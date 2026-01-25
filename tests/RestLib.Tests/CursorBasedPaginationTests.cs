@@ -1,0 +1,1007 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using FluentAssertions;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using RestLib.Abstractions;
+using RestLib.Configuration;
+using RestLib.Pagination;
+using RestLib.Responses;
+using RestLib.Tests.Fakes;
+using Xunit;
+
+namespace RestLib.Tests;
+
+/// <summary>
+/// Tests for Story 4.1: Cursor-Based Pagination.
+/// Verifies cursor encoding/decoding, limit validation, and proper error handling.
+/// </summary>
+public class CursorBasedPaginationTests : IDisposable
+{
+  private readonly IHost _host;
+  private readonly HttpClient _client;
+  private readonly PaginationTestRepository _repository;
+
+  public CursorBasedPaginationTests()
+  {
+    _repository = new PaginationTestRepository();
+
+    _host = new HostBuilder()
+        .ConfigureWebHost(webBuilder =>
+        {
+          webBuilder
+                  .UseTestServer()
+                  .ConfigureServices(services =>
+                  {
+                    services.AddRestLib(options =>
+                    {
+                      options.DefaultPageSize = 20;
+                      options.MaxPageSize = 100;
+                    });
+                    services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
+                    services.AddRouting();
+                  })
+                  .Configure(app =>
+                  {
+                    app.UseRouting();
+                    app.UseEndpoints(endpoints =>
+                    {
+                      endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
+                      {
+                        config.AllowAnonymous();
+                      });
+                    });
+                  });
+        })
+        .Build();
+
+    _host.Start();
+    _client = _host.GetTestClient();
+  }
+
+  public void Dispose()
+  {
+    _client.Dispose();
+    _host.Dispose();
+  }
+
+  #region Cursor Validation Tests
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithNullCursor_ReturnsFirstPage()
+  {
+    // Arrange
+    _repository.SeedMany(25);
+
+    // Act
+    var response = await _client.GetAsync("/api/products");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    json.GetProperty("items").GetArrayLength().Should().Be(20); // Default page size
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithEmptyStringCursor_ReturnsFirstPage()
+  {
+    // Arrange
+    _repository.SeedMany(25);
+
+    // Act
+    var response = await _client.GetAsync("/api/products?cursor=");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithValidBase64UrlCursor_ReturnsSuccess()
+  {
+    // Arrange
+    _repository.SeedMany(50);
+    var cursor = CursorEncoder.Encode(Guid.NewGuid());
+
+    // Act
+    var response = await _client.GetAsync($"/api/products?cursor={Uri.EscapeDataString(cursor)}");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithInvalidCursor_Returns400WithProblemDetails()
+  {
+    // Arrange
+    var invalidCursor = "not-a-valid-base64url-cursor";
+
+    // Act
+    var response = await _client.GetAsync($"/api/products?cursor={invalidCursor}");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+    var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
+    problem.Should().NotBeNull();
+    problem!.Type.Should().Be("/problems/invalid-cursor");
+    problem.Title.Should().Be("Invalid Cursor");
+    problem.Status.Should().Be(400);
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithMalformedBase64Cursor_Returns400()
+  {
+    // Arrange - base64 with invalid characters
+    var malformedCursor = "abc!!!xyz";
+
+    // Act
+    var response = await _client.GetAsync($"/api/products?cursor={malformedCursor}");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
+    problem!.Type.Should().Be("/problems/invalid-cursor");
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithValidBase64ButInvalidStructure_Returns400()
+  {
+    // Arrange - valid base64 but not a valid cursor structure
+    var invalidStructure = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("{\"foo\":\"bar\"}"))
+        .Replace('+', '-').Replace('/', '_').TrimEnd('=');
+
+    // Act
+    var response = await _client.GetAsync($"/api/products?cursor={invalidStructure}");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+  }
+
+  #endregion
+
+  #region Limit Validation Tests
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithDefaultLimit_Returns20Items()
+  {
+    // Arrange
+    _repository.SeedMany(50);
+
+    // Act
+    var response = await _client.GetAsync("/api/products");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    json.GetProperty("items").GetArrayLength().Should().Be(20);
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithLimit10_Returns10Items()
+  {
+    // Arrange
+    _repository.SeedMany(50);
+
+    // Act
+    var response = await _client.GetAsync("/api/products?limit=10");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    json.GetProperty("items").GetArrayLength().Should().Be(10);
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithLimit1_Returns1Item()
+  {
+    // Arrange
+    _repository.SeedMany(50);
+
+    // Act
+    var response = await _client.GetAsync("/api/products?limit=1");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    json.GetProperty("items").GetArrayLength().Should().Be(1);
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithLimit100_Returns100Items()
+  {
+    // Arrange
+    _repository.SeedMany(150);
+
+    // Act
+    var response = await _client.GetAsync("/api/products?limit=100");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    json.GetProperty("items").GetArrayLength().Should().Be(100);
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithLimitZero_Returns400WithProblemDetails()
+  {
+    // Act
+    var response = await _client.GetAsync("/api/products?limit=0");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+    var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
+    problem.Should().NotBeNull();
+    problem!.Type.Should().Be("/problems/invalid-limit");
+    problem.Title.Should().Be("Invalid Limit");
+    problem.Status.Should().Be(400);
+    problem.Detail.Should().Contain("0").And.Contain("1").And.Contain("100");
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithNegativeLimit_Returns400WithProblemDetails()
+  {
+    // Act
+    var response = await _client.GetAsync("/api/products?limit=-5");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+    var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
+    problem!.Type.Should().Be("/problems/invalid-limit");
+    problem.Detail.Should().Contain("-5");
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithLimit101_Returns400WithProblemDetails()
+  {
+    // Act
+    var response = await _client.GetAsync("/api/products?limit=101");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+    var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
+    problem!.Type.Should().Be("/problems/invalid-limit");
+    problem.Detail.Should().Contain("101");
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithLimit1000_Returns400WithProblemDetails()
+  {
+    // Act
+    var response = await _client.GetAsync("/api/products?limit=1000");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+    var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
+    problem!.Type.Should().Be("/problems/invalid-limit");
+  }
+
+  #endregion
+
+  #region Cursor Encoding Tests
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public void CursorEncoder_EncodesGuidToBase64Url()
+  {
+    // Arrange
+    var id = Guid.NewGuid();
+
+    // Act
+    var cursor = CursorEncoder.Encode(id);
+
+    // Assert
+    cursor.Should().NotBeNullOrEmpty();
+    // Base64url should not contain + / or =
+    cursor.Should().NotContain("+");
+    cursor.Should().NotContain("/");
+    cursor.Should().NotContain("=");
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public void CursorEncoder_EncodesIntToBase64Url()
+  {
+    // Arrange
+    var id = 12345;
+
+    // Act
+    var cursor = CursorEncoder.Encode(id);
+
+    // Assert
+    cursor.Should().NotBeNullOrEmpty();
+    cursor.Should().NotContain("+");
+    cursor.Should().NotContain("/");
+    cursor.Should().NotContain("=");
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public void CursorEncoder_EncodesStringToBase64Url()
+  {
+    // Arrange
+    var id = "product-123";
+
+    // Act
+    var cursor = CursorEncoder.Encode(id);
+
+    // Assert
+    cursor.Should().NotBeNullOrEmpty();
+    cursor.Should().NotContain("+");
+    cursor.Should().NotContain("/");
+    cursor.Should().NotContain("=");
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public void CursorEncoder_DecodesGuidFromBase64Url()
+  {
+    // Arrange
+    var originalId = Guid.NewGuid();
+    var cursor = CursorEncoder.Encode(originalId);
+
+    // Act
+    var success = CursorEncoder.TryDecode<Guid>(cursor, out var decodedId);
+
+    // Assert
+    success.Should().BeTrue();
+    decodedId.Should().Be(originalId);
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public void CursorEncoder_DecodesIntFromBase64Url()
+  {
+    // Arrange
+    var originalId = 12345;
+    var cursor = CursorEncoder.Encode(originalId);
+
+    // Act
+    var success = CursorEncoder.TryDecode<int>(cursor, out var decodedId);
+
+    // Assert
+    success.Should().BeTrue();
+    decodedId.Should().Be(originalId);
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public void CursorEncoder_DecodesStringFromBase64Url()
+  {
+    // Arrange
+    var originalId = "product-123";
+    var cursor = CursorEncoder.Encode(originalId);
+
+    // Act
+    var success = CursorEncoder.TryDecode<string>(cursor, out var decodedId);
+
+    // Assert
+    success.Should().BeTrue();
+    decodedId.Should().Be(originalId);
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public void CursorEncoder_TryDecode_ReturnsFalseForInvalidCursor()
+  {
+    // Arrange
+    var invalidCursor = "not-valid-base64";
+
+    // Act
+    var success = CursorEncoder.TryDecode<Guid>(invalidCursor, out var decodedId);
+
+    // Assert
+    success.Should().BeFalse();
+    decodedId.Should().Be(Guid.Empty);
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public void CursorEncoder_TryDecode_ReturnsFalseForEmptyString()
+  {
+    // Act
+    var success = CursorEncoder.TryDecode<Guid>("", out var decodedId);
+
+    // Assert
+    success.Should().BeFalse();
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public void CursorEncoder_TryDecode_ReturnsFalseForNull()
+  {
+    // Act
+    var success = CursorEncoder.TryDecode<Guid>(null!, out var decodedId);
+
+    // Assert
+    success.Should().BeFalse();
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public void CursorEncoder_IsValid_ReturnsTrueForValidCursor()
+  {
+    // Arrange
+    var cursor = CursorEncoder.Encode(Guid.NewGuid());
+
+    // Act
+    var isValid = CursorEncoder.IsValid(cursor);
+
+    // Assert
+    isValid.Should().BeTrue();
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public void CursorEncoder_IsValid_ReturnsTrueForNullOrEmpty()
+  {
+    // Assert
+    CursorEncoder.IsValid(null).Should().BeTrue();
+    CursorEncoder.IsValid("").Should().BeTrue();
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public void CursorEncoder_IsValid_ReturnsFalseForInvalidBase64()
+  {
+    // Act
+    var isValid = CursorEncoder.IsValid("not-valid!!!base64");
+
+    // Assert
+    isValid.Should().BeFalse();
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public void CursorEncoder_IsValid_ReturnsFalseForValidBase64ButInvalidStructure()
+  {
+    // Arrange - valid base64 but doesn't have the "v" property
+    var invalidStructure = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("{\"foo\":\"bar\"}"))
+        .Replace('+', '-').Replace('/', '_').TrimEnd('=');
+
+    // Act
+    var isValid = CursorEncoder.IsValid(invalidStructure);
+
+    // Assert
+    isValid.Should().BeFalse();
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public void CursorEncoder_CursorsAreUrlSafe()
+  {
+    // Arrange - test with values that would produce + and / in standard base64
+    var testValues = new object[]
+    {
+      Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff"),
+      "test/string+with=special",
+      999999999999L,
+      -1
+    };
+
+    foreach (var value in testValues)
+    {
+      // Act
+      var cursor = CursorEncoder.Encode(value);
+
+      // Assert - base64url must not contain these characters
+      cursor.Should().NotContain("+", $"Cursor for {value} contains '+'");
+      cursor.Should().NotContain("/", $"Cursor for {value} contains '/'");
+      cursor.Should().NotContain("=", $"Cursor for {value} contains '='");
+    }
+  }
+
+  #endregion
+
+  #region Combined Cursor and Limit Tests
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithValidCursorAndLimit_ReturnsSuccess()
+  {
+    // Arrange
+    _repository.SeedMany(50);
+    var cursor = CursorEncoder.Encode(Guid.NewGuid());
+
+    // Act
+    var response = await _client.GetAsync($"/api/products?cursor={Uri.EscapeDataString(cursor)}&limit=10");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithInvalidCursorAndValidLimit_Returns400ForCursor()
+  {
+    // Arrange - cursor is validated first
+    var invalidCursor = "invalid";
+
+    // Act
+    var response = await _client.GetAsync($"/api/products?cursor={invalidCursor}&limit=10");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
+    problem!.Type.Should().Be("/problems/invalid-cursor");
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithValidCursorAndInvalidLimit_Returns400ForLimit()
+  {
+    // Arrange
+    var validCursor = CursorEncoder.Encode(Guid.NewGuid());
+
+    // Act
+    var response = await _client.GetAsync($"/api/products?cursor={Uri.EscapeDataString(validCursor)}&limit=0");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
+    problem!.Type.Should().Be("/problems/invalid-limit");
+  }
+
+  #endregion
+
+  #region Response Structure Tests
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_ResponseContainsPaginationLinks()
+  {
+    // Arrange
+    _repository.SeedMany(50);
+
+    // Act
+    var response = await _client.GetAsync("/api/products?limit=10");
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+    // Assert
+    json.TryGetProperty("self", out _).Should().BeTrue();
+    json.GetProperty("self").GetString().Should().Contain("/api/products");
+    json.GetProperty("self").GetString().Should().Contain("limit=10");
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_ResponseHasNextLinkWhenMoreItemsExist()
+  {
+    // Arrange - seed items that will produce a next cursor
+    _repository.SeedManyWithNextCursor(10);
+
+    // Act
+    var response = await _client.GetAsync("/api/products?limit=5");
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+    // Assert
+    json.TryGetProperty("next", out var nextLink).Should().BeTrue();
+    nextLink.GetString().Should().Contain("cursor=");
+    nextLink.GetString().Should().Contain("limit=5");
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_ResponseOmitsNextLinkWhenNoMoreItems()
+  {
+    // Arrange - seed fewer items than limit
+    _repository.SeedMany(5);
+
+    // Act
+    var response = await _client.GetAsync("/api/products?limit=10");
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+    // Assert - when there are no more items, "next" is omitted (null values not serialized)
+    json.TryGetProperty("next", out _).Should().BeFalse();
+  }
+
+  #endregion
+
+  #region Edge Cases
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithEmptyRepository_ReturnsEmptyItems()
+  {
+    // Arrange - repository is empty
+
+    // Act
+    var response = await _client.GetAsync("/api/products");
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+    json.GetProperty("items").GetArrayLength().Should().Be(0);
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithFewerItemsThanLimit_ReturnsAllItems()
+  {
+    // Arrange
+    _repository.SeedMany(3);
+
+    // Act
+    var response = await _client.GetAsync("/api/products?limit=10");
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+    json.GetProperty("items").GetArrayLength().Should().Be(3);
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_WithExactlyLimitItems_ReturnsAllItems()
+  {
+    // Arrange
+    _repository.SeedMany(10);
+
+    // Act
+    var response = await _client.GetAsync("/api/products?limit=10");
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+    json.GetProperty("items").GetArrayLength().Should().Be(10);
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_LimitIsEnforcedByMaxPageSize()
+  {
+    // Arrange - limit exceeds max (should fail validation)
+    _repository.SeedMany(200);
+
+    // Act
+    var response = await _client.GetAsync("/api/products?limit=150");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
+    problem!.Type.Should().Be("/problems/invalid-limit");
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_CursorWithSpecialCharacters_IsHandledCorrectly()
+  {
+    // Arrange - cursor that encodes to base64 with special chars that need URL encoding
+    var cursor = CursorEncoder.Encode("test/value+special=chars");
+
+    // Act
+    var response = await _client.GetAsync($"/api/products?cursor={Uri.EscapeDataString(cursor)}");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+  }
+
+  #endregion
+}
+
+/// <summary>
+/// Tests for cursor encoding with custom page size configuration.
+/// </summary>
+public class CursorPaginationCustomConfigTests : IDisposable
+{
+  private readonly IHost _host;
+  private readonly HttpClient _client;
+  private readonly PaginationTestRepository _repository;
+
+  public CursorPaginationCustomConfigTests()
+  {
+    _repository = new PaginationTestRepository();
+
+    _host = new HostBuilder()
+        .ConfigureWebHost(webBuilder =>
+        {
+          webBuilder
+                  .UseTestServer()
+                  .ConfigureServices(services =>
+                  {
+                    services.AddRestLib(options =>
+                    {
+                      options.DefaultPageSize = 5;   // Custom default
+                      options.MaxPageSize = 50;      // Custom max
+                    });
+                    services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
+                    services.AddRouting();
+                  })
+                  .Configure(app =>
+                  {
+                    app.UseRouting();
+                    app.UseEndpoints(endpoints =>
+                    {
+                      endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
+                      {
+                        config.AllowAnonymous();
+                      });
+                    });
+                  });
+        })
+        .Build();
+
+    _host.Start();
+    _client = _host.GetTestClient();
+  }
+
+  public void Dispose()
+  {
+    _client.Dispose();
+    _host.Dispose();
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_UsesCustomDefaultPageSize()
+  {
+    // Arrange
+    _repository.SeedMany(20);
+
+    // Act
+    var response = await _client.GetAsync("/api/products");
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+    json.GetProperty("items").GetArrayLength().Should().Be(5); // Custom default
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_EnforcesCustomMaxPageSize()
+  {
+    // Arrange
+    _repository.SeedMany(100);
+
+    // Act - limit exceeds custom max of 50
+    var response = await _client.GetAsync("/api/products?limit=51");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
+    problem!.Type.Should().Be("/problems/invalid-limit");
+    problem.Detail.Should().Contain("50"); // Custom max
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  public async Task GetAll_AllowsUpToCustomMaxPageSize()
+  {
+    // Arrange
+    _repository.SeedMany(100);
+
+    // Act - limit at custom max of 50
+    var response = await _client.GetAsync("/api/products?limit=50");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    json.GetProperty("items").GetArrayLength().Should().Be(50);
+  }
+}
+
+/// <summary>
+/// Integration tests verifying Zalando Rule 160 compliance for cursor pagination.
+/// </summary>
+public class ZalandoPaginationComplianceTests : IDisposable
+{
+  private readonly IHost _host;
+  private readonly HttpClient _client;
+  private readonly PaginationTestRepository _repository;
+
+  public ZalandoPaginationComplianceTests()
+  {
+    _repository = new PaginationTestRepository();
+
+    _host = new HostBuilder()
+        .ConfigureWebHost(webBuilder =>
+        {
+          webBuilder
+                  .UseTestServer()
+                  .ConfigureServices(services =>
+                  {
+                    services.AddRestLib();
+                    services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
+                    services.AddRouting();
+                  })
+                  .Configure(app =>
+                  {
+                    app.UseRouting();
+                    app.UseEndpoints(endpoints =>
+                    {
+                      endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
+                      {
+                        config.AllowAnonymous();
+                      });
+                    });
+                  });
+        })
+        .Build();
+
+    _host.Start();
+    _client = _host.GetTestClient();
+  }
+
+  public void Dispose()
+  {
+    _client.Dispose();
+    _host.Dispose();
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  [Trait("Compliance", "Zalando Rule 160")]
+  public void CursorsAreOpaque_NotExposingInternalDetails()
+  {
+    // Arrange
+    var id = Guid.NewGuid();
+
+    // Act
+    var cursor = CursorEncoder.Encode(id);
+
+    // Assert
+    // Cursor should not directly contain the GUID string
+    cursor.Should().NotContain(id.ToString());
+    // Should be base64url encoded (opaque)
+    cursor.Should().MatchRegex(@"^[A-Za-z0-9_-]+$");
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  [Trait("Compliance", "Zalando")]
+  public async Task GetAll_SupportsLimitQueryParameter()
+  {
+    // Arrange
+    _repository.SeedMany(50);
+
+    // Act
+    var response = await _client.GetAsync("/api/products?limit=15");
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+    json.GetProperty("items").GetArrayLength().Should().Be(15);
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  [Trait("Compliance", "Zalando")]
+  public async Task GetAll_SupportsCursorQueryParameter()
+  {
+    // Arrange
+    _repository.SeedMany(50);
+    var cursor = CursorEncoder.Encode(Guid.NewGuid());
+
+    // Act
+    var response = await _client.GetAsync($"/api/products?cursor={Uri.EscapeDataString(cursor)}");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.1")]
+  [Trait("Compliance", "Zalando")]
+  public async Task GetAll_InvalidCursor_ReturnsProperProblemDetails()
+  {
+    // Act
+    var response = await _client.GetAsync("/api/products?cursor=invalid");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+    var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
+    problem.Should().NotBeNull();
+    problem!.Type.Should().StartWith("/problems/");
+    problem.Status.Should().Be(400);
+  }
+}
+
+/// <summary>
+/// Test repository with pagination support for Story 4.1 tests.
+/// </summary>
+public class PaginationTestRepository : IRepository<ProductEntity, Guid>
+{
+  private readonly Dictionary<Guid, ProductEntity> _store = new();
+  private string? _nextCursor;
+
+  public Task<ProductEntity?> GetByIdAsync(Guid id, CancellationToken ct = default)
+  {
+    _store.TryGetValue(id, out var entity);
+    return Task.FromResult(entity);
+  }
+
+  public Task<PagedResult<ProductEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default)
+  {
+    var items = _store.Values.Take(pagination.Limit).ToList();
+    return Task.FromResult(new PagedResult<ProductEntity>
+    {
+      Items = items,
+      NextCursor = items.Count < _store.Count ? (_nextCursor ?? CursorEncoder.Encode(Guid.NewGuid())) : null
+    });
+  }
+
+  public Task<ProductEntity> CreateAsync(ProductEntity entity, CancellationToken ct = default)
+  {
+    if (entity.Id == Guid.Empty)
+      entity.Id = Guid.NewGuid();
+    _store[entity.Id] = entity;
+    return Task.FromResult(entity);
+  }
+
+  public Task<ProductEntity?> UpdateAsync(Guid id, ProductEntity entity, CancellationToken ct = default)
+  {
+    if (!_store.ContainsKey(id))
+      return Task.FromResult<ProductEntity?>(null);
+    entity.Id = id;
+    _store[id] = entity;
+    return Task.FromResult<ProductEntity?>(entity);
+  }
+
+  public Task<ProductEntity?> PatchAsync(Guid id, JsonElement patchDocument, CancellationToken ct = default)
+  {
+    if (!_store.TryGetValue(id, out var existing))
+      return Task.FromResult<ProductEntity?>(null);
+    return Task.FromResult<ProductEntity?>(existing);
+  }
+
+  public Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
+  {
+    return Task.FromResult(_store.Remove(id));
+  }
+
+  public void SeedMany(int count)
+  {
+    _store.Clear();
+    for (var i = 0; i < count; i++)
+    {
+      var entity = new ProductEntity
+      {
+        Id = Guid.NewGuid(),
+        ProductName = $"Product {i + 1}",
+        UnitPrice = 10.00m + i,
+        StockQuantity = 100 + i,
+        IsActive = true
+      };
+      _store[entity.Id] = entity;
+    }
+  }
+
+  public void SeedManyWithNextCursor(int count)
+  {
+    SeedMany(count);
+    _nextCursor = CursorEncoder.Encode(Guid.NewGuid());
+  }
+
+  public void Clear() => _store.Clear();
+}

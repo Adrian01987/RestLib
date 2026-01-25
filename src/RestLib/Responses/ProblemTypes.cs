@@ -1,0 +1,40 @@
+namespace RestLib.Responses;
+
+/// <summary>
+/// Standard problem type URIs for RestLib errors.
+/// </summary>
+public static class ProblemTypes
+{
+  /// <summary>Resource not found (404).</summary>
+  public const string NotFound = "/problems/not-found";
+
+  /// <summary>Validation failed (400).</summary>
+  public const string ValidationFailed = "/problems/validation-failed";
+
+  /// <summary>Bad request (400).</summary>
+  public const string BadRequest = "/problems/bad-request";
+
+  /// <summary>Invalid cursor format (400).</summary>
+  public const string InvalidCursor = "/problems/invalid-cursor";
+
+  /// <summary>Invalid pagination limit (400).</summary>
+  public const string InvalidLimit = "/problems/invalid-limit";
+
+  /// <summary>Invalid filter value (400).</summary>
+  public const string InvalidFilter = "/problems/invalid-filter";
+
+  /// <summary>Resource conflict (409).</summary>
+  public const string Conflict = "/problems/conflict";
+
+  /// <summary>Precondition failed / ETag mismatch (412).</summary>
+  public const string PreconditionFailed = "/problems/precondition-failed";
+
+  /// <summary>Unauthorized / missing authentication (401).</summary>
+  public const string Unauthorized = "/problems/unauthorized";
+
+  /// <summary>Forbidden / insufficient permissions (403).</summary>
+  public const string Forbidden = "/problems/forbidden";
+
+  /// <summary>Internal server error (500).</summary>
+  public const string InternalError = "/problems/internal-error";
+}

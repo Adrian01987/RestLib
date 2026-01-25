@@ -1,0 +1,32 @@
+<Project>
+  <PropertyGroup>
+    <!-- Build settings -->
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <LangVersion>latest</LangVersion>
+    
+    <!-- Package metadata -->
+    <Authors>RestLib Contributors</Authors>
+    <Company>RestLib</Company>
+    <Copyright>Copyright © 2026 RestLib Contributors</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/Adrian01987/RestLib</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Adrian01987/RestLib</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>rest;api;aspnetcore;crud;scaffolding;minimal-api;dotnet</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    
+    <!-- SourceLink support -->
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+  
+  <!-- Deterministic builds for CI -->
+  <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+</Project>

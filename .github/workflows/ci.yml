@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_NOLOGO: true
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
+
+      - name: Test with coverage
+        run: |
+          dotnet test --no-build --configuration Release \
+            --collect:"XPlat Code Coverage" \
+            --results-directory TestResults \
+            --logger trx \
+            -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: TestResults/*.trx
+          retention-days: 30
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: TestResults/**/coverage.cobertura.xml
+          flags: unittests
+          name: RestLib-coverage
+          fail_ci_if_error: false
+          verbose: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Generate coverage report summary
+        run: |
+          echo "## Code Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          # Find and display coverage percentage from cobertura XML
+          COVERAGE_FILE=$(find TestResults -name "coverage.cobertura.xml" -type f | head -1)
+          if [ -f "$COVERAGE_FILE" ]; then
+            LINE_RATE=$(grep -oP 'line-rate="\K[^"]+' "$COVERAGE_FILE" | head -1)
+            PERCENTAGE=$(echo "$LINE_RATE * 100" | bc -l | xargs printf "%.1f")
+            echo "📊 **Line Coverage:** ${PERCENTAGE}%" >> $GITHUB_STEP_SUMMARY
+            
+            # Check coverage threshold
+            THRESHOLD=80
+            if (( $(echo "$PERCENTAGE >= $THRESHOLD" | bc -l) )); then
+              echo "✅ Coverage meets minimum threshold of ${THRESHOLD}%" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "⚠️ Coverage is below minimum threshold of ${THRESHOLD}%" >> $GITHUB_STEP_SUMMARY
+              echo "::warning::Code coverage ${PERCENTAGE}% is below the ${THRESHOLD}% threshold"
+            fi
+          else
+            echo "⚠️ Coverage file not found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Pack
+        run: dotnet pack --no-build --configuration Release --output ./artifacts
+
+      - name: Upload NuGet packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: ./artifacts/*.nupkg
+          retention-days: 30
+
+      - name: Upload symbol packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: symbol-packages
+          path: ./artifacts/*.snupkg
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: TestResults/**/coverage.cobertura.xml
+          retention-days: 30
