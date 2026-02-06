@@ -147,7 +147,35 @@ RestLib follows [Zalando REST API Guidelines](https://opensource.zalando.com/res
 }
 ```
 
-### 🔌 Extensible via Hooks
+### � Advanced Filtering
+
+Enable filtering with zero boilerplate. It parses the query string, validates parameters, and passes safe values to your repository.
+
+```csharp
+app.MapRestLib<Product, Guid>("/api/products", config =>
+{
+    // Enable filtering for specific properties:
+    // GET /api/products?category_id=5&is_active=true
+    config.AllowFiltering(p => p.CategoryId, p => p.IsActive);
+});
+```
+
+### ✂️ Select Operations
+
+Need a read-only API? Or want to handle specific operations yourself? Enable only what you need:
+
+```csharp
+app.MapRestLib<Category, Guid>("/api/categories", config =>
+{
+    // Only expose GET endpoints (no create/update/delete)
+    config.IncludeOperations(RestLibOperation.GetAll, RestLibOperation.GetById);
+});
+
+// Implement custom logic alongside RestLib
+app.MapPost("/api/categories", async (Category category, IRepository<Category, Guid> repo) => { ... });
+```
+
+### �🔌 Extensible via Hooks
 
 Inject custom logic without subclassing:
 

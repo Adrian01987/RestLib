@@ -1,5 +1,6 @@
 using Microsoft.OpenApi.Models;
 using RestLib;
+using RestLib.Abstractions;
 using RestLib.InMemory;
 using RestLib.Sample.Models;
 
@@ -36,10 +37,37 @@ app.UseSwaggerUI(c =>
 });
 
 // Map RestLib endpoints — the magic ✨
-app.MapRestLib<Category, Guid>("/api/categories", config => config.AllowAnonymous());
+app.MapRestLib<Category, Guid>("/api/categories", config =>
+{
+  config.AllowAnonymous();
+  config.IncludeOperations(RestLibOperation.GetAll, RestLibOperation.GetById);
+});
+
+
+// Custom statistics endpoint for categories
+app.MapGet("/api/categories/statistics", async (IRepository<Category, Guid> repository, CancellationToken ct) =>
+{
+  // Fetch all categories (limit set to max value to get all items)
+  var page = await repository.GetAllAsync(new RestLib.Pagination.PaginationRequest { Limit = int.MaxValue }, ct);
+  var categories = page.Items;
+
+  var stats = new
+  {
+    TotalCategories = categories.Count,
+    Names = categories.Select(c => c.Name)
+  };
+
+  return Results.Ok(stats);
+})
+.WithTags("Category")
+.WithSummary("Get category statistics")
+.WithDescription("Returns aggregated statistics about categories and their products.")
+.AllowAnonymous();
+
 app.MapRestLib<Product, Guid>("/api/products", config =>
 {
   config.AllowAnonymous();
+  config.ExcludeOperations(RestLibOperation.Delete);
   config.AllowFiltering(p => p.CategoryId, p => p.IsActive);
   config.UseHooks(hooks => hooks.BeforePersist = ctx =>
   {

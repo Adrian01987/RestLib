@@ -42,785 +42,803 @@ public static class RestLibEndpointExtensions
     var entityName = typeof(TEntity).Name;
 
     // GET /prefix - Get all (paginated)
-    var getAllEndpoint = group.MapGet("", async (
-        IRepository<TEntity, TKey> repository,
-        HttpContext httpContext,
-        string? cursor,
-        int? limit,
-        CancellationToken ct) =>
+    if (config.IsOperationEnabled(RestLibOperation.GetAll))
     {
-      var jsonOptions = GetJsonOptions(httpContext);
-      var RestLibOptions = httpContext.RequestServices.GetService<RestLibOptions>()
-                           ?? new RestLibOptions();
-
-      // Create hook pipeline if hooks are configured
-      var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
-      HookContext<TEntity, TKey>? hookContext = null;
-
-      try
+      var getAllEndpoint = group.MapGet("", async (
+          IRepository<TEntity, TKey> repository,
+          HttpContext httpContext,
+          string? cursor,
+          int? limit,
+          CancellationToken ct) =>
       {
-        // OnRequestReceived hook
-        if (pipeline is not null)
+        var jsonOptions = GetJsonOptions(httpContext);
+        var RestLibOptions = httpContext.RequestServices.GetService<RestLibOptions>()
+                             ?? new RestLibOptions();
+
+        // Create hook pipeline if hooks are configured
+        var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
+        HookContext<TEntity, TKey>? hookContext = null;
+
+        try
         {
-          hookContext = pipeline.CreateContext(httpContext, RestLibOperation.GetAll);
-          if (!await pipeline.ExecuteOnRequestReceivedAsync(hookContext))
+          // OnRequestReceived hook
+          if (pipeline is not null)
           {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            hookContext = pipeline.CreateContext(httpContext, RestLibOperation.GetAll);
+            if (!await pipeline.ExecuteOnRequestReceivedAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
           }
-        }
 
-        // Validate cursor if provided
-        if (!string.IsNullOrEmpty(cursor) && !CursorEncoder.IsValid(cursor))
-        {
-          return ProblemDetailsResult.InvalidCursor(
-              cursor,
-              httpContext.Request.Path,
-              jsonOptions);
-        }
-
-        // Validate limit if provided
-        if (limit.HasValue && (limit.Value < 1 || limit.Value > RestLibOptions.MaxPageSize))
-        {
-          return ProblemDetailsResult.InvalidLimit(
-              limit.Value,
-              1,
-              RestLibOptions.MaxPageSize,
-              httpContext.Request.Path,
-              jsonOptions);
-        }
-
-        // Parse and validate filters
-        IReadOnlyList<FilterValue> filterValues = [];
-        if (config.HasFilters)
-        {
-          var filterResult = FilterParser.Parse(httpContext.Request.Query, config.FilterConfiguration);
-          if (!filterResult.IsValid)
+          // Validate cursor if provided
+          if (!string.IsNullOrEmpty(cursor) && !CursorEncoder.IsValid(cursor))
           {
-            return ProblemDetailsResult.InvalidFilters(
-                filterResult.Errors,
+            return ProblemDetailsResult.InvalidCursor(
+                cursor,
                 httpContext.Request.Path,
                 jsonOptions);
           }
-          filterValues = filterResult.Values;
-        }
 
-        // OnRequestValidated hook
-        if (pipeline is not null && hookContext is not null)
-        {
-          if (!await pipeline.ExecuteOnRequestValidatedAsync(hookContext))
+          // Validate limit if provided
+          if (limit.HasValue && (limit.Value < 1 || limit.Value > RestLibOptions.MaxPageSize))
           {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            return ProblemDetailsResult.InvalidLimit(
+                limit.Value,
+                1,
+                RestLibOptions.MaxPageSize,
+                httpContext.Request.Path,
+                jsonOptions);
           }
-        }
 
-        var effectiveLimit = Math.Clamp(limit ?? RestLibOptions.DefaultPageSize, 1, RestLibOptions.MaxPageSize);
-        var paginationRequest = new PaginationRequest
-        {
-          Cursor = cursor,
-          Limit = effectiveLimit,
-          Filters = filterValues
-        };
-
-        var result = await repository.GetAllAsync(paginationRequest, ct);
-
-        var response = BuildCollectionResponse(result, httpContext.Request, cursor, effectiveLimit, RestLibOptions);
-
-        // BeforeResponse hook
-        if (pipeline is not null && hookContext is not null)
-        {
-          if (!await pipeline.ExecuteBeforeResponseAsync(hookContext))
+          // Parse and validate filters
+          IReadOnlyList<FilterValue> filterValues = [];
+          if (config.HasFilters)
           {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            var filterResult = FilterParser.Parse(httpContext.Request.Query, config.FilterConfiguration);
+            if (!filterResult.IsValid)
+            {
+              return ProblemDetailsResult.InvalidFilters(
+                  filterResult.Errors,
+                  httpContext.Request.Path,
+                  jsonOptions);
+            }
+            filterValues = filterResult.Values;
           }
-        }
 
-        return Results.Json(response, jsonOptions);
-      }
-      catch (Exception ex)
-      {
-        if (pipeline is not null)
-        {
-          var errorContext = pipeline.CreateErrorContext(httpContext, RestLibOperation.GetAll, ex);
-          var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
-          if (handled && errorResult is not null)
+          // OnRequestValidated hook
+          if (pipeline is not null && hookContext is not null)
           {
-            return errorResult;
+            if (!await pipeline.ExecuteOnRequestValidatedAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
           }
-        }
-        throw;
-      }
-    });
-    ConfigureGetAllEndpoint(getAllEndpoint, config, entityName);
 
-    // Add OpenAPI documentation for filter parameters
-    if (config.HasFilters)
-    {
-      getAllEndpoint.WithOpenApi(operation =>
-      {
-        foreach (var filter in config.FilterConfiguration.Properties)
-        {
-          var param = new OpenApiParameter
+          var effectiveLimit = Math.Clamp(limit ?? RestLibOptions.DefaultPageSize, 1, RestLibOptions.MaxPageSize);
+          var paginationRequest = new PaginationRequest
           {
-            Name = filter.QueryParameterName,
-            In = ParameterLocation.Query,
-            Required = false,
-            Description = $"Filter by {filter.PropertyName}",
-            Schema = GetOpenApiSchema(filter.PropertyType)
+            Cursor = cursor,
+            Limit = effectiveLimit,
+            Filters = filterValues
           };
-          operation.Parameters.Add(param);
+
+          var result = await repository.GetAllAsync(paginationRequest, ct);
+
+          var response = BuildCollectionResponse(result, httpContext.Request, cursor, effectiveLimit, RestLibOptions);
+
+          // BeforeResponse hook
+          if (pipeline is not null && hookContext is not null)
+          {
+            if (!await pipeline.ExecuteBeforeResponseAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
+          }
+
+          return Results.Json(response, jsonOptions);
         }
-        return operation;
+        catch (Exception ex)
+        {
+          if (pipeline is not null)
+          {
+            var errorContext = pipeline.CreateErrorContext(httpContext, RestLibOperation.GetAll, ex);
+            var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
+            if (handled && errorResult is not null)
+            {
+              return errorResult;
+            }
+          }
+          throw;
+        }
       });
-    }
+      ConfigureGetAllEndpoint(getAllEndpoint, config, entityName);
+
+      // Add OpenAPI documentation for filter parameters
+      if (config.HasFilters)
+      {
+        getAllEndpoint.WithOpenApi(operation =>
+        {
+          foreach (var filter in config.FilterConfiguration.Properties)
+          {
+            var param = new OpenApiParameter
+            {
+              Name = filter.QueryParameterName,
+              In = ParameterLocation.Query,
+              Required = false,
+              Description = $"Filter by {filter.PropertyName}",
+              Schema = GetOpenApiSchema(filter.PropertyType)
+            };
+            operation.Parameters.Add(param);
+          }
+          return operation;
+        });
+      }
+    } // end GetAll
 
     // GET /prefix/{id} - Get by ID
-    var getByIdEndpoint = group.MapGet("/{id}", async (
-        TKey id,
-        IRepository<TEntity, TKey> repository,
-        HttpContext httpContext,
-        CancellationToken ct) =>
+    if (config.IsOperationEnabled(RestLibOperation.GetById))
     {
-      var jsonOptions = GetJsonOptions(httpContext);
-      var RestLibOptions = httpContext.RequestServices.GetService<RestLibOptions>()
-                           ?? new RestLibOptions();
-
-      // Create hook pipeline if hooks are configured
-      var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
-      HookContext<TEntity, TKey>? hookContext = null;
-
-      try
+      var getByIdEndpoint = group.MapGet("/{id}", async (
+          TKey id,
+          IRepository<TEntity, TKey> repository,
+          HttpContext httpContext,
+          CancellationToken ct) =>
       {
-        // OnRequestReceived hook
-        if (pipeline is not null)
+        var jsonOptions = GetJsonOptions(httpContext);
+        var RestLibOptions = httpContext.RequestServices.GetService<RestLibOptions>()
+                             ?? new RestLibOptions();
+
+        // Create hook pipeline if hooks are configured
+        var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
+        HookContext<TEntity, TKey>? hookContext = null;
+
+        try
         {
-          hookContext = pipeline.CreateContext(httpContext, RestLibOperation.GetById, id);
-          if (!await pipeline.ExecuteOnRequestReceivedAsync(hookContext))
+          // OnRequestReceived hook
+          if (pipeline is not null)
           {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            hookContext = pipeline.CreateContext(httpContext, RestLibOperation.GetById, id);
+            if (!await pipeline.ExecuteOnRequestReceivedAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
           }
-        }
 
-        var entity = await repository.GetByIdAsync(id, ct);
+          var entity = await repository.GetByIdAsync(id, ct);
 
-        if (entity is null)
-        {
-          return ProblemDetailsResult.NotFound(
-              entityName,
-              id!,
-              httpContext.Request.Path,
-              jsonOptions);
-        }
-
-        // Update hook context with entity
-        if (hookContext is not null)
-        {
-          hookContext.Entity = entity;
-        }
-
-        // OnRequestValidated hook
-        if (pipeline is not null && hookContext is not null)
-        {
-          if (!await pipeline.ExecuteOnRequestValidatedAsync(hookContext))
+          if (entity is null)
           {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            return ProblemDetailsResult.NotFound(
+                entityName,
+                id!,
+                httpContext.Request.Path,
+                jsonOptions);
           }
-        }
 
-        // Handle conditional requests when ETag support is enabled
-        if (RestLibOptions.EnableETagSupport)
-        {
-          var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
-                              ?? new HashBasedETagGenerator(jsonOptions);
-          var etag = etagGenerator.Generate(entity);
-
-          // Check If-None-Match header for conditional GET
-          var ifNoneMatch = httpContext.Request.Headers.IfNoneMatch;
-          if (!ETagComparer.IfNoneMatchSucceeds(ifNoneMatch, etag))
+          // Update hook context with entity
+          if (hookContext is not null)
           {
-            // ETag matches - return 304 Not Modified
+            hookContext.Entity = entity;
+          }
+
+          // OnRequestValidated hook
+          if (pipeline is not null && hookContext is not null)
+          {
+            if (!await pipeline.ExecuteOnRequestValidatedAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
+          }
+
+          // Handle conditional requests when ETag support is enabled
+          if (RestLibOptions.EnableETagSupport)
+          {
+            var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
+                                ?? new HashBasedETagGenerator(jsonOptions);
+            var etag = etagGenerator.Generate(entity);
+
+            // Check If-None-Match header for conditional GET
+            var ifNoneMatch = httpContext.Request.Headers.IfNoneMatch;
+            if (!ETagComparer.IfNoneMatchSucceeds(ifNoneMatch, etag))
+            {
+              // ETag matches - return 304 Not Modified
+              httpContext.Response.Headers.ETag = etag;
+              return Results.StatusCode(StatusCodes.Status304NotModified);
+            }
+
             httpContext.Response.Headers.ETag = etag;
-            return Results.StatusCode(StatusCodes.Status304NotModified);
           }
 
-          httpContext.Response.Headers.ETag = etag;
-        }
-
-        // BeforeResponse hook
-        if (pipeline is not null && hookContext is not null)
-        {
-          if (!await pipeline.ExecuteBeforeResponseAsync(hookContext))
+          // BeforeResponse hook
+          if (pipeline is not null && hookContext is not null)
           {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            if (!await pipeline.ExecuteBeforeResponseAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
           }
-        }
 
-        return Results.Json(entity, jsonOptions);
-      }
-      catch (Exception ex)
-      {
-        if (pipeline is not null)
-        {
-          var errorContext = pipeline.CreateErrorContext(httpContext, RestLibOperation.GetById, ex, id);
-          var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
-          if (handled && errorResult is not null)
-          {
-            return errorResult;
-          }
+          return Results.Json(entity, jsonOptions);
         }
-        throw;
-      }
-    });
-    ConfigureGetByIdEndpoint(getByIdEndpoint, config, entityName);
+        catch (Exception ex)
+        {
+          if (pipeline is not null)
+          {
+            var errorContext = pipeline.CreateErrorContext(httpContext, RestLibOperation.GetById, ex, id);
+            var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
+            if (handled && errorResult is not null)
+            {
+              return errorResult;
+            }
+          }
+          throw;
+        }
+      });
+      ConfigureGetByIdEndpoint(getByIdEndpoint, config, entityName);
+    } // end GetById
 
     // POST /prefix - Create
-    var createEndpoint = group.MapPost("", async (
-        TEntity entity,
-        IRepository<TEntity, TKey> repository,
-        HttpContext httpContext,
-        CancellationToken ct) =>
+    if (config.IsOperationEnabled(RestLibOperation.Create))
     {
-      var jsonOptions = GetJsonOptions(httpContext);
-      var RestLibOptions = httpContext.RequestServices.GetService<RestLibOptions>()
-                           ?? new RestLibOptions();
-
-      // Create hook pipeline if hooks are configured
-      var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
-      HookContext<TEntity, TKey>? hookContext = null;
-
-      try
+      var createEndpoint = group.MapPost("", async (
+          TEntity entity,
+          IRepository<TEntity, TKey> repository,
+          HttpContext httpContext,
+          CancellationToken ct) =>
       {
-        // OnRequestReceived hook
-        if (pipeline is not null)
+        var jsonOptions = GetJsonOptions(httpContext);
+        var RestLibOptions = httpContext.RequestServices.GetService<RestLibOptions>()
+                             ?? new RestLibOptions();
+
+        // Create hook pipeline if hooks are configured
+        var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
+        HookContext<TEntity, TKey>? hookContext = null;
+
+        try
         {
-          hookContext = pipeline.CreateContext(httpContext, RestLibOperation.Create, entity: entity);
-          if (!await pipeline.ExecuteOnRequestReceivedAsync(hookContext))
+          // OnRequestReceived hook
+          if (pipeline is not null)
           {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            hookContext = pipeline.CreateContext(httpContext, RestLibOperation.Create, entity: entity);
+            if (!await pipeline.ExecuteOnRequestReceivedAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
+            // Entity might have been modified by hook
+            entity = hookContext.Entity ?? entity;
           }
-          // Entity might have been modified by hook
-          entity = hookContext.Entity ?? entity;
-        }
 
-        // Validate entity using Data Annotations
-        if (RestLibOptions.EnableValidation)
-        {
-          var validationResult = Validation.EntityValidator.Validate(entity, RestLibOptions.JsonNamingPolicy);
-          if (!validationResult.IsValid)
+          // Validate entity using Data Annotations
+          if (RestLibOptions.EnableValidation)
           {
-            return ProblemDetailsResult.ValidationFailed(
-                validationResult.Errors.ToDictionary(e => e.Key, e => e.Value),
-                httpContext.Request.Path,
-                jsonOptions);
+            var validationResult = Validation.EntityValidator.Validate(entity, RestLibOptions.JsonNamingPolicy);
+            if (!validationResult.IsValid)
+            {
+              return ProblemDetailsResult.ValidationFailed(
+                  validationResult.Errors.ToDictionary(e => e.Key, e => e.Value),
+                  httpContext.Request.Path,
+                  jsonOptions);
+            }
           }
-        }
 
-        // OnRequestValidated hook
-        if (pipeline is not null && hookContext is not null)
-        {
-          hookContext.Entity = entity;
-          if (!await pipeline.ExecuteOnRequestValidatedAsync(hookContext))
+          // OnRequestValidated hook
+          if (pipeline is not null && hookContext is not null)
           {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            hookContext.Entity = entity;
+            if (!await pipeline.ExecuteOnRequestValidatedAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
+            entity = hookContext.Entity ?? entity;
           }
-          entity = hookContext.Entity ?? entity;
-        }
 
-        // BeforePersist hook
-        if (pipeline is not null && hookContext is not null)
-        {
-          hookContext.Entity = entity;
-          if (!await pipeline.ExecuteBeforePersistAsync(hookContext))
+          // BeforePersist hook
+          if (pipeline is not null && hookContext is not null)
           {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            hookContext.Entity = entity;
+            if (!await pipeline.ExecuteBeforePersistAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
+            entity = hookContext.Entity ?? entity;
           }
-          entity = hookContext.Entity ?? entity;
-        }
 
-        var created = await repository.CreateAsync(entity, ct);
+          var created = await repository.CreateAsync(entity, ct);
 
-        // AfterPersist hook
-        if (pipeline is not null && hookContext is not null)
-        {
-          hookContext.Entity = created;
-          if (!await pipeline.ExecuteAfterPersistAsync(hookContext))
+          // AfterPersist hook
+          if (pipeline is not null && hookContext is not null)
           {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            hookContext.Entity = created;
+            if (!await pipeline.ExecuteAfterPersistAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
           }
-        }
 
-        // Extract ID from created entity and set Location header
-        var createdId = GetEntityKey(created, config.KeySelector);
-        var location = $"{httpContext.Request.Path}/{createdId}";
-        httpContext.Response.Headers.Location = location;
+          // Extract ID from created entity and set Location header
+          var createdId = GetEntityKey(created, config.KeySelector);
+          var location = $"{httpContext.Request.Path}/{createdId}";
+          httpContext.Response.Headers.Location = location;
 
-        // Add ETag header when enabled
-        if (RestLibOptions.EnableETagSupport)
-        {
-          var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
-                              ?? new HashBasedETagGenerator(jsonOptions);
-          httpContext.Response.Headers.ETag = etagGenerator.Generate(created);
-        }
-
-        // BeforeResponse hook
-        if (pipeline is not null && hookContext is not null)
-        {
-          if (!await pipeline.ExecuteBeforeResponseAsync(hookContext))
+          // Add ETag header when enabled
+          if (RestLibOptions.EnableETagSupport)
           {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
+                                ?? new HashBasedETagGenerator(jsonOptions);
+            httpContext.Response.Headers.ETag = etagGenerator.Generate(created);
           }
-        }
 
-        return Results.Json(created, jsonOptions, statusCode: StatusCodes.Status201Created);
-      }
-      catch (Exception ex)
-      {
-        if (pipeline is not null)
-        {
-          var errorContext = pipeline.CreateErrorContext(httpContext, RestLibOperation.Create, ex, entity: entity);
-          var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
-          if (handled && errorResult is not null)
+          // BeforeResponse hook
+          if (pipeline is not null && hookContext is not null)
           {
-            return errorResult;
+            if (!await pipeline.ExecuteBeforeResponseAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
           }
+
+          return Results.Json(created, jsonOptions, statusCode: StatusCodes.Status201Created);
         }
-        throw;
-      }
-    });
-    ConfigureCreateEndpoint(createEndpoint, config, entityName);
+        catch (Exception ex)
+        {
+          if (pipeline is not null)
+          {
+            var errorContext = pipeline.CreateErrorContext(httpContext, RestLibOperation.Create, ex, entity: entity);
+            var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
+            if (handled && errorResult is not null)
+            {
+              return errorResult;
+            }
+          }
+          throw;
+        }
+      });
+      ConfigureCreateEndpoint(createEndpoint, config, entityName);
+    } // end Create
 
     // PUT /prefix/{id} - Full Update
-    var updateEndpoint = group.MapPut("/{id}", async (
-        TKey id,
-        TEntity entity,
-        IRepository<TEntity, TKey> repository,
-        HttpContext httpContext,
-        CancellationToken ct) =>
+    if (config.IsOperationEnabled(RestLibOperation.Update))
     {
-      var jsonOptions = GetJsonOptions(httpContext);
-      var RestLibOptions = httpContext.RequestServices.GetService<RestLibOptions>()
-                           ?? new RestLibOptions();
-
-      // Create hook pipeline if hooks are configured
-      var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
-      HookContext<TEntity, TKey>? hookContext = null;
-      TEntity? originalEntity = null;
-
-      try
+      var updateEndpoint = group.MapPut("/{id}", async (
+          TKey id,
+          TEntity entity,
+          IRepository<TEntity, TKey> repository,
+          HttpContext httpContext,
+          CancellationToken ct) =>
       {
-        // OnRequestReceived hook
-        if (pipeline is not null)
-        {
-          hookContext = pipeline.CreateContext(httpContext, RestLibOperation.Update, id, entity);
-          if (!await pipeline.ExecuteOnRequestReceivedAsync(hookContext))
-          {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-          }
-          entity = hookContext.Entity ?? entity;
-        }
+        var jsonOptions = GetJsonOptions(httpContext);
+        var RestLibOptions = httpContext.RequestServices.GetService<RestLibOptions>()
+                             ?? new RestLibOptions();
 
-        // Validate entity using Data Annotations
-        if (RestLibOptions.EnableValidation)
+        // Create hook pipeline if hooks are configured
+        var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
+        HookContext<TEntity, TKey>? hookContext = null;
+        TEntity? originalEntity = null;
+
+        try
         {
-          var validationResult = Validation.EntityValidator.Validate(entity, RestLibOptions.JsonNamingPolicy);
-          if (!validationResult.IsValid)
+          // OnRequestReceived hook
+          if (pipeline is not null)
           {
-            return ProblemDetailsResult.ValidationFailed(
-                validationResult.Errors.ToDictionary(e => e.Key, e => e.Value),
+            hookContext = pipeline.CreateContext(httpContext, RestLibOperation.Update, id, entity);
+            if (!await pipeline.ExecuteOnRequestReceivedAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
+            entity = hookContext.Entity ?? entity;
+          }
+
+          // Validate entity using Data Annotations
+          if (RestLibOptions.EnableValidation)
+          {
+            var validationResult = Validation.EntityValidator.Validate(entity, RestLibOptions.JsonNamingPolicy);
+            if (!validationResult.IsValid)
+            {
+              return ProblemDetailsResult.ValidationFailed(
+                  validationResult.Errors.ToDictionary(e => e.Key, e => e.Value),
+                  httpContext.Request.Path,
+                  jsonOptions);
+            }
+          }
+
+          // OnRequestValidated hook
+          if (pipeline is not null && hookContext is not null)
+          {
+            hookContext.Entity = entity;
+            if (!await pipeline.ExecuteOnRequestValidatedAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
+            entity = hookContext.Entity ?? entity;
+          }
+
+          // Check for ETag precondition (If-Match header)
+          if (RestLibOptions.EnableETagSupport)
+          {
+            var ifMatchHeader = httpContext.Request.Headers.IfMatch;
+            if (!Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(ifMatchHeader))
+            {
+              // Get current entity to compare ETags
+              var current = await repository.GetByIdAsync(id, ct);
+              if (current is null)
+              {
+                return ProblemDetailsResult.NotFound(
+                    entityName,
+                    id!,
+                    httpContext.Request.Path,
+                    jsonOptions);
+              }
+
+              var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
+                                  ?? new HashBasedETagGenerator(jsonOptions);
+              var currentETag = etagGenerator.Generate(current);
+
+              if (!ETagComparer.IfMatchSucceeds(ifMatchHeader, currentETag))
+              {
+                return ProblemDetailsResult.PreconditionFailed(
+                    "The resource has been modified since you last retrieved it.",
+                    httpContext.Request.Path,
+                    jsonOptions);
+              }
+
+              originalEntity = current;
+            }
+          }
+
+          // Fetch original entity if not already fetched (for hooks)
+          if (originalEntity is null && pipeline is not null)
+          {
+            originalEntity = await repository.GetByIdAsync(id, ct);
+          }
+
+          // BeforePersist hook
+          if (pipeline is not null && hookContext is not null)
+          {
+            // Create new context with original entity
+            hookContext = new HookContext<TEntity, TKey>
+            {
+              HttpContext = httpContext,
+              Operation = RestLibOperation.Update,
+              ResourceId = id,
+              Entity = entity,
+              OriginalEntity = originalEntity,
+              Services = httpContext.RequestServices,
+              CancellationToken = ct
+            };
+            if (!await pipeline.ExecuteBeforePersistAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
+            entity = hookContext.Entity ?? entity;
+          }
+
+          var updated = await repository.UpdateAsync(id, entity, ct);
+
+          if (updated is null)
+          {
+            return ProblemDetailsResult.NotFound(
+                entityName,
+                id!,
                 httpContext.Request.Path,
                 jsonOptions);
           }
-        }
 
-        // OnRequestValidated hook
-        if (pipeline is not null && hookContext is not null)
-        {
-          hookContext.Entity = entity;
-          if (!await pipeline.ExecuteOnRequestValidatedAsync(hookContext))
+          // AfterPersist hook
+          if (pipeline is not null && hookContext is not null)
           {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-          }
-          entity = hookContext.Entity ?? entity;
-        }
-
-        // Check for ETag precondition (If-Match header)
-        if (RestLibOptions.EnableETagSupport)
-        {
-          var ifMatchHeader = httpContext.Request.Headers.IfMatch;
-          if (!Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(ifMatchHeader))
-          {
-            // Get current entity to compare ETags
-            var current = await repository.GetByIdAsync(id, ct);
-            if (current is null)
+            hookContext.Entity = updated;
+            if (!await pipeline.ExecuteAfterPersistAsync(hookContext))
             {
-              return ProblemDetailsResult.NotFound(
-                  entityName,
-                  id!,
-                  httpContext.Request.Path,
-                  jsonOptions);
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
             }
+          }
 
+          // Add ETag header when enabled
+          if (RestLibOptions.EnableETagSupport)
+          {
             var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
                                 ?? new HashBasedETagGenerator(jsonOptions);
-            var currentETag = etagGenerator.Generate(current);
+            httpContext.Response.Headers.ETag = etagGenerator.Generate(updated);
+          }
 
-            if (!ETagComparer.IfMatchSucceeds(ifMatchHeader, currentETag))
+          // BeforeResponse hook
+          if (pipeline is not null && hookContext is not null)
+          {
+            if (!await pipeline.ExecuteBeforeResponseAsync(hookContext))
             {
-              return ProblemDetailsResult.PreconditionFailed(
-                  "The resource has been modified since you last retrieved it.",
-                  httpContext.Request.Path,
-                  jsonOptions);
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
             }
-
-            originalEntity = current;
           }
-        }
 
-        // Fetch original entity if not already fetched (for hooks)
-        if (originalEntity is null && pipeline is not null)
-        {
-          originalEntity = await repository.GetByIdAsync(id, ct);
+          return Results.Json(updated, jsonOptions);
         }
-
-        // BeforePersist hook
-        if (pipeline is not null && hookContext is not null)
+        catch (Exception ex)
         {
-          // Create new context with original entity
-          hookContext = new HookContext<TEntity, TKey>
+          if (pipeline is not null)
           {
-            HttpContext = httpContext,
-            Operation = RestLibOperation.Update,
-            ResourceId = id,
-            Entity = entity,
-            OriginalEntity = originalEntity,
-            Services = httpContext.RequestServices,
-            CancellationToken = ct
-          };
-          if (!await pipeline.ExecuteBeforePersistAsync(hookContext))
-          {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            var errorContext = pipeline.CreateErrorContext(httpContext, RestLibOperation.Update, ex, id, entity);
+            var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
+            if (handled && errorResult is not null)
+            {
+              return errorResult;
+            }
           }
-          entity = hookContext.Entity ?? entity;
+          throw;
         }
-
-        var updated = await repository.UpdateAsync(id, entity, ct);
-
-        if (updated is null)
-        {
-          return ProblemDetailsResult.NotFound(
-              entityName,
-              id!,
-              httpContext.Request.Path,
-              jsonOptions);
-        }
-
-        // AfterPersist hook
-        if (pipeline is not null && hookContext is not null)
-        {
-          hookContext.Entity = updated;
-          if (!await pipeline.ExecuteAfterPersistAsync(hookContext))
-          {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-          }
-        }
-
-        // Add ETag header when enabled
-        if (RestLibOptions.EnableETagSupport)
-        {
-          var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
-                              ?? new HashBasedETagGenerator(jsonOptions);
-          httpContext.Response.Headers.ETag = etagGenerator.Generate(updated);
-        }
-
-        // BeforeResponse hook
-        if (pipeline is not null && hookContext is not null)
-        {
-          if (!await pipeline.ExecuteBeforeResponseAsync(hookContext))
-          {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-          }
-        }
-
-        return Results.Json(updated, jsonOptions);
-      }
-      catch (Exception ex)
-      {
-        if (pipeline is not null)
-        {
-          var errorContext = pipeline.CreateErrorContext(httpContext, RestLibOperation.Update, ex, id, entity);
-          var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
-          if (handled && errorResult is not null)
-          {
-            return errorResult;
-          }
-        }
-        throw;
-      }
-    });
-    ConfigureUpdateEndpoint(updateEndpoint, config, entityName);
+      });
+      ConfigureUpdateEndpoint(updateEndpoint, config, entityName);
+    } // end Update
 
     // PATCH /prefix/{id} - Partial Update (JSON Merge Patch - RFC 7396)
-    var patchEndpoint = group.MapPatch("/{id}", async (
-        TKey id,
-        JsonElement patchDocument,
-        IRepository<TEntity, TKey> repository,
-        HttpContext httpContext,
-        CancellationToken ct) =>
+    if (config.IsOperationEnabled(RestLibOperation.Patch))
     {
-      var jsonOptions = GetJsonOptions(httpContext);
-      var RestLibOptions = httpContext.RequestServices.GetService<RestLibOptions>()
-                           ?? new RestLibOptions();
-
-      // Create hook pipeline if hooks are configured
-      var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
-      HookContext<TEntity, TKey>? hookContext = null;
-      TEntity? originalEntity = null;
-
-      try
+      var patchEndpoint = group.MapPatch("/{id}", async (
+          TKey id,
+          JsonElement patchDocument,
+          IRepository<TEntity, TKey> repository,
+          HttpContext httpContext,
+          CancellationToken ct) =>
       {
-        // OnRequestReceived hook
-        if (pipeline is not null)
-        {
-          hookContext = pipeline.CreateContext(httpContext, RestLibOperation.Patch, id);
-          if (!await pipeline.ExecuteOnRequestReceivedAsync(hookContext))
-          {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-          }
-        }
+        var jsonOptions = GetJsonOptions(httpContext);
+        var RestLibOptions = httpContext.RequestServices.GetService<RestLibOptions>()
+                             ?? new RestLibOptions();
 
-        // OnRequestValidated hook
-        if (pipeline is not null && hookContext is not null)
-        {
-          if (!await pipeline.ExecuteOnRequestValidatedAsync(hookContext))
-          {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-          }
-        }
+        // Create hook pipeline if hooks are configured
+        var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
+        HookContext<TEntity, TKey>? hookContext = null;
+        TEntity? originalEntity = null;
 
-        // Check for ETag precondition (If-Match header)
-        if (RestLibOptions.EnableETagSupport)
+        try
         {
-          var ifMatchHeader = httpContext.Request.Headers.IfMatch;
-          if (!Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(ifMatchHeader))
+          // OnRequestReceived hook
+          if (pipeline is not null)
           {
-            // Get current entity to compare ETags
-            var current = await repository.GetByIdAsync(id, ct);
-            if (current is null)
+            hookContext = pipeline.CreateContext(httpContext, RestLibOperation.Patch, id);
+            if (!await pipeline.ExecuteOnRequestReceivedAsync(hookContext))
             {
-              return ProblemDetailsResult.NotFound(
-                  entityName,
-                  id!,
-                  httpContext.Request.Path,
-                  jsonOptions);
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
             }
+          }
 
-            var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
-                                ?? new HashBasedETagGenerator(jsonOptions);
-            var currentETag = etagGenerator.Generate(current);
-
-            if (!ETagComparer.IfMatchSucceeds(ifMatchHeader, currentETag))
+          // OnRequestValidated hook
+          if (pipeline is not null && hookContext is not null)
+          {
+            if (!await pipeline.ExecuteOnRequestValidatedAsync(hookContext))
             {
-              return ProblemDetailsResult.PreconditionFailed(
-                  "The resource has been modified since you last retrieved it.",
-                  httpContext.Request.Path,
-                  jsonOptions);
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
             }
-
-            originalEntity = current;
           }
-        }
 
-        // Fetch original entity if not already fetched (for hooks)
-        if (originalEntity is null && pipeline is not null)
-        {
-          originalEntity = await repository.GetByIdAsync(id, ct);
-        }
+          // Check for ETag precondition (If-Match header)
+          if (RestLibOptions.EnableETagSupport)
+          {
+            var ifMatchHeader = httpContext.Request.Headers.IfMatch;
+            if (!Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(ifMatchHeader))
+            {
+              // Get current entity to compare ETags
+              var current = await repository.GetByIdAsync(id, ct);
+              if (current is null)
+              {
+                return ProblemDetailsResult.NotFound(
+                    entityName,
+                    id!,
+                    httpContext.Request.Path,
+                    jsonOptions);
+              }
 
-        // BeforePersist hook
-        if (pipeline is not null && hookContext is not null)
-        {
-          // Create new context with original entity
-          hookContext = new HookContext<TEntity, TKey>
-          {
-            HttpContext = httpContext,
-            Operation = RestLibOperation.Patch,
-            ResourceId = id,
-            Entity = originalEntity,
-            OriginalEntity = originalEntity,
-            Services = httpContext.RequestServices,
-            CancellationToken = ct
-          };
-          if (!await pipeline.ExecuteBeforePersistAsync(hookContext))
-          {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+              var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
+                                  ?? new HashBasedETagGenerator(jsonOptions);
+              var currentETag = etagGenerator.Generate(current);
+
+              if (!ETagComparer.IfMatchSucceeds(ifMatchHeader, currentETag))
+              {
+                return ProblemDetailsResult.PreconditionFailed(
+                    "The resource has been modified since you last retrieved it.",
+                    httpContext.Request.Path,
+                    jsonOptions);
+              }
+
+              originalEntity = current;
+            }
           }
-        }
 
-        var patched = await repository.PatchAsync(id, patchDocument, ct);
-
-        if (patched is null)
-        {
-          return ProblemDetailsResult.NotFound(
-              entityName,
-              id!,
-              httpContext.Request.Path,
-              jsonOptions);
-        }
-
-        // Validate patched entity using Data Annotations
-        if (RestLibOptions.EnableValidation)
-        {
-          var validationResult = Validation.EntityValidator.Validate(patched, RestLibOptions.JsonNamingPolicy);
-          if (!validationResult.IsValid)
+          // Fetch original entity if not already fetched (for hooks)
+          if (originalEntity is null && pipeline is not null)
           {
-            return ProblemDetailsResult.ValidationFailed(
-                validationResult.Errors.ToDictionary(e => e.Key, e => e.Value),
+            originalEntity = await repository.GetByIdAsync(id, ct);
+          }
+
+          // BeforePersist hook
+          if (pipeline is not null && hookContext is not null)
+          {
+            // Create new context with original entity
+            hookContext = new HookContext<TEntity, TKey>
+            {
+              HttpContext = httpContext,
+              Operation = RestLibOperation.Patch,
+              ResourceId = id,
+              Entity = originalEntity,
+              OriginalEntity = originalEntity,
+              Services = httpContext.RequestServices,
+              CancellationToken = ct
+            };
+            if (!await pipeline.ExecuteBeforePersistAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
+          }
+
+          var patched = await repository.PatchAsync(id, patchDocument, ct);
+
+          if (patched is null)
+          {
+            return ProblemDetailsResult.NotFound(
+                entityName,
+                id!,
                 httpContext.Request.Path,
                 jsonOptions);
           }
-        }
 
-        // AfterPersist hook
-        if (pipeline is not null && hookContext is not null)
-        {
-          hookContext.Entity = patched;
-          if (!await pipeline.ExecuteAfterPersistAsync(hookContext))
+          // Validate patched entity using Data Annotations
+          if (RestLibOptions.EnableValidation)
           {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            var validationResult = Validation.EntityValidator.Validate(patched, RestLibOptions.JsonNamingPolicy);
+            if (!validationResult.IsValid)
+            {
+              return ProblemDetailsResult.ValidationFailed(
+                  validationResult.Errors.ToDictionary(e => e.Key, e => e.Value),
+                  httpContext.Request.Path,
+                  jsonOptions);
+            }
           }
-        }
 
-        // Add ETag header when enabled
-        if (RestLibOptions.EnableETagSupport)
-        {
-          var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
-                              ?? new HashBasedETagGenerator(jsonOptions);
-          httpContext.Response.Headers.ETag = etagGenerator.Generate(patched);
-        }
-
-        // BeforeResponse hook
-        if (pipeline is not null && hookContext is not null)
-        {
-          if (!await pipeline.ExecuteBeforeResponseAsync(hookContext))
+          // AfterPersist hook
+          if (pipeline is not null && hookContext is not null)
           {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            hookContext.Entity = patched;
+            if (!await pipeline.ExecuteAfterPersistAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
           }
-        }
 
-        return Results.Json(patched, jsonOptions);
-      }
-      catch (Exception ex)
-      {
-        if (pipeline is not null)
-        {
-          var errorContext = pipeline.CreateErrorContext(httpContext, RestLibOperation.Patch, ex, id, originalEntity);
-          var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
-          if (handled && errorResult is not null)
+          // Add ETag header when enabled
+          if (RestLibOptions.EnableETagSupport)
           {
-            return errorResult;
+            var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
+                                ?? new HashBasedETagGenerator(jsonOptions);
+            httpContext.Response.Headers.ETag = etagGenerator.Generate(patched);
           }
+
+          // BeforeResponse hook
+          if (pipeline is not null && hookContext is not null)
+          {
+            if (!await pipeline.ExecuteBeforeResponseAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
+          }
+
+          return Results.Json(patched, jsonOptions);
         }
-        throw;
-      }
-    });
-    ConfigurePatchEndpoint(patchEndpoint, config, entityName);
+        catch (Exception ex)
+        {
+          if (pipeline is not null)
+          {
+            var errorContext = pipeline.CreateErrorContext(httpContext, RestLibOperation.Patch, ex, id, originalEntity);
+            var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
+            if (handled && errorResult is not null)
+            {
+              return errorResult;
+            }
+          }
+          throw;
+        }
+      });
+      ConfigurePatchEndpoint(patchEndpoint, config, entityName);
+    } // end Patch
 
     // DELETE /prefix/{id} - Delete
-    var deleteEndpoint = group.MapDelete("/{id}", async (
-        TKey id,
-        IRepository<TEntity, TKey> repository,
-        HttpContext httpContext,
-        CancellationToken ct) =>
+    if (config.IsOperationEnabled(RestLibOperation.Delete))
     {
-      var jsonOptions = GetJsonOptions(httpContext);
-
-      // Create hook pipeline if hooks are configured
-      var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
-      HookContext<TEntity, TKey>? hookContext = null;
-      TEntity? entityToDelete = null;
-
-      try
+      var deleteEndpoint = group.MapDelete("/{id}", async (
+          TKey id,
+          IRepository<TEntity, TKey> repository,
+          HttpContext httpContext,
+          CancellationToken ct) =>
       {
-        // OnRequestReceived hook
-        if (pipeline is not null)
+        var jsonOptions = GetJsonOptions(httpContext);
+
+        // Create hook pipeline if hooks are configured
+        var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
+        HookContext<TEntity, TKey>? hookContext = null;
+        TEntity? entityToDelete = null;
+
+        try
         {
-          hookContext = pipeline.CreateContext(httpContext, RestLibOperation.Delete, id);
-          if (!await pipeline.ExecuteOnRequestReceivedAsync(hookContext))
+          // OnRequestReceived hook
+          if (pipeline is not null)
           {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            hookContext = pipeline.CreateContext(httpContext, RestLibOperation.Delete, id);
+            if (!await pipeline.ExecuteOnRequestReceivedAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
           }
-        }
 
-        // OnRequestValidated hook
-        if (pipeline is not null && hookContext is not null)
-        {
-          if (!await pipeline.ExecuteOnRequestValidatedAsync(hookContext))
+          // OnRequestValidated hook
+          if (pipeline is not null && hookContext is not null)
           {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            if (!await pipeline.ExecuteOnRequestValidatedAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
           }
-        }
 
-        // Fetch entity for hooks if pipeline exists
-        if (pipeline is not null)
-        {
-          entityToDelete = await repository.GetByIdAsync(id, ct);
-        }
-
-        // BeforePersist hook
-        if (pipeline is not null && hookContext is not null)
-        {
-          hookContext.Entity = entityToDelete;
-          if (!await pipeline.ExecuteBeforePersistAsync(hookContext))
+          // Fetch entity for hooks if pipeline exists
+          if (pipeline is not null)
           {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            entityToDelete = await repository.GetByIdAsync(id, ct);
           }
-        }
 
-        var deleted = await repository.DeleteAsync(id, ct);
-
-        if (!deleted)
-        {
-          return ProblemDetailsResult.NotFound(
-              entityName,
-              id!,
-              httpContext.Request.Path,
-              jsonOptions);
-        }
-
-        // AfterPersist hook
-        if (pipeline is not null && hookContext is not null)
-        {
-          if (!await pipeline.ExecuteAfterPersistAsync(hookContext))
+          // BeforePersist hook
+          if (pipeline is not null && hookContext is not null)
           {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            hookContext.Entity = entityToDelete;
+            if (!await pipeline.ExecuteBeforePersistAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
           }
-        }
 
-        // BeforeResponse hook
-        if (pipeline is not null && hookContext is not null)
-        {
-          if (!await pipeline.ExecuteBeforeResponseAsync(hookContext))
-          {
-            return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-          }
-        }
+          var deleted = await repository.DeleteAsync(id, ct);
 
-        return Results.NoContent();
-      }
-      catch (Exception ex)
-      {
-        if (pipeline is not null)
-        {
-          var errorContext = pipeline.CreateErrorContext(httpContext, RestLibOperation.Delete, ex, id, entityToDelete);
-          var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
-          if (handled && errorResult is not null)
+          if (!deleted)
           {
-            return errorResult;
+            return ProblemDetailsResult.NotFound(
+                entityName,
+                id!,
+                httpContext.Request.Path,
+                jsonOptions);
           }
+
+          // AfterPersist hook
+          if (pipeline is not null && hookContext is not null)
+          {
+            if (!await pipeline.ExecuteAfterPersistAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
+          }
+
+          // BeforeResponse hook
+          if (pipeline is not null && hookContext is not null)
+          {
+            if (!await pipeline.ExecuteBeforeResponseAsync(hookContext))
+            {
+              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+            }
+          }
+
+          return Results.NoContent();
         }
-        throw;
-      }
-    });
-    ConfigureDeleteEndpoint(deleteEndpoint, config, entityName);
+        catch (Exception ex)
+        {
+          if (pipeline is not null)
+          {
+            var errorContext = pipeline.CreateErrorContext(httpContext, RestLibOperation.Delete, ex, id, entityToDelete);
+            var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
+            if (handled && errorResult is not null)
+            {
+              return errorResult;
+            }
+          }
+          throw;
+        }
+      });
+      ConfigureDeleteEndpoint(deleteEndpoint, config, entityName);
+    } // end Delete
 
     return group;
   }

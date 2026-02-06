@@ -17,6 +17,8 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   private readonly FilterConfiguration<TEntity> _filterConfiguration = new();
   private RestLibHooks<TEntity, TKey>? _hooks;
   private readonly RestLibOpenApiConfiguration _openApi = new();
+  private HashSet<RestLibOperation>? _includedOperations;
+  private HashSet<RestLibOperation>? _excludedOperations;
 
   /// <summary>
   /// Gets or sets the function to extract the key from an entity.
@@ -130,6 +132,73 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
       _filterConfiguration.AddProperty(propertyName, queryParamName, propertyType);
     }
     return this;
+  }
+
+  /// <summary>
+  /// Includes the specified operations. All others will be excluded unless also included
+  /// in a subsequent call. Multiple calls are merged (unioned).
+  /// Cannot be combined with <see cref="ExcludeOperations"/>.
+  /// </summary>
+  /// <param name="operations">The operations to include.</param>
+  /// <returns>This configuration instance for chaining.</returns>
+  /// <example>
+  /// <code>
+  /// config.IncludeOperations(RestLibOperation.GetAll, RestLibOperation.GetById);
+  /// // Later, add Create as well:
+  /// config.IncludeOperations(RestLibOperation.Create);
+  /// </code>
+  /// </example>
+  public RestLibEndpointConfiguration<TEntity, TKey> IncludeOperations(
+      params RestLibOperation[] operations)
+  {
+    if (_excludedOperations is not null)
+      throw new InvalidOperationException(
+          "Cannot use IncludeOperations when ExcludeOperations has already been called.");
+
+    if (_includedOperations is null)
+      _includedOperations = [.. operations];
+    else
+      _includedOperations.UnionWith(operations);
+
+    return this;
+  }
+
+  /// <summary>
+  /// Excludes the specified operations. All others will be included.
+  /// Cannot be combined with <see cref="IncludeOperations"/>.
+  /// </summary>
+  /// <param name="operations">The operations to exclude.</param>
+  /// <returns>This configuration instance for chaining.</returns>
+  /// <example>
+  /// <code>
+  /// config.ExcludeOperations(RestLibOperation.Delete, RestLibOperation.Patch);
+  /// </code>
+  /// </example>
+  public RestLibEndpointConfiguration<TEntity, TKey> ExcludeOperations(
+      params RestLibOperation[] operations)
+  {
+    if (_includedOperations is not null)
+      throw new InvalidOperationException(
+          "Cannot use ExcludeOperations when IncludeOperations has already been called.");
+
+    _excludedOperations = [.. operations];
+    return this;
+  }
+
+  /// <summary>
+  /// Determines whether the specified operation should be mapped.
+  /// </summary>
+  /// <param name="operation">The operation to check.</param>
+  /// <returns><c>true</c> if the operation is enabled; otherwise, <c>false</c>.</returns>
+  public bool IsOperationEnabled(RestLibOperation operation)
+  {
+    if (_includedOperations is not null)
+      return _includedOperations.Contains(operation);
+
+    if (_excludedOperations is not null)
+      return !_excludedOperations.Contains(operation);
+
+    return true; // all enabled by default
   }
 
   /// <summary>
