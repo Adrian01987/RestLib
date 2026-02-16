@@ -314,7 +314,7 @@ Key decisions are documented as [Architecture Decision Records](docs/adr/):
 
 ## Contributing
 
-Contributions are welcome! Here's how:
+Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests to us.
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
