@@ -5,58 +5,34 @@
 [![Build](https://github.com/Adrian01987/RestLib/actions/workflows/ci.yml/badge.svg)](https://github.com/Adrian01987/RestLib/actions/workflows/ci.yml)
 [![Coverage](https://codecov.io/gh/Adrian01987/RestLib/branch/main/graph/badge.svg)](https://codecov.io/gh/Adrian01987/RestLib)
 [![NuGet](https://img.shields.io/nuget/v/RestLib.svg)](https://www.nuget.org/packages/RestLib/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/Adrian01987/RestLib/blob/main/LICENSE)
 
-```csharp
-builder.Services.AddRestLib().AddRestLibInMemory<Product, Guid>();
-app.MapRestLib<Product, Guid>("/api/products");
-// → GET, POST, PUT, DELETE with auth, pagination, OpenAPI ✨
+RestLib is a .NET 8 library for ASP.NET Core Minimal APIs that generates CRUD endpoints from your model and repository. It bakes in secure defaults, cursor pagination, filtering, OpenAPI metadata, and RFC 9457 Problem Details so you can ship consistent APIs faster.
+
+## Install
+
+Install the core package:
+
+```bash
+dotnet add package RestLib
 ```
 
----
+For demos, tests, and quick prototypes, add the optional in-memory adapter:
 
-## Why I Built This
+```bash
+dotnet add package RestLib.InMemory
+```
 
-Every backend project starts the same way: create a model, write a controller, add validation, handle errors, set up pagination, configure Swagger... and repeat for every entity.
+## Quick Start
 
-I've written this code dozens of times. So have you.
-
-**RestLib eliminates this repetitive work** while enforcing the standards I care about:
-
-- ✅ Proper REST semantics (Zalando guidelines)
-- ✅ Secure by default (auth required unless you opt out)
-- ✅ Machine-readable errors (RFC 9457 Problem Details)
-- ✅ Clean extensibility (hooks, not inheritance)
-
-### What This Project Demonstrates
-
-| Skill                  | How It's Shown                                            |
-| ---------------------- | --------------------------------------------------------- |
-| **Modern .NET**        | .NET 8, Minimal APIs, generic constraints, async patterns |
-| **API Design**         | Zalando guidelines, RFC 9457, OpenAPI 3.1                 |
-| **Library Design**     | Clean abstractions, hook-based extensibility, no lock-in  |
-| **Production Mindset** | Security defaults, comprehensive testing, CI/CD           |
-| **Documentation**      | ADRs, clear README, code examples                         |
-
----
-
-## Quick Start (5 minutes)
-
-### 1. Create a new project
+Create a new app:
 
 ```bash
 dotnet new web -n MyApi
 cd MyApi
 ```
 
-### 2. Install RestLib
-
-```bash
-dotnet add package RestLib
-dotnet add package RestLib.InMemory
-```
-
-### 3. Define your model
+Define a model:
 
 ```csharp
 public class Product
@@ -67,7 +43,7 @@ public class Product
 }
 ```
 
-### 4. Configure and run
+Configure RestLib:
 
 ```csharp
 using RestLib;
@@ -87,57 +63,63 @@ app.UseSwaggerUI();
 
 app.MapRestLib<Product, Guid>("/api/products", config =>
 {
-    config.AllowAnonymous(); // For demo purposes
+    config.AllowAnonymous();
 });
 
 app.Run();
 ```
 
-### 5. Explore your API
+Run the app and open Swagger:
 
 ```bash
 dotnet run
-# Open http://localhost:5000/swagger
 ```
 
-**That's it.** You have a full CRUD API with:
+That gives you:
 
-- `GET /api/products` — List all (paginated)
-- `GET /api/products/{id}` — Get by ID
-- `POST /api/products` — Create
-- `PUT /api/products/{id}` — Update
-- `DELETE /api/products/{id}` — Delete
+- `GET /api/products` - list all with cursor pagination
+- `GET /api/products/{id}` - fetch a single resource
+- `POST /api/products` - create
+- `PUT /api/products/{id}` - replace
+- `PATCH /api/products/{id}` - partially update
+- `DELETE /api/products/{id}` - delete
 
----
+## Why RestLib
+
+Every backend project starts the same way: define a model, write CRUD endpoints, add validation, handle errors, set up pagination, wire Swagger, and repeat for every entity.
+
+RestLib removes that repetition while keeping the parts that matter explicit:
+
+- Proper REST semantics inspired by the Zalando REST API Guidelines
+- Secure-by-default endpoints with per-operation opt-out
+- Machine-readable RFC 9457 Problem Details responses
+- Hook-based extensibility instead of controller inheritance
+- OpenAPI metadata and package-ready defaults out of the box
 
 ## Features
 
-### 🔒 Secure by Default
+### Secure by Default
 
-All endpoints require authorization unless explicitly opted out:
+All endpoints require authorization unless you opt out per operation:
 
 ```csharp
 app.MapRestLib<Product, Guid>("/api/products", config =>
 {
-    // Only these operations are public
     config.AllowAnonymous(RestLibOperation.GetAll, RestLibOperation.GetById);
-
-    // Delete requires admin role
     config.RequirePolicy(RestLibOperation.Delete, "AdminOnly");
 });
 ```
 
-### 📄 Standards-Compliant
+### Standards-Compliant Responses
 
-RestLib follows [Zalando REST API Guidelines](https://opensource.zalando.com/restful-api-guidelines/):
+RestLib follows the [Zalando REST API Guidelines](https://opensource.zalando.com/restful-api-guidelines/) and uses RFC 9457 Problem Details for error payloads.
 
-- **snake_case** JSON properties
-- **Cursor-based** pagination
-- **RFC 9457** Problem Details for errors
-- **Proper** HTTP status codes
+- `snake_case` JSON properties
+- Cursor-based pagination
+- Structured validation and error responses
+- Consistent HTTP status codes
 
 ```json
-// Error response
 {
   "type": "/problems/not-found",
   "title": "Resource Not Found",
@@ -147,89 +129,96 @@ RestLib follows [Zalando REST API Guidelines](https://opensource.zalando.com/res
 }
 ```
 
-### � Advanced Filtering
+### Advanced Filtering
 
-Enable filtering with zero boilerplate. It parses the query string, validates parameters, and passes safe values to your repository.
+Enable query-string filtering with no custom parser code:
 
 ```csharp
 app.MapRestLib<Product, Guid>("/api/products", config =>
 {
-    // Enable filtering for specific properties:
-    // GET /api/products?category_id=5&is_active=true
     config.AllowFiltering(p => p.CategoryId, p => p.IsActive);
 });
 ```
 
-### ✂️ Select Operations
+Example request:
 
-Need a read-only API? Or want to handle specific operations yourself? Enable only what you need:
+```text
+GET /api/products?category_id=5&is_active=true
+```
+
+### Select Operations
+
+Expose only the operations you want, and mix custom endpoints with generated ones:
 
 ```csharp
 app.MapRestLib<Category, Guid>("/api/categories", config =>
 {
-    // Only expose GET endpoints (no create/update/delete)
     config.IncludeOperations(RestLibOperation.GetAll, RestLibOperation.GetById);
 });
 
-// Implement custom logic alongside RestLib
-app.MapPost("/api/categories", async (Category category, IRepository<Category, Guid> repo) => { ... });
-```
-
-### �🔌 Extensible via Hooks
-
-Inject custom logic without subclassing:
-
-```csharp
-config.UseHooks(hooks =>
+app.MapPost("/api/categories", async (Category category, IRepository<Category, Guid> repo) =>
 {
-    hooks.BeforePersist = async ctx =>
-    {
-        if (ctx.Operation == RestLibOperation.Create)
-        {
-            ctx.Entity!.CreatedAt = DateTime.UtcNow;
-            ctx.Entity!.CreatedBy = ctx.HttpContext.User.Identity?.Name;
-        }
-    };
-
-    hooks.AfterPersist = async ctx =>
-    {
-        await PublishEvent(new ProductCreated(ctx.Entity!.Id));
-    };
+    return Results.Created($"/api/categories/{category.Id}", await repo.CreateAsync(category));
 });
 ```
 
-### 🗄️ Persistence-Agnostic
+### Extensible via Hooks
 
-Bring your own data store:
+Inject custom logic into the pipeline without subclassing framework types:
+
+```csharp
+app.MapRestLib<Product, Guid>("/api/products", config =>
+{
+    config.UseHooks(hooks =>
+    {
+        hooks.BeforePersist = ctx =>
+        {
+            if (ctx.Entity is Product product && ctx.Operation == RestLibOperation.Create)
+            {
+                product.CreatedAt = DateTime.UtcNow;
+            }
+
+            return Task.CompletedTask;
+        };
+    });
+});
+```
+
+### Persistence-Agnostic
+
+Use the in-memory adapter or plug in your own repository implementation:
 
 ```csharp
 public class ProductRepository : IRepository<Product, Guid>
 {
     private readonly MyDbContext _db;
 
-    public async Task<Product?> GetByIdAsync(Guid id, CancellationToken ct)
-        => await _db.Products.FindAsync(id, ct);
+    public ProductRepository(MyDbContext db)
+    {
+        _db = db;
+    }
 
-    // ... other methods
+    public async Task<Product?> GetByIdAsync(Guid id, CancellationToken ct)
+        => await _db.Products.FindAsync([id], ct);
+
+    // Implement the remaining IRepository members...
 }
 
 builder.Services.AddRepository<Product, Guid, ProductRepository>();
 ```
 
----
-
 ## Performance
 
-RestLib adds minimal overhead compared to hand-written Minimal APIs. In some cases, RestLib is actually **faster** due to optimized code paths:
+RestLib adds minimal overhead compared to hand-written Minimal APIs. In some cases, it is faster due to optimized code paths.
 
-| Operation | Raw API  | RestLib  | Overhead    | Memory |
-| --------- | -------- | -------- | ----------- | ------ |
-| GET by ID | 67.5 μs  | 69.5 μs  | +3%         | +2%    |
-| GET all   | 173.3 μs | 116.5 μs | **-33%** ⚡ | +7%    |
-| POST      | 97.3 μs  | 99.4 μs  | +2%         | +13%   |
-| PUT       | 88.6 μs  | 114.2 μs | +29%        | +13%   |
+| Operation | Raw API  | RestLib  | Overhead | Memory |
+| --------- | -------- | -------- | -------- | ------ |
+| GET by ID | 67.5 us  | 69.5 us  | +3%      | +2%    |
+| GET all   | 173.3 us | 116.5 us | -33%     | +7%    |
+| POST      | 97.3 us  | 99.4 us  | +2%      | +13%   |
+| PUT       | 88.6 us  | 114.2 us | +29%     | +13%   |
 
-_Benchmarks run on .NET 8.0, Windows 11, Intel Core i3-8130U, 100 items in repository._
+Benchmarks were run on .NET 8.0 with 100 seeded items.
 
 <details>
 <summary>Full benchmark results</summary>
@@ -258,80 +247,49 @@ Intel Core i3-8130U CPU 2.20GHz (Kaby Lake), 1 CPU, 4 logical and 2 physical cor
 
 </details>
 
-<details>
-<summary>Run benchmarks locally</summary>
+## Learn More
 
-```bash
-cd benchmarks/RestLib.Benchmarks
-dotnet run -c Release
-```
-
-For a quick validation run:
-
-```bash
-dotnet run -c Release -- --job Dry --filter "*"
-```
-
-</details>
-
----
+- [Sample app](https://github.com/Adrian01987/RestLib/blob/main/samples/RestLib.Sample/Program.cs)
+- [Architecture decisions](https://github.com/Adrian01987/RestLib/tree/main/docs/adr)
+- [Benchmarks](https://github.com/Adrian01987/RestLib/blob/main/benchmarks/RestLib.Benchmarks/README.md)
+- [Changelog](https://github.com/Adrian01987/RestLib/blob/main/CHANGELOG.md)
+- [Contributing guide](https://github.com/Adrian01987/RestLib/blob/main/CONTRIBUTING.md)
 
 ## Architecture Decisions
 
-Key decisions are documented as [Architecture Decision Records](docs/adr/):
+Key decisions are documented as Architecture Decision Records:
 
-| ADR                                          | Decision                            |
-| -------------------------------------------- | ----------------------------------- |
-| [ADR-001](docs/adr/001-cursor-pagination.md) | Cursor-based pagination over offset |
-| [ADR-002](docs/adr/002-secure-by-default.md) | Authorization required by default   |
-| [ADR-003](docs/adr/003-minimal-apis.md)      | Minimal APIs over controllers       |
-| [ADR-004](docs/adr/004-snake-case-json.md)   | snake_case JSON naming              |
-| [ADR-005](docs/adr/005-problem-details.md)   | RFC 9457 Problem Details for errors |
-
----
-
-## Documentation
-
-📝 _Documentation is a work in progress. Check back soon for detailed guides on configuration, hooks, and custom repositories._
-
----
+| ADR | Decision |
+| --- | -------- |
+| [ADR-001](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/001-cursor-pagination.md) | Cursor-based pagination over offset |
+| [ADR-002](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/002-secure-by-default.md) | Authorization required by default |
+| [ADR-003](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/003-minimal-apis.md) | Minimal APIs over controllers |
+| [ADR-004](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/004-snake-case-json.md) | `snake_case` JSON naming |
+| [ADR-005](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/005-problem-details.md) | RFC 9457 Problem Details for errors |
+| [ADR-006](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/006-operation-selection.md) | Operation allowlists and denylists |
 
 ## Packages
 
-| Package            | Description                      | NuGet                                                                                                             |
-| ------------------ | -------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `RestLib`          | Core library                     | [![NuGet](https://img.shields.io/nuget/v/RestLib.svg)](https://www.nuget.org/packages/RestLib/)                   |
-| `RestLib.InMemory` | In-memory repository for testing | [![NuGet](https://img.shields.io/nuget/v/RestLib.InMemory.svg)](https://www.nuget.org/packages/RestLib.InMemory/) |
-
----
+| Package | Description | NuGet |
+| ------- | ----------- | ----- |
+| `RestLib` | Core library | [RestLib](https://www.nuget.org/packages/RestLib/) |
+| `RestLib.InMemory` | In-memory repository for testing and prototyping | [RestLib.InMemory](https://www.nuget.org/packages/RestLib.InMemory/) |
 
 ## Requirements
 
 - .NET 8.0 or later
-- ASP.NET Core
-
----
+- ASP.NET Core Minimal APIs
 
 ## Contributing
 
-Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests to us.
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
+Contributions are welcome. Read the [contributing guide](https://github.com/Adrian01987/RestLib/blob/main/CONTRIBUTING.md).
 
 ## License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
-
----
+This project is licensed under the MIT License. See the [license](https://github.com/Adrian01987/RestLib/blob/main/LICENSE).
 
 ## Acknowledgments
 
-- [Zalando RESTful API Guidelines](https://opensource.zalando.com/restful-api-guidelines/) — API design inspiration
-- [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) — Problem Details specification
-- [FastEndpoints](https://fast-endpoints.com/) — Alternative approach inspiration
+- [Zalando RESTful API Guidelines](https://opensource.zalando.com/restful-api-guidelines/)
+- [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)
+- [FastEndpoints](https://fast-endpoints.com/)
