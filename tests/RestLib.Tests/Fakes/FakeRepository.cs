@@ -110,6 +110,83 @@ public class FakeRepository : FakeRepositoryBase<FakeEntity, Guid>
 }
 
 /// <summary>
+/// Entity with a non-default key property for testing KeyProperty configuration.
+/// </summary>
+public class CustomKeyEntity
+{
+  public Guid Code { get; set; }
+  public string Label { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// A fake in-memory repository for CustomKeyEntity, keyed by Code instead of Id.
+/// </summary>
+public class CustomKeyEntityRepository : IRepository<CustomKeyEntity, Guid>
+{
+  private readonly Dictionary<Guid, CustomKeyEntity> _store = new();
+
+  public Task<CustomKeyEntity?> GetByIdAsync(Guid id, CancellationToken ct = default)
+  {
+    _store.TryGetValue(id, out var entity);
+    return Task.FromResult(entity);
+  }
+
+  public Task<PagedResult<CustomKeyEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default)
+  {
+    var items = _store.Values.Take(pagination.Limit).ToList();
+    return Task.FromResult(new PagedResult<CustomKeyEntity>
+    {
+      Items = items,
+      NextCursor = null
+    });
+  }
+
+  public Task<CustomKeyEntity> CreateAsync(CustomKeyEntity entity, CancellationToken ct = default)
+  {
+    if (entity.Code == Guid.Empty)
+      entity.Code = Guid.NewGuid();
+
+    _store[entity.Code] = entity;
+    return Task.FromResult(entity);
+  }
+
+  public Task<CustomKeyEntity?> UpdateAsync(Guid id, CustomKeyEntity entity, CancellationToken ct = default)
+  {
+    if (!_store.ContainsKey(id))
+      return Task.FromResult<CustomKeyEntity?>(null);
+
+    entity.Code = id;
+    _store[id] = entity;
+    return Task.FromResult<CustomKeyEntity?>(entity);
+  }
+
+  public Task<CustomKeyEntity?> PatchAsync(Guid id, JsonElement patchDocument, CancellationToken ct = default)
+  {
+    if (!_store.TryGetValue(id, out var existing))
+      return Task.FromResult<CustomKeyEntity?>(null);
+
+    if (patchDocument.TryGetProperty("label", out var labelElement))
+      existing.Label = labelElement.GetString() ?? existing.Label;
+
+    _store[id] = existing;
+    return Task.FromResult<CustomKeyEntity?>(existing);
+  }
+
+  public Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
+  {
+    return Task.FromResult(_store.Remove(id));
+  }
+
+  public void Seed(params CustomKeyEntity[] entities)
+  {
+    foreach (var entity in entities)
+    {
+      _store[entity.Code] = entity;
+    }
+  }
+}
+
+/// <summary>
 /// A fake in-memory repository for testing purposes with TestEntity.
 /// </summary>
 public class TestEntityRepository : IRepository<TestEntity, Guid>

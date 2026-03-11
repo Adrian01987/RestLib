@@ -43,7 +43,7 @@ public class JsonResourceConfigurationTests
           }
         }
       });
-    }, mapAll: true);
+    });
 
     var client = host.GetTestClient();
     var repository = host.Services.GetRequiredService<TestEntityRepository>();
@@ -87,7 +87,7 @@ public class JsonResourceConfigurationTests
     using var host = await CreateHost(services =>
     {
       services.AddJsonResource<TestEntity, Guid>(configuration.GetSection("RestLib:Resources:0"));
-    }, mapAll: true);
+    });
 
     var client = host.GetTestClient();
     var repository = host.Services.GetRequiredService<TestEntityRepository>();
@@ -143,7 +143,7 @@ public class JsonResourceConfigurationTests
           }
         }
       });
-    }, mapAll: true);
+    });
 
     var client = host.GetTestClient();
     var repository = host.Services.GetRequiredService<TestEntityRepository>();
@@ -165,7 +165,409 @@ public class JsonResourceConfigurationTests
     persisted!.Name.Should().Be("updated:second");
   }
 
-  private static async Task<IHost> CreateHost(Action<IServiceCollection> configureServices, bool mapAll)
+  [Fact]
+  public async Task AddJsonResource_WithKeyProperty_UsesConfiguredKeySelector()
+  {
+    using var host = await CreateHost(
+      services =>
+      {
+        services.AddSingleton<CustomKeyEntityRepository>();
+        services.AddSingleton<IRepository<CustomKeyEntity, Guid>>(sp =>
+            sp.GetRequiredService<CustomKeyEntityRepository>());
+
+        services.AddJsonResource<CustomKeyEntity, Guid>(new RestLibJsonResourceConfiguration
+        {
+          Name = "custom-key-items",
+          Route = "/api/custom-key-items",
+          AllowAnonymousAll = true,
+          KeyProperty = nameof(CustomKeyEntity.Code),
+          Operations = new RestLibJsonOperationSelection
+          {
+            Include = [RestLibOperation.GetAll, RestLibOperation.GetById, RestLibOperation.Create]
+          }
+        });
+      });
+
+    var client = host.GetTestClient();
+    var repository = host.Services.GetRequiredService<CustomKeyEntityRepository>();
+
+    // Create an entity via POST
+    var createResponse = await client.PostAsJsonAsync("/api/custom-key-items",
+        new CustomKeyEntity { Label = "test-item" });
+    createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+    var created = await createResponse.Content.ReadFromJsonAsync<CustomKeyEntity>();
+    created.Should().NotBeNull();
+    created!.Code.Should().NotBe(Guid.Empty);
+
+    // Verify the Location header points to the correct key
+    createResponse.Headers.Location.Should().NotBeNull();
+    createResponse.Headers.Location!.ToString().Should().Contain(created.Code.ToString());
+
+    // Fetch by the custom key property
+    var getByIdResponse = await client.GetAsync($"/api/custom-key-items/{created.Code}");
+    getByIdResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+    var fetched = await getByIdResponse.Content.ReadFromJsonAsync<CustomKeyEntity>();
+    fetched.Should().NotBeNull();
+    fetched!.Label.Should().Be("test-item");
+  }
+
+  [Fact]
+  public async Task AddJsonResource_WithDefaultHooks_RunsHooksForAllOperations()
+  {
+    using var host = await CreateHost(services =>
+    {
+      services.AddNamedHook<TestEntity, Guid>(HookNames.DefaultStamp, context =>
+      {
+        if (context.Entity is not null)
+        {
+          context.Entity.Name = $"stamped:{context.Entity.Name}";
+        }
+
+        return Task.CompletedTask;
+      });
+
+      services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+      {
+        Name = "items",
+        Route = "/api/items",
+        AllowAnonymousAll = true,
+        Hooks = new RestLibJsonHookConfiguration
+        {
+          BeforePersist = new RestLibJsonHookStage
+          {
+            Default = [HookNames.DefaultStamp]
+          }
+        }
+      });
+    });
+
+    var client = host.GetTestClient();
+
+    // Create should trigger the default hook
+    var createResponse = await client.PostAsJsonAsync("/api/items", new TestEntity { Name = "alpha", Price = 1m });
+    var created = await createResponse.Content.ReadFromJsonAsync<TestEntity>();
+    created.Should().NotBeNull();
+    created!.Name.Should().Be("stamped:alpha");
+
+    // Update should also trigger the default hook
+    var updateResponse = await client.PutAsJsonAsync($"/api/items/{created.Id}",
+        new TestEntity { Name = "beta", Price = 2m });
+    var updated = await updateResponse.Content.ReadFromJsonAsync<TestEntity>();
+    updated.Should().NotBeNull();
+    updated!.Name.Should().Be("stamped:beta");
+  }
+
+  [Fact]
+  public async Task AddJsonResource_WithMultipleHooksInStage_ExecutesAllSequentially()
+  {
+    using var host = await CreateHost(services =>
+    {
+      services.AddNamedHook<TestEntity, Guid>(HookNames.PrefixName, context =>
+      {
+        if (context.Entity is not null)
+        {
+          context.Entity.Name = $"prefix:{context.Entity.Name}";
+        }
+
+        return Task.CompletedTask;
+      });
+
+      services.AddNamedHook<TestEntity, Guid>(HookNames.SuffixName, context =>
+      {
+        if (context.Entity is not null)
+        {
+          context.Entity.Name = $"{context.Entity.Name}:suffix";
+        }
+
+        return Task.CompletedTask;
+      });
+
+      services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+      {
+        Name = "items",
+        Route = "/api/items",
+        AllowAnonymousAll = true,
+        Hooks = new RestLibJsonHookConfiguration
+        {
+          BeforePersist = new RestLibJsonHookStage
+          {
+            Default = [HookNames.PrefixName, HookNames.SuffixName]
+          }
+        }
+      });
+    });
+
+    var client = host.GetTestClient();
+
+    var createResponse = await client.PostAsJsonAsync("/api/items", new TestEntity { Name = "test", Price = 1m });
+    var created = await createResponse.Content.ReadFromJsonAsync<TestEntity>();
+
+    created.Should().NotBeNull();
+    // PrefixName runs first: "test" -> "prefix:test"
+    // SuffixName runs second: "prefix:test" -> "prefix:test:suffix"
+    created!.Name.Should().Be("prefix:test:suffix");
+  }
+
+  [Fact]
+  public async Task AddJsonResource_WithNamedErrorHooks_HandlesErrorsPerConfiguration()
+  {
+    using var host = await CreateHost(services =>
+    {
+      services.AddNamedHook<TestEntity, Guid>(HookNames.ThrowOnPersist, _ =>
+      {
+        throw new InvalidOperationException("Simulated persistence error");
+      });
+
+      services.AddNamedErrorHook<TestEntity, Guid>(HookNames.HandleTestError, context =>
+      {
+        context.Handled = true;
+        context.ErrorResult = Results.Json(
+            new { error = "handled", message = context.Exception.Message },
+            statusCode: 422);
+        return Task.CompletedTask;
+      });
+
+      services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+      {
+        Name = "items",
+        Route = "/api/items",
+        AllowAnonymousAll = true,
+        Hooks = new RestLibJsonHookConfiguration
+        {
+          BeforePersist = new RestLibJsonHookStage
+          {
+            Default = [HookNames.ThrowOnPersist]
+          },
+          OnError = new RestLibJsonErrorHookStage
+          {
+            Default = [HookNames.HandleTestError]
+          }
+        }
+      });
+    });
+
+    var client = host.GetTestClient();
+
+    var createResponse = await client.PostAsJsonAsync("/api/items", new TestEntity { Name = "will-fail", Price = 1m });
+    createResponse.StatusCode.Should().Be((HttpStatusCode)422);
+
+    var body = await createResponse.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+    body.Should().NotBeNull();
+    body!["error"].Should().Be("handled");
+    body["message"].Should().Be("Simulated persistence error");
+  }
+
+  [Fact]
+  public async Task AddJsonResource_WithOpenApiDeprecationAndDescriptions_PropagatesToSwagger()
+  {
+    using var host = await CreateHost(services =>
+    {
+      services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+      {
+        Name = "items",
+        Route = "/api/items",
+        AllowAnonymousAll = true,
+        Operations = new RestLibJsonOperationSelection
+        {
+          Include = [RestLibOperation.GetAll, RestLibOperation.GetById]
+        },
+        OpenApi = new RestLibJsonOpenApiConfiguration
+        {
+          Tag = "LegacyItems",
+          Deprecated = true,
+          DeprecationMessage = "Use /api/v2/items instead.",
+          Summaries = new Dictionary<string, string>
+          {
+            [nameof(RestLibOperation.GetAll)] = "List all legacy items"
+          },
+          Descriptions = new Dictionary<string, string>
+          {
+            [nameof(RestLibOperation.GetAll)] = "Returns a paginated list of legacy items."
+          }
+        }
+      });
+    });
+
+    var client = host.GetTestClient();
+    var openApi = await client.GetStringAsync("/swagger/v1/swagger.json");
+    var document = new OpenApiStringReader().Read(openApi, out _);
+
+    var getAllOperation = document.Paths["/api/items"].Operations[Microsoft.OpenApi.Models.OperationType.Get];
+
+    getAllOperation.Summary.Should().Be("List all legacy items");
+    getAllOperation.Deprecated.Should().BeTrue();
+    getAllOperation.Description.Should().Contain("Use /api/v2/items instead.");
+    getAllOperation.Description.Should().Contain("Returns a paginated list of legacy items.");
+    getAllOperation.Tags.Should().Contain(tag => tag.Name == "LegacyItems");
+  }
+
+  [Fact]
+  public async Task MapJsonResource_WithName_MapsSingleResource()
+  {
+    using var host = await CreateHost(
+      services =>
+      {
+        services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+        {
+          Name = "first-resource",
+          Route = "/api/first",
+          AllowAnonymousAll = true
+        });
+
+        services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+        {
+          Name = "second-resource",
+          Route = "/api/second",
+          AllowAnonymousAll = true
+        });
+      },
+      mapResourceName: "first-resource");
+
+    var client = host.GetTestClient();
+    var repository = host.Services.GetRequiredService<TestEntityRepository>();
+    var id = Guid.NewGuid();
+    repository.Seed(new TestEntity { Id = id, Name = "test", Price = 1m });
+
+    // First resource should be mapped
+    var firstResponse = await client.GetAsync($"/api/first/{id}");
+    firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+    // Second resource should NOT be mapped
+    var secondResponse = await client.GetAsync($"/api/second/{id}");
+    secondResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+  }
+
+  [Fact]
+  public void AddJsonResource_WithUnregisteredHookName_ThrowsOnMapping()
+  {
+    var act = async () =>
+    {
+      using var host = await CreateHost(services =>
+      {
+        services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+        {
+          Name = "items",
+          Route = "/api/items",
+          AllowAnonymousAll = true,
+          Hooks = new RestLibJsonHookConfiguration
+          {
+            BeforePersist = new RestLibJsonHookStage
+            {
+              Default = ["NonExistentHook"]
+            }
+          }
+        });
+      });
+    };
+
+    act.Should().ThrowAsync<InvalidOperationException>()
+        .WithMessage("*No RestLib hook named 'NonExistentHook'*");
+  }
+
+  [Fact]
+  public void AddJsonResource_WithDuplicateName_ThrowsOnRegistration()
+  {
+    var services = new ServiceCollection();
+    services.AddRestLib();
+    services.AddSingleton<TestEntityRepository>();
+    services.AddSingleton<IRepository<TestEntity, Guid>>(sp => sp.GetRequiredService<TestEntityRepository>());
+
+    services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+    {
+      Name = "items",
+      Route = "/api/items",
+      AllowAnonymousAll = true
+    });
+
+    var act = () => services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+    {
+      Name = "items",
+      Route = "/api/other-items",
+      AllowAnonymousAll = true
+    });
+
+    act.Should().Throw<InvalidOperationException>()
+        .WithMessage("*'items' is already registered*");
+  }
+
+  [Fact]
+  public void AddJsonResource_WithInvalidOperationNameInSummaries_ThrowsOnMapping()
+  {
+    var act = async () =>
+    {
+      using var host = await CreateHost(services =>
+      {
+        services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+        {
+          Name = "items",
+          Route = "/api/items",
+          AllowAnonymousAll = true,
+          OpenApi = new RestLibJsonOpenApiConfiguration
+          {
+            Summaries = new Dictionary<string, string>
+            {
+              ["InvalidOperation"] = "This should fail"
+            }
+          }
+        });
+      });
+    };
+
+    act.Should().ThrowAsync<InvalidOperationException>()
+        .WithMessage("*'InvalidOperation' is not a valid RestLib operation name*");
+  }
+
+  [Fact]
+  public void AddJsonResource_WithBothIncludeAndExclude_ThrowsOnMapping()
+  {
+    var act = async () =>
+    {
+      using var host = await CreateHost(services =>
+      {
+        services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+        {
+          Name = "items",
+          Route = "/api/items",
+          AllowAnonymousAll = true,
+          Operations = new RestLibJsonOperationSelection
+          {
+            Include = [RestLibOperation.GetAll],
+            Exclude = [RestLibOperation.Delete]
+          }
+        });
+      });
+    };
+
+    act.Should().ThrowAsync<InvalidOperationException>()
+        .WithMessage("*cannot configure both include and exclude*");
+  }
+
+  [Fact]
+  public void AddJsonResource_WithInvalidKeyProperty_ThrowsOnMapping()
+  {
+    var act = async () =>
+    {
+      using var host = await CreateHost(services =>
+      {
+        services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+        {
+          Name = "items",
+          Route = "/api/items",
+          AllowAnonymousAll = true,
+          KeyProperty = "NonExistentProperty"
+        });
+      });
+    };
+
+    act.Should().ThrowAsync<InvalidOperationException>()
+        .WithMessage("*Key property 'NonExistentProperty' was not found*");
+  }
+
+  private static async Task<IHost> CreateHost(
+      Action<IServiceCollection> configureServices,
+      string? mapResourceName = null)
   {
     var host = new HostBuilder()
         .ConfigureWebHost(webBuilder =>
@@ -188,7 +590,11 @@ public class JsonResourceConfigurationTests
                 app.UseSwagger();
                 app.UseEndpoints(endpoints =>
                 {
-                  if (mapAll)
+                  if (mapResourceName is not null)
+                  {
+                    endpoints.MapJsonResource(mapResourceName);
+                  }
+                  else
                   {
                     endpoints.MapJsonResources();
                   }

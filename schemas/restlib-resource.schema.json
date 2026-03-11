@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Adrian01987/RestLib/main/schemas/restlib-resource.schema.json",
+  "title": "RestLib Resource Configuration",
+  "description": "JSON schema for configuring a RestLib REST API resource in appsettings.json.",
+  "type": "object",
+  "properties": {
+    "Name": {
+      "type": "string",
+      "description": "Unique resource name used during registration."
+    },
+    "Route": {
+      "type": "string",
+      "description": "Route prefix for the resource (e.g. /api/products).",
+      "pattern": "^/"
+    },
+    "KeyProperty": {
+      "type": "string",
+      "description": "Entity property name used as the primary key. Defaults to 'Id' when omitted."
+    },
+    "AllowAnonymous": {
+      "type": "array",
+      "description": "Operations that allow anonymous (unauthenticated) access.",
+      "items": { "$ref": "#/$defs/operation" },
+      "uniqueItems": true
+    },
+    "AllowAnonymousAll": {
+      "type": "boolean",
+      "description": "When true, all operations allow anonymous access.",
+      "default": false
+    },
+    "Operations": {
+      "$ref": "#/$defs/operationSelection"
+    },
+    "Policies": {
+      "type": "object",
+      "description": "Authorization policies required for specific operations. Keys are operation names, values are arrays of policy names.",
+      "propertyNames": { "$ref": "#/$defs/operation" },
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" },
+        "minItems": 1
+      }
+    },
+    "Filtering": {
+      "type": "array",
+      "description": "Entity property names that can be filtered on via query parameters. Names are automatically converted to snake_case in the query string.",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "OpenApi": {
+      "$ref": "#/$defs/openApi"
+    },
+    "Hooks": {
+      "$ref": "#/$defs/hookConfiguration"
+    }
+  },
+  "required": ["Name", "Route"],
+  "additionalProperties": false,
+  "$defs": {
+    "operation": {
+      "type": "string",
+      "enum": ["GetAll", "GetById", "Create", "Update", "Patch", "Delete"],
+      "description": "A RestLib CRUD operation."
+    },
+    "operationSelection": {
+      "type": "object",
+      "description": "Controls which CRUD operations are enabled. Use either Include or Exclude, not both.",
+      "properties": {
+        "Include": {
+          "type": "array",
+          "description": "Only these operations will be mapped. All others are disabled.",
+          "items": { "$ref": "#/$defs/operation" },
+          "uniqueItems": true
+        },
+        "Exclude": {
+          "type": "array",
+          "description": "These operations will not be mapped. All others remain enabled.",
+          "items": { "$ref": "#/$defs/operation" },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false,
+      "not": {
+        "required": ["Include", "Exclude"],
+        "properties": {
+          "Include": { "minItems": 1 },
+          "Exclude": { "minItems": 1 }
+        }
+      }
+    },
+    "openApi": {
+      "type": "object",
+      "description": "OpenAPI (Swagger) metadata for the resource.",
+      "properties": {
+        "Tag": {
+          "type": "string",
+          "description": "Shared tag name for grouping endpoints in the OpenAPI document."
+        },
+        "TagDescription": {
+          "type": "string",
+          "description": "Description for the OpenAPI tag."
+        },
+        "Deprecated": {
+          "type": "boolean",
+          "description": "Marks all operations as deprecated in the OpenAPI document.",
+          "default": false
+        },
+        "DeprecationMessage": {
+          "type": "string",
+          "description": "Message displayed when the resource is deprecated."
+        },
+        "Summaries": {
+          "type": "object",
+          "description": "Short summary text for each operation in the OpenAPI document.",
+          "propertyNames": { "$ref": "#/$defs/operation" },
+          "additionalProperties": { "type": "string" }
+        },
+        "Descriptions": {
+          "type": "object",
+          "description": "Detailed description text for each operation in the OpenAPI document.",
+          "propertyNames": { "$ref": "#/$defs/operation" },
+          "additionalProperties": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "hookConfiguration": {
+      "type": "object",
+      "description": "Named hook handlers wired to pipeline stages. Hooks must be registered in C# via AddNamedHook/AddNamedErrorHook before use.",
+      "properties": {
+        "OnRequestReceived": {
+          "$ref": "#/$defs/hookStage",
+          "description": "Hooks that run when a request is first received."
+        },
+        "OnRequestValidated": {
+          "$ref": "#/$defs/hookStage",
+          "description": "Hooks that run after request validation."
+        },
+        "BeforePersist": {
+          "$ref": "#/$defs/hookStage",
+          "description": "Hooks that run before persistence."
+        },
+        "AfterPersist": {
+          "$ref": "#/$defs/hookStage",
+          "description": "Hooks that run after persistence."
+        },
+        "BeforeResponse": {
+          "$ref": "#/$defs/hookStage",
+          "description": "Hooks that run before the response is sent."
+        },
+        "OnError": {
+          "$ref": "#/$defs/errorHookStage",
+          "description": "Hooks that run when an exception occurs."
+        }
+      },
+      "additionalProperties": false
+    },
+    "hookStage": {
+      "type": "object",
+      "description": "Configuration for a standard hook pipeline stage.",
+      "properties": {
+        "Default": {
+          "type": "array",
+          "description": "Hook names that always run for this stage, regardless of operation.",
+          "items": { "type": "string" }
+        },
+        "ByOperation": {
+          "type": "object",
+          "description": "Hook names that run only for specific operations.",
+          "propertyNames": { "$ref": "#/$defs/operation" },
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "errorHookStage": {
+      "type": "object",
+      "description": "Configuration for the error hook pipeline stage.",
+      "properties": {
+        "Default": {
+          "type": "array",
+          "description": "Error hook names that always run, regardless of operation.",
+          "items": { "type": "string" }
+        },
+        "ByOperation": {
+          "type": "object",
+          "description": "Error hook names that run only for specific operations.",
+          "propertyNames": { "$ref": "#/$defs/operation" },
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
