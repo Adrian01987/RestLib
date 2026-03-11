@@ -1,7 +1,9 @@
 using Microsoft.OpenApi.Models;
 using RestLib;
 using RestLib.Abstractions;
+using RestLib.Configuration;
 using RestLib.InMemory;
+using RestLib.Sample;
 using RestLib.Sample.Models;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,6 +12,28 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRestLib();
 builder.Services.AddRestLibInMemoryWithData<Category, Guid>(c => c.Id, Guid.NewGuid, SeedData.GetCategories());
 builder.Services.AddRestLibInMemoryWithData<Product, Guid>(p => p.Id, Guid.NewGuid, SeedData.GetProducts());
+builder.Services.AddNamedHook<Product, Guid>(HookNames.SetUpdatedAt, ctx =>
+{
+  if (ctx.Entity is Product product)
+  {
+    product.UpdatedAt = ctx.Operation == RestLibOperation.Create ? null : DateTime.UtcNow;
+  }
+
+  return Task.CompletedTask;
+});
+
+var categoryResource = builder.Configuration
+    .GetSection("RestLib:Resources:Categories")
+    .Get<RestLibJsonResourceConfiguration>()
+    ?? throw new InvalidOperationException("Missing RestLib category resource configuration.");
+
+var productResource = builder.Configuration
+    .GetSection("RestLib:Resources:Products")
+    .Get<RestLibJsonResourceConfiguration>()
+    ?? throw new InvalidOperationException("Missing RestLib product resource configuration.");
+
+builder.Services.AddJsonResource<Category, Guid>(categoryResource);
+builder.Services.AddJsonResource<Product, Guid>(productResource);
 
 // Configure Swagger/OpenAPI
 builder.Services.AddEndpointsApiExplorer();
@@ -36,12 +60,8 @@ app.UseSwaggerUI(c =>
   c.DefaultModelsExpandDepth(-1);
 });
 
-// Map RestLib endpoints — the magic ✨
-app.MapRestLib<Category, Guid>("/api/categories", config =>
-{
-  config.AllowAnonymous();
-  config.IncludeOperations(RestLibOperation.GetAll, RestLibOperation.GetById);
-});
+// Map RestLib endpoints from JSON resource configuration
+app.MapJsonResources();
 
 
 // Custom statistics endpoint for categories
@@ -63,17 +83,5 @@ app.MapGet("/api/categories/statistics", async (IRepository<Category, Guid> repo
 .WithSummary("Get category statistics")
 .WithDescription("Returns aggregated statistics about categories and their products.")
 .AllowAnonymous();
-
-app.MapRestLib<Product, Guid>("/api/products", config =>
-{
-  config.AllowAnonymous();
-  config.ExcludeOperations(RestLibOperation.Delete);
-  config.AllowFiltering(p => p.CategoryId, p => p.IsActive);
-  config.UseHooks(hooks => hooks.BeforePersist = ctx =>
-  {
-    if (ctx.Entity is Product p) p.UpdatedAt = ctx.Operation == RestLibOperation.Create ? null : DateTime.UtcNow;
-    return Task.CompletedTask;
-  });
-});
 
 app.Run();

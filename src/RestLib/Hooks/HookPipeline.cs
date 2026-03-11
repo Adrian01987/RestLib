@@ -28,18 +28,19 @@ internal sealed class HookPipeline<TEntity, TKey> where TEntity : class
     TEntity? entity = default,
     TEntity? originalEntity = default)
   {
-    return new HookContext<TEntity, TKey>
+    var context = new HookContext<TEntity, TKey>
     {
       HttpContext = httpContext,
       Operation = operation,
       ResourceId = resourceId,
       Entity = entity,
-      OriginalEntity = originalEntity,
       Services = httpContext.RequestServices,
       CancellationToken = httpContext.RequestAborted,
       ShouldContinue = true,
       EarlyResult = null
     };
+    context.SetOriginalEntity(originalEntity);
+    return context;
   }
 
   /// <summary>

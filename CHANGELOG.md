@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- JSON-backed resource configuration via `AddJsonResource<TEntity, TKey>()` and `MapJsonResources()`
+- Named hook system for JSON-configured resources (`AddNamedHook`, `AddNamedErrorHook`)
+- `RestLibJsonResourceConfiguration` model for declarative resource setup from `appsettings.json`
+- `RestLibJsonResourceBuilder` to apply JSON configuration to endpoint configuration
+- `RestLibJsonResourceRegistry` for deferred endpoint mapping
+- `IRestLibNamedHookResolver<TEntity, TKey>` abstraction for resolving named hooks at runtime
+- String-based `AllowFiltering` overload for property names
+- Per-operation hook selection via JSON (`ByOperation` and `Default` stages)
+- OpenAPI metadata configuration via JSON (tag, summaries, descriptions, deprecation)
+- Policy-based authorization configuration via JSON
+
 ## [0.2.0] - 2026-02-06
 
 ### Added
@@ -17,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions release pipeline for automated NuGet publishing
 - Codecov integration for coverage tracking
 
-## [0.1.0] - 2026-XX-XX
+## [0.1.0] - 2026-01-25
 
 ### Added
 
@@ -47,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Architecture Decision Records (ADRs) for key design choices
 - XML documentation for public APIs
 
-[Unreleased]: https://github.com/Adrian01987/RestLib/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Adrian01987/RestLib/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Adrian01987/RestLib/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Adrian01987/RestLib/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Adrian01987/RestLib/releases/tag/v0.1.0

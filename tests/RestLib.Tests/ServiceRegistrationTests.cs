@@ -1,7 +1,9 @@
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using RestLib.Abstractions;
 using RestLib.Configuration;
+using RestLib.Hooks;
 using RestLib.Tests.Fakes;
 using Xunit;
 
@@ -99,6 +101,73 @@ public class ServiceRegistrationTests
     // Assert
     act.Should().Throw<ArgumentNullException>()
         .WithParameterName("services");
+  }
+
+  #endregion
+
+  #region JSON Resource Registration Tests
+
+  [Fact]
+  public void AddJsonResource_ReturnsServiceCollection_ForChaining()
+  {
+    var services = new ServiceCollection();
+
+    var result = services.AddRestLib()
+        .AddJsonResource<FakeEntity, Guid>(new RestLibJsonResourceConfiguration
+        {
+          Name = "fake-entities",
+          Route = "/api/fake-entities"
+        });
+
+    result.Should().BeSameAs(services);
+  }
+
+  [Fact]
+  public void AddJsonResource_FromConfigurationSection_ReturnsServiceCollection_ForChaining()
+  {
+    var services = new ServiceCollection();
+    var configuration = new ConfigurationBuilder()
+        .AddInMemoryCollection(new Dictionary<string, string?>
+        {
+          ["RestLib:Resources:0:Name"] = "fake-entities",
+          ["RestLib:Resources:0:Route"] = "/api/fake-entities"
+        })
+        .Build();
+
+    var result = services.AddRestLib()
+        .AddJsonResource<FakeEntity, Guid>(configuration.GetSection("RestLib:Resources:0"));
+
+    result.Should().BeSameAs(services);
+  }
+
+  [Fact]
+  public void AddNamedHook_RegistersResolver()
+  {
+    var services = new ServiceCollection();
+
+    services.AddRestLib();
+    services.AddNamedHook<FakeEntity, Guid>(HookNames.TagEntity, _ => Task.CompletedTask);
+
+    var provider = services.BuildServiceProvider();
+    var resolver = provider.GetService<IRestLibNamedHookResolver<FakeEntity, Guid>>();
+
+    resolver.Should().NotBeNull();
+    resolver!.Resolve(HookNames.TagEntity).Should().NotBeNull();
+  }
+
+  [Fact]
+  public void AddNamedErrorHook_RegistersResolver()
+  {
+    var services = new ServiceCollection();
+
+    services.AddRestLib();
+    services.AddNamedErrorHook<FakeEntity, Guid>(HookNames.HandleError, _ => Task.CompletedTask);
+
+    var provider = services.BuildServiceProvider();
+    var resolver = provider.GetService<IRestLibNamedHookResolver<FakeEntity, Guid>>();
+
+    resolver.Should().NotBeNull();
+    resolver!.ResolveError(HookNames.HandleError).Should().NotBeNull();
   }
 
   #endregion

@@ -162,6 +162,43 @@ app.MapPost("/api/categories", async (Category category, IRepository<Category, G
 });
 ```
 
+You can also move this declarative resource configuration out of `Program.cs` and into JSON while keeping your model, repository, and hooks strongly typed:
+
+```json
+{
+  "RestLib": {
+    "Resources": {
+      "Products": {
+        "Name": "products",
+        "Route": "/api/products",
+        "AllowAnonymousAll": true,
+        "Operations": {
+          "Exclude": ["Delete"]
+        },
+        "Filtering": ["CategoryId", "IsActive"],
+        "OpenApi": {
+          "Tag": "Product",
+          "Summaries": {
+            "GetAll": "List products"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+```csharp
+var productResource = builder.Configuration
+    .GetSection("RestLib:Resources:Products")
+    .Get<RestLibJsonResourceConfiguration>()!;
+
+builder.Services.AddJsonResource<Product, Guid>(productResource);
+
+var app = builder.Build();
+app.MapJsonResources();
+```
+
 ### Extensible via Hooks
 
 Inject custom logic into the pipeline without subclassing framework types:
@@ -183,6 +220,36 @@ app.MapRestLib<Product, Guid>("/api/products", config =>
     });
 });
 ```
+
+If you want a cleaner startup file, JSON config can select named hooks per operation while the hook implementations stay in C#:
+
+```csharp
+builder.Services.AddNamedHook<Product, Guid>(HookNames.SetUpdatedAt, ctx =>
+{
+    if (ctx.Entity is Product product)
+    {
+        product.UpdatedAt = ctx.Operation == RestLibOperation.Create ? null : DateTime.UtcNow;
+    }
+
+    return Task.CompletedTask;
+});
+```
+
+```json
+{
+  "Hooks": {
+    "BeforePersist": {
+      "ByOperation": {
+        "Create": ["SetUpdatedAt"],
+        "Update": ["SetUpdatedAt"],
+        "Patch": ["SetUpdatedAt"]
+      }
+    }
+  }
+}
+```
+
+This keeps route, auth, filtering, operation selection, OpenAPI metadata, and hook selection in JSON while your actual behavior remains strongly typed and testable in C#. A simple pattern is to centralize hook names in a `HookNames` class and use those constants when registering handlers.
 
 ### Persistence-Agnostic
 

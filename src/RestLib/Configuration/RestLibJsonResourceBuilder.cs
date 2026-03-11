@@ -1,0 +1,356 @@
+using System.Linq.Expressions;
+using System.Reflection;
+using Microsoft.Extensions.DependencyInjection;
+using RestLib.Hooks;
+
+namespace RestLib.Configuration;
+
+internal static class RestLibJsonResourceBuilder
+{
+  public static void Apply<TEntity, TKey>(
+      RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
+      RestLibJsonResourceConfiguration jsonConfiguration)
+      where TEntity : class
+  {
+    ArgumentNullException.ThrowIfNull(endpointConfiguration);
+    ArgumentNullException.ThrowIfNull(jsonConfiguration);
+
+    ApplyKeySelector(endpointConfiguration, jsonConfiguration);
+    ApplyAuthorization(endpointConfiguration, jsonConfiguration);
+    ApplyOperationSelection(endpointConfiguration, jsonConfiguration);
+    ApplyFiltering(endpointConfiguration, jsonConfiguration);
+    ApplyOpenApi(endpointConfiguration, jsonConfiguration.OpenApi);
+  }
+
+  public static RestLibHooks<TEntity, TKey>? BuildHooks<TEntity, TKey>(
+      IServiceProvider services,
+      RestLibJsonHookConfiguration? hookConfiguration)
+      where TEntity : class
+  {
+    ArgumentNullException.ThrowIfNull(services);
+
+    if (hookConfiguration is null)
+      return null;
+
+    var resolver = services.GetService<IRestLibNamedHookResolver<TEntity, TKey>>();
+    if (resolver is null)
+    {
+      throw new InvalidOperationException(
+          $"JSON hook configuration requires an {nameof(IRestLibNamedHookResolver<TEntity, TKey>)} registration.");
+    }
+
+    var hooks = new RestLibHooks<TEntity, TKey>
+    {
+      OnRequestReceived = BuildStandardStage(resolver, hookConfiguration.OnRequestReceived),
+      OnRequestValidated = BuildStandardStage(resolver, hookConfiguration.OnRequestValidated),
+      BeforePersist = BuildStandardStage(resolver, hookConfiguration.BeforePersist),
+      AfterPersist = BuildStandardStage(resolver, hookConfiguration.AfterPersist),
+      BeforeResponse = BuildStandardStage(resolver, hookConfiguration.BeforeResponse),
+      OnError = BuildErrorStage(resolver, hookConfiguration.OnError)
+    };
+
+    return hooks.HasAnyHooks ? hooks : null;
+  }
+
+  private static void ApplyKeySelector<TEntity, TKey>(
+      RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
+      RestLibJsonResourceConfiguration jsonConfiguration)
+      where TEntity : class
+  {
+    var keyPropertyName = jsonConfiguration.KeyProperty;
+    if (string.IsNullOrWhiteSpace(keyPropertyName))
+      return;
+
+    var property = typeof(TEntity).GetProperty(keyPropertyName, BindingFlags.Public | BindingFlags.Instance)
+                   ?? throw new InvalidOperationException(
+                       $"Key property '{keyPropertyName}' was not found on entity type '{typeof(TEntity).Name}'.");
+
+    if (property.PropertyType != typeof(TKey))
+    {
+      throw new InvalidOperationException(
+          $"Key property '{keyPropertyName}' on entity type '{typeof(TEntity).Name}' must be of type '{typeof(TKey).Name}'.");
+    }
+
+    var entityParameter = Expression.Parameter(typeof(TEntity), "entity");
+    var propertyAccess = Expression.Property(entityParameter, property);
+    var lambda = Expression.Lambda<Func<TEntity, TKey>>(propertyAccess, entityParameter);
+    endpointConfiguration.KeySelector = lambda.Compile();
+  }
+
+  private static void ApplyAuthorization<TEntity, TKey>(
+      RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
+      RestLibJsonResourceConfiguration jsonConfiguration)
+      where TEntity : class
+  {
+    if (jsonConfiguration.AllowAnonymousAll)
+    {
+      endpointConfiguration.AllowAnonymous();
+    }
+
+    if (jsonConfiguration.AllowAnonymous.Count > 0)
+    {
+      endpointConfiguration.AllowAnonymous([.. jsonConfiguration.AllowAnonymous]);
+    }
+
+    foreach (var policyEntry in jsonConfiguration.Policies)
+    {
+      var operation = ParseOperation(policyEntry.Key, nameof(jsonConfiguration.Policies));
+      endpointConfiguration.RequirePolicy(operation, policyEntry.Value);
+    }
+  }
+
+  private static void ApplyOperationSelection<TEntity, TKey>(
+      RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
+      RestLibJsonResourceConfiguration jsonConfiguration)
+      where TEntity : class
+  {
+    var operations = jsonConfiguration.Operations;
+    if (operations is null)
+      return;
+
+    if (operations.Include.Count > 0 && operations.Exclude.Count > 0)
+    {
+      throw new InvalidOperationException(
+          $"Resource '{jsonConfiguration.Name}' cannot configure both include and exclude operations.");
+    }
+
+    if (operations.Include.Count > 0)
+    {
+      endpointConfiguration.IncludeOperations([.. operations.Include]);
+    }
+
+    if (operations.Exclude.Count > 0)
+    {
+      endpointConfiguration.ExcludeOperations([.. operations.Exclude]);
+    }
+  }
+
+  private static void ApplyFiltering<TEntity, TKey>(
+      RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
+      RestLibJsonResourceConfiguration jsonConfiguration)
+      where TEntity : class
+  {
+    if (jsonConfiguration.Filtering.Count == 0)
+      return;
+
+    endpointConfiguration.AllowFiltering([.. jsonConfiguration.Filtering]);
+  }
+
+  private static void ApplyOpenApi<TEntity, TKey>(
+      RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
+      RestLibJsonOpenApiConfiguration? openApiConfiguration)
+      where TEntity : class
+  {
+    if (openApiConfiguration is null)
+      return;
+
+    endpointConfiguration.OpenApi.Tag = openApiConfiguration.Tag;
+    endpointConfiguration.OpenApi.TagDescription = openApiConfiguration.TagDescription;
+    endpointConfiguration.OpenApi.Deprecated = openApiConfiguration.Deprecated;
+    endpointConfiguration.OpenApi.DeprecationMessage = openApiConfiguration.DeprecationMessage;
+
+    ApplySummaries(endpointConfiguration.OpenApi.Summaries, openApiConfiguration.Summaries);
+    ApplyDescriptions(endpointConfiguration.OpenApi.Descriptions, openApiConfiguration.Descriptions);
+  }
+
+  private static void ApplySummaries(
+      RestLibOpenApiSummaries summaries,
+      IReadOnlyDictionary<string, string> configuredSummaries)
+  {
+    foreach (var summaryEntry in configuredSummaries)
+    {
+      var operation = ParseOperation(summaryEntry.Key, nameof(configuredSummaries));
+      switch (operation)
+      {
+        case RestLibOperation.GetAll:
+          summaries.GetAll = summaryEntry.Value;
+          break;
+        case RestLibOperation.GetById:
+          summaries.GetById = summaryEntry.Value;
+          break;
+        case RestLibOperation.Create:
+          summaries.Create = summaryEntry.Value;
+          break;
+        case RestLibOperation.Update:
+          summaries.Update = summaryEntry.Value;
+          break;
+        case RestLibOperation.Patch:
+          summaries.Patch = summaryEntry.Value;
+          break;
+        case RestLibOperation.Delete:
+          summaries.Delete = summaryEntry.Value;
+          break;
+      }
+    }
+  }
+
+  private static void ApplyDescriptions(
+      RestLibOpenApiDescriptions descriptions,
+      IReadOnlyDictionary<string, string> configuredDescriptions)
+  {
+    foreach (var descriptionEntry in configuredDescriptions)
+    {
+      var operation = ParseOperation(descriptionEntry.Key, nameof(configuredDescriptions));
+      switch (operation)
+      {
+        case RestLibOperation.GetAll:
+          descriptions.GetAll = descriptionEntry.Value;
+          break;
+        case RestLibOperation.GetById:
+          descriptions.GetById = descriptionEntry.Value;
+          break;
+        case RestLibOperation.Create:
+          descriptions.Create = descriptionEntry.Value;
+          break;
+        case RestLibOperation.Update:
+          descriptions.Update = descriptionEntry.Value;
+          break;
+        case RestLibOperation.Patch:
+          descriptions.Patch = descriptionEntry.Value;
+          break;
+        case RestLibOperation.Delete:
+          descriptions.Delete = descriptionEntry.Value;
+          break;
+      }
+    }
+  }
+
+  private static RestLibHookDelegate<TEntity, TKey>? BuildStandardStage<TEntity, TKey>(
+      IRestLibNamedHookResolver<TEntity, TKey> resolver,
+      RestLibJsonHookStage? stage)
+      where TEntity : class
+  {
+    if (stage is null)
+      return null;
+
+    var defaultHooks = ResolveStandardHooks(resolver, stage.Default);
+    var byOperation = ResolveOperationHooks(resolver, stage.ByOperation);
+
+    if (defaultHooks.Count == 0 && byOperation.Count == 0)
+      return null;
+
+    return async context =>
+    {
+      foreach (var hook in defaultHooks)
+      {
+        await hook(context);
+        if (!context.ShouldContinue)
+          return;
+      }
+
+      if (byOperation.TryGetValue(context.Operation, out var operationHooks))
+      {
+        foreach (var hook in operationHooks)
+        {
+          await hook(context);
+          if (!context.ShouldContinue)
+            return;
+        }
+      }
+    };
+  }
+
+  private static RestLibErrorHookDelegate<TEntity, TKey>? BuildErrorStage<TEntity, TKey>(
+      IRestLibNamedHookResolver<TEntity, TKey> resolver,
+      RestLibJsonErrorHookStage? stage)
+      where TEntity : class
+  {
+    if (stage is null)
+      return null;
+
+    var defaultHooks = ResolveErrorHooks(resolver, stage.Default);
+    var byOperation = ResolveOperationErrorHooks(resolver, stage.ByOperation);
+
+    if (defaultHooks.Count == 0 && byOperation.Count == 0)
+      return null;
+
+    return async context =>
+    {
+      foreach (var hook in defaultHooks)
+      {
+        await hook(context);
+        if (context.Handled)
+          return;
+      }
+
+      if (byOperation.TryGetValue(context.Operation, out var operationHooks))
+      {
+        foreach (var hook in operationHooks)
+        {
+          await hook(context);
+          if (context.Handled)
+            return;
+        }
+      }
+    };
+  }
+
+  private static List<RestLibHookDelegate<TEntity, TKey>> ResolveStandardHooks<TEntity, TKey>(
+      IRestLibNamedHookResolver<TEntity, TKey> resolver,
+      IEnumerable<string> hookNames)
+      where TEntity : class
+  {
+    var hooks = new List<RestLibHookDelegate<TEntity, TKey>>();
+    foreach (var hookName in hookNames)
+    {
+      hooks.Add(resolver.Resolve(hookName));
+    }
+
+    return hooks;
+  }
+
+  private static Dictionary<RestLibOperation, List<RestLibHookDelegate<TEntity, TKey>>> ResolveOperationHooks<TEntity, TKey>(
+      IRestLibNamedHookResolver<TEntity, TKey> resolver,
+      IReadOnlyDictionary<string, List<string>> stageConfiguration)
+      where TEntity : class
+  {
+    var hooks = new Dictionary<RestLibOperation, List<RestLibHookDelegate<TEntity, TKey>>>();
+    foreach (var entry in stageConfiguration)
+    {
+      var operation = ParseOperation(entry.Key, nameof(stageConfiguration));
+      hooks[operation] = entry.Value.Select(resolver.Resolve).ToList();
+    }
+
+    return hooks;
+  }
+
+  private static List<RestLibErrorHookDelegate<TEntity, TKey>> ResolveErrorHooks<TEntity, TKey>(
+      IRestLibNamedHookResolver<TEntity, TKey> resolver,
+      IEnumerable<string> hookNames)
+      where TEntity : class
+  {
+    var hooks = new List<RestLibErrorHookDelegate<TEntity, TKey>>();
+    foreach (var hookName in hookNames)
+    {
+      hooks.Add(resolver.ResolveError(hookName));
+    }
+
+    return hooks;
+  }
+
+  private static Dictionary<RestLibOperation, List<RestLibErrorHookDelegate<TEntity, TKey>>> ResolveOperationErrorHooks<TEntity, TKey>(
+      IRestLibNamedHookResolver<TEntity, TKey> resolver,
+      IReadOnlyDictionary<string, List<string>> stageConfiguration)
+      where TEntity : class
+  {
+    var hooks = new Dictionary<RestLibOperation, List<RestLibErrorHookDelegate<TEntity, TKey>>>();
+    foreach (var entry in stageConfiguration)
+    {
+      var operation = ParseOperation(entry.Key, nameof(stageConfiguration));
+      hooks[operation] = entry.Value.Select(resolver.ResolveError).ToList();
+    }
+
+    return hooks;
+  }
+
+  private static RestLibOperation ParseOperation(string operationName, string parameterName)
+  {
+    if (Enum.TryParse<RestLibOperation>(operationName, true, out var operation))
+    {
+      return operation;
+    }
+
+    throw new InvalidOperationException(
+        $"'{operationName}' is not a valid RestLib operation name for '{parameterName}'.");
+  }
+}

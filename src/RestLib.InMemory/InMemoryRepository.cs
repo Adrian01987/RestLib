@@ -281,7 +281,7 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>
     return idProperty?.Name;
   }
 
-  private static string MergeJsonObjects(JsonElement original, JsonElement patch)
+  private string MergeJsonObjects(JsonElement original, JsonElement patch)
   {
     var merged = new Dictionary<string, object?>();
 
@@ -297,7 +297,7 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>
       merged[prop.Name] = GetJsonValue(prop.Value);
     }
 
-    return JsonSerializer.Serialize(merged);
+    return JsonSerializer.Serialize(merged, _jsonOptions);
   }
 
   private static object? GetJsonValue(JsonElement element)

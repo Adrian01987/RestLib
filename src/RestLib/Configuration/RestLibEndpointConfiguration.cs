@@ -135,6 +135,35 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   }
 
   /// <summary>
+  /// Configures which properties can be filtered on via query parameters.
+  /// Property names are automatically converted to snake_case in the query string.
+  /// </summary>
+  /// <param name="propertyNames">The entity property names to allow for filtering.</param>
+  /// <returns>This configuration instance for chaining.</returns>
+  /// <example>
+  /// <code>
+  /// config.AllowFiltering("CategoryId", "IsActive");
+  /// // Results in query parameters: ?category_id=5&amp;is_active=true
+  /// </code>
+  /// </example>
+  public RestLibEndpointConfiguration<TEntity, TKey> AllowFiltering(
+      params string[] propertyNames)
+  {
+    foreach (var propertyName in propertyNames)
+    {
+      var property = typeof(TEntity).GetProperty(propertyName)
+                     ?? throw new ArgumentException(
+                         $"Property '{propertyName}' was not found on entity type '{typeof(TEntity).Name}'.",
+                         nameof(propertyNames));
+
+      var queryParamName = FilterConfiguration<TEntity>.ConvertToSnakeCase(property.Name);
+      _filterConfiguration.AddProperty(property.Name, queryParamName, property.PropertyType);
+    }
+
+    return this;
+  }
+
+  /// <summary>
   /// Includes the specified operations. All others will be excluded unless also included
   /// in a subsequent call. Multiple calls are merged (unioned).
   /// Cannot be combined with <see cref="ExcludeOperations"/>.

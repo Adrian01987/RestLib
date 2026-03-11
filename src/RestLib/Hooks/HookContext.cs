@@ -38,7 +38,14 @@ public class HookContext<TEntity, TKey> where TEntity : class
   /// Gets the original entity before any modifications.
   /// Available for Update and Patch operations after fetching from repository.
   /// </summary>
-  public TEntity? OriginalEntity { get; init; }
+  public TEntity? OriginalEntity { get; private set; }
+
+  /// <summary>
+  /// Sets the original entity. Used internally by the pipeline when the original
+  /// entity becomes available after the context has been created.
+  /// </summary>
+  /// <param name="originalEntity">The original entity before modifications.</param>
+  internal void SetOriginalEntity(TEntity? originalEntity) => OriginalEntity = originalEntity;
 
   /// <summary>
   /// Gets or sets whether the pipeline should continue execution.

@@ -52,8 +52,8 @@ public static class RestLibEndpointExtensions
           CancellationToken ct) =>
       {
         var jsonOptions = GetJsonOptions(httpContext);
-        var RestLibOptions = httpContext.RequestServices.GetService<RestLibOptions>()
-                             ?? new RestLibOptions();
+        var options = httpContext.RequestServices.GetService<RestLibOptions>()
+                      ?? new RestLibOptions();
 
         // Create hook pipeline if hooks are configured
         var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
@@ -65,10 +65,8 @@ public static class RestLibEndpointExtensions
           if (pipeline is not null)
           {
             hookContext = pipeline.CreateContext(httpContext, RestLibOperation.GetAll);
-            if (!await pipeline.ExecuteOnRequestReceivedAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestReceivedAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
           // Validate cursor if provided
@@ -81,12 +79,12 @@ public static class RestLibEndpointExtensions
           }
 
           // Validate limit if provided
-          if (limit.HasValue && (limit.Value < 1 || limit.Value > RestLibOptions.MaxPageSize))
+          if (limit.HasValue && (limit.Value < 1 || limit.Value > options.MaxPageSize))
           {
             return ProblemDetailsResult.InvalidLimit(
                 limit.Value,
                 1,
-                RestLibOptions.MaxPageSize,
+                options.MaxPageSize,
                 httpContext.Request.Path,
                 jsonOptions);
           }
@@ -109,13 +107,11 @@ public static class RestLibEndpointExtensions
           // OnRequestValidated hook
           if (pipeline is not null && hookContext is not null)
           {
-            if (!await pipeline.ExecuteOnRequestValidatedAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestValidatedAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
-          var effectiveLimit = Math.Clamp(limit ?? RestLibOptions.DefaultPageSize, 1, RestLibOptions.MaxPageSize);
+          var effectiveLimit = Math.Clamp(limit ?? options.DefaultPageSize, 1, options.MaxPageSize);
           var paginationRequest = new PaginationRequest
           {
             Cursor = cursor,
@@ -125,30 +121,21 @@ public static class RestLibEndpointExtensions
 
           var result = await repository.GetAllAsync(paginationRequest, ct);
 
-          var response = BuildCollectionResponse(result, httpContext.Request, cursor, effectiveLimit, RestLibOptions);
+          var response = BuildCollectionResponse(result, httpContext.Request, cursor, effectiveLimit, options);
 
           // BeforeResponse hook
           if (pipeline is not null && hookContext is not null)
           {
-            if (!await pipeline.ExecuteBeforeResponseAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforeResponseAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
           return Results.Json(response, jsonOptions);
         }
         catch (Exception ex)
         {
-          if (pipeline is not null)
-          {
-            var errorContext = pipeline.CreateErrorContext(httpContext, RestLibOperation.GetAll, ex);
-            var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
-            if (handled && errorResult is not null)
-            {
-              return errorResult;
-            }
-          }
+          var errorResult = await HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.GetAll, ex);
+          if (errorResult is not null) return errorResult;
           throw;
         }
       });
@@ -186,8 +173,8 @@ public static class RestLibEndpointExtensions
           CancellationToken ct) =>
       {
         var jsonOptions = GetJsonOptions(httpContext);
-        var RestLibOptions = httpContext.RequestServices.GetService<RestLibOptions>()
-                             ?? new RestLibOptions();
+        var options = httpContext.RequestServices.GetService<RestLibOptions>()
+                      ?? new RestLibOptions();
 
         // Create hook pipeline if hooks are configured
         var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
@@ -199,10 +186,8 @@ public static class RestLibEndpointExtensions
           if (pipeline is not null)
           {
             hookContext = pipeline.CreateContext(httpContext, RestLibOperation.GetById, id);
-            if (!await pipeline.ExecuteOnRequestReceivedAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestReceivedAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
           var entity = await repository.GetByIdAsync(id, ct);
@@ -225,14 +210,12 @@ public static class RestLibEndpointExtensions
           // OnRequestValidated hook
           if (pipeline is not null && hookContext is not null)
           {
-            if (!await pipeline.ExecuteOnRequestValidatedAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestValidatedAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
           // Handle conditional requests when ETag support is enabled
-          if (RestLibOptions.EnableETagSupport)
+          if (options.EnableETagSupport)
           {
             var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
                                 ?? new HashBasedETagGenerator(jsonOptions);
@@ -253,25 +236,16 @@ public static class RestLibEndpointExtensions
           // BeforeResponse hook
           if (pipeline is not null && hookContext is not null)
           {
-            if (!await pipeline.ExecuteBeforeResponseAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforeResponseAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
           return Results.Json(entity, jsonOptions);
         }
         catch (Exception ex)
         {
-          if (pipeline is not null)
-          {
-            var errorContext = pipeline.CreateErrorContext(httpContext, RestLibOperation.GetById, ex, id);
-            var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
-            if (handled && errorResult is not null)
-            {
-              return errorResult;
-            }
-          }
+          var errorResult = await HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.GetById, ex, id);
+          if (errorResult is not null) return errorResult;
           throw;
         }
       });
@@ -288,8 +262,8 @@ public static class RestLibEndpointExtensions
           CancellationToken ct) =>
       {
         var jsonOptions = GetJsonOptions(httpContext);
-        var RestLibOptions = httpContext.RequestServices.GetService<RestLibOptions>()
-                             ?? new RestLibOptions();
+        var options = httpContext.RequestServices.GetService<RestLibOptions>()
+                      ?? new RestLibOptions();
 
         // Create hook pipeline if hooks are configured
         var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
@@ -301,18 +275,16 @@ public static class RestLibEndpointExtensions
           if (pipeline is not null)
           {
             hookContext = pipeline.CreateContext(httpContext, RestLibOperation.Create, entity: entity);
-            if (!await pipeline.ExecuteOnRequestReceivedAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestReceivedAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
             // Entity might have been modified by hook
             entity = hookContext.Entity ?? entity;
           }
 
           // Validate entity using Data Annotations
-          if (RestLibOptions.EnableValidation)
+          if (options.EnableValidation)
           {
-            var validationResult = Validation.EntityValidator.Validate(entity, RestLibOptions.JsonNamingPolicy);
+            var validationResult = Validation.EntityValidator.Validate(entity, options.JsonNamingPolicy);
             if (!validationResult.IsValid)
             {
               return ProblemDetailsResult.ValidationFailed(
@@ -326,10 +298,8 @@ public static class RestLibEndpointExtensions
           if (pipeline is not null && hookContext is not null)
           {
             hookContext.Entity = entity;
-            if (!await pipeline.ExecuteOnRequestValidatedAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestValidatedAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
             entity = hookContext.Entity ?? entity;
           }
 
@@ -337,10 +307,8 @@ public static class RestLibEndpointExtensions
           if (pipeline is not null && hookContext is not null)
           {
             hookContext.Entity = entity;
-            if (!await pipeline.ExecuteBeforePersistAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforePersistAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
             entity = hookContext.Entity ?? entity;
           }
 
@@ -350,10 +318,8 @@ public static class RestLibEndpointExtensions
           if (pipeline is not null && hookContext is not null)
           {
             hookContext.Entity = created;
-            if (!await pipeline.ExecuteAfterPersistAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteAfterPersistAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
           // Extract ID from created entity and set Location header
@@ -362,7 +328,7 @@ public static class RestLibEndpointExtensions
           httpContext.Response.Headers.Location = location;
 
           // Add ETag header when enabled
-          if (RestLibOptions.EnableETagSupport)
+          if (options.EnableETagSupport)
           {
             var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
                                 ?? new HashBasedETagGenerator(jsonOptions);
@@ -372,25 +338,16 @@ public static class RestLibEndpointExtensions
           // BeforeResponse hook
           if (pipeline is not null && hookContext is not null)
           {
-            if (!await pipeline.ExecuteBeforeResponseAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforeResponseAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
           return Results.Json(created, jsonOptions, statusCode: StatusCodes.Status201Created);
         }
         catch (Exception ex)
         {
-          if (pipeline is not null)
-          {
-            var errorContext = pipeline.CreateErrorContext(httpContext, RestLibOperation.Create, ex, entity: entity);
-            var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
-            if (handled && errorResult is not null)
-            {
-              return errorResult;
-            }
-          }
+          var errorResult = await HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Create, ex, entity: entity);
+          if (errorResult is not null) return errorResult;
           throw;
         }
       });
@@ -408,8 +365,8 @@ public static class RestLibEndpointExtensions
           CancellationToken ct) =>
       {
         var jsonOptions = GetJsonOptions(httpContext);
-        var RestLibOptions = httpContext.RequestServices.GetService<RestLibOptions>()
-                             ?? new RestLibOptions();
+        var options = httpContext.RequestServices.GetService<RestLibOptions>()
+                      ?? new RestLibOptions();
 
         // Create hook pipeline if hooks are configured
         var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
@@ -422,17 +379,15 @@ public static class RestLibEndpointExtensions
           if (pipeline is not null)
           {
             hookContext = pipeline.CreateContext(httpContext, RestLibOperation.Update, id, entity);
-            if (!await pipeline.ExecuteOnRequestReceivedAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestReceivedAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
             entity = hookContext.Entity ?? entity;
           }
 
           // Validate entity using Data Annotations
-          if (RestLibOptions.EnableValidation)
+          if (options.EnableValidation)
           {
-            var validationResult = Validation.EntityValidator.Validate(entity, RestLibOptions.JsonNamingPolicy);
+            var validationResult = Validation.EntityValidator.Validate(entity, options.JsonNamingPolicy);
             if (!validationResult.IsValid)
             {
               return ProblemDetailsResult.ValidationFailed(
@@ -446,15 +401,13 @@ public static class RestLibEndpointExtensions
           if (pipeline is not null && hookContext is not null)
           {
             hookContext.Entity = entity;
-            if (!await pipeline.ExecuteOnRequestValidatedAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestValidatedAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
             entity = hookContext.Entity ?? entity;
           }
 
           // Check for ETag precondition (If-Match header)
-          if (RestLibOptions.EnableETagSupport)
+          if (options.EnableETagSupport)
           {
             var ifMatchHeader = httpContext.Request.Headers.IfMatch;
             if (!Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(ifMatchHeader))
@@ -492,24 +445,13 @@ public static class RestLibEndpointExtensions
             originalEntity = await repository.GetByIdAsync(id, ct);
           }
 
-          // BeforePersist hook
+          // BeforePersist hook — update existing context with original entity
           if (pipeline is not null && hookContext is not null)
           {
-            // Create new context with original entity
-            hookContext = new HookContext<TEntity, TKey>
-            {
-              HttpContext = httpContext,
-              Operation = RestLibOperation.Update,
-              ResourceId = id,
-              Entity = entity,
-              OriginalEntity = originalEntity,
-              Services = httpContext.RequestServices,
-              CancellationToken = ct
-            };
-            if (!await pipeline.ExecuteBeforePersistAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            hookContext.Entity = entity;
+            hookContext.SetOriginalEntity(originalEntity);
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforePersistAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
             entity = hookContext.Entity ?? entity;
           }
 
@@ -528,14 +470,12 @@ public static class RestLibEndpointExtensions
           if (pipeline is not null && hookContext is not null)
           {
             hookContext.Entity = updated;
-            if (!await pipeline.ExecuteAfterPersistAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteAfterPersistAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
           // Add ETag header when enabled
-          if (RestLibOptions.EnableETagSupport)
+          if (options.EnableETagSupport)
           {
             var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
                                 ?? new HashBasedETagGenerator(jsonOptions);
@@ -545,25 +485,16 @@ public static class RestLibEndpointExtensions
           // BeforeResponse hook
           if (pipeline is not null && hookContext is not null)
           {
-            if (!await pipeline.ExecuteBeforeResponseAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforeResponseAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
           return Results.Json(updated, jsonOptions);
         }
         catch (Exception ex)
         {
-          if (pipeline is not null)
-          {
-            var errorContext = pipeline.CreateErrorContext(httpContext, RestLibOperation.Update, ex, id, entity);
-            var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
-            if (handled && errorResult is not null)
-            {
-              return errorResult;
-            }
-          }
+          var errorResult = await HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Update, ex, id, entity);
+          if (errorResult is not null) return errorResult;
           throw;
         }
       });
@@ -581,8 +512,8 @@ public static class RestLibEndpointExtensions
           CancellationToken ct) =>
       {
         var jsonOptions = GetJsonOptions(httpContext);
-        var RestLibOptions = httpContext.RequestServices.GetService<RestLibOptions>()
-                             ?? new RestLibOptions();
+        var options = httpContext.RequestServices.GetService<RestLibOptions>()
+                      ?? new RestLibOptions();
 
         // Create hook pipeline if hooks are configured
         var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
@@ -595,23 +526,19 @@ public static class RestLibEndpointExtensions
           if (pipeline is not null)
           {
             hookContext = pipeline.CreateContext(httpContext, RestLibOperation.Patch, id);
-            if (!await pipeline.ExecuteOnRequestReceivedAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestReceivedAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
           // OnRequestValidated hook
           if (pipeline is not null && hookContext is not null)
           {
-            if (!await pipeline.ExecuteOnRequestValidatedAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestValidatedAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
           // Check for ETag precondition (If-Match header)
-          if (RestLibOptions.EnableETagSupport)
+          if (options.EnableETagSupport)
           {
             var ifMatchHeader = httpContext.Request.Headers.IfMatch;
             if (!Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(ifMatchHeader))
@@ -649,24 +576,13 @@ public static class RestLibEndpointExtensions
             originalEntity = await repository.GetByIdAsync(id, ct);
           }
 
-          // BeforePersist hook
+          // BeforePersist hook — update existing context with original entity
           if (pipeline is not null && hookContext is not null)
           {
-            // Create new context with original entity
-            hookContext = new HookContext<TEntity, TKey>
-            {
-              HttpContext = httpContext,
-              Operation = RestLibOperation.Patch,
-              ResourceId = id,
-              Entity = originalEntity,
-              OriginalEntity = originalEntity,
-              Services = httpContext.RequestServices,
-              CancellationToken = ct
-            };
-            if (!await pipeline.ExecuteBeforePersistAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            hookContext.Entity = originalEntity;
+            hookContext.SetOriginalEntity(originalEntity);
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforePersistAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
           var patched = await repository.PatchAsync(id, patchDocument, ct);
@@ -681,9 +597,9 @@ public static class RestLibEndpointExtensions
           }
 
           // Validate patched entity using Data Annotations
-          if (RestLibOptions.EnableValidation)
+          if (options.EnableValidation)
           {
-            var validationResult = Validation.EntityValidator.Validate(patched, RestLibOptions.JsonNamingPolicy);
+            var validationResult = Validation.EntityValidator.Validate(patched, options.JsonNamingPolicy);
             if (!validationResult.IsValid)
             {
               return ProblemDetailsResult.ValidationFailed(
@@ -697,14 +613,12 @@ public static class RestLibEndpointExtensions
           if (pipeline is not null && hookContext is not null)
           {
             hookContext.Entity = patched;
-            if (!await pipeline.ExecuteAfterPersistAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteAfterPersistAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
           // Add ETag header when enabled
-          if (RestLibOptions.EnableETagSupport)
+          if (options.EnableETagSupport)
           {
             var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
                                 ?? new HashBasedETagGenerator(jsonOptions);
@@ -714,25 +628,16 @@ public static class RestLibEndpointExtensions
           // BeforeResponse hook
           if (pipeline is not null && hookContext is not null)
           {
-            if (!await pipeline.ExecuteBeforeResponseAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforeResponseAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
           return Results.Json(patched, jsonOptions);
         }
         catch (Exception ex)
         {
-          if (pipeline is not null)
-          {
-            var errorContext = pipeline.CreateErrorContext(httpContext, RestLibOperation.Patch, ex, id, originalEntity);
-            var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
-            if (handled && errorResult is not null)
-            {
-              return errorResult;
-            }
-          }
+          var errorResult = await HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Patch, ex, id, originalEntity);
+          if (errorResult is not null) return errorResult;
           throw;
         }
       });
@@ -761,19 +666,15 @@ public static class RestLibEndpointExtensions
           if (pipeline is not null)
           {
             hookContext = pipeline.CreateContext(httpContext, RestLibOperation.Delete, id);
-            if (!await pipeline.ExecuteOnRequestReceivedAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestReceivedAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
           // OnRequestValidated hook
           if (pipeline is not null && hookContext is not null)
           {
-            if (!await pipeline.ExecuteOnRequestValidatedAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestValidatedAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
           // Fetch entity for hooks if pipeline exists
@@ -786,10 +687,8 @@ public static class RestLibEndpointExtensions
           if (pipeline is not null && hookContext is not null)
           {
             hookContext.Entity = entityToDelete;
-            if (!await pipeline.ExecuteBeforePersistAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforePersistAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
           var deleted = await repository.DeleteAsync(id, ct);
@@ -806,34 +705,23 @@ public static class RestLibEndpointExtensions
           // AfterPersist hook
           if (pipeline is not null && hookContext is not null)
           {
-            if (!await pipeline.ExecuteAfterPersistAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteAfterPersistAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
           // BeforeResponse hook
           if (pipeline is not null && hookContext is not null)
           {
-            if (!await pipeline.ExecuteBeforeResponseAsync(hookContext))
-            {
-              return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
-            }
+            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforeResponseAsync, hookContext);
+            if (earlyResult is not null) return earlyResult;
           }
 
           return Results.NoContent();
         }
         catch (Exception ex)
         {
-          if (pipeline is not null)
-          {
-            var errorContext = pipeline.CreateErrorContext(httpContext, RestLibOperation.Delete, ex, id, entityToDelete);
-            var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
-            if (handled && errorResult is not null)
-            {
-              return errorResult;
-            }
-          }
+          var errorResult = await HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Delete, ex, id, entityToDelete);
+          if (errorResult is not null) return errorResult;
           throw;
         }
       });
@@ -1479,6 +1367,44 @@ public static class RestLibEndpointExtensions
         }
       }
     };
+  }
+
+  /// <summary>
+  /// Executes a hook stage and returns an early result if the pipeline was short-circuited.
+  /// Returns <c>null</c> if the pipeline should continue normally.
+  /// </summary>
+  private static async Task<IResult?> ExecuteHookAsync<TEntity, TKey>(
+      Func<HookContext<TEntity, TKey>, Task<bool>> hookExecutor,
+      HookContext<TEntity, TKey> hookContext)
+      where TEntity : class
+  {
+    if (!await hookExecutor(hookContext))
+    {
+      return hookContext.EarlyResult ?? Results.StatusCode(StatusCodes.Status500InternalServerError);
+    }
+
+    return null;
+  }
+
+  /// <summary>
+  /// Executes the error hook pipeline and returns an error result if handled.
+  /// Returns <c>null</c> if the error was not handled (caller should rethrow).
+  /// </summary>
+  private static async Task<IResult?> HandleErrorHookAsync<TEntity, TKey>(
+      HookPipeline<TEntity, TKey>? pipeline,
+      HttpContext httpContext,
+      RestLibOperation operation,
+      Exception exception,
+      TKey? resourceId = default,
+      TEntity? entity = default)
+      where TEntity : class
+  {
+    if (pipeline is null) return null;
+
+    var errorContext = pipeline.CreateErrorContext(httpContext, operation, exception, resourceId, entity);
+    var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
+
+    return handled && errorResult is not null ? errorResult : null;
   }
 
   /// <summary>

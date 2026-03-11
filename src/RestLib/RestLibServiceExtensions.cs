@@ -1,10 +1,12 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.Json;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using RestLib.Abstractions;
 using RestLib.Configuration;
+using RestLib.Hooks;
 using RestLib.Serialization;
 
 namespace RestLib;
@@ -35,6 +37,7 @@ public static class RestLibServiceExtensions
     // Register JSON serializer options configured per RestLib settings
     var jsonOptions = RestLibJsonOptions.Create(options);
     services.TryAddSingleton(jsonOptions);
+    services.TryAddSingleton(new RestLibJsonResourceRegistry());
 
     // Configure HTTP JSON options for request deserialization (Minimal APIs)
     services.Configure<JsonOptions>(httpJsonOptions =>
@@ -45,6 +48,121 @@ public static class RestLibServiceExtensions
             ? JsonIgnoreCondition.WhenWritingNull
             : JsonIgnoreCondition.Never;
     });
+
+    return services;
+  }
+
+  /// <summary>
+  /// Registers a JSON-backed RestLib resource definition for a typed entity.
+  /// </summary>
+  /// <typeparam name="TEntity">The entity type.</typeparam>
+  /// <typeparam name="TKey">The key type.</typeparam>
+  /// <param name="services">The service collection.</param>
+  /// <param name="configuration">The JSON resource configuration.</param>
+  /// <returns>The service collection for chaining.</returns>
+  public static IServiceCollection AddJsonResource<TEntity, TKey>(
+      this IServiceCollection services,
+      RestLibJsonResourceConfiguration configuration)
+      where TEntity : class
+  {
+    ArgumentNullException.ThrowIfNull(services);
+    ArgumentNullException.ThrowIfNull(configuration);
+
+    var registry = GetOrCreateJsonResourceRegistry(services);
+    registry.Add(configuration.Name, endpoints =>
+    {
+      endpoints.MapRestLib<TEntity, TKey>(configuration.Route, config =>
+      {
+        RestLibJsonResourceBuilder.Apply(config, configuration);
+
+        var hooks = RestLibJsonResourceBuilder.BuildHooks<TEntity, TKey>(endpoints.ServiceProvider, configuration.Hooks);
+        if (hooks is not null)
+        {
+          config.UseHooks(existingHooks =>
+          {
+            existingHooks.OnRequestReceived = hooks.OnRequestReceived;
+            existingHooks.OnRequestValidated = hooks.OnRequestValidated;
+            existingHooks.BeforePersist = hooks.BeforePersist;
+            existingHooks.AfterPersist = hooks.AfterPersist;
+            existingHooks.BeforeResponse = hooks.BeforeResponse;
+            existingHooks.OnError = hooks.OnError;
+          });
+        }
+      });
+    });
+
+    return services;
+  }
+
+  /// <summary>
+  /// Loads a JSON resource configuration section and registers a typed RestLib resource.
+  /// </summary>
+  /// <typeparam name="TEntity">The entity type.</typeparam>
+  /// <typeparam name="TKey">The key type.</typeparam>
+  /// <param name="services">The service collection.</param>
+  /// <param name="configurationSection">The configuration section containing a resource definition.</param>
+  /// <returns>The service collection for chaining.</returns>
+  public static IServiceCollection AddJsonResource<TEntity, TKey>(
+      this IServiceCollection services,
+      IConfigurationSection configurationSection)
+      where TEntity : class
+  {
+    ArgumentNullException.ThrowIfNull(services);
+    ArgumentNullException.ThrowIfNull(configurationSection);
+
+    var configuration = configurationSection.Get<RestLibJsonResourceConfiguration>()
+                        ?? throw new InvalidOperationException(
+                            $"Configuration section '{configurationSection.Path}' does not contain a valid RestLib resource definition.");
+
+    return services.AddJsonResource<TEntity, TKey>(configuration);
+  }
+
+  /// <summary>
+  /// Registers a named standard hook for JSON-backed resource configuration.
+  /// </summary>
+  /// <typeparam name="TEntity">The entity type.</typeparam>
+  /// <typeparam name="TKey">The key type.</typeparam>
+  /// <param name="services">The service collection.</param>
+  /// <param name="name">The unique hook name.</param>
+  /// <param name="hook">The hook delegate.</param>
+  /// <returns>The service collection for chaining.</returns>
+  public static IServiceCollection AddNamedHook<TEntity, TKey>(
+      this IServiceCollection services,
+      string name,
+      RestLibHookDelegate<TEntity, TKey> hook)
+      where TEntity : class
+  {
+    ArgumentNullException.ThrowIfNull(services);
+    ArgumentException.ThrowIfNullOrWhiteSpace(name);
+    ArgumentNullException.ThrowIfNull(hook);
+
+    var resolver = GetOrCreateNamedHookResolver<TEntity, TKey>(services);
+    resolver.Add(name, hook);
+
+    return services;
+  }
+
+  /// <summary>
+  /// Registers a named error hook for JSON-backed resource configuration.
+  /// </summary>
+  /// <typeparam name="TEntity">The entity type.</typeparam>
+  /// <typeparam name="TKey">The key type.</typeparam>
+  /// <param name="services">The service collection.</param>
+  /// <param name="name">The unique hook name.</param>
+  /// <param name="hook">The error hook delegate.</param>
+  /// <returns>The service collection for chaining.</returns>
+  public static IServiceCollection AddNamedErrorHook<TEntity, TKey>(
+      this IServiceCollection services,
+      string name,
+      RestLibErrorHookDelegate<TEntity, TKey> hook)
+      where TEntity : class
+  {
+    ArgumentNullException.ThrowIfNull(services);
+    ArgumentException.ThrowIfNullOrWhiteSpace(name);
+    ArgumentNullException.ThrowIfNull(hook);
+
+    var resolver = GetOrCreateNamedHookResolver<TEntity, TKey>(services);
+    resolver.AddError(name, hook);
 
     return services;
   }
@@ -102,5 +220,41 @@ public static class RestLibServiceExtensions
     services.Add(descriptor);
 
     return services;
+  }
+
+  private static RestLibJsonResourceRegistry GetOrCreateJsonResourceRegistry(IServiceCollection services)
+  {
+    var descriptor = services.LastOrDefault(d =>
+        d.ServiceType == typeof(RestLibJsonResourceRegistry) &&
+        d.ImplementationInstance is RestLibJsonResourceRegistry);
+
+    if (descriptor?.ImplementationInstance is RestLibJsonResourceRegistry existingRegistry)
+    {
+      return existingRegistry;
+    }
+
+    var registry = new RestLibJsonResourceRegistry();
+    services.TryAddSingleton(registry);
+    return registry;
+  }
+
+  private static RestLibNamedHookResolver<TEntity, TKey> GetOrCreateNamedHookResolver<TEntity, TKey>(
+      IServiceCollection services)
+      where TEntity : class
+  {
+    var descriptor = services.LastOrDefault(d =>
+        d.ServiceType == typeof(RestLibNamedHookResolver<TEntity, TKey>) &&
+        d.ImplementationInstance is RestLibNamedHookResolver<TEntity, TKey>);
+
+    if (descriptor?.ImplementationInstance is RestLibNamedHookResolver<TEntity, TKey> existingResolver)
+    {
+      return existingResolver;
+    }
+
+    var resolver = new RestLibNamedHookResolver<TEntity, TKey>();
+    services.TryAddSingleton(resolver);
+    services.TryAddSingleton<IRestLibNamedHookResolver<TEntity, TKey>>(sp =>
+        sp.GetRequiredService<RestLibNamedHookResolver<TEntity, TKey>>());
+    return resolver;
   }
 }

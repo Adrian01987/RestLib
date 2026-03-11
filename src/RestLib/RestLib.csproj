@@ -6,7 +6,7 @@
     <!-- Package metadata -->
     <PackageId>RestLib</PackageId>
     <Description>Lightweight REST API scaffolding for ASP.NET Core. Define a model, implement a repository, get a production-ready API — secure by default, extensible when needed.</Description>
-    <PackageVersion>0.2.0</PackageVersion>
+    <PackageVersion>0.3.0</PackageVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 

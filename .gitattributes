@@ -1,0 +1,45 @@
+###############################################################################
+# Set default behavior to automatically normalize line endings
+###############################################################################
+* text=auto
+
+###############################################################################
+# Override for specific file types
+###############################################################################
+
+# Source code
+*.cs        text diff=csharp
+*.csproj    text
+*.sln       text eol=crlf
+*.props     text
+*.targets   text
+
+# Documentation
+*.md        text diff=markdown
+*.txt       text
+
+# Configuration
+*.json      text
+*.yml       text
+*.yaml      text
+*.xml       text
+*.config    text
+*.editorconfig text
+
+# Shell scripts
+*.sh        text eol=lf
+*.bash      text eol=lf
+
+# Windows scripts
+*.cmd       text eol=crlf
+*.bat       text eol=crlf
+*.ps1       text eol=crlf
+
+# Binary files
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+*.nupkg     binary
+*.snupkg    binary
