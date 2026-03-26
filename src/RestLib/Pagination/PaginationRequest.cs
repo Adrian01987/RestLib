@@ -1,9 +1,10 @@
 using RestLib.Filtering;
+using RestLib.Sorting;
 
 namespace RestLib.Pagination;
 
 /// <summary>
-/// Represents a pagination request with optional filters.
+/// Represents a pagination request with optional filters and sort fields.
 /// </summary>
 public class PaginationRequest
 {
@@ -22,4 +23,10 @@ public class PaginationRequest
   /// Repository implementations should use these to filter results.
   /// </summary>
   public IReadOnlyList<FilterValue> Filters { get; init; } = [];
+
+  /// <summary>
+  /// Gets the sort fields to apply to the query.
+  /// Repository implementations should use these to order results.
+  /// </summary>
+  public IReadOnlyList<SortField> SortFields { get; init; } = [];
 }

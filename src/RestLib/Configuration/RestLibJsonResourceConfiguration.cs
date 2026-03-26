@@ -47,6 +47,16 @@ public class RestLibJsonResourceConfiguration
   public List<string> Filtering { get; set; } = [];
 
   /// <summary>
+  /// Gets or sets the sortable entity property names.
+  /// </summary>
+  public List<string> Sorting { get; set; } = [];
+
+  /// <summary>
+  /// Gets or sets the default sort expression (e.g. "name:asc,price:desc").
+  /// </summary>
+  public string? DefaultSort { get; set; }
+
+  /// <summary>
   /// Gets or sets the OpenAPI metadata configuration.
   /// </summary>
   public RestLibJsonOpenApiConfiguration? OpenApi { get; set; }

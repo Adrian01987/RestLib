@@ -48,6 +48,16 @@
       "items": { "type": "string" },
       "uniqueItems": true
     },
+    "Sorting": {
+      "type": "array",
+      "description": "Entity property names that can be sorted on via the sort query parameter. Names are automatically converted to snake_case.",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "DefaultSort": {
+      "type": "string",
+      "description": "Default sort expression applied when the client does not provide a sort parameter (e.g. 'name:asc,price:desc'). All referenced fields must also be listed in Sorting."
+    },
     "OpenApi": {
       "$ref": "#/$defs/openApi"
     },

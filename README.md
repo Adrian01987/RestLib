@@ -7,7 +7,7 @@
 [![NuGet](https://img.shields.io/nuget/v/RestLib.svg)](https://www.nuget.org/packages/RestLib/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/Adrian01987/RestLib/blob/main/LICENSE)
 
-RestLib is a .NET 8 library for ASP.NET Core Minimal APIs that generates CRUD endpoints from your model and repository. It bakes in secure defaults, cursor pagination, filtering, OpenAPI metadata, and RFC 9457 Problem Details so you can ship consistent APIs faster.
+RestLib is a .NET 8 library for ASP.NET Core Minimal APIs that generates CRUD endpoints from your model and repository. It bakes in secure defaults, cursor pagination, filtering, sorting, OpenAPI metadata, and RFC 9457 Problem Details so you can ship consistent APIs faster.
 
 ## Install
 
@@ -146,6 +146,25 @@ Example request:
 GET /api/products?category_id=5&is_active=true
 ```
 
+### Sorting
+
+Control result ordering with an allow-list of sortable properties:
+
+```csharp
+app.MapRestLib<Product, Guid>("/api/products", config =>
+{
+    config.AllowSorting(p => p.Price, p => p.Name);
+    config.DefaultSort("name:asc");
+});
+```
+
+```text
+GET /api/products?sort=price:asc,name:desc&limit=20
+```
+
+Sort fields use snake_case names and support `asc`/`desc` directions.
+Disallowed fields return a 400 Problem Details response.
+
 ### Select Operations
 
 Expose only the operations you want, and mix custom endpoints with generated ones:
@@ -176,6 +195,8 @@ You can also move this declarative resource configuration out of `Program.cs` an
           "Exclude": ["Delete"]
         },
         "Filtering": ["CategoryId", "IsActive"],
+        "Sorting": ["Price", "Name", "CreatedAt"],
+        "DefaultSort": "name:asc",
         "OpenApi": {
           "Tag": "Product",
           "Summaries": {

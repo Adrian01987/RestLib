@@ -12,6 +12,7 @@ using RestLib.Hooks;
 using RestLib.Pagination;
 using RestLib.Responses;
 using RestLib.Serialization;
+using RestLib.Sorting;
 
 namespace RestLib;
 
@@ -104,6 +105,29 @@ public static class RestLibEndpointExtensions
             filterValues = filterResult.Values;
           }
 
+          // Parse and validate sort
+          IReadOnlyList<SortField> sortFields = [];
+          if (config.HasSorting)
+          {
+            var rawSort = httpContext.Request.Query["sort"].FirstOrDefault();
+            if (!string.IsNullOrEmpty(rawSort))
+            {
+              var sortResult = SortParser.Parse(rawSort, config.SortConfiguration);
+              if (!sortResult.IsValid)
+              {
+                return ProblemDetailsResult.InvalidSort(
+                    sortResult.Errors,
+                    httpContext.Request.Path,
+                    jsonOptions);
+              }
+              sortFields = sortResult.Fields;
+            }
+            else if (config.SortConfiguration.DefaultSortFields is { Count: > 0 } defaults)
+            {
+              sortFields = defaults;
+            }
+          }
+
           // OnRequestValidated hook
           if (pipeline is not null && hookContext is not null)
           {
@@ -116,7 +140,8 @@ public static class RestLibEndpointExtensions
           {
             Cursor = cursor,
             Limit = effectiveLimit,
-            Filters = filterValues
+            Filters = filterValues,
+            SortFields = sortFields
           };
 
           var result = await repository.GetAllAsync(paginationRequest, ct);
@@ -158,6 +183,29 @@ public static class RestLibEndpointExtensions
             };
             operation.Parameters.Add(param);
           }
+          return operation;
+        });
+      }
+
+      // Add OpenAPI documentation for sort parameter
+      if (config.HasSorting)
+      {
+        getAllEndpoint.WithOpenApi(operation =>
+        {
+          var allowedFields = string.Join(", ",
+              config.SortConfiguration.Properties.Select(p => p.QueryParameterName));
+
+          operation.Parameters.Add(new OpenApiParameter
+          {
+            Name = "sort",
+            In = ParameterLocation.Query,
+            Required = false,
+            Description = $"Sort by comma-separated property:direction pairs. " +
+                          $"Allowed fields: {allowedFields}. Directions: asc, desc. " +
+                          $"Example: price:asc,name:desc",
+            Schema = new OpenApiSchema { Type = "string" }
+          });
+
           return operation;
         });
       }

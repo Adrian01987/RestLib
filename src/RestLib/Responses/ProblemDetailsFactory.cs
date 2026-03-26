@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using RestLib.Filtering;
+using RestLib.Sorting;
 
 namespace RestLib.Responses;
 
@@ -120,6 +121,32 @@ public static class ProblemDetailsFactory
       Detail = errors.Count == 1
           ? $"The filter parameter '{errors[0].ParameterName}' has an invalid value."
           : $"Multiple filter parameters have invalid values.",
+      Instance = instance,
+      Errors = errorDict
+    };
+  }
+
+  /// <summary>
+  /// Creates a 400 Invalid Sort problem details response.
+  /// </summary>
+  /// <param name="errors">The sort validation errors.</param>
+  /// <param name="instance">The request path.</param>
+  public static RestLibProblemDetails InvalidSort(
+      IReadOnlyList<SortValidationError> errors,
+      string? instance = null)
+  {
+    var errorDict = errors.ToDictionary(
+        e => e.Field,
+        e => new[] { e.Message });
+
+    return new RestLibProblemDetails
+    {
+      Type = ProblemTypes.InvalidSort,
+      Title = "Invalid Sort Parameter",
+      Status = StatusCodes.Status400BadRequest,
+      Detail = errors.Count == 1
+          ? $"The sort field '{errors[0].Field}' is invalid."
+          : "One or more sort fields are invalid.",
       Instance = instance,
       Errors = errorDict
     };

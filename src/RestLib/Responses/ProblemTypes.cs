@@ -23,6 +23,9 @@ public static class ProblemTypes
   /// <summary>Invalid filter value (400).</summary>
   public const string InvalidFilter = "/problems/invalid-filter";
 
+  /// <summary>Invalid sort parameter value (400).</summary>
+  public const string InvalidSort = "/problems/invalid-sort";
+
   /// <summary>Resource conflict (409).</summary>
   public const string Conflict = "/problems/conflict";
 

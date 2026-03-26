@@ -19,6 +19,7 @@ internal static class RestLibJsonResourceBuilder
     ApplyAuthorization(endpointConfiguration, jsonConfiguration);
     ApplyOperationSelection(endpointConfiguration, jsonConfiguration);
     ApplyFiltering(endpointConfiguration, jsonConfiguration);
+    ApplySorting(endpointConfiguration, jsonConfiguration);
     ApplyOpenApi(endpointConfiguration, jsonConfiguration.OpenApi);
   }
 
@@ -134,6 +135,22 @@ internal static class RestLibJsonResourceBuilder
       return;
 
     endpointConfiguration.AllowFiltering([.. jsonConfiguration.Filtering]);
+  }
+
+  private static void ApplySorting<TEntity, TKey>(
+      RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
+      RestLibJsonResourceConfiguration jsonConfiguration)
+      where TEntity : class
+  {
+    if (jsonConfiguration.Sorting.Count == 0)
+      return;
+
+    endpointConfiguration.AllowSorting([.. jsonConfiguration.Sorting]);
+
+    if (!string.IsNullOrWhiteSpace(jsonConfiguration.DefaultSort))
+    {
+      endpointConfiguration.DefaultSort(jsonConfiguration.DefaultSort);
+    }
   }
 
   private static void ApplyOpenApi<TEntity, TKey>(

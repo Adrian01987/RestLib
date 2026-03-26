@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
+using System.Reflection;
 using System.Text.Json;
 using RestLib.Abstractions;
 using RestLib.Filtering;
 using RestLib.Pagination;
+using RestLib.Sorting;
 
 namespace RestLib.InMemory;
 
@@ -56,8 +58,8 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>
     // Apply filters
     items = ApplyFilters(items, request.Filters);
 
-    // Order items consistently by key for pagination
-    var orderedItems = items.OrderBy(e => _keySelector(e)).ToList();
+    // Apply sorting (dynamic if sort fields provided, otherwise by key)
+    var orderedItems = ApplySorting(items, request.SortFields).ToList();
 
     // Apply cursor-based pagination
     int startIndex = 0;
@@ -186,6 +188,44 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>
       items = items.Where(e => MatchesFilter(e, filter));
     }
     return items;
+  }
+
+  private IEnumerable<TEntity> ApplySorting(
+      IEnumerable<TEntity> items,
+      IReadOnlyList<SortField> sortFields)
+  {
+    if (sortFields.Count == 0)
+    {
+      // No sort requested — fall back to key ordering (preserves current behavior)
+      return items.OrderBy(e => _keySelector(e));
+    }
+
+    IOrderedEnumerable<TEntity>? ordered = null;
+
+    foreach (var field in sortFields)
+    {
+      var property = typeof(TEntity).GetProperty(
+          field.PropertyName,
+          BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)!;
+
+      Func<TEntity, object?> selector = e => property.GetValue(e);
+
+      if (ordered is null)
+      {
+        ordered = field.Direction == SortDirection.Asc
+            ? items.OrderBy(selector)
+            : items.OrderByDescending(selector);
+      }
+      else
+      {
+        ordered = field.Direction == SortDirection.Asc
+            ? ordered.ThenBy(selector)
+            : ordered.ThenByDescending(selector);
+      }
+    }
+
+    // Always append key as tie-breaker for stable cursor pagination
+    return ordered!.ThenBy(e => _keySelector(e));
   }
 
   private bool MatchesFilter(TEntity entity, FilterValue filter)

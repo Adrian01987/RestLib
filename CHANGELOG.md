@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Sorting / ordering support for GetAll endpoints via `AllowSorting` and `DefaultSort`
+- `sort` query parameter with multi-field, asc/desc support
+- RFC 9457 Problem Details response for invalid sort parameters
+- Sort preserved in pagination links
+- JSON configuration support for sorting (`Sorting` and `DefaultSort` properties)
+- JSON Schema updated for sorting configuration
+
+## [0.3.0] - 2026-03-11
+
+### Added
+
 - JSON-backed resource configuration via `AddJsonResource<TEntity, TKey>()` and `MapJsonResources()`
 - Named hook system for JSON-configured resources (`AddNamedHook`, `AddNamedErrorHook`)
 - `RestLibJsonResourceConfiguration` model for declarative resource setup from `appsettings.json`

@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using RestLib.Filtering;
 using RestLib.Hooks;
+using RestLib.Sorting;
 
 namespace RestLib.Configuration;
 
@@ -15,6 +16,7 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   private readonly HashSet<RestLibOperation> _anonymousOperations = [];
   private readonly Dictionary<RestLibOperation, string[]> _operationPolicies = [];
   private readonly FilterConfiguration<TEntity> _filterConfiguration = new();
+  private readonly SortConfiguration<TEntity> _sortConfiguration = new();
   private RestLibHooks<TEntity, TKey>? _hooks;
   private readonly RestLibOpenApiConfiguration _openApi = new();
   private HashSet<RestLibOperation>? _includedOperations;
@@ -164,6 +166,104 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   }
 
   /// <summary>
+  /// Configures which properties can be sorted on via the sort query parameter.
+  /// Property names are automatically converted to snake_case in the query string.
+  /// </summary>
+  /// <param name="propertyExpressions">Expressions selecting the sortable properties.</param>
+  /// <returns>This configuration instance for chaining.</returns>
+  /// <example>
+  /// <code>
+  /// config.AllowSorting(p => p.Price, p => p.Name);
+  /// // Request: ?sort=price:asc,name:desc
+  /// </code>
+  /// </example>
+  public RestLibEndpointConfiguration<TEntity, TKey> AllowSorting(
+      params Expression<Func<TEntity, object?>>[] propertyExpressions)
+  {
+    foreach (var expression in propertyExpressions)
+    {
+      var memberExpression = expression.Body as MemberExpression
+          ?? (expression.Body as UnaryExpression)?.Operand as MemberExpression;
+
+      if (memberExpression == null)
+      {
+        throw new ArgumentException(
+            "Each expression must be a property access expression (e.g., p => p.PropertyName)",
+            nameof(propertyExpressions));
+      }
+
+      var propertyName = memberExpression.Member.Name;
+      var propertyType = memberExpression.Type;
+      var queryParamName = FilterConfiguration<TEntity>.ConvertToSnakeCase(propertyName);
+
+      _sortConfiguration.AddProperty(propertyName, queryParamName, propertyType);
+    }
+    return this;
+  }
+
+  /// <summary>
+  /// Configures which properties can be sorted on via the sort query parameter.
+  /// Property names are automatically converted to snake_case in the query string.
+  /// </summary>
+  /// <param name="propertyNames">The entity property names to allow for sorting.</param>
+  /// <returns>This configuration instance for chaining.</returns>
+  /// <example>
+  /// <code>
+  /// config.AllowSorting("Price", "Name");
+  /// // Request: ?sort=price:asc,name:desc
+  /// </code>
+  /// </example>
+  public RestLibEndpointConfiguration<TEntity, TKey> AllowSorting(
+      params string[] propertyNames)
+  {
+    foreach (var propertyName in propertyNames)
+    {
+      var property = typeof(TEntity).GetProperty(propertyName)
+                     ?? throw new ArgumentException(
+                         $"Property '{propertyName}' was not found on entity type '{typeof(TEntity).Name}'.",
+                         nameof(propertyNames));
+
+      var queryParamName = FilterConfiguration<TEntity>.ConvertToSnakeCase(property.Name);
+      _sortConfiguration.AddProperty(property.Name, queryParamName, property.PropertyType);
+    }
+    return this;
+  }
+
+  /// <summary>
+  /// Sets the default sort expression used when the client does not send a sort parameter.
+  /// Must be called after <see cref="AllowSorting(Expression{Func{TEntity, object?}}[])"/>
+  /// so properties are already registered.
+  /// </summary>
+  /// <param name="sortExpression">
+  /// Comma-separated sort expression, e.g. "name:asc" or "price:desc,name:asc".
+  /// </param>
+  /// <returns>This configuration instance for chaining.</returns>
+  /// <example>
+  /// <code>
+  /// config.AllowSorting(p => p.Price, p => p.Name);
+  /// config.DefaultSort("name:asc");
+  /// </code>
+  /// </example>
+  public RestLibEndpointConfiguration<TEntity, TKey> DefaultSort(string sortExpression)
+  {
+    if (_sortConfiguration.Properties.Count == 0)
+      throw new InvalidOperationException(
+          "DefaultSort must be called after AllowSorting. No sortable properties are configured.");
+
+    var result = SortParser.Parse(sortExpression, _sortConfiguration);
+    if (!result.IsValid)
+    {
+      var errorMessages = string.Join("; ", result.Errors.Select(e => $"{e.Field}: {e.Message}"));
+      throw new ArgumentException(
+          $"Invalid default sort expression '{sortExpression}': {errorMessages}",
+          nameof(sortExpression));
+    }
+
+    _sortConfiguration.SetDefaultSort(result.Fields);
+    return this;
+  }
+
+  /// <summary>
   /// Includes the specified operations. All others will be excluded unless also included
   /// in a subsequent call. Multiple calls are merged (unioned).
   /// Cannot be combined with <see cref="ExcludeOperations"/>.
@@ -245,6 +345,16 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   /// Gets whether any filters have been configured.
   /// </summary>
   internal bool HasFilters => _filterConfiguration.Properties.Count > 0;
+
+  /// <summary>
+  /// Gets the sort configuration for this entity.
+  /// </summary>
+  internal SortConfiguration<TEntity> SortConfiguration => _sortConfiguration;
+
+  /// <summary>
+  /// Gets whether any sortable properties have been configured.
+  /// </summary>
+  internal bool HasSorting => _sortConfiguration.Properties.Count > 0;
 
   /// <summary>
   /// Configures hooks for the request processing pipeline.

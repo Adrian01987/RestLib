@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using RestLib.Filtering;
+using RestLib.Sorting;
 
 namespace RestLib.Responses;
 
@@ -97,6 +98,18 @@ public static class ProblemDetailsResult
       JsonSerializerOptions? jsonOptions = null)
   {
     var problem = ProblemDetailsFactory.InvalidFilters(errors, instance);
+    return Create(problem, jsonOptions);
+  }
+
+  /// <summary>
+  /// Creates a 400 Invalid Sort result.
+  /// </summary>
+  public static IResult InvalidSort(
+      IReadOnlyList<SortValidationError> errors,
+      string? instance = null,
+      JsonSerializerOptions? jsonOptions = null)
+  {
+    var problem = ProblemDetailsFactory.InvalidSort(errors, instance);
     return Create(problem, jsonOptions);
   }
 
