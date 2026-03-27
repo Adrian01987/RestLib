@@ -261,4 +261,65 @@ public class RateLimitingTests : IDisposable
     getAll1.StatusCode.Should().Be(HttpStatusCode.OK);
     getAll2.StatusCode.Should().Be(HttpStatusCode.OK);
   }
+
+  [Fact]
+  [Trait("Category", "Story6.1")]
+  public async Task JsonConfig_AppliesRateLimiting()
+  {
+    // Arrange — configure rate limiting via JSON config model
+    _repository = new TestEntityRepository();
+
+    _host = new HostBuilder()
+        .ConfigureWebHost(webBuilder =>
+        {
+          webBuilder
+                  .UseTestServer()
+                  .ConfigureServices(services =>
+                  {
+                    services.AddRestLib();
+                    services.AddSingleton<IRepository<TestEntity, Guid>>(_repository);
+                    services.AddRouting();
+                    services.AddRateLimiter(options =>
+                    {
+                      options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+                      options.AddFixedWindowLimiter("json-strict", limiter =>
+                      {
+                        limiter.PermitLimit = 1;
+                        limiter.Window = TimeSpan.FromMinutes(1);
+                      });
+                    });
+                    services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+                    {
+                      Name = "limited",
+                      Route = "/api/limited",
+                      AllowAnonymousAll = true,
+                      RateLimiting = new RestLibJsonRateLimitingConfiguration
+                      {
+                        Default = "json-strict"
+                      }
+                    });
+                  })
+                  .Configure(app =>
+                  {
+                    app.UseRouting();
+                    app.UseRateLimiter();
+                    app.UseEndpoints(endpoints =>
+                    {
+                      endpoints.MapJsonResources();
+                    });
+                  });
+        })
+        .Build();
+
+    _host.Start();
+    _client = _host.GetTestClient();
+
+    // Act — first request consumes the limit, second should be rejected
+    var first = await _client.GetAsync("/api/limited");
+    var second = await _client.GetAsync("/api/limited");
+
+    // Assert
+    first.StatusCode.Should().Be(HttpStatusCode.OK);
+    second.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+  }
 }

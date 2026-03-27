@@ -20,6 +20,7 @@ internal static class RestLibJsonResourceBuilder
     ApplyOperationSelection(endpointConfiguration, jsonConfiguration);
     ApplyFiltering(endpointConfiguration, jsonConfiguration);
     ApplySorting(endpointConfiguration, jsonConfiguration);
+    ApplyRateLimiting(endpointConfiguration, jsonConfiguration);
     ApplyOpenApi(endpointConfiguration, jsonConfiguration.OpenApi);
   }
 
@@ -150,6 +151,32 @@ internal static class RestLibJsonResourceBuilder
     if (!string.IsNullOrWhiteSpace(jsonConfiguration.DefaultSort))
     {
       endpointConfiguration.DefaultSort(jsonConfiguration.DefaultSort);
+    }
+  }
+
+  private static void ApplyRateLimiting<TEntity, TKey>(
+      RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
+      RestLibJsonResourceConfiguration jsonConfiguration)
+      where TEntity : class
+  {
+    var rateLimiting = jsonConfiguration.RateLimiting;
+    if (rateLimiting is null)
+      return;
+
+    if (!string.IsNullOrWhiteSpace(rateLimiting.Default))
+    {
+      endpointConfiguration.UseRateLimiting(rateLimiting.Default);
+    }
+
+    foreach (var entry in rateLimiting.ByOperation)
+    {
+      var operation = ParseOperation(entry.Key, nameof(rateLimiting.ByOperation));
+      endpointConfiguration.UseRateLimiting(entry.Value, operation);
+    }
+
+    if (rateLimiting.Disabled.Count > 0)
+    {
+      endpointConfiguration.DisableRateLimiting([.. rateLimiting.Disabled]);
     }
   }
 

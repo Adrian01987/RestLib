@@ -57,6 +57,11 @@ public class RestLibJsonResourceConfiguration
   public string? DefaultSort { get; set; }
 
   /// <summary>
+  /// Gets or sets the rate limiting configuration for this resource.
+  /// </summary>
+  public RestLibJsonRateLimitingConfiguration? RateLimiting { get; set; }
+
+  /// <summary>
   /// Gets or sets the OpenAPI metadata configuration.
   /// </summary>
   public RestLibJsonOpenApiConfiguration? OpenApi { get; set; }
@@ -185,4 +190,27 @@ public class RestLibJsonErrorHookStage
   /// Gets or sets error hooks that run only for specific operations.
   /// </summary>
   public Dictionary<string, List<string>> ByOperation { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// JSON configuration for rate limiting policies.
+/// </summary>
+public class RestLibJsonRateLimitingConfiguration
+{
+  /// <summary>
+  /// Gets or sets the default rate limiting policy applied to all operations.
+  /// Per-operation overrides and disabled operations take precedence.
+  /// </summary>
+  public string? Default { get; set; }
+
+  /// <summary>
+  /// Gets or sets per-operation rate limiting policy overrides.
+  /// Keys are operation names, values are policy names.
+  /// </summary>
+  public Dictionary<string, string> ByOperation { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+  /// <summary>
+  /// Gets or sets operations that are exempt from rate limiting.
+  /// </summary>
+  public List<RestLibOperation> Disabled { get; set; } = [];
 }

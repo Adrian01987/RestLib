@@ -58,6 +58,9 @@
       "type": "string",
       "description": "Default sort expression applied when the client does not provide a sort parameter (e.g. 'name:asc,price:desc'). All referenced fields must also be listed in Sorting."
     },
+    "RateLimiting": {
+      "$ref": "#/$defs/rateLimiting"
+    },
     "OpenApi": {
       "$ref": "#/$defs/openApi"
     },
@@ -131,6 +134,29 @@
           "description": "Detailed description text for each operation in the OpenAPI document.",
           "propertyNames": { "$ref": "#/$defs/operation" },
           "additionalProperties": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "rateLimiting": {
+      "type": "object",
+      "description": "Rate limiting policy configuration. Requires the application to register rate limiting policies via AddRateLimiter() and wire the middleware via UseRateLimiter().",
+      "properties": {
+        "Default": {
+          "type": "string",
+          "description": "Default rate limiting policy name applied to all operations. Per-operation overrides and disabled operations take precedence."
+        },
+        "ByOperation": {
+          "type": "object",
+          "description": "Per-operation rate limiting policy overrides. Keys are operation names, values are policy names.",
+          "propertyNames": { "$ref": "#/$defs/operation" },
+          "additionalProperties": { "type": "string" }
+        },
+        "Disabled": {
+          "type": "array",
+          "description": "Operations exempt from rate limiting.",
+          "items": { "$ref": "#/$defs/operation" },
+          "uniqueItems": true
         }
       },
       "additionalProperties": false
