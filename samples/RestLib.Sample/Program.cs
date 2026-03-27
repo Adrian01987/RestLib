@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.OpenApi.Models;
 using RestLib;
 using RestLib.Abstractions;
@@ -35,6 +36,22 @@ var productResource = builder.Configuration
 builder.Services.AddJsonResource<Category, Guid>(categoryResource);
 builder.Services.AddJsonResource<Product, Guid>(productResource);
 
+// Register rate limiting policies
+builder.Services.AddRateLimiter(options =>
+{
+  options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+  options.AddFixedWindowLimiter("restlib-read", limiter =>
+  {
+    limiter.PermitLimit = 100;
+    limiter.Window = TimeSpan.FromMinutes(1);
+  });
+  options.AddFixedWindowLimiter("restlib-write", limiter =>
+  {
+    limiter.PermitLimit = 20;
+    limiter.Window = TimeSpan.FromMinutes(1);
+  });
+});
+
 // Configure Swagger/OpenAPI
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -61,6 +78,7 @@ app.UseSwaggerUI(c =>
 });
 
 // Map RestLib endpoints from JSON resource configuration
+app.UseRateLimiter();
 app.MapJsonResources();
 
 

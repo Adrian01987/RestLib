@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sort preserved in pagination links
 - JSON configuration support for sorting (`Sorting` and `DefaultSort` properties)
 - JSON Schema updated for sorting configuration
+- Rate limiting integration via `UseRateLimiting` and `DisableRateLimiting`
+- Per-operation and global rate limit policy assignment
+- JSON configuration support for rate limiting (`RateLimiting` property with `Default`, `ByOperation`, and `Disabled`)
+- JSON Schema updated for rate limiting configuration
 
 ## [0.3.0] - 2026-03-11
 

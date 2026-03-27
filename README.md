@@ -165,6 +165,36 @@ GET /api/products?sort=price:asc,name:desc&limit=20
 Sort fields use snake_case names and support `asc`/`desc` directions.
 Disallowed fields return a 400 Problem Details response.
 
+### Rate Limiting
+
+Integrate with ASP.NET Core's rate limiting middleware to throttle requests per operation:
+
+```csharp
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddFixedWindowLimiter("read-policy", o => { o.PermitLimit = 100; o.Window = TimeSpan.FromMinutes(1); });
+    options.AddFixedWindowLimiter("write-policy", o => { o.PermitLimit = 20; o.Window = TimeSpan.FromMinutes(1); });
+});
+
+app.UseRateLimiter();
+
+app.MapRestLib<Product, Guid>("/api/products", config =>
+{
+    config.UseRateLimiting("read-policy", RestLibOperation.GetAll, RestLibOperation.GetById);
+    config.UseRateLimiting("write-policy", RestLibOperation.Create, RestLibOperation.Update);
+});
+```
+
+Set a default policy and exempt specific operations:
+
+```csharp
+config.UseRateLimiting("default-policy");
+config.DisableRateLimiting(RestLibOperation.GetById);
+```
+
+Rate limiting is opt-in. RestLib applies the named policy to endpoints;
+the application defines and registers the actual policies.
+
 ### Select Operations
 
 Expose only the operations you want, and mix custom endpoints with generated ones:

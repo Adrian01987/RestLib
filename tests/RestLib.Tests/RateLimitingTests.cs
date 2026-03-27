@@ -264,6 +264,139 @@ public class RateLimitingTests : IDisposable
 
   [Fact]
   [Trait("Category", "Story6.1")]
+  public void UseRateLimiting_EmptyPolicyName_ThrowsArgumentException()
+  {
+    // Arrange
+    var cfg = new RestLibEndpointConfiguration<TestEntity, Guid>();
+
+    // Act
+    var act = () => cfg.UseRateLimiting("");
+
+    // Assert
+    act.Should().Throw<ArgumentException>();
+  }
+
+  [Fact]
+  [Trait("Category", "Story6.1")]
+  public async Task DisableRateLimiting_NoOperations_IsNoOp()
+  {
+    // Arrange — strict default, DisableRateLimiting with no args should not disable anything
+    CreateHost(cfg =>
+    {
+      cfg.UseRateLimiting("strict");
+      cfg.DisableRateLimiting();
+    });
+
+    // Act — first request consumes the limit, second should be rejected
+    await _client!.GetAsync("/api/limited");
+    var response = await _client!.GetAsync("/api/limited");
+
+    // Assert — strict policy still applies because DisableRateLimiting was a no-op
+    response.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+  }
+
+  [Fact]
+  [Trait("Category", "Story6.1")]
+  public async Task UseRateLimiting_CalledMultipleTimes_LastDefaultWins()
+  {
+    // Arrange — first call sets strict (1 permit), second overwrites with relaxed (10 permits)
+    CreateHost(cfg =>
+    {
+      cfg.UseRateLimiting("strict");
+      cfg.UseRateLimiting("relaxed");
+    });
+
+    // Act — send multiple requests that would exceed the strict limit
+    var response1 = await _client!.GetAsync("/api/limited");
+    var response2 = await _client!.GetAsync("/api/limited");
+    var response3 = await _client!.GetAsync("/api/limited");
+
+    // Assert — all succeed because relaxed (last call) wins
+    response1.StatusCode.Should().Be(HttpStatusCode.OK);
+    response2.StatusCode.Should().Be(HttpStatusCode.OK);
+    response3.StatusCode.Should().Be(HttpStatusCode.OK);
+  }
+
+  [Fact]
+  [Trait("Category", "Story6.1")]
+  public void JsonConfig_ByOperation_InvalidName_ThrowsInvalidOperationException()
+  {
+    // Arrange — JSON config with an invalid operation name in ByOperation
+    var act = async () =>
+    {
+      using var host = new HostBuilder()
+          .ConfigureWebHost(webBuilder =>
+          {
+            webBuilder
+                    .UseTestServer()
+                    .ConfigureServices(services =>
+                    {
+                      services.AddRestLib();
+                      services.AddSingleton<IRepository<TestEntity, Guid>>(new TestEntityRepository());
+                      services.AddRouting();
+                      services.AddRateLimiter(options =>
+                      {
+                        options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+                        options.AddFixedWindowLimiter("some-policy", limiter =>
+                        {
+                          limiter.PermitLimit = 1;
+                          limiter.Window = TimeSpan.FromMinutes(1);
+                        });
+                      });
+                      services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+                      {
+                        Name = "limited",
+                        Route = "/api/limited",
+                        AllowAnonymousAll = true,
+                        RateLimiting = new RestLibJsonRateLimitingConfiguration
+                        {
+                          ByOperation = new Dictionary<string, string>
+                          {
+                            ["NotAnOperation"] = "some-policy"
+                          }
+                        }
+                      });
+                    })
+                    .Configure(app =>
+                    {
+                      app.UseRouting();
+                      app.UseRateLimiter();
+                      app.UseEndpoints(endpoints =>
+                      {
+                        endpoints.MapJsonResources();
+                      });
+                    });
+          })
+          .Build();
+
+      await host.StartAsync();
+    };
+
+    // Assert
+    act.Should().ThrowAsync<InvalidOperationException>()
+        .WithMessage("*'NotAnOperation' is not a valid RestLib operation name*");
+  }
+
+  [Fact]
+  [Trait("Category", "Story6.1")]
+  public async Task UseRateLimiting_PerOperation_NoOperations_IsNoOp()
+  {
+    // Arrange — per-operation call with no operations is a no-op; no default set either
+    CreateHost(cfg => cfg.UseRateLimiting("strict", Array.Empty<RestLibOperation>()));
+
+    // Act — send multiple requests
+    var response1 = await _client!.GetAsync("/api/limited");
+    var response2 = await _client!.GetAsync("/api/limited");
+    var response3 = await _client!.GetAsync("/api/limited");
+
+    // Assert — all succeed because no policy was actually applied
+    response1.StatusCode.Should().Be(HttpStatusCode.OK);
+    response2.StatusCode.Should().Be(HttpStatusCode.OK);
+    response3.StatusCode.Should().Be(HttpStatusCode.OK);
+  }
+
+  [Fact]
+  [Trait("Category", "Story6.1")]
   public async Task JsonConfig_AppliesRateLimiting()
   {
     // Arrange — configure rate limiting via JSON config model
