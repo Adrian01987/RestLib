@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi.Models;
@@ -840,6 +841,20 @@ public static class RestLibEndpointExtensions
       else
       {
         endpoint.RequireAuthorization();
+      }
+    }
+
+    // Rate limiting — opt-in, applied after authorization
+    if (config.IsRateLimitingDisabled(operation))
+    {
+      endpoint.DisableRateLimiting();
+    }
+    else
+    {
+      var rateLimitPolicy = config.GetRateLimitPolicy(operation);
+      if (rateLimitPolicy is not null)
+      {
+        endpoint.RequireRateLimiting(rateLimitPolicy);
       }
     }
   }

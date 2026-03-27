@@ -17,6 +17,9 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   private readonly Dictionary<RestLibOperation, string[]> _operationPolicies = [];
   private readonly FilterConfiguration<TEntity> _filterConfiguration = new();
   private readonly SortConfiguration<TEntity> _sortConfiguration = new();
+  private string? _defaultRateLimitPolicy;
+  private readonly Dictionary<RestLibOperation, string> _rateLimitPolicies = [];
+  private readonly HashSet<RestLibOperation> _disabledRateLimitOperations = [];
   private RestLibHooks<TEntity, TKey>? _hooks;
   private readonly RestLibOpenApiConfiguration _openApi = new();
   private HashSet<RestLibOperation>? _includedOperations;
@@ -264,6 +267,73 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   }
 
   /// <summary>
+  /// Applies a rate limiting policy to all operations on this resource.
+  /// Per-operation overrides and <see cref="DisableRateLimiting"/> take precedence.
+  /// </summary>
+  /// <param name="policyName">The name of the rate limiting policy defined via <c>AddRateLimiter</c>.</param>
+  /// <returns>This configuration instance for chaining.</returns>
+  /// <example>
+  /// <code>
+  /// config.UseRateLimiting("my-policy");
+  /// </code>
+  /// </example>
+  public RestLibEndpointConfiguration<TEntity, TKey> UseRateLimiting(string policyName)
+  {
+    ArgumentException.ThrowIfNullOrWhiteSpace(policyName);
+    _defaultRateLimitPolicy = policyName;
+    return this;
+  }
+
+  /// <summary>
+  /// Applies a rate limiting policy to specific operations on this resource.
+  /// Takes precedence over the default policy set via <see cref="UseRateLimiting(string)"/>.
+  /// </summary>
+  /// <param name="policyName">The name of the rate limiting policy defined via <c>AddRateLimiter</c>.</param>
+  /// <param name="operations">The operations to apply the policy to.</param>
+  /// <returns>This configuration instance for chaining.</returns>
+  /// <example>
+  /// <code>
+  /// config.UseRateLimiting("read-policy", RestLibOperation.GetAll, RestLibOperation.GetById);
+  /// config.UseRateLimiting("write-policy", RestLibOperation.Create, RestLibOperation.Update);
+  /// </code>
+  /// </example>
+  public RestLibEndpointConfiguration<TEntity, TKey> UseRateLimiting(
+      string policyName,
+      params RestLibOperation[] operations)
+  {
+    ArgumentException.ThrowIfNullOrWhiteSpace(policyName);
+    foreach (var operation in operations)
+    {
+      _rateLimitPolicies[operation] = policyName;
+    }
+    return this;
+  }
+
+  /// <summary>
+  /// Disables rate limiting for specific operations on this resource.
+  /// This is useful when a global rate limiter is applied via middleware
+  /// but certain RestLib operations should be exempt.
+  /// Takes precedence over both per-operation and default policies.
+  /// </summary>
+  /// <param name="operations">The operations to exempt from rate limiting.</param>
+  /// <returns>This configuration instance for chaining.</returns>
+  /// <example>
+  /// <code>
+  /// config.UseRateLimiting("strict-policy");
+  /// config.DisableRateLimiting(RestLibOperation.GetById);
+  /// </code>
+  /// </example>
+  public RestLibEndpointConfiguration<TEntity, TKey> DisableRateLimiting(
+      params RestLibOperation[] operations)
+  {
+    foreach (var operation in operations)
+    {
+      _disabledRateLimitOperations.Add(operation);
+    }
+    return this;
+  }
+
+  /// <summary>
   /// Includes the specified operations. All others will be excluded unless also included
   /// in a subsequent call. Multiple calls are merged (unioned).
   /// Cannot be combined with <see cref="ExcludeOperations"/>.
@@ -383,4 +453,17 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   /// Gets the configured hooks for the request processing pipeline.
   /// </summary>
   internal RestLibHooks<TEntity, TKey>? Hooks => _hooks;
+
+  /// <summary>
+  /// Gets whether rate limiting is explicitly disabled for an operation.
+  /// </summary>
+  internal bool IsRateLimitingDisabled(RestLibOperation operation) =>
+      _disabledRateLimitOperations.Contains(operation);
+
+  /// <summary>
+  /// Resolves the rate limit policy for an operation.
+  /// Returns null if no policy applies (per-operation first, then default).
+  /// </summary>
+  internal string? GetRateLimitPolicy(RestLibOperation operation) =>
+      _rateLimitPolicies.TryGetValue(operation, out var policy) ? policy : _defaultRateLimitPolicy;
 }
