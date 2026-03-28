@@ -52,10 +52,10 @@ app.MapRestLib<Product, Guid>("/api/products", config =>
 
 We support both approaches to balance **explicitness** (allowlist) with **convenience** (denylist). However, to prevent ambiguity, **using both in the same configuration is forbidden** and will throw an `InvalidOperationException`.
 
-#### B. Behavior Merging
+#### B. Behavior on Multiple Calls
 
-- Multiple calls to `IncludeOperations` are **merged (unioned)**.
-- Multiple calls to `ExcludeOperations` are **merged (unioned)**.
+- Multiple calls to `IncludeOperations` are **merged (unioned)** — each call adds to the existing set.
+- Multiple calls to `ExcludeOperations` **replace** the previous set — only the last call's operations are excluded.
 
 #### C. Default Behavior
 

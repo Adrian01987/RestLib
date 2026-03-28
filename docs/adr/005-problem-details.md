@@ -52,16 +52,22 @@ Error responses in REST APIs need a consistent, machine-readable format. Options
 
 ## Error Types
 
-| HTTP Status | Type                            | Title                 |
-| ----------- | ------------------------------- | --------------------- |
-| 400         | `/problems/bad-request`         | Bad Request           |
-| 400         | `/problems/validation-failed`   | Validation Failed     |
-| 401         | `/problems/unauthorized`        | Unauthorized          |
-| 403         | `/problems/forbidden`           | Forbidden             |
-| 404         | `/problems/not-found`           | Resource Not Found    |
-| 409         | `/problems/conflict`            | Resource Conflict     |
-| 412         | `/problems/precondition-failed` | Precondition Failed   |
-| 500         | `/problems/internal-error`      | Internal Server Error |
+| HTTP Status | Type                            | Title                 | Notes                                |
+| ----------- | ------------------------------- | --------------------- | ------------------------------------ |
+| 400         | `/problems/bad-request`         | Bad Request           |                                      |
+| 400         | `/problems/validation-failed`   | Validation Failed     |                                      |
+| 400         | `/problems/invalid-cursor`      | Invalid Cursor        |                                      |
+| 400         | `/problems/invalid-limit`       | Invalid Limit         |                                      |
+| 400         | `/problems/invalid-filter`      | Invalid Filter        |                                      |
+| 400         | `/problems/invalid-sort`        | Invalid Sort          |                                      |
+| 401         | `/problems/unauthorized`        | Unauthorized          | OpenAPI docs only; handled by middleware |
+| 403         | `/problems/forbidden`           | Forbidden             | OpenAPI docs only; handled by middleware |
+| 404         | `/problems/not-found`           | Resource Not Found    |                                      |
+| 409         | `/problems/conflict`            | Resource Conflict     |                                      |
+| 412         | `/problems/precondition-failed` | Precondition Failed   |                                      |
+| 500         | `/problems/internal-error`      | Internal Server Error |                                      |
+
+The `unauthorized` and `forbidden` types are defined as constants for OpenAPI response documentation but are not constructed by RestLib — ASP.NET Core's authentication/authorization middleware produces the actual 401/403 responses.
 
 ## Validation Error Example
 
@@ -81,10 +87,17 @@ Error responses in REST APIs need a consistent, machine-readable format. Options
 
 ## Implementation
 
+The implementation is split across three classes:
+
+- **`RestLibProblemDetails`** — plain data model (POCO) with the RFC 9457 fields
+- **`ProblemDetailsFactory`** — static factory methods that create `RestLibProblemDetails` instances
+- **`ProblemDetailsResult`** — static helper methods that wrap the factory output into `IResult` responses with the `application/problem+json` content type
+
 ```csharp
-public static class RestLibProblemDetails
+// ProblemDetailsFactory creates the data object
+public static class ProblemDetailsFactory
 {
-    public static ProblemDetails NotFound(string entityName, object id, string instance)
+    public static RestLibProblemDetails NotFound(string entityName, object id, string? instance = null)
         => new()
         {
             Type = "/problems/not-found",
@@ -93,6 +106,13 @@ public static class RestLibProblemDetails
             Detail = $"{entityName} with ID '{id}' does not exist.",
             Instance = instance
         };
+}
+
+// ProblemDetailsResult wraps it into an IResult for Minimal API handlers
+public static class ProblemDetailsResult
+{
+    public static IResult NotFound(string entityName, object id, string? instance = null)
+        => Create(ProblemDetailsFactory.NotFound(entityName, id, instance));
 }
 ```
 

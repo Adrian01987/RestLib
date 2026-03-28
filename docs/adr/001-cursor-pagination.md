@@ -33,10 +33,11 @@ Use **cursor-based pagination** as the default.
 
 ## Consequences
 
-- **No "page number" concept** — clients must traverse sequentially using `next`/`prev` links
+- **No "page number" concept** — clients must traverse sequentially using `next` links
 - **Cursors must be URL-safe** — we use base64url encoding
 - **Repository interface must support cursor-based queries** — the `PaginationRequest` includes a `Cursor` property
 - **Response includes navigation links** — `self`, `first`, `next`, `prev` for client convenience
+- **`prev` is structurally present but always null** — simple cursor pagination is forward-only; the `prev` property exists on the response model for future bidirectional cursor support but is not populated in the current implementation
 
 ## References
 
