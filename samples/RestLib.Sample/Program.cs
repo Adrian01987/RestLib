@@ -10,9 +10,11 @@ using RestLib.Sample.Models;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add RestLib services with in-memory repositories (pre-seeded)
-builder.Services.AddRestLib();
+// EnableETagSupport is a global option — applies to all resources (Categories, Products, and Orders)
+builder.Services.AddRestLib(opts => { opts.EnableETagSupport = true; });
 builder.Services.AddRestLibInMemoryWithData<Category, Guid>(c => c.Id, Guid.NewGuid, SeedData.GetCategories());
 builder.Services.AddRestLibInMemoryWithData<Product, Guid>(p => p.Id, Guid.NewGuid, SeedData.GetProducts());
+builder.Services.AddRestLibInMemoryWithData<Order, Guid>(o => o.Id, Guid.NewGuid, SeedData.GetOrders());
 builder.Services.AddNamedHook<Product, Guid>(HookNames.SetUpdatedAt, ctx =>
 {
   if (ctx.Entity is Product product)
@@ -77,9 +79,76 @@ app.UseSwaggerUI(c =>
   c.DefaultModelsExpandDepth(-1);
 });
 
-// Map RestLib endpoints from JSON resource configuration
+// Map RestLib endpoints from JSON resource configuration (Categories + Products)
 app.UseRateLimiter();
 app.MapJsonResources();
+
+// Map Order endpoints using the fluent C# API — demonstrates features not shown by JSON config above
+app.MapRestLib<Order, Guid>("/api/orders", cfg =>
+{
+  // Explicit key selector (matches the default Id convention, shown here for demonstration)
+  cfg.KeySelector = o => o.Id;
+
+  // Operation selection — orders are replace-only, no PATCH
+  cfg.ExcludeOperations(RestLibOperation.Patch);
+
+  // Authorization — reads are public, writes require authentication (secure by default)
+  cfg.AllowAnonymous(RestLibOperation.GetAll, RestLibOperation.GetById);
+
+  // Filtering via strongly-typed expressions
+  cfg.AllowFiltering(o => o.Status, o => o.CustomerEmail);
+
+  // Sorting via strongly-typed expressions with a default sort
+  cfg.AllowSorting(o => o.CreatedAt, o => o.Total);
+  cfg.DefaultSort("created_at:desc");
+
+  // Rate limiting — reuse the same policies, but exempt GetById
+  cfg.UseRateLimiting("restlib-read", RestLibOperation.GetAll, RestLibOperation.GetById);
+  cfg.UseRateLimiting("restlib-write", RestLibOperation.Create, RestLibOperation.Update, RestLibOperation.Delete);
+  cfg.DisableRateLimiting(RestLibOperation.GetById);
+
+  // Inline hooks via UseHooks (as opposed to named hooks used by Products via JSON config)
+  cfg.UseHooks(hooks =>
+  {
+    // Auto-calculate total from order lines and set timestamps before persisting
+    hooks.BeforePersist = ctx =>
+    {
+      if (ctx.Entity is Order order)
+      {
+        order.Total = order.Lines.Sum(l => l.Quantity * l.UnitPrice);
+
+        if (ctx.Operation == RestLibOperation.Create)
+        {
+          order.CreatedAt = DateTime.UtcNow;
+          order.UpdatedAt = null;
+        }
+        else
+        {
+          order.UpdatedAt = DateTime.UtcNow;
+        }
+      }
+
+      return Task.CompletedTask;
+    };
+
+    // Custom error handling — log and return a structured error response
+    hooks.OnError = ctx =>
+    {
+      Console.WriteLine($"[Order Error] {ctx.Operation}: {ctx.Exception.Message}");
+      return Task.CompletedTask;
+    };
+  });
+
+  // OpenAPI metadata via fluent API
+  cfg.OpenApi.Tag = "Order";
+  cfg.OpenApi.TagDescription = "Manage customer orders";
+  cfg.OpenApi.Summaries.GetAll = "List orders";
+  cfg.OpenApi.Summaries.GetById = "Get order by id";
+  cfg.OpenApi.Summaries.Create = "Place a new order";
+  cfg.OpenApi.Summaries.Update = "Replace an order";
+  cfg.OpenApi.Summaries.Delete = "Cancel an order";
+  cfg.OpenApi.Descriptions.GetAll = "Returns a paginated list of orders. Supports filtering by status and customer_email, and sorting by created_at or total.";
+});
 
 
 // Custom statistics endpoint for categories
