@@ -60,6 +60,7 @@ Error responses in REST APIs need a consistent, machine-readable format. Options
 | 400         | `/problems/invalid-limit`       | Invalid Limit         |                                      |
 | 400         | `/problems/invalid-filter`      | Invalid Filter        |                                      |
 | 400         | `/problems/invalid-sort`        | Invalid Sort          |                                      |
+| 400         | `/problems/invalid-fields`      | Invalid Field Selection |                                    |
 | 401         | `/problems/unauthorized`        | Unauthorized          | OpenAPI docs only; handled by middleware |
 | 403         | `/problems/forbidden`           | Forbidden             | OpenAPI docs only; handled by middleware |
 | 404         | `/problems/not-found`           | Resource Not Found    |                                      |

@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using RestLib.FieldSelection;
 using RestLib.Filtering;
 using RestLib.Hooks;
 using RestLib.Sorting;
@@ -17,6 +18,7 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   private readonly Dictionary<RestLibOperation, string[]> _operationPolicies = [];
   private readonly FilterConfiguration<TEntity> _filterConfiguration = new();
   private readonly SortConfiguration<TEntity> _sortConfiguration = new();
+  private readonly FieldSelectionConfiguration<TEntity> _fieldSelectionConfiguration = new();
   private string? _defaultRateLimitPolicy;
   private readonly Dictionary<RestLibOperation, string> _rateLimitPolicies = [];
   private readonly HashSet<RestLibOperation> _disabledRateLimitOperations = [];
@@ -267,6 +269,69 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   }
 
   /// <summary>
+  /// Configures which properties can be selected via the <c>fields</c> query parameter.
+  /// Property names are automatically converted to snake_case in the query string.
+  /// </summary>
+  /// <param name="propertyExpressions">Expressions selecting the selectable properties.</param>
+  /// <returns>This configuration instance for chaining.</returns>
+  /// <example>
+  /// <code>
+  /// config.AllowFieldSelection(p => p.Id, p => p.Name, p => p.Price);
+  /// // Request: ?fields=id,name,price
+  /// </code>
+  /// </example>
+  public RestLibEndpointConfiguration<TEntity, TKey> AllowFieldSelection(
+      params Expression<Func<TEntity, object?>>[] propertyExpressions)
+  {
+    foreach (var expression in propertyExpressions)
+    {
+      var memberExpression = expression.Body as MemberExpression
+          ?? (expression.Body as UnaryExpression)?.Operand as MemberExpression;
+
+      if (memberExpression == null)
+      {
+        throw new ArgumentException(
+            "Each expression must be a property access expression (e.g., p => p.PropertyName)",
+            nameof(propertyExpressions));
+      }
+
+      var propertyName = memberExpression.Member.Name;
+      var queryFieldName = FieldSelectionConfiguration<TEntity>.ConvertToSnakeCase(propertyName);
+
+      _fieldSelectionConfiguration.AddProperty(propertyName, queryFieldName);
+    }
+    return this;
+  }
+
+  /// <summary>
+  /// Configures which properties can be selected via the <c>fields</c> query parameter.
+  /// Property names are automatically converted to snake_case in the query string.
+  /// </summary>
+  /// <param name="propertyNames">The entity property names to allow for field selection.</param>
+  /// <returns>This configuration instance for chaining.</returns>
+  /// <example>
+  /// <code>
+  /// config.AllowFieldSelection("Id", "Name", "Price");
+  /// // Request: ?fields=id,name,price
+  /// </code>
+  /// </example>
+  public RestLibEndpointConfiguration<TEntity, TKey> AllowFieldSelection(
+      params string[] propertyNames)
+  {
+    foreach (var propertyName in propertyNames)
+    {
+      var property = typeof(TEntity).GetProperty(propertyName)
+                     ?? throw new ArgumentException(
+                         $"Property '{propertyName}' was not found on entity type '{typeof(TEntity).Name}'.",
+                         nameof(propertyNames));
+
+      var queryFieldName = FieldSelectionConfiguration<TEntity>.ConvertToSnakeCase(property.Name);
+      _fieldSelectionConfiguration.AddProperty(property.Name, queryFieldName);
+    }
+    return this;
+  }
+
+  /// <summary>
   /// Applies a rate limiting policy to all operations on this resource.
   /// Per-operation overrides and <see cref="DisableRateLimiting"/> take precedence.
   /// </summary>
@@ -425,6 +490,16 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   /// Gets whether any sortable properties have been configured.
   /// </summary>
   internal bool HasSorting => _sortConfiguration.Properties.Count > 0;
+
+  /// <summary>
+  /// Gets the field selection configuration for this entity.
+  /// </summary>
+  internal FieldSelectionConfiguration<TEntity> FieldSelectionConfiguration => _fieldSelectionConfiguration;
+
+  /// <summary>
+  /// Gets whether any selectable fields have been configured.
+  /// </summary>
+  internal bool HasFieldSelection => _fieldSelectionConfiguration.Properties.Count > 0;
 
   /// <summary>
   /// Configures hooks for the request processing pipeline.

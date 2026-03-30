@@ -195,6 +195,28 @@ config.DisableRateLimiting(RestLibOperation.GetById);
 Rate limiting is opt-in. RestLib applies the named policy to endpoints;
 the application defines and registers the actual policies.
 
+### Field Selection
+
+Return only the fields your client needs with sparse fieldsets:
+
+```csharp
+app.MapRestLib<Product, Guid>("/api/products", config =>
+{
+    config.AllowFieldSelection(p => p.Id, p => p.Name, p => p.Price, p => p.CategoryId);
+});
+```
+
+```http
+GET /api/products?fields=id,name,price
+```
+
+Only the selected fields are included in the response. Unknown or disallowed
+fields return a 400 Problem Details response. If no `fields` parameter is sent,
+the full entity is returned.
+
+Field selection works with both GetAll (collection) and GetById (single entity)
+endpoints, and combines with filtering, sorting, and pagination.
+
 ### Select Operations
 
 Expose only the operations you want, and mix custom endpoints with generated ones:
@@ -385,6 +407,7 @@ Key decisions are documented as Architecture Decision Records:
 | [ADR-004](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/004-snake-case-json.md) | `snake_case` JSON naming |
 | [ADR-005](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/005-problem-details.md) | RFC 9457 Problem Details for errors |
 | [ADR-006](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/006-operation-selection.md) | Operation allowlists and denylists |
+| [ADR-007](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/007-field-selection.md) | Serialize-then-pick field projection |
 
 ## Packages
 

@@ -26,6 +26,9 @@ public static class ProblemTypes
   /// <summary>Invalid sort parameter value (400).</summary>
   public const string InvalidSort = "/problems/invalid-sort";
 
+  /// <summary>Invalid field selection parameters (400).</summary>
+  public const string InvalidFields = "/problems/invalid-fields";
+
   /// <summary>Resource conflict (409).</summary>
   public const string Conflict = "/problems/conflict";
 

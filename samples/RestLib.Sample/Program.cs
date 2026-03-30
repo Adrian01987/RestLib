@@ -102,6 +102,14 @@ app.MapRestLib<Order, Guid>("/api/orders", cfg =>
   cfg.AllowSorting(o => o.CreatedAt, o => o.Total);
   cfg.DefaultSort("created_at:desc");
 
+  // Field selection — clients can request only the fields they need
+  cfg.AllowFieldSelection(
+      o => o.Id,
+      o => o.CustomerEmail,
+      o => o.Status,
+      o => o.Total,
+      o => o.CreatedAt);
+
   // Rate limiting — reuse the same policies, but exempt GetById
   cfg.UseRateLimiting("restlib-read", RestLibOperation.GetAll, RestLibOperation.GetById);
   cfg.UseRateLimiting("restlib-write", RestLibOperation.Create, RestLibOperation.Update, RestLibOperation.Delete);

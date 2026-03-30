@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using RestLib.FieldSelection;
 using RestLib.Filtering;
 using RestLib.Sorting;
 
@@ -147,6 +148,32 @@ public static class ProblemDetailsFactory
       Detail = errors.Count == 1
           ? $"The sort field '{errors[0].Field}' is invalid."
           : "One or more sort fields are invalid.",
+      Instance = instance,
+      Errors = errorDict
+    };
+  }
+
+  /// <summary>
+  /// Creates a 400 Invalid Fields problem details response.
+  /// </summary>
+  /// <param name="errors">The field selection validation errors.</param>
+  /// <param name="instance">The request path.</param>
+  public static RestLibProblemDetails InvalidFields(
+      IReadOnlyList<FieldSelectionValidationError> errors,
+      string? instance = null)
+  {
+    var errorDict = errors.ToDictionary(
+        e => e.Field,
+        e => new[] { e.Message });
+
+    return new RestLibProblemDetails
+    {
+      Type = ProblemTypes.InvalidFields,
+      Title = "Invalid Field Selection",
+      Status = StatusCodes.Status400BadRequest,
+      Detail = errors.Count == 1
+          ? $"The field '{errors[0].Field}' is not a selectable field."
+          : "One or more requested fields are not selectable.",
       Instance = instance,
       Errors = errorDict
     };

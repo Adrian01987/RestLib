@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using RestLib.FieldSelection;
 using RestLib.Filtering;
 using RestLib.Sorting;
 
@@ -110,6 +111,18 @@ public static class ProblemDetailsResult
       JsonSerializerOptions? jsonOptions = null)
   {
     var problem = ProblemDetailsFactory.InvalidSort(errors, instance);
+    return Create(problem, jsonOptions);
+  }
+
+  /// <summary>
+  /// Creates a 400 Invalid Fields result.
+  /// </summary>
+  public static IResult InvalidFields(
+      IReadOnlyList<FieldSelectionValidationError> errors,
+      string? instance = null,
+      JsonSerializerOptions? jsonOptions = null)
+  {
+    var problem = ProblemDetailsFactory.InvalidFields(errors, instance);
     return Create(problem, jsonOptions);
   }
 

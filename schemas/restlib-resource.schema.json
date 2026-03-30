@@ -58,6 +58,12 @@
       "type": "string",
       "description": "Default sort expression applied when the client does not provide a sort parameter (e.g. 'name:asc,price:desc'). All referenced fields must also be listed in Sorting."
     },
+    "FieldSelection": {
+      "type": "array",
+      "description": "Entity property names that can be selected via the fields query parameter. Names are automatically converted to snake_case in the query string.",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
     "RateLimiting": {
       "$ref": "#/$defs/rateLimiting"
     },

@@ -8,6 +8,7 @@ using Microsoft.OpenApi.Models;
 using RestLib.Abstractions;
 using RestLib.Caching;
 using RestLib.Configuration;
+using RestLib.FieldSelection;
 using RestLib.Filtering;
 using RestLib.Hooks;
 using RestLib.Pagination;
@@ -129,6 +130,25 @@ public static class RestLibEndpointExtensions
             }
           }
 
+          // Parse and validate field selection
+          IReadOnlyList<SelectedField> selectedFields = [];
+          if (config.HasFieldSelection)
+          {
+            var rawFields = httpContext.Request.Query["fields"].FirstOrDefault();
+            if (!string.IsNullOrEmpty(rawFields))
+            {
+              var fieldsResult = FieldSelectionParser.Parse(rawFields, config.FieldSelectionConfiguration);
+              if (!fieldsResult.IsValid)
+              {
+                return ProblemDetailsResult.InvalidFields(
+                    fieldsResult.Errors,
+                    httpContext.Request.Path,
+                    jsonOptions);
+              }
+              selectedFields = fieldsResult.Fields;
+            }
+          }
+
           // OnRequestValidated hook
           if (pipeline is not null && hookContext is not null)
           {
@@ -154,6 +174,21 @@ public static class RestLibEndpointExtensions
           {
             var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforeResponseAsync, hookContext);
             if (earlyResult is not null) return earlyResult;
+          }
+
+          // Apply field selection projection if requested
+          if (selectedFields.Count > 0)
+          {
+            var projectedItems = FieldProjector.ProjectMany(response.Items, selectedFields, jsonOptions);
+            var projectedResponse = new
+            {
+              items = projectedItems,
+              self = response.Self,
+              first = response.First,
+              next = response.Next,
+              prev = response.Prev
+            };
+            return Results.Json(projectedResponse, jsonOptions);
           }
 
           return Results.Json(response, jsonOptions);
@@ -210,6 +245,27 @@ public static class RestLibEndpointExtensions
           return operation;
         });
       }
+
+      // Add OpenAPI documentation for fields parameter
+      if (config.HasFieldSelection)
+      {
+        getAllEndpoint.WithOpenApi(operation =>
+        {
+          var allowedFields = string.Join(", ",
+              config.FieldSelectionConfiguration.Properties.Select(p => p.QueryFieldName));
+
+          operation.Parameters.Add(new OpenApiParameter
+          {
+            Name = "fields",
+            In = ParameterLocation.Query,
+            Required = false,
+            Description = $"Comma-separated list of fields to include in the response. " +
+                          $"Allowed fields: {allowedFields}.",
+            Schema = new OpenApiSchema { Type = "string" }
+          });
+          return operation;
+        });
+      }
     } // end GetAll
 
     // GET /prefix/{id} - Get by ID
@@ -237,6 +293,25 @@ public static class RestLibEndpointExtensions
             hookContext = pipeline.CreateContext(httpContext, RestLibOperation.GetById, id);
             var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestReceivedAsync, hookContext);
             if (earlyResult is not null) return earlyResult;
+          }
+
+          // Parse and validate field selection before hitting the database
+          IReadOnlyList<SelectedField> selectedFields = [];
+          if (config.HasFieldSelection)
+          {
+            var rawFields = httpContext.Request.Query["fields"].FirstOrDefault();
+            if (!string.IsNullOrEmpty(rawFields))
+            {
+              var fieldsResult = FieldSelectionParser.Parse(rawFields, config.FieldSelectionConfiguration);
+              if (!fieldsResult.IsValid)
+              {
+                return ProblemDetailsResult.InvalidFields(
+                    fieldsResult.Errors,
+                    httpContext.Request.Path,
+                    jsonOptions);
+              }
+              selectedFields = fieldsResult.Fields;
+            }
           }
 
           var entity = await repository.GetByIdAsync(id, ct);
@@ -289,6 +364,16 @@ public static class RestLibEndpointExtensions
             if (earlyResult is not null) return earlyResult;
           }
 
+          // Apply field selection projection if requested
+          if (selectedFields.Count > 0)
+          {
+            var projected = FieldProjector.Project(entity, selectedFields, jsonOptions);
+            if (projected is not null)
+            {
+              return Results.Json(projected, jsonOptions);
+            }
+          }
+
           return Results.Json(entity, jsonOptions);
         }
         catch (Exception ex)
@@ -299,6 +384,27 @@ public static class RestLibEndpointExtensions
         }
       });
       ConfigureGetByIdEndpoint(getByIdEndpoint, config, entityName);
+
+      // Add OpenAPI documentation for fields parameter
+      if (config.HasFieldSelection)
+      {
+        getByIdEndpoint.WithOpenApi(operation =>
+        {
+          var allowedFields = string.Join(", ",
+              config.FieldSelectionConfiguration.Properties.Select(p => p.QueryFieldName));
+
+          operation.Parameters.Add(new OpenApiParameter
+          {
+            Name = "fields",
+            In = ParameterLocation.Query,
+            Required = false,
+            Description = $"Comma-separated list of fields to include in the response. " +
+                          $"Allowed fields: {allowedFields}.",
+            Schema = new OpenApiSchema { Type = "string" }
+          });
+          return operation;
+        });
+      }
     } // end GetById
 
     // POST /prefix - Create

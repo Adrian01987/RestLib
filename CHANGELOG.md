@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Per-operation and global rate limit policy assignment
 - JSON configuration support for rate limiting (`RateLimiting` property with `Default`, `ByOperation`, and `Disabled`)
 - JSON Schema updated for rate limiting configuration
+- Field selection / sparse fieldsets via `AllowFieldSelection`
+- `fields` query parameter for GetAll and GetById endpoints
+- RFC 9457 Problem Details response for invalid field selection
+- Fields preserved in pagination links
+- JSON configuration support for field selection (`FieldSelection` property)
+- JSON Schema updated for field selection configuration
 
 ## [0.3.0] - 2026-03-11
 

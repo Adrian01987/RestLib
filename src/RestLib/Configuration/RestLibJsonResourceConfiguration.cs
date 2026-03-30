@@ -57,6 +57,11 @@ public class RestLibJsonResourceConfiguration
   public string? DefaultSort { get; set; }
 
   /// <summary>
+  /// Gets or sets the selectable entity property names for sparse fieldsets.
+  /// </summary>
+  public List<string> FieldSelection { get; set; } = [];
+
+  /// <summary>
   /// Gets or sets the rate limiting configuration for this resource.
   /// </summary>
   public RestLibJsonRateLimitingConfiguration? RateLimiting { get; set; }
