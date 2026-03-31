@@ -217,6 +217,37 @@ the full entity is returned.
 Field selection works with both GetAll (collection) and GetById (single entity)
 endpoints, and combines with filtering, sorting, and pagination.
 
+### Batch Operations
+
+Create, update, patch, or delete multiple resources in a single request:
+
+```csharp
+app.MapRestLib<Product, Guid>("/api/products", config =>
+{
+    config.EnableBatch(BatchAction.Create, BatchAction.Delete, BatchAction.Patch);
+});
+```
+
+```http
+POST /api/products/batch
+Content-Type: application/json
+
+{
+  "action": "create",
+  "items": [
+    { "name": "Keyboard", "price": 49.99 },
+    { "name": "Mouse", "price": 29.99 }
+  ]
+}
+```
+
+The response reports per-item status. All succeeded returns 200; mixed results
+return 207 Multi-Status with individual status codes per item.
+
+Batch size is limited to 100 items by default (configurable via
+`RestLibOptions.MaxBatchSize`). Hooks fire once per item, and validation runs
+per item with errors reported individually.
+
 ### Select Operations
 
 Expose only the operations you want, and mix custom endpoints with generated ones:
@@ -408,6 +439,8 @@ Key decisions are documented as Architecture Decision Records:
 | [ADR-005](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/005-problem-details.md) | RFC 9457 Problem Details for errors |
 | [ADR-006](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/006-operation-selection.md) | Operation allowlists and denylists |
 | [ADR-007](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/007-field-selection.md) | Serialize-then-pick field projection |
+| [ADR-008](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/008-batch-operations.md) | Batch operations with partial success |
+| [ADR-009](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/009-sorting.md) | Allow-list sorting with default sort |
 
 ## Packages
 

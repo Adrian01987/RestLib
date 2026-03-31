@@ -67,4 +67,10 @@ public class RestLibOptions
   /// Defaults to true.
   /// </summary>
   public bool EnableValidation { get; set; } = true;
+
+  /// <summary>
+  /// Gets or sets the maximum number of items allowed in a single batch request.
+  /// Defaults to 100. Set to 0 to disable the limit.
+  /// </summary>
+  public int MaxBatchSize { get; set; } = 100;
 }

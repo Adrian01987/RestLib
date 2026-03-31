@@ -29,6 +29,15 @@ public static class ProblemTypes
   /// <summary>Invalid field selection parameters (400).</summary>
   public const string InvalidFields = "/problems/invalid-fields";
 
+  /// <summary>Invalid batch request structure or action (400).</summary>
+  public const string InvalidBatchRequest = "/problems/invalid-batch-request";
+
+  /// <summary>Batch size exceeds the configured maximum (400).</summary>
+  public const string BatchSizeExceeded = "/problems/batch-size-exceeded";
+
+  /// <summary>Requested batch action is not enabled for this resource (400).</summary>
+  public const string BatchActionNotEnabled = "/problems/batch-action-not-enabled";
+
   /// <summary>Resource conflict (409).</summary>
   public const string Conflict = "/problems/conflict";
 

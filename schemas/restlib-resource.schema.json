@@ -64,6 +64,9 @@
       "items": { "type": "string" },
       "uniqueItems": true
     },
+    "Batch": {
+      "$ref": "#/$defs/batchConfiguration"
+    },
     "RateLimiting": {
       "$ref": "#/$defs/rateLimiting"
     },
@@ -79,7 +82,7 @@
   "$defs": {
     "operation": {
       "type": "string",
-      "enum": ["GetAll", "GetById", "Create", "Update", "Patch", "Delete"],
+      "enum": ["GetAll", "GetById", "Create", "Update", "Patch", "Delete", "BatchCreate", "BatchUpdate", "BatchPatch", "BatchDelete"],
       "description": "A RestLib CRUD operation."
     },
     "operationSelection": {
@@ -162,6 +165,22 @@
           "type": "array",
           "description": "Operations exempt from rate limiting.",
           "items": { "$ref": "#/$defs/operation" },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "batchConfiguration": {
+      "type": "object",
+      "description": "Batch operations configuration. Enables bulk create, update, patch, and/or delete via POST /prefix/batch.",
+      "properties": {
+        "Actions": {
+          "type": "array",
+          "description": "Batch actions to enable. If empty or omitted, all actions (Create, Update, Patch, Delete) are enabled.",
+          "items": {
+            "type": "string",
+            "enum": ["Create", "Update", "Patch", "Delete"]
+          },
           "uniqueItems": true
         }
       },

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi.Models;
 using RestLib.Abstractions;
+using RestLib.Batch;
 using RestLib.Caching;
 using RestLib.Configuration;
 using RestLib.FieldSelection;
@@ -883,6 +884,138 @@ public static class RestLibEndpointExtensions
       ConfigureDeleteEndpoint(deleteEndpoint, config, entityName);
     } // end Delete
 
+    // POST /prefix/batch - Batch operations
+    if (config.HasBatch)
+    {
+      var batchEndpoint = group.MapPost("batch", async (HttpContext httpContext) =>
+      {
+        var jsonOptions = GetJsonOptions(httpContext);
+        var options = httpContext.RequestServices.GetService<RestLibOptions>()
+                      ?? new RestLibOptions();
+        var repository = httpContext.RequestServices.GetRequiredService<IRepository<TEntity, TKey>>();
+        var ct = httpContext.RequestAborted;
+        var instance = httpContext.Request.Path.ToString();
+
+        // Deserialize the envelope
+        BatchRequestEnvelope? envelope;
+        try
+        {
+          envelope = await httpContext.Request.ReadFromJsonAsync<BatchRequestEnvelope>(jsonOptions, ct);
+        }
+        catch (JsonException)
+        {
+          return ProblemDetailsResult.InvalidBatchRequest(
+              "The request body is not valid JSON.",
+              instance: instance,
+              jsonOptions: jsonOptions);
+        }
+
+        if (envelope is null)
+        {
+          return ProblemDetailsResult.InvalidBatchRequest(
+              "The request body is empty.",
+              instance: instance,
+              jsonOptions: jsonOptions);
+        }
+
+        // Validate action
+        if (!Enum.TryParse<BatchAction>(envelope.Action, ignoreCase: true, out var action))
+        {
+          var allowedActions = config.EnabledBatchActions
+              .Select(a => a.ToString().ToLowerInvariant());
+          return ProblemDetailsResult.InvalidBatchRequest(
+              $"'{envelope.Action}' is not a valid batch action.",
+              errors: new Dictionary<string, string[]>
+              {
+                ["action"] = [$"'{envelope.Action}' is not a valid batch action. Allowed actions: {string.Join(", ", allowedActions)}."]
+              },
+              instance: instance,
+              jsonOptions: jsonOptions);
+        }
+
+        // Verify action is enabled
+        if (!config.IsBatchActionEnabled(action))
+        {
+          var enabledActions = config.EnabledBatchActions
+              .Select(a => a.ToString().ToLowerInvariant());
+          return ProblemDetailsResult.BatchActionNotEnabled(
+              action.ToString().ToLowerInvariant(),
+              enabledActions,
+              instance: instance,
+              jsonOptions: jsonOptions);
+        }
+
+        // Validate items array exists
+        if (envelope.Items.ValueKind == JsonValueKind.Undefined
+            || envelope.Items.ValueKind == JsonValueKind.Null)
+        {
+          return ProblemDetailsResult.InvalidBatchRequest(
+              "The 'items' array is required.",
+              instance: instance,
+              jsonOptions: jsonOptions);
+        }
+
+        if (envelope.Items.ValueKind != JsonValueKind.Array)
+        {
+          return ProblemDetailsResult.InvalidBatchRequest(
+              "The 'items' property must be an array.",
+              instance: instance,
+              jsonOptions: jsonOptions);
+        }
+
+        var itemCount = envelope.Items.GetArrayLength();
+
+        // Validate non-empty
+        if (itemCount == 0)
+        {
+          return ProblemDetailsResult.InvalidBatchRequest(
+              "The 'items' array must contain at least one item.",
+              instance: instance,
+              jsonOptions: jsonOptions);
+        }
+
+        // Validate batch size
+        if (options.MaxBatchSize > 0 && itemCount > options.MaxBatchSize)
+        {
+          return ProblemDetailsResult.BatchSizeExceeded(
+              itemCount,
+              options.MaxBatchSize,
+              instance: instance,
+              jsonOptions: jsonOptions);
+        }
+
+        // Create hook pipeline if hooks are configured
+        var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
+
+        // Dispatch to the appropriate processor
+        var response = action switch
+        {
+          BatchAction.Create => await BatchProcessor.ProcessCreateAsync(
+              envelope.Items, httpContext, repository, config,
+              pipeline, options, jsonOptions, ct),
+          BatchAction.Update => await BatchProcessor.ProcessUpdateAsync(
+              envelope.Items, httpContext, repository, config,
+              pipeline, options, jsonOptions, ct),
+          BatchAction.Patch => await BatchProcessor.ProcessPatchAsync(
+              envelope.Items, httpContext, repository, config,
+              pipeline, options, jsonOptions, ct),
+          BatchAction.Delete => await BatchProcessor.ProcessDeleteAsync(
+              envelope.Items, httpContext, repository, config,
+              pipeline, jsonOptions, ct),
+          _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
+        };
+
+        // Determine response status code
+        var allSucceeded = response.Items.All(r => r.Status is >= 200 and < 300);
+        var statusCode = allSucceeded
+            ? StatusCodes.Status200OK
+            : StatusCodes.Status207MultiStatus;
+
+        return Results.Json(response, jsonOptions, statusCode: statusCode);
+      });
+      ConfigureBatchEndpoint(batchEndpoint, config, entityName);
+    } // end Batch
+
     return group;
   }
 
@@ -1382,6 +1515,42 @@ public static class RestLibEndpointExtensions
         ["403"] = CreateProblemDetailsResponse("Forbidden - Insufficient permissions"),
         ["404"] = CreateProblemDetailsResponse($"{entityName} not found"),
         ["412"] = CreateProblemDetailsResponse("Precondition Failed - ETag mismatch (resource was modified)")
+      };
+
+      return operation;
+    });
+  }
+
+  /// <summary>
+  /// Configures the batch endpoint with OpenAPI metadata and conventions.
+  /// </summary>
+  private static void ConfigureBatchEndpoint<TEntity, TKey>(
+      RouteHandlerBuilder endpoint,
+      RestLibEndpointConfiguration<TEntity, TKey> config,
+      string entityName)
+      where TEntity : class
+  {
+    // Use BatchCreate as the representative operation for auth/rate-limiting
+    ConfigureEndpointBase(
+        endpoint,
+        RestLibOperation.BatchCreate,
+        config,
+        entityName,
+        "Batch",
+        $"Batch operations for {entityName}",
+        $"Perform batch create, update, patch, or delete operations on {entityName} resources. " +
+        $"Enabled actions: {string.Join(", ", config.EnabledBatchActions.Select(a => a.ToString().ToLowerInvariant()))}.");
+
+    endpoint.WithOpenApi(operation =>
+    {
+      // Document responses
+      operation.Responses = new OpenApiResponses
+      {
+        ["200"] = new OpenApiResponse { Description = "All items processed successfully" },
+        ["207"] = new OpenApiResponse { Description = "Multi-Status - some items succeeded, some failed" },
+        ["400"] = CreateProblemDetailsResponse("Invalid batch request, size exceeded, or action not enabled"),
+        ["401"] = CreateProblemDetailsResponse("Unauthorized - Authentication required"),
+        ["403"] = CreateProblemDetailsResponse("Forbidden - Insufficient permissions")
       };
 
       return operation;

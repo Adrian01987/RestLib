@@ -127,6 +127,57 @@ public static class ProblemDetailsResult
   }
 
   /// <summary>
+  /// Creates a 400 Invalid Batch Request result.
+  /// </summary>
+  /// <param name="detail">Description of the batch validation error.</param>
+  /// <param name="errors">Optional field-level errors.</param>
+  /// <param name="instance">The request path.</param>
+  /// <param name="jsonOptions">Optional JSON serializer options.</param>
+  public static IResult InvalidBatchRequest(
+      string detail,
+      IDictionary<string, string[]>? errors = null,
+      string? instance = null,
+      JsonSerializerOptions? jsonOptions = null)
+  {
+    var problem = ProblemDetailsFactory.InvalidBatchRequest(detail, errors, instance);
+    return Create(problem, jsonOptions);
+  }
+
+  /// <summary>
+  /// Creates a 400 Batch Size Exceeded result.
+  /// </summary>
+  /// <param name="itemCount">The number of items in the request.</param>
+  /// <param name="maxBatchSize">The maximum allowed batch size.</param>
+  /// <param name="instance">The request path.</param>
+  /// <param name="jsonOptions">Optional JSON serializer options.</param>
+  public static IResult BatchSizeExceeded(
+      int itemCount,
+      int maxBatchSize,
+      string? instance = null,
+      JsonSerializerOptions? jsonOptions = null)
+  {
+    var problem = ProblemDetailsFactory.BatchSizeExceeded(itemCount, maxBatchSize, instance);
+    return Create(problem, jsonOptions);
+  }
+
+  /// <summary>
+  /// Creates a 400 Batch Action Not Enabled result.
+  /// </summary>
+  /// <param name="action">The requested batch action.</param>
+  /// <param name="enabledActions">The actions enabled for this resource.</param>
+  /// <param name="instance">The request path.</param>
+  /// <param name="jsonOptions">Optional JSON serializer options.</param>
+  public static IResult BatchActionNotEnabled(
+      string action,
+      IEnumerable<string> enabledActions,
+      string? instance = null,
+      JsonSerializerOptions? jsonOptions = null)
+  {
+    var problem = ProblemDetailsFactory.BatchActionNotEnabled(action, enabledActions, instance);
+    return Create(problem, jsonOptions);
+  }
+
+  /// <summary>
   /// Creates a 409 Conflict result.
   /// </summary>
   public static IResult Conflict(

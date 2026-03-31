@@ -9,12 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Batch operations via `EnableBatch()` with `POST /prefix/batch` endpoint
+- Support for batch create, update, patch, and delete actions
+- Partial success reporting with per-item status (200/207 Multi-Status)
+- `IBatchRepository<TEntity, TKey>` optional interface for optimized batch persistence
+- `RestLibOptions.MaxBatchSize` for configurable batch size limits (default: 100)
+- Per-item hooks and validation in batch operations
+- RFC 9457 Problem Details for batch-level errors (invalid action, size exceeded)
+- JSON configuration support for batch operations (`Batch` property)
+- JSON Schema updated for batch configuration
+- ADR-008: Batch Operations
 - Sorting / ordering support for GetAll endpoints via `AllowSorting` and `DefaultSort`
 - `sort` query parameter with multi-field, asc/desc support
 - RFC 9457 Problem Details response for invalid sort parameters
 - Sort preserved in pagination links
 - JSON configuration support for sorting (`Sorting` and `DefaultSort` properties)
 - JSON Schema updated for sorting configuration
+- ADR-009: Sorting
 - Rate limiting integration via `UseRateLimiting` and `DisableRateLimiting`
 - Per-operation and global rate limit policy assignment
 - JSON configuration support for rate limiting (`RateLimiting` property with `Default`, `ByOperation`, and `Disabled`)
@@ -25,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fields preserved in pagination links
 - JSON configuration support for field selection (`FieldSelection` property)
 - JSON Schema updated for field selection configuration
+- E2E bash test suite covering CRUD, pagination, filtering, sorting, field selection, batch, and error handling (90 tests)
+
+### Fixed
+
+- `InMemoryRepository.MergeJsonObjects` now correctly resolves naming convention mismatches between the original entity (camelCase) and patch document (snake_case) during PATCH operations
+- `InMemoryRepository.GetAllAsync` no longer overflows when `Limit` is `int.MaxValue`, which caused the `Take(Limit + 1)` pagination pattern to return zero results
 
 ## [0.3.0] - 2026-03-11
 

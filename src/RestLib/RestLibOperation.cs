@@ -21,5 +21,17 @@ public enum RestLibOperation
   Patch,
 
   /// <summary>Delete an entity.</summary>
-  Delete
+  Delete,
+
+  /// <summary>Batch create operation.</summary>
+  BatchCreate,
+
+  /// <summary>Batch update operation.</summary>
+  BatchUpdate,
+
+  /// <summary>Batch patch operation.</summary>
+  BatchPatch,
+
+  /// <summary>Batch delete operation.</summary>
+  BatchDelete
 }

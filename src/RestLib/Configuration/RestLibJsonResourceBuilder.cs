@@ -21,6 +21,7 @@ internal static class RestLibJsonResourceBuilder
     ApplyFiltering(endpointConfiguration, jsonConfiguration);
     ApplySorting(endpointConfiguration, jsonConfiguration);
     ApplyFieldSelection(endpointConfiguration, jsonConfiguration);
+    ApplyBatch(endpointConfiguration, jsonConfiguration);
     ApplyRateLimiting(endpointConfiguration, jsonConfiguration);
     ApplyOpenApi(endpointConfiguration, jsonConfiguration.OpenApi);
   }
@@ -164,6 +165,25 @@ internal static class RestLibJsonResourceBuilder
       return;
 
     endpointConfiguration.AllowFieldSelection([.. jsonConfiguration.FieldSelection]);
+  }
+
+  private static void ApplyBatch<TEntity, TKey>(
+      RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
+      RestLibJsonResourceConfiguration jsonConfiguration)
+      where TEntity : class
+  {
+    var batch = jsonConfiguration.Batch;
+    if (batch is null)
+      return;
+
+    if (batch.Actions.Count == 0)
+    {
+      endpointConfiguration.EnableBatch();
+    }
+    else
+    {
+      endpointConfiguration.EnableBatch([.. batch.Actions]);
+    }
   }
 
   private static void ApplyRateLimiting<TEntity, TKey>(

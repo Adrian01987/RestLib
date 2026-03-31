@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using RestLib.Batch;
 using RestLib.FieldSelection;
 using RestLib.Filtering;
 using RestLib.Hooks;
@@ -19,6 +20,7 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   private readonly FilterConfiguration<TEntity> _filterConfiguration = new();
   private readonly SortConfiguration<TEntity> _sortConfiguration = new();
   private readonly FieldSelectionConfiguration<TEntity> _fieldSelectionConfiguration = new();
+  private readonly HashSet<BatchAction> _enabledBatchActions = [];
   private string? _defaultRateLimitPolicy;
   private readonly Dictionary<RestLibOperation, string> _rateLimitPolicies = [];
   private readonly HashSet<RestLibOperation> _disabledRateLimitOperations = [];
@@ -332,6 +334,44 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   }
 
   /// <summary>
+  /// Enables batch operations for this resource.
+  /// When called with no arguments, all batch actions (Create, Update, Patch, Delete) are enabled.
+  /// </summary>
+  /// <param name="actions">
+  /// The batch actions to enable. If empty, all actions are enabled.
+  /// </param>
+  /// <returns>This configuration instance for chaining.</returns>
+  /// <example>
+  /// <code>
+  /// // Enable all batch actions
+  /// config.EnableBatch();
+  ///
+  /// // Enable specific actions
+  /// config.EnableBatch(BatchAction.Create, BatchAction.Delete);
+  /// </code>
+  /// </example>
+  public RestLibEndpointConfiguration<TEntity, TKey> EnableBatch(
+      params BatchAction[] actions)
+  {
+    if (actions.Length == 0)
+    {
+      foreach (var action in Enum.GetValues<BatchAction>())
+      {
+        _enabledBatchActions.Add(action);
+      }
+    }
+    else
+    {
+      foreach (var action in actions)
+      {
+        _enabledBatchActions.Add(action);
+      }
+    }
+
+    return this;
+  }
+
+  /// <summary>
   /// Applies a rate limiting policy to all operations on this resource.
   /// Per-operation overrides and <see cref="DisableRateLimiting"/> take precedence.
   /// </summary>
@@ -523,6 +563,23 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     configure(_hooks);
     return this;
   }
+
+  /// <summary>
+  /// Gets the set of enabled batch actions.
+  /// </summary>
+  internal IReadOnlySet<BatchAction> EnabledBatchActions => _enabledBatchActions;
+
+  /// <summary>
+  /// Gets a value indicating whether any batch actions have been enabled.
+  /// </summary>
+  internal bool HasBatch => _enabledBatchActions.Count > 0;
+
+  /// <summary>
+  /// Checks whether a specific batch action is enabled.
+  /// </summary>
+  /// <param name="action">The batch action to check.</param>
+  /// <returns><c>true</c> if the action is enabled; otherwise, <c>false</c>.</returns>
+  internal bool IsBatchActionEnabled(BatchAction action) => _enabledBatchActions.Contains(action);
 
   /// <summary>
   /// Gets the configured hooks for the request processing pipeline.

@@ -1,3 +1,5 @@
+using RestLib.Batch;
+
 namespace RestLib.Configuration;
 
 /// <summary>
@@ -60,6 +62,11 @@ public class RestLibJsonResourceConfiguration
   /// Gets or sets the selectable entity property names for sparse fieldsets.
   /// </summary>
   public List<string> FieldSelection { get; set; } = [];
+
+  /// <summary>
+  /// Gets or sets the batch operations configuration for this resource.
+  /// </summary>
+  public RestLibJsonBatchConfiguration? Batch { get; set; }
 
   /// <summary>
   /// Gets or sets the rate limiting configuration for this resource.
@@ -218,4 +225,17 @@ public class RestLibJsonRateLimitingConfiguration
   /// Gets or sets operations that are exempt from rate limiting.
   /// </summary>
   public List<RestLibOperation> Disabled { get; set; } = [];
+}
+
+/// <summary>
+/// JSON configuration for batch operations.
+/// </summary>
+public class RestLibJsonBatchConfiguration
+{
+  /// <summary>
+  /// Gets or sets the enabled batch actions.
+  /// Valid values: Create, Update, Patch, Delete.
+  /// If empty or omitted, all actions are enabled.
+  /// </summary>
+  public List<BatchAction> Actions { get; set; } = [];
 }

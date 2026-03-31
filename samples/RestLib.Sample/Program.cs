@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.OpenApi.Models;
 using RestLib;
 using RestLib.Abstractions;
+using RestLib.Batch;
 using RestLib.Configuration;
 using RestLib.InMemory;
 using RestLib.Sample;
@@ -93,7 +94,8 @@ app.MapRestLib<Order, Guid>("/api/orders", cfg =>
   cfg.ExcludeOperations(RestLibOperation.Patch);
 
   // Authorization — reads are public, writes require authentication (secure by default)
-  cfg.AllowAnonymous(RestLibOperation.GetAll, RestLibOperation.GetById);
+  // BatchCreate is included so the batch endpoint is accessible without auth middleware in this demo
+  cfg.AllowAnonymous(RestLibOperation.GetAll, RestLibOperation.GetById, RestLibOperation.BatchCreate);
 
   // Filtering via strongly-typed expressions
   cfg.AllowFiltering(o => o.Status, o => o.CustomerEmail);
@@ -114,6 +116,9 @@ app.MapRestLib<Order, Guid>("/api/orders", cfg =>
   cfg.UseRateLimiting("restlib-read", RestLibOperation.GetAll, RestLibOperation.GetById);
   cfg.UseRateLimiting("restlib-write", RestLibOperation.Create, RestLibOperation.Update, RestLibOperation.Delete);
   cfg.DisableRateLimiting(RestLibOperation.GetById);
+
+  // Batch operations — allow bulk create and delete for orders
+  cfg.EnableBatch(BatchAction.Create, BatchAction.Delete);
 
   // Inline hooks via UseHooks (as opposed to named hooks used by Products via JSON config)
   cfg.UseHooks(hooks =>

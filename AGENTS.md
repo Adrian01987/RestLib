@@ -13,7 +13,7 @@ field selection, RFC 9457 Problem Details, and OpenAPI metadata out of the box.
 ```bash
 dotnet restore                # Restore packages
 dotnet build                  # Build all projects
-dotnet test                   # Run all tests (668 tests)
+dotnet test                   # Run all tests (695 tests)
 ```
 
 ### Run a single test
@@ -35,6 +35,17 @@ dotnet test --filter "Category=Story7.1"
 dotnet test --filter "FullyQualifiedName~RestLib.Tests.SortingTests"
 ```
 
+### Run E2E tests
+
+The E2E tests live in `tests/e2eTests/` and run against the sample app on
+`http://localhost:5000`. They require `curl` and `jq`.
+
+```bash
+bash tests/e2eTests/run-all.sh            # Start sample app, run all suites, stop
+bash tests/e2eTests/run-all.sh --no-server # Run against an already-running server
+BASE_URL=http://localhost:5000 bash tests/e2eTests/crud-tests.sh  # Single suite
+```
+
 ### Other commands
 
 ```bash
@@ -48,6 +59,7 @@ cd benchmarks/RestLib.Benchmarks && dotnet run -c Release  # Benchmarks
 ```
 src/RestLib/                  Core library (NuGet package)
   Abstractions/               IRepository<TEntity, TKey>, IETagGenerator
+  Batch/                      Batch request/response models, processor
   Configuration/              Endpoint config, JSON resource config, options
   FieldSelection/             Field selection config, parser, projector
   Filtering/                  Filter config, parser
@@ -60,6 +72,7 @@ src/RestLib/                  Core library (NuGet package)
 src/RestLib.InMemory/         In-memory repository for testing/prototyping
 tests/RestLib.Tests/          xUnit integration and unit tests
   Fakes/                      Shared test entities and fake repositories
+tests/e2eTests/               Bash E2E tests against the running sample app
 samples/RestLib.Sample/       Sample app demonstrating all features
 schemas/                      JSON Schema for resource configuration
 docs/adr/                     Architecture Decision Records

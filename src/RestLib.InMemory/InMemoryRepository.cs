@@ -9,12 +9,13 @@ using RestLib.Sorting;
 namespace RestLib.InMemory;
 
 /// <summary>
-/// Thread-safe in-memory implementation of <see cref="IRepository{TEntity, TKey}"/>.
+/// Thread-safe in-memory implementation of <see cref="IRepository{TEntity, TKey}"/>
+/// and <see cref="IBatchRepository{TEntity, TKey}"/>.
 /// Ideal for testing, prototyping, and scenarios where data persistence is not required.
 /// </summary>
 /// <typeparam name="TEntity">The entity type.</typeparam>
 /// <typeparam name="TKey">The key type.</typeparam>
-public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>
+public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBatchRepository<TEntity, TKey>
     where TEntity : class
     where TKey : notnull
 {
@@ -68,9 +69,12 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>
       startIndex = cursorIndex;
     }
 
+    // Guard against int overflow when taking one extra to detect more items.
+    var takeCount = request.Limit == int.MaxValue ? int.MaxValue : request.Limit + 1;
+
     var pagedItems = orderedItems
         .Skip(startIndex)
-        .Take(request.Limit + 1) // Take one extra to determine if there are more
+        .Take(takeCount)
         .ToList();
 
     var hasMore = pagedItems.Count > request.Limit;
@@ -79,7 +83,10 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>
       pagedItems = pagedItems.Take(request.Limit).ToList();
     }
 
-    string? nextCursor = hasMore ? CursorEncoder.Encode(startIndex + request.Limit) : null;
+    // Guard against int overflow when computing the next cursor position.
+    string? nextCursor = hasMore && startIndex <= int.MaxValue - request.Limit
+        ? CursorEncoder.Encode(startIndex + request.Limit)
+        : null;
 
     return Task.FromResult(new PagedResult<TEntity>
     {
@@ -154,6 +161,69 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>
   public Task<bool> DeleteAsync(TKey id, CancellationToken cancellationToken = default)
   {
     return Task.FromResult(_store.TryRemove(id, out _));
+  }
+
+  /// <inheritdoc />
+  public Task<IReadOnlyList<TEntity>> CreateManyAsync(
+      IReadOnlyList<TEntity> entities,
+      CancellationToken ct = default)
+  {
+    ArgumentNullException.ThrowIfNull(entities);
+
+    var results = new List<TEntity>(entities.Count);
+    foreach (var entity in entities)
+    {
+      var key = _keySelector(entity);
+      var current = entity;
+
+      if (EqualityComparer<TKey>.Default.Equals(key, default!))
+      {
+        key = _keyGenerator();
+        current = SetKeyOnEntity(current, key);
+      }
+
+      _store[key] = current;
+      results.Add(current);
+    }
+
+    return Task.FromResult<IReadOnlyList<TEntity>>(results);
+  }
+
+  /// <inheritdoc />
+  public Task<IReadOnlyList<TEntity>> UpdateManyAsync(
+      IReadOnlyList<TEntity> entities,
+      CancellationToken ct = default)
+  {
+    ArgumentNullException.ThrowIfNull(entities);
+
+    var results = new List<TEntity>(entities.Count);
+    foreach (var entity in entities)
+    {
+      var key = _keySelector(entity);
+      _store[key] = entity;
+      results.Add(entity);
+    }
+
+    return Task.FromResult<IReadOnlyList<TEntity>>(results);
+  }
+
+  /// <inheritdoc />
+  public Task<int> DeleteManyAsync(
+      IReadOnlyList<TKey> keys,
+      CancellationToken ct = default)
+  {
+    ArgumentNullException.ThrowIfNull(keys);
+
+    var count = 0;
+    foreach (var key in keys)
+    {
+      if (_store.TryRemove(key, out _))
+      {
+        count++;
+      }
+    }
+
+    return Task.FromResult(count);
   }
 
   /// <summary>
@@ -331,13 +401,79 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>
       merged[prop.Name] = GetJsonValue(prop.Value);
     }
 
+    // Build a lookup from the C# property names to the serialized key names
+    // so we can map patch keys (which may use a different naming convention)
+    // back to the original's key names.
+    var propertyNameMap = BuildPropertyNameMap(merged.Keys);
+
     // Apply patch values (overwriting originals)
     foreach (var prop in patch.EnumerateObject())
     {
-      merged[prop.Name] = GetJsonValue(prop.Value);
+      // Resolve the patch key to the corresponding original key
+      var key = ResolvePropertyName(prop.Name, propertyNameMap);
+      merged[key] = GetJsonValue(prop.Value);
     }
 
     return JsonSerializer.Serialize(merged, _jsonOptions);
+  }
+
+  /// <summary>
+  /// Builds a mapping from C# PascalCase property names to their serialized JSON key names.
+  /// </summary>
+  /// <param name="serializedKeys">The existing serialized key names from the original entity.</param>
+  /// <returns>A dictionary mapping each CLR property name (case-insensitive) to its serialized key.</returns>
+  private static Dictionary<string, string> BuildPropertyNameMap(IEnumerable<string> serializedKeys)
+  {
+    var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    var entityProperties = typeof(TEntity).GetProperties(
+        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+
+    foreach (var clrProp in entityProperties)
+    {
+      // Find which serialized key corresponds to this CLR property.
+      // Match case-insensitively against the serialized keys.
+      foreach (var serializedKey in serializedKeys)
+      {
+        if (serializedKey.Equals(clrProp.Name, StringComparison.OrdinalIgnoreCase))
+        {
+          map[clrProp.Name] = serializedKey;
+          break;
+        }
+      }
+    }
+
+    return map;
+  }
+
+  /// <summary>
+  /// Resolves a patch property name to the matching serialized key name from the original entity,
+  /// allowing the patch document to use a different naming convention (e.g., snake_case)
+  /// than the repository's internal serialization (e.g., camelCase).
+  /// </summary>
+  /// <param name="patchKey">The property name from the patch document.</param>
+  /// <param name="propertyNameMap">Map from CLR property name to serialized key.</param>
+  /// <returns>The matching serialized key, or the original patch key if no match is found.</returns>
+  private static string ResolvePropertyName(string patchKey, Dictionary<string, string> propertyNameMap)
+  {
+    // Direct match against CLR property names (handles PascalCase patches)
+    if (propertyNameMap.TryGetValue(patchKey, out var match))
+    {
+      return match;
+    }
+
+    // Normalize the patch key by stripping underscores for comparison
+    // This handles snake_case → PascalCase mapping (e.g., "is_active" → "IsActive")
+    var normalizedPatch = patchKey.Replace("_", string.Empty);
+    foreach (var kvp in propertyNameMap)
+    {
+      if (kvp.Key.Equals(normalizedPatch, StringComparison.OrdinalIgnoreCase))
+      {
+        return kvp.Value;
+      }
+    }
+
+    // No match found — use the patch key as-is
+    return patchKey;
   }
 
   private static object? GetJsonValue(JsonElement element)

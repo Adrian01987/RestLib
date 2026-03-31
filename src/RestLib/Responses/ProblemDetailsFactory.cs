@@ -180,6 +180,71 @@ public static class ProblemDetailsFactory
   }
 
   /// <summary>
+  /// Creates a 400 Invalid Batch Request problem details response.
+  /// </summary>
+  /// <param name="detail">Description of the batch validation error.</param>
+  /// <param name="errors">Optional field-level errors.</param>
+  /// <param name="instance">The request path.</param>
+  public static RestLibProblemDetails InvalidBatchRequest(
+      string detail,
+      IDictionary<string, string[]>? errors = null,
+      string? instance = null)
+  {
+    return new RestLibProblemDetails
+    {
+      Type = ProblemTypes.InvalidBatchRequest,
+      Title = "Invalid Batch Request",
+      Status = StatusCodes.Status400BadRequest,
+      Detail = detail,
+      Instance = instance,
+      Errors = errors
+    };
+  }
+
+  /// <summary>
+  /// Creates a 400 Batch Size Exceeded problem details response.
+  /// </summary>
+  /// <param name="itemCount">The number of items in the request.</param>
+  /// <param name="maxBatchSize">The maximum allowed batch size.</param>
+  /// <param name="instance">The request path.</param>
+  public static RestLibProblemDetails BatchSizeExceeded(
+      int itemCount,
+      int maxBatchSize,
+      string? instance = null)
+  {
+    return new RestLibProblemDetails
+    {
+      Type = ProblemTypes.BatchSizeExceeded,
+      Title = "Batch Size Exceeded",
+      Status = StatusCodes.Status400BadRequest,
+      Detail = $"The batch contains {itemCount} items but the maximum allowed is {maxBatchSize}.",
+      Instance = instance
+    };
+  }
+
+  /// <summary>
+  /// Creates a 400 Batch Action Not Enabled problem details response.
+  /// </summary>
+  /// <param name="action">The requested batch action.</param>
+  /// <param name="enabledActions">The actions enabled for this resource.</param>
+  /// <param name="instance">The request path.</param>
+  public static RestLibProblemDetails BatchActionNotEnabled(
+      string action,
+      IEnumerable<string> enabledActions,
+      string? instance = null)
+  {
+    var allowed = string.Join(", ", enabledActions);
+    return new RestLibProblemDetails
+    {
+      Type = ProblemTypes.BatchActionNotEnabled,
+      Title = "Batch Action Not Enabled",
+      Status = StatusCodes.Status400BadRequest,
+      Detail = $"The batch action '{action}' is not enabled for this resource. Enabled actions: {allowed}.",
+      Instance = instance
+    };
+  }
+
+  /// <summary>
   /// Creates a 409 Conflict problem details response.
   /// </summary>
   /// <param name="detail">Description of the conflict.</param>
