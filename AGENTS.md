@@ -13,7 +13,7 @@ field selection, RFC 9457 Problem Details, and OpenAPI metadata out of the box.
 ```bash
 dotnet restore                # Restore packages
 dotnet build                  # Build all projects
-dotnet test                   # Run all tests (695 tests)
+dotnet test                   # Run all tests (727 tests)
 ```
 
 ### Run a single test
