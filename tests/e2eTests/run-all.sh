@@ -138,6 +138,7 @@ ALL_SUITES=(
   "field-selection-tests.sh"
   "error-handling-tests.sh"
   "batch-tests.sh"
+  "versioning-tests.sh"
 )
 
 # ---------------------------------------------------------------------------

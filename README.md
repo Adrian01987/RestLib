@@ -378,6 +378,69 @@ public class ProductRepository : IRepository<Product, Guid>
 builder.Services.AddRepository<Product, Guid, ProductRepository>();
 ```
 
+### Versioning
+
+RestLib integrates with any ASP.NET Core versioning strategy via route groups.
+
+#### URL prefix versioning
+
+```csharp
+var v1 = app.MapGroup("/api/v1");
+var v2 = app.MapGroup("/api/v2");
+
+v1.MapRestLib<Product, Guid>("/products", cfg =>
+{
+    cfg.AllowAnonymous();
+    cfg.ExcludeOperations(RestLibOperation.Patch, RestLibOperation.Delete);
+    cfg.AllowFiltering(p => p.CategoryId);
+});
+
+v2.MapRestLib<Product, Guid>("/products", cfg =>
+{
+    cfg.AllowAnonymous();
+    cfg.AllowFiltering(p => p.CategoryId, p => p.IsActive);
+    cfg.AllowSorting(p => p.Price, p => p.Name);
+    cfg.AllowFieldSelection(p => p.Id, p => p.Name, p => p.Price);
+});
+```
+
+#### Prefix-less overload on a route group
+
+When the route group already has the full path configured, use the prefix-less overload:
+
+```csharp
+app.MapGroup("/api/v1/products").MapRestLib<Product, Guid>(cfg =>
+{
+    cfg.AllowAnonymous();
+});
+```
+
+#### With Asp.Versioning.Http
+
+```csharp
+// Install: Asp.Versioning.Http
+builder.Services.AddApiVersioning();
+
+var versionedApi = app.NewVersionedApi("Products");
+
+versionedApi
+    .MapGroup("/api/v{version:apiVersion}/products")
+    .HasApiVersion(1.0)
+    .MapRestLib<Product, Guid>(cfg => cfg.AllowAnonymous());
+
+versionedApi
+    .MapGroup("/api/v{version:apiVersion}/products")
+    .HasApiVersion(2.0)
+    .MapRestLib<Product, Guid>(cfg =>
+    {
+        cfg.AllowAnonymous();
+        cfg.AllowFieldSelection(p => p.Id, p => p.Name, p => p.Price);
+    });
+```
+
+RestLib does not depend on `Asp.Versioning.Http` — install it only if you need
+query-string, header, or media-type versioning strategies.
+
 ## Performance
 
 RestLib adds minimal overhead compared to hand-written Minimal APIs. In some cases, it is faster due to optimized code paths.

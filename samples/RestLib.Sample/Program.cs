@@ -163,6 +163,45 @@ app.MapRestLib<Order, Guid>("/api/orders", cfg =>
   cfg.OpenApi.Descriptions.GetAll = "Returns a paginated list of orders. Supports filtering by status and customer_email, and sorting by created_at or total.";
 });
 
+// --- Versioned API groups (URL prefix strategy) ---
+// Demonstrates registering the same entity type with different configurations per version.
+// GET /api/v1/products — read-only, no sorting or field selection
+// GET /api/v2/products — full CRUD with sorting and field selection
+var v1 = app.MapGroup("/api/v1");
+var v2 = app.MapGroup("/api/v2");
+
+v1.MapRestLib<Product, Guid>("/products", cfg =>
+{
+  cfg.AllowAnonymous();
+  cfg.KeySelector = p => p.Id;
+  cfg.ExcludeOperations(
+      RestLibOperation.Create,
+      RestLibOperation.Update,
+      RestLibOperation.Patch,
+      RestLibOperation.Delete,
+      RestLibOperation.BatchCreate,
+      RestLibOperation.BatchUpdate,
+      RestLibOperation.BatchPatch,
+      RestLibOperation.BatchDelete);
+  cfg.AllowFiltering(p => p.CategoryId);
+  cfg.OpenApi.Tag = "Products (v1)";
+});
+
+v2.MapRestLib<Product, Guid>("/products", cfg =>
+{
+  cfg.AllowAnonymous();
+  cfg.KeySelector = p => p.Id;
+  cfg.AllowFiltering(p => p.CategoryId, p => p.IsActive);
+  cfg.AllowSorting(p => p.Price, p => p.Name, p => p.CreatedAt);
+  cfg.DefaultSort("name:asc");
+  cfg.AllowFieldSelection(
+      p => p.Id,
+      p => p.Name,
+      p => p.Price,
+      p => p.IsActive);
+  cfg.OpenApi.Tag = "Products (v2)";
+});
+
 
 // Custom statistics endpoint for categories
 app.MapGet("/api/categories/statistics", async (IRepository<Category, Guid> repository, CancellationToken ct) =>

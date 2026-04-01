@@ -25,6 +25,12 @@ namespace RestLib;
 public static class RestLibEndpointExtensions
 {
   /// <summary>
+  /// Fallback registry used when <see cref="RestLibServiceExtensions.AddRestLib"/> has not been called.
+  /// Prefer the DI-registered instance for proper test isolation.
+  /// </summary>
+  private static readonly EndpointNameRegistry _fallbackNameRegistry = new();
+
+  /// <summary>
   /// Maps CRUD endpoints for the specified entity type.
   /// </summary>
   /// <typeparam name="TEntity">The entity type.</typeparam>
@@ -39,11 +45,64 @@ public static class RestLibEndpointExtensions
       Action<RestLibEndpointConfiguration<TEntity, TKey>>? configure = null)
       where TEntity : class
   {
+    var group = endpoints.MapGroup(prefix);
+    ConfigureRestLibEndpoints(group, configure, prefix);
+    return group;
+  }
+
+  /// <summary>
+  /// Maps RestLib CRUD endpoints directly onto an existing route group.
+  /// Use this overload when the group already has its route prefix configured
+  /// (e.g., inside a versioned API group).
+  /// </summary>
+  /// <typeparam name="TEntity">The entity type.</typeparam>
+  /// <typeparam name="TKey">The key type.</typeparam>
+  /// <param name="group">The route group builder to attach endpoints to.</param>
+  /// <param name="configure">Optional configuration action.</param>
+  /// <returns>The route group builder for further customization.</returns>
+  public static RouteGroupBuilder MapRestLib<TEntity, TKey>(
+      this RouteGroupBuilder group,
+      Action<RestLibEndpointConfiguration<TEntity, TKey>>? configure = null)
+      where TEntity : class
+  {
+    ArgumentNullException.ThrowIfNull(group);
+    ConfigureRestLibEndpoints(group, configure, routePrefix: null);
+    return group;
+  }
+
+  /// <summary>
+  /// Shared implementation that registers all CRUD endpoints on the provided group.
+  /// </summary>
+  private static void ConfigureRestLibEndpoints<TEntity, TKey>(
+      RouteGroupBuilder group,
+      Action<RestLibEndpointConfiguration<TEntity, TKey>>? configure,
+      string? routePrefix)
+      where TEntity : class
+  {
     var config = new RestLibEndpointConfiguration<TEntity, TKey>();
     configure?.Invoke(config);
 
-    var group = endpoints.MapGroup(prefix);
-    var entityName = typeof(TEntity).Name;
+    var baseEntityName = typeof(TEntity).Name;
+
+    // Generate a unique endpoint name prefix for OpenAPI operation IDs.
+    // Build a candidate name from the entity type name and (optionally) the sanitized route prefix.
+    // When the same candidate appears more than once (e.g., the same entity at the same
+    // sub-prefix inside different versioned groups), append a numeric suffix to prevent
+    // duplicate endpoint name collisions.
+    string candidateName;
+    if (!string.IsNullOrEmpty(routePrefix))
+    {
+      var sanitizedPrefix = SanitizeRoutePrefix(routePrefix);
+      candidateName = $"{baseEntityName}_{sanitizedPrefix}";
+    }
+    else
+    {
+      candidateName = baseEntityName;
+    }
+
+    var nameRegistry = ((IEndpointRouteBuilder)group).ServiceProvider.GetService<EndpointNameRegistry>()
+                       ?? _fallbackNameRegistry;
+    var entityName = nameRegistry.GetUniqueEndpointName(candidateName);
 
     // GET /prefix - Get all (paginated)
     if (config.IsOperationEnabled(RestLibOperation.GetAll))
@@ -201,7 +260,7 @@ public static class RestLibEndpointExtensions
           throw;
         }
       });
-      ConfigureGetAllEndpoint(getAllEndpoint, config, entityName);
+      ConfigureGetAllEndpoint(getAllEndpoint, config, baseEntityName, entityName);
 
       // Add OpenAPI documentation for filter parameters
       if (config.HasFilters)
@@ -384,7 +443,7 @@ public static class RestLibEndpointExtensions
           throw;
         }
       });
-      ConfigureGetByIdEndpoint(getByIdEndpoint, config, entityName);
+      ConfigureGetByIdEndpoint(getByIdEndpoint, config, baseEntityName, entityName);
 
       // Add OpenAPI documentation for fields parameter
       if (config.HasFieldSelection)
@@ -507,7 +566,7 @@ public static class RestLibEndpointExtensions
           throw;
         }
       });
-      ConfigureCreateEndpoint(createEndpoint, config, entityName);
+      ConfigureCreateEndpoint(createEndpoint, config, baseEntityName, entityName);
     } // end Create
 
     // PUT /prefix/{id} - Full Update
@@ -654,7 +713,7 @@ public static class RestLibEndpointExtensions
           throw;
         }
       });
-      ConfigureUpdateEndpoint(updateEndpoint, config, entityName);
+      ConfigureUpdateEndpoint(updateEndpoint, config, baseEntityName, entityName);
     } // end Update
 
     // PATCH /prefix/{id} - Partial Update (JSON Merge Patch - RFC 7396)
@@ -797,7 +856,7 @@ public static class RestLibEndpointExtensions
           throw;
         }
       });
-      ConfigurePatchEndpoint(patchEndpoint, config, entityName);
+      ConfigurePatchEndpoint(patchEndpoint, config, baseEntityName, entityName);
     } // end Patch
 
     // DELETE /prefix/{id} - Delete
@@ -881,7 +940,7 @@ public static class RestLibEndpointExtensions
           throw;
         }
       });
-      ConfigureDeleteEndpoint(deleteEndpoint, config, entityName);
+      ConfigureDeleteEndpoint(deleteEndpoint, config, baseEntityName, entityName);
     } // end Delete
 
     // POST /prefix/batch - Batch operations
@@ -1013,10 +1072,8 @@ public static class RestLibEndpointExtensions
 
         return Results.Json(response, jsonOptions, statusCode: statusCode);
       });
-      ConfigureBatchEndpoint(batchEndpoint, config, entityName);
+      ConfigureBatchEndpoint(batchEndpoint, config, baseEntityName, entityName);
     } // end Batch
-
-    return group;
   }
 
   /// <summary>
@@ -1027,6 +1084,7 @@ public static class RestLibEndpointExtensions
       RestLibOperation operation,
       RestLibEndpointConfiguration<TEntity, TKey> config,
       string entityName,
+      string endpointNamePrefix,
       string operationId,
       string defaultSummary,
       string defaultDescription)
@@ -1034,8 +1092,8 @@ public static class RestLibEndpointExtensions
   {
     var openApiConfig = config.OpenApi;
 
-    // Use custom tag or fall back to entity name
-    var tag = openApiConfig.Tag ?? entityName;
+    // Use custom tag or fall back to the base entity type name (without registration suffix)
+    var tag = openApiConfig.Tag ?? typeof(TEntity).Name;
 
     // Use custom summary or fall back to default
     var summary = openApiConfig.Summaries.GetSummary(operation) ?? defaultSummary;
@@ -1051,7 +1109,7 @@ public static class RestLibEndpointExtensions
       description = $"**DEPRECATED:** This endpoint is deprecated and may be removed in a future version.\n\n{description}";
     }
 
-    endpoint.WithName($"{entityName}_{operationId}");
+    endpoint.WithName($"{endpointNamePrefix}_{operationId}");
     endpoint.WithSummary(summary);
     endpoint.WithDescription(description);
     endpoint.WithTags(tag);
@@ -1104,7 +1162,8 @@ public static class RestLibEndpointExtensions
   private static void ConfigureGetAllEndpoint<TEntity, TKey>(
       RouteHandlerBuilder endpoint,
       RestLibEndpointConfiguration<TEntity, TKey> config,
-      string entityName)
+      string entityName,
+      string endpointNamePrefix)
       where TEntity : class
   {
     ConfigureEndpointBase(
@@ -1112,6 +1171,7 @@ public static class RestLibEndpointExtensions
         RestLibOperation.GetAll,
         config,
         entityName,
+        endpointNamePrefix,
         "GetAll",
         $"Get all {entityName} entities (paginated)",
         $"Returns a paginated list of {entityName} entities. " +
@@ -1166,7 +1226,8 @@ public static class RestLibEndpointExtensions
   private static void ConfigureGetByIdEndpoint<TEntity, TKey>(
       RouteHandlerBuilder endpoint,
       RestLibEndpointConfiguration<TEntity, TKey> config,
-      string entityName)
+      string entityName,
+      string endpointNamePrefix)
       where TEntity : class
   {
     ConfigureEndpointBase(
@@ -1174,6 +1235,7 @@ public static class RestLibEndpointExtensions
         RestLibOperation.GetById,
         config,
         entityName,
+        endpointNamePrefix,
         "GetById",
         $"Get a {entityName} by ID",
         $"Returns a single {entityName} entity by its unique identifier. " +
@@ -1232,7 +1294,8 @@ public static class RestLibEndpointExtensions
   private static void ConfigureCreateEndpoint<TEntity, TKey>(
       RouteHandlerBuilder endpoint,
       RestLibEndpointConfiguration<TEntity, TKey> config,
-      string entityName)
+      string entityName,
+      string endpointNamePrefix)
       where TEntity : class
   {
     ConfigureEndpointBase(
@@ -1240,6 +1303,7 @@ public static class RestLibEndpointExtensions
         RestLibOperation.Create,
         config,
         entityName,
+        endpointNamePrefix,
         "Create",
         $"Create a new {entityName}",
         $"Creates a new {entityName} entity. " +
@@ -1309,7 +1373,8 @@ public static class RestLibEndpointExtensions
   private static void ConfigureUpdateEndpoint<TEntity, TKey>(
       RouteHandlerBuilder endpoint,
       RestLibEndpointConfiguration<TEntity, TKey> config,
-      string entityName)
+      string entityName,
+      string endpointNamePrefix)
       where TEntity : class
   {
     ConfigureEndpointBase(
@@ -1317,6 +1382,7 @@ public static class RestLibEndpointExtensions
         RestLibOperation.Update,
         config,
         entityName,
+        endpointNamePrefix,
         "Update",
         $"Fully update a {entityName}",
         $"Replaces an existing {entityName} entity with the provided data. " +
@@ -1394,7 +1460,8 @@ public static class RestLibEndpointExtensions
   private static void ConfigurePatchEndpoint<TEntity, TKey>(
       RouteHandlerBuilder endpoint,
       RestLibEndpointConfiguration<TEntity, TKey> config,
-      string entityName)
+      string entityName,
+      string endpointNamePrefix)
       where TEntity : class
   {
     ConfigureEndpointBase(
@@ -1402,6 +1469,7 @@ public static class RestLibEndpointExtensions
         RestLibOperation.Patch,
         config,
         entityName,
+        endpointNamePrefix,
         "Patch",
         $"Partially update a {entityName}",
         $"Partially updates an existing {entityName} entity using JSON Merge Patch (RFC 7396). " +
@@ -1481,7 +1549,8 @@ public static class RestLibEndpointExtensions
   private static void ConfigureDeleteEndpoint<TEntity, TKey>(
       RouteHandlerBuilder endpoint,
       RestLibEndpointConfiguration<TEntity, TKey> config,
-      string entityName)
+      string entityName,
+      string endpointNamePrefix)
       where TEntity : class
   {
     ConfigureEndpointBase(
@@ -1489,6 +1558,7 @@ public static class RestLibEndpointExtensions
         RestLibOperation.Delete,
         config,
         entityName,
+        endpointNamePrefix,
         "Delete",
         $"Delete a {entityName}",
         $"Deletes an existing {entityName} entity. " +
@@ -1527,7 +1597,8 @@ public static class RestLibEndpointExtensions
   private static void ConfigureBatchEndpoint<TEntity, TKey>(
       RouteHandlerBuilder endpoint,
       RestLibEndpointConfiguration<TEntity, TKey> config,
-      string entityName)
+      string entityName,
+      string endpointNamePrefix)
       where TEntity : class
   {
     // Use BatchCreate as the representative operation for auth/rate-limiting
@@ -1536,6 +1607,7 @@ public static class RestLibEndpointExtensions
         RestLibOperation.BatchCreate,
         config,
         entityName,
+        endpointNamePrefix,
         "Batch",
         $"Batch operations for {entityName}",
         $"Perform batch create, update, patch, or delete operations on {entityName} resources. " +
@@ -1936,5 +2008,21 @@ public static class RestLibEndpointExtensions
     }
 
     return schema;
+  }
+
+  /// <summary>
+  /// Converts a route prefix into a valid identifier fragment for use in endpoint names.
+  /// Strips leading/trailing slashes and replaces non-alphanumeric characters with underscores.
+  /// </summary>
+  private static string SanitizeRoutePrefix(string prefix)
+  {
+    var trimmed = prefix.Trim('/');
+    var sb = new System.Text.StringBuilder(trimmed.Length);
+    foreach (var ch in trimmed)
+    {
+      sb.Append(char.IsLetterOrDigit(ch) ? ch : '_');
+    }
+
+    return sb.ToString();
   }
 }

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Prefix-less `MapRestLib<TEntity, TKey>(this RouteGroupBuilder, ...)` overload for versioned API groups
+- `RestLibJsonResourceRegistry.MapAll(RouteGroupBuilder)` and `Map(RouteGroupBuilder, string)` overloads for JSON-configured resources on route groups
+- DI-scoped `EndpointNameRegistry` for unique OpenAPI operation IDs with proper test isolation
+- Route prefix incorporated into OpenAPI operation IDs to prevent collisions across versioned groups
+- ADR-010: API Versioning Integration
 - Batch operations via `EnableBatch()` with `POST /prefix/batch` endpoint
 - Support for batch create, update, patch, and delete actions
 - Partial success reporting with per-item status (200/207 Multi-Status)

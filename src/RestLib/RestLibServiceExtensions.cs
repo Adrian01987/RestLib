@@ -34,6 +34,9 @@ public static class RestLibServiceExtensions
 
     services.TryAddSingleton(options);
 
+    // Register endpoint name registry for unique OpenAPI operation IDs
+    services.TryAddSingleton(new EndpointNameRegistry());
+
     // Register JSON serializer options configured per RestLib settings
     var jsonOptions = RestLibJsonOptions.Create(options);
     services.TryAddSingleton(jsonOptions);

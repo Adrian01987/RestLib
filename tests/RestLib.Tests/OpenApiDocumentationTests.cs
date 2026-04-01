@@ -132,17 +132,17 @@ public class OpenApiDocumentationTests
 
     // Assert
     openApiDoc.Paths["/api/items"].Operations[OperationType.Get].OperationId
-        .Should().Be("OpenApiTestEntity_GetAll");
+        .Should().Be("OpenApiTestEntity_api_items_GetAll");
     openApiDoc.Paths["/api/items"].Operations[OperationType.Post].OperationId
-        .Should().Be("OpenApiTestEntity_Create");
+        .Should().Be("OpenApiTestEntity_api_items_Create");
     openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Get].OperationId
-        .Should().Be("OpenApiTestEntity_GetById");
+        .Should().Be("OpenApiTestEntity_api_items_GetById");
     openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Put].OperationId
-        .Should().Be("OpenApiTestEntity_Update");
+        .Should().Be("OpenApiTestEntity_api_items_Update");
     openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Patch].OperationId
-        .Should().Be("OpenApiTestEntity_Patch");
+        .Should().Be("OpenApiTestEntity_api_items_Patch");
     openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Delete].OperationId
-        .Should().Be("OpenApiTestEntity_Delete");
+        .Should().Be("OpenApiTestEntity_api_items_Delete");
   }
 
   [Fact]
@@ -696,6 +696,7 @@ public class OpenApiDocumentationTests
           webBuilder.UseTestServer();
           webBuilder.ConfigureServices(services =>
           {
+            services.AddRestLib();
             services.AddRouting();
             services.AddEndpointsApiExplorer();
             services.AddSwaggerGen(c =>
@@ -735,6 +736,7 @@ public class OpenApiDocumentationTests
           webBuilder.UseTestServer();
           webBuilder.ConfigureServices(services =>
           {
+            services.AddRestLib();
             services.AddRouting();
             services.AddEndpointsApiExplorer();
             services.AddSwaggerGen(c =>
