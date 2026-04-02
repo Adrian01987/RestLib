@@ -13,7 +13,7 @@ field selection, RFC 9457 Problem Details, and OpenAPI metadata out of the box.
 ```bash
 dotnet restore                # Restore packages
 dotnet build                  # Build all projects
-dotnet test                   # Run all tests (745 tests)
+dotnet test                   # Run all tests (764 tests)
 ```
 
 ### Run a single test
@@ -64,6 +64,7 @@ src/RestLib/                  Core library (NuGet package)
   FieldSelection/             Field selection config, parser, projector
   Filtering/                  Filter config, parser
   Hooks/                      Hook pipeline, named hooks
+  Internal/                   Shared utilities (NamingUtils)
   Pagination/                 Cursor-based pagination
   Responses/                  CollectionResponse, ProblemDetails, ProblemTypes
   Serialization/              RestLibJsonOptions (snake_case)
