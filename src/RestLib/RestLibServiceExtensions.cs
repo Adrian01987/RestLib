@@ -32,6 +32,8 @@ public static class RestLibServiceExtensions
     var options = new RestLibOptions();
     configure?.Invoke(options);
 
+    ValidateOptions(options);
+
     services.TryAddSingleton(options);
 
     // Register endpoint name registry for unique OpenAPI operation IDs
@@ -259,5 +261,36 @@ public static class RestLibServiceExtensions
     services.TryAddSingleton<IRestLibNamedHookResolver<TEntity, TKey>>(sp =>
         sp.GetRequiredService<RestLibNamedHookResolver<TEntity, TKey>>());
     return resolver;
+  }
+
+  /// <summary>
+  /// Validates <see cref="RestLibOptions"/> and throws <see cref="InvalidOperationException"/>
+  /// if any values are out of range.
+  /// </summary>
+  private static void ValidateOptions(RestLibOptions options)
+  {
+    if (options.DefaultPageSize <= 0)
+    {
+      throw new InvalidOperationException(
+          $"RestLibOptions.DefaultPageSize must be greater than 0. Current value: {options.DefaultPageSize}.");
+    }
+
+    if (options.MaxPageSize <= 0)
+    {
+      throw new InvalidOperationException(
+          $"RestLibOptions.MaxPageSize must be greater than 0. Current value: {options.MaxPageSize}.");
+    }
+
+    if (options.DefaultPageSize > options.MaxPageSize)
+    {
+      throw new InvalidOperationException(
+          $"RestLibOptions.DefaultPageSize ({options.DefaultPageSize}) must not exceed MaxPageSize ({options.MaxPageSize}).");
+    }
+
+    if (options.MaxBatchSize < 0)
+    {
+      throw new InvalidOperationException(
+          $"RestLibOptions.MaxBatchSize must be 0 or greater. Current value: {options.MaxBatchSize}.");
+    }
   }
 }

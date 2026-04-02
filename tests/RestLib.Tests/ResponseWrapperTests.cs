@@ -564,6 +564,7 @@ public class ResponseWrapperConfigTests : IDisposable
     // Arrange
     SetupHost(options =>
     {
+      options.DefaultPageSize = 10;
       options.MaxPageSize = 10;
     });
 

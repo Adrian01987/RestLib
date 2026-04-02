@@ -333,6 +333,155 @@ public class ServiceRegistrationTests
 
   #endregion
 
+  #region Options Validation Tests
+
+  [Fact]
+  [Trait("Category", "Story1.3")]
+  public void AddRestLib_NegativeDefaultPageSize_ThrowsInvalidOperationException()
+  {
+    // Arrange
+    var services = new ServiceCollection();
+
+    // Act
+    var act = () => services.AddRestLib(o => o.DefaultPageSize = -1);
+
+    // Assert
+    act.Should().Throw<InvalidOperationException>()
+        .WithMessage("*DefaultPageSize*greater than 0*-1*");
+  }
+
+  [Fact]
+  [Trait("Category", "Story1.3")]
+  public void AddRestLib_ZeroDefaultPageSize_ThrowsInvalidOperationException()
+  {
+    // Arrange
+    var services = new ServiceCollection();
+
+    // Act
+    var act = () => services.AddRestLib(o => o.DefaultPageSize = 0);
+
+    // Assert
+    act.Should().Throw<InvalidOperationException>()
+        .WithMessage("*DefaultPageSize*greater than 0*0*");
+  }
+
+  [Fact]
+  [Trait("Category", "Story1.3")]
+  public void AddRestLib_NegativeMaxPageSize_ThrowsInvalidOperationException()
+  {
+    // Arrange
+    var services = new ServiceCollection();
+
+    // Act
+    var act = () => services.AddRestLib(o => o.MaxPageSize = -1);
+
+    // Assert
+    act.Should().Throw<InvalidOperationException>()
+        .WithMessage("*MaxPageSize*greater than 0*-1*");
+  }
+
+  [Fact]
+  [Trait("Category", "Story1.3")]
+  public void AddRestLib_ZeroMaxPageSize_ThrowsInvalidOperationException()
+  {
+    // Arrange
+    var services = new ServiceCollection();
+
+    // Act
+    var act = () => services.AddRestLib(o => o.MaxPageSize = 0);
+
+    // Assert
+    act.Should().Throw<InvalidOperationException>()
+        .WithMessage("*MaxPageSize*greater than 0*0*");
+  }
+
+  [Fact]
+  [Trait("Category", "Story1.3")]
+  public void AddRestLib_DefaultPageSizeExceedsMaxPageSize_ThrowsInvalidOperationException()
+  {
+    // Arrange
+    var services = new ServiceCollection();
+
+    // Act
+    var act = () => services.AddRestLib(o =>
+    {
+      o.DefaultPageSize = 50;
+      o.MaxPageSize = 10;
+    });
+
+    // Assert
+    act.Should().Throw<InvalidOperationException>()
+        .WithMessage("*DefaultPageSize*50*must not exceed*MaxPageSize*10*");
+  }
+
+  [Fact]
+  [Trait("Category", "Story1.3")]
+  public void AddRestLib_NegativeMaxBatchSize_ThrowsInvalidOperationException()
+  {
+    // Arrange
+    var services = new ServiceCollection();
+
+    // Act
+    var act = () => services.AddRestLib(o => o.MaxBatchSize = -1);
+
+    // Assert
+    act.Should().Throw<InvalidOperationException>()
+        .WithMessage("*MaxBatchSize*0 or greater*-1*");
+  }
+
+  [Fact]
+  [Trait("Category", "Story1.3")]
+  public void AddRestLib_ZeroMaxBatchSize_DoesNotThrow()
+  {
+    // Arrange
+    var services = new ServiceCollection();
+
+    // Act
+    var act = () => services.AddRestLib(o => o.MaxBatchSize = 0);
+
+    // Assert — 0 is valid (disables the limit)
+    act.Should().NotThrow();
+  }
+
+  [Fact]
+  [Trait("Category", "Story1.3")]
+  public void AddRestLib_ValidCustomOptions_DoesNotThrow()
+  {
+    // Arrange
+    var services = new ServiceCollection();
+
+    // Act
+    var act = () => services.AddRestLib(o =>
+    {
+      o.DefaultPageSize = 10;
+      o.MaxPageSize = 50;
+      o.MaxBatchSize = 200;
+    });
+
+    // Assert
+    act.Should().NotThrow();
+  }
+
+  [Fact]
+  [Trait("Category", "Story1.3")]
+  public void AddRestLib_DefaultPageSizeEqualsMaxPageSize_DoesNotThrow()
+  {
+    // Arrange
+    var services = new ServiceCollection();
+
+    // Act
+    var act = () => services.AddRestLib(o =>
+    {
+      o.DefaultPageSize = 50;
+      o.MaxPageSize = 50;
+    });
+
+    // Assert — equal is valid (boundary)
+    act.Should().NotThrow();
+  }
+
+  #endregion
+
   #region Integration Tests
 
   [Fact]
