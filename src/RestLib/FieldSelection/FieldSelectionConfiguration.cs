@@ -1,5 +1,5 @@
 using System.Linq.Expressions;
-using System.Text.Json;
+using RestLib.Internal;
 
 namespace RestLib.FieldSelection;
 
@@ -54,23 +54,13 @@ public class FieldSelectionConfiguration<TEntity> where TEntity : class
             ?? throw new ArgumentException("Expression must be a member expression", nameof(propertyExpression));
 
         var propertyName = memberExpression.Member.Name;
-        var queryFieldName = ConvertToSnakeCase(propertyName);
+        var queryFieldName = NamingUtils.ConvertToSnakeCase(propertyName);
 
         _properties.Add(new FieldPropertyConfiguration
         {
             PropertyName = propertyName,
             QueryFieldName = queryFieldName
         });
-    }
-
-    /// <summary>
-    /// Converts a PascalCase property name to snake_case.
-    /// </summary>
-    /// <param name="propertyName">The PascalCase property name.</param>
-    /// <returns>The snake_case equivalent.</returns>
-    internal static string ConvertToSnakeCase(string propertyName)
-    {
-        return JsonNamingPolicy.SnakeCaseLower.ConvertName(propertyName);
     }
 
     /// <summary>

@@ -3,6 +3,7 @@ using RestLib.Batch;
 using RestLib.FieldSelection;
 using RestLib.Filtering;
 using RestLib.Hooks;
+using RestLib.Internal;
 using RestLib.Sorting;
 
 namespace RestLib.Configuration;
@@ -123,20 +124,11 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   {
     foreach (var expression in propertyExpressions)
     {
-      // Handle cases where the expression is wrapped in Convert (for value types)
-      var memberExpression = expression.Body as MemberExpression
-          ?? (expression.Body as UnaryExpression)?.Operand as MemberExpression;
-
-      if (memberExpression == null)
-      {
-        throw new ArgumentException(
-            "Each expression must be a property access expression (e.g., p => p.PropertyName)",
-            nameof(propertyExpressions));
-      }
+      var memberExpression = NamingUtils.GetMemberExpression(expression.Body, nameof(propertyExpressions));
 
       var propertyName = memberExpression.Member.Name;
       var propertyType = memberExpression.Type;
-      var queryParamName = FilterConfiguration<TEntity>.ConvertToSnakeCase(propertyName);
+      var queryParamName = NamingUtils.ConvertToSnakeCase(propertyName);
 
       _filterConfiguration.AddProperty(propertyName, queryParamName, propertyType);
     }
@@ -160,12 +152,9 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   {
     foreach (var propertyName in propertyNames)
     {
-      var property = typeof(TEntity).GetProperty(propertyName)
-                     ?? throw new ArgumentException(
-                         $"Property '{propertyName}' was not found on entity type '{typeof(TEntity).Name}'.",
-                         nameof(propertyNames));
+      var property = NamingUtils.ResolveProperty<TEntity>(propertyName, nameof(propertyNames));
 
-      var queryParamName = FilterConfiguration<TEntity>.ConvertToSnakeCase(property.Name);
+      var queryParamName = NamingUtils.ConvertToSnakeCase(property.Name);
       _filterConfiguration.AddProperty(property.Name, queryParamName, property.PropertyType);
     }
 
@@ -189,19 +178,11 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   {
     foreach (var expression in propertyExpressions)
     {
-      var memberExpression = expression.Body as MemberExpression
-          ?? (expression.Body as UnaryExpression)?.Operand as MemberExpression;
-
-      if (memberExpression == null)
-      {
-        throw new ArgumentException(
-            "Each expression must be a property access expression (e.g., p => p.PropertyName)",
-            nameof(propertyExpressions));
-      }
+      var memberExpression = NamingUtils.GetMemberExpression(expression.Body, nameof(propertyExpressions));
 
       var propertyName = memberExpression.Member.Name;
       var propertyType = memberExpression.Type;
-      var queryParamName = FilterConfiguration<TEntity>.ConvertToSnakeCase(propertyName);
+      var queryParamName = NamingUtils.ConvertToSnakeCase(propertyName);
 
       _sortConfiguration.AddProperty(propertyName, queryParamName, propertyType);
     }
@@ -225,12 +206,9 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   {
     foreach (var propertyName in propertyNames)
     {
-      var property = typeof(TEntity).GetProperty(propertyName)
-                     ?? throw new ArgumentException(
-                         $"Property '{propertyName}' was not found on entity type '{typeof(TEntity).Name}'.",
-                         nameof(propertyNames));
+      var property = NamingUtils.ResolveProperty<TEntity>(propertyName, nameof(propertyNames));
 
-      var queryParamName = FilterConfiguration<TEntity>.ConvertToSnakeCase(property.Name);
+      var queryParamName = NamingUtils.ConvertToSnakeCase(property.Name);
       _sortConfiguration.AddProperty(property.Name, queryParamName, property.PropertyType);
     }
     return this;
@@ -287,18 +265,10 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   {
     foreach (var expression in propertyExpressions)
     {
-      var memberExpression = expression.Body as MemberExpression
-          ?? (expression.Body as UnaryExpression)?.Operand as MemberExpression;
-
-      if (memberExpression == null)
-      {
-        throw new ArgumentException(
-            "Each expression must be a property access expression (e.g., p => p.PropertyName)",
-            nameof(propertyExpressions));
-      }
+      var memberExpression = NamingUtils.GetMemberExpression(expression.Body, nameof(propertyExpressions));
 
       var propertyName = memberExpression.Member.Name;
-      var queryFieldName = FieldSelectionConfiguration<TEntity>.ConvertToSnakeCase(propertyName);
+      var queryFieldName = NamingUtils.ConvertToSnakeCase(propertyName);
 
       _fieldSelectionConfiguration.AddProperty(propertyName, queryFieldName);
     }
@@ -322,12 +292,9 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   {
     foreach (var propertyName in propertyNames)
     {
-      var property = typeof(TEntity).GetProperty(propertyName)
-                     ?? throw new ArgumentException(
-                         $"Property '{propertyName}' was not found on entity type '{typeof(TEntity).Name}'.",
-                         nameof(propertyNames));
+      var property = NamingUtils.ResolveProperty<TEntity>(propertyName, nameof(propertyNames));
 
-      var queryFieldName = FieldSelectionConfiguration<TEntity>.ConvertToSnakeCase(property.Name);
+      var queryFieldName = NamingUtils.ConvertToSnakeCase(property.Name);
       _fieldSelectionConfiguration.AddProperty(property.Name, queryFieldName);
     }
     return this;

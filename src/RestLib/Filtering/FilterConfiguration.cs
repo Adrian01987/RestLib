@@ -1,5 +1,5 @@
 using System.Linq.Expressions;
-using System.Text.Json;
+using RestLib.Internal;
 
 namespace RestLib.Filtering;
 
@@ -48,7 +48,7 @@ public class FilterConfiguration<TEntity> where TEntity : class
         ?? throw new ArgumentException("Expression must be a member expression", nameof(propertyExpression));
 
     var propertyName = memberExpression.Member.Name;
-    var queryParamName = ConvertToSnakeCase(propertyName);
+    var queryParamName = NamingUtils.ConvertToSnakeCase(propertyName);
 
     _properties.Add(new FilterPropertyConfiguration
     {
@@ -74,12 +74,4 @@ public class FilterConfiguration<TEntity> where TEntity : class
     });
   }
 
-  /// <summary>
-  /// Converts a PascalCase property name to snake_case.
-  /// </summary>
-  internal static string ConvertToSnakeCase(string propertyName)
-  {
-    // Use built-in SnakeCaseLower policy for consistency
-    return JsonNamingPolicy.SnakeCaseLower.ConvertName(propertyName);
-  }
 }
