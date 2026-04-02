@@ -504,6 +504,7 @@ Key decisions are documented as Architecture Decision Records:
 | [ADR-007](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/007-field-selection.md) | Serialize-then-pick field projection |
 | [ADR-008](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/008-batch-operations.md) | Batch operations with partial success |
 | [ADR-009](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/009-sorting.md) | Allow-list sorting with default sort |
+| [ADR-010](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/010-versioning.md) | API versioning via route groups |
 
 ## Packages
 

@@ -1,7 +1,7 @@
-# 006. Operation Selection
+# ADR-006: Operation Selection
 
-Date: 2026-02-06
-Status: Accepted
+**Status:** Accepted  
+**Date:** 2026-02-06
 
 ## Context
 
