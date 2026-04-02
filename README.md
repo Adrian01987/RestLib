@@ -115,7 +115,7 @@ app.MapRestLib<Product, Guid>("/api/products", config =>
 RestLib follows the [Zalando REST API Guidelines](https://opensource.zalando.com/restful-api-guidelines/) and uses RFC 9457 Problem Details for error payloads.
 
 - `snake_case` JSON properties
-- Cursor-based pagination
+- Cursor-based pagination (forward-only by design — see [ADR-001](docs/adr/001-cursor-pagination.md))
 - Structured validation and error responses
 - Consistent HTTP status codes
 
@@ -505,6 +505,8 @@ Key decisions are documented as Architecture Decision Records:
 | [ADR-008](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/008-batch-operations.md) | Batch operations with partial success |
 | [ADR-009](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/009-sorting.md) | Allow-list sorting with default sort |
 | [ADR-010](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/010-versioning.md) | API versioning via route groups |
+| [ADR-011](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/011-filtering.md) | Query parameter filtering |
+| [ADR-012](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/012-hook-pipeline.md) | Hook pipeline for extensibility |
 
 ## Packages
 
