@@ -16,6 +16,7 @@ using RestLib.Configuration;
 using RestLib.Hooks;
 using RestLib.InMemory;
 using RestLib.Responses;
+using RestLib.Tests.Fakes;
 using Xunit;
 
 namespace RestLib.Tests;
@@ -644,6 +645,62 @@ public class BatchOperationsTests : IDisposable
     entity.GetProperty("price").GetDecimal().Should().Be(100m);
     entity.GetProperty("name").GetString().Should().Be("OriginalName");
     entity.GetProperty("is_active").GetBoolean().Should().BeTrue();
+  }
+
+  [Fact]
+  [Trait("Category", "Story8.4")]
+  public async Task BatchPatch_CallsPatchAsync_NotUpdateAsync()
+  {
+    // Arrange
+    var id = Guid.NewGuid();
+    _repository.Seed([
+        new BatchEntity { Id = id, Name = "Original", Price = 10m, IsActive = true },
+    ]);
+
+    var spy = new RepositorySpy<BatchEntity, Guid>(_repository);
+
+    _host = new HostBuilder()
+        .ConfigureWebHost(webBuilder =>
+        {
+          webBuilder
+              .UseTestServer()
+              .ConfigureServices(services =>
+              {
+                services.AddRestLib();
+                services.AddSingleton<IRepository<BatchEntity, Guid>>(spy);
+                services.AddRouting();
+              })
+              .Configure(app =>
+              {
+                app.UseRouting();
+                app.UseEndpoints(endpoints =>
+                {
+                  endpoints.MapRestLib<BatchEntity, Guid>("/api/items", cfg =>
+                  {
+                    cfg.AllowAnonymous();
+                    cfg.EnableBatch();
+                  });
+                });
+              });
+        })
+        .Build();
+
+    _host.Start();
+    _client = _host.GetTestClient();
+
+    var payload = new
+    {
+      action = "patch",
+      items = new[] { new { id, body = new { price = 99m } } }
+    };
+
+    // Act
+    var response = await _client.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+    spy.PatchAsyncCallCount.Should().BeGreaterThan(0, "batch PATCH should delegate to PatchAsync");
+    spy.UpdateAsyncCallCount.Should().Be(0, "batch PATCH should not call UpdateAsync");
   }
 
   #endregion

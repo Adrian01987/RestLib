@@ -345,3 +345,55 @@ public class ProductEntityRepository : IRepository<ProductEntity, Guid>
 
   public int Count => _store.Count;
 }
+
+/// <summary>
+/// A decorator that wraps an <see cref="IRepository{TEntity, TKey}"/> and counts calls
+/// to <c>PatchAsync</c> and <c>UpdateAsync</c> for verification in tests.
+/// </summary>
+public class RepositorySpy<TEntity, TKey> : IRepository<TEntity, TKey>
+    where TEntity : class
+{
+  private readonly IRepository<TEntity, TKey> _inner;
+
+  /// <summary>
+  /// Initializes a new instance of the <see cref="RepositorySpy{TEntity, TKey}"/> class.
+  /// </summary>
+  /// <param name="inner">The inner repository to delegate to.</param>
+  public RepositorySpy(IRepository<TEntity, TKey> inner) => _inner = inner;
+
+  /// <summary>Gets the number of times <c>PatchAsync</c> was called.</summary>
+  public int PatchAsyncCallCount { get; private set; }
+
+  /// <summary>Gets the number of times <c>UpdateAsync</c> was called.</summary>
+  public int UpdateAsyncCallCount { get; private set; }
+
+  /// <inheritdoc />
+  public Task<TEntity?> GetByIdAsync(TKey id, CancellationToken ct = default) =>
+      _inner.GetByIdAsync(id, ct);
+
+  /// <inheritdoc />
+  public Task<PagedResult<TEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default) =>
+      _inner.GetAllAsync(pagination, ct);
+
+  /// <inheritdoc />
+  public Task<TEntity> CreateAsync(TEntity entity, CancellationToken ct = default) =>
+      _inner.CreateAsync(entity, ct);
+
+  /// <inheritdoc />
+  public Task<TEntity?> UpdateAsync(TKey id, TEntity entity, CancellationToken ct = default)
+  {
+    UpdateAsyncCallCount++;
+    return _inner.UpdateAsync(id, entity, ct);
+  }
+
+  /// <inheritdoc />
+  public Task<TEntity?> PatchAsync(TKey id, JsonElement patchDocument, CancellationToken ct = default)
+  {
+    PatchAsyncCallCount++;
+    return _inner.PatchAsync(id, patchDocument, ct);
+  }
+
+  /// <inheritdoc />
+  public Task<bool> DeleteAsync(TKey id, CancellationToken ct = default) =>
+      _inner.DeleteAsync(id, ct);
+}

@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Http;
 using RestLib.Abstractions;
 using RestLib.Configuration;
@@ -384,7 +383,7 @@ internal static class BatchProcessor
                 continue;
             }
 
-            // Fetch existing entity
+            // Fetch existing entity (needed for 404 check and hook context)
             var existing = await repository.GetByIdAsync(item.Id, ct);
             if (existing is null)
             {
@@ -398,75 +397,12 @@ internal static class BatchProcessor
                 continue;
             }
 
-            // Merge: serialize existing -> overlay patch body -> deserialize back
-            TEntity? patched;
-            try
-            {
-                var existingJson = JsonSerializer.Serialize(existing, jsonOptions);
-                var existingNode = JsonNode.Parse(existingJson);
-                var patchNode = JsonNode.Parse(item.Body.GetRawText());
-
-                if (existingNode is JsonObject existingObj
-                    && patchNode is JsonObject patchObj)
-                {
-                    foreach (var prop in patchObj)
-                    {
-                        existingObj[prop.Key] = prop.Value?.DeepClone();
-                    }
-                }
-
-                patched = existingNode?.Deserialize<TEntity>(jsonOptions);
-            }
-            catch (JsonException)
-            {
-                results.Add(new BatchItemResult
-                {
-                    Index = i,
-                    Status = StatusCodes.Status400BadRequest,
-                    Error = ProblemDetailsFactory.BadRequest(
-                        $"Item at index {i} has an invalid patch body.",
-                        httpContext.Request.Path)
-                });
-                continue;
-            }
-
-            if (patched is null)
-            {
-                results.Add(new BatchItemResult
-                {
-                    Index = i,
-                    Status = StatusCodes.Status400BadRequest,
-                    Error = ProblemDetailsFactory.BadRequest(
-                        $"Item at index {i} patch produced a null entity.",
-                        httpContext.Request.Path)
-                });
-                continue;
-            }
-
-            // Validation
-            if (options.EnableValidation)
-            {
-                var validationResult = EntityValidator.Validate(patched, jsonOptions.PropertyNamingPolicy);
-                if (!validationResult.IsValid)
-                {
-                    results.Add(new BatchItemResult
-                    {
-                        Index = i,
-                        Status = StatusCodes.Status400BadRequest,
-                        Error = ProblemDetailsFactory.ValidationFailed(
-                            new Dictionary<string, string[]>(validationResult.Errors),
-                            httpContext.Request.Path)
-                    });
-                    continue;
-                }
-            }
-
-            // Hooks
+            // Hooks: OnRequestReceived, OnRequestValidated, BeforePersist
             if (pipeline is not null)
             {
                 var hookContext = pipeline.CreateContext(
                     httpContext, RestLibOperation.BatchPatch,
-                    resourceId: item.Id, entity: patched, originalEntity: existing);
+                    resourceId: item.Id, entity: existing, originalEntity: existing);
 
                 var received = await pipeline.ExecuteOnRequestReceivedAsync(hookContext);
                 if (!received)
@@ -488,15 +424,14 @@ internal static class BatchProcessor
                     results.Add(HookShortCircuitResult(i, hookContext));
                     continue;
                 }
-
-                patched = hookContext.Entity ?? patched;
             }
 
-            // Persist
+            // Persist via PatchAsync — delegates merge semantics to the repository,
+            // consistent with single-item PATCH behavior.
             try
             {
-                var updated = await repository.UpdateAsync(item.Id, patched, ct);
-                if (updated is null)
+                var patched = await repository.PatchAsync(item.Id, item.Body, ct);
+                if (patched is null)
                 {
                     var entityName = typeof(TEntity).Name;
                     results.Add(new BatchItemResult
@@ -508,12 +443,30 @@ internal static class BatchProcessor
                     continue;
                 }
 
+                // Validate patched entity (post-persist, consistent with single-item PATCH)
+                if (options.EnableValidation)
+                {
+                    var validationResult = EntityValidator.Validate(patched, jsonOptions.PropertyNamingPolicy);
+                    if (!validationResult.IsValid)
+                    {
+                        results.Add(new BatchItemResult
+                        {
+                            Index = i,
+                            Status = StatusCodes.Status400BadRequest,
+                            Error = ProblemDetailsFactory.ValidationFailed(
+                                new Dictionary<string, string[]>(validationResult.Errors),
+                                httpContext.Request.Path)
+                        });
+                        continue;
+                    }
+                }
+
                 // Hook: AfterPersist
                 if (pipeline is not null)
                 {
                     var afterContext = pipeline.CreateContext(
                         httpContext, RestLibOperation.BatchPatch,
-                        resourceId: item.Id, entity: updated);
+                        resourceId: item.Id, entity: patched);
                     await pipeline.ExecuteAfterPersistAsync(afterContext);
                 }
 
@@ -521,7 +474,7 @@ internal static class BatchProcessor
                 {
                     Index = i,
                     Status = StatusCodes.Status200OK,
-                    Entity = updated
+                    Entity = patched
                 });
             }
             catch (Exception ex)
