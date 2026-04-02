@@ -976,20 +976,24 @@ public static class RestLibEndpointExtensions
         // Create hook pipeline if hooks are configured
         var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
 
+        // Resolve optional batch repository for bulk-optimized operations
+        var batchRepository = httpContext.RequestServices
+            .GetService<IBatchRepository<TEntity, TKey>>();
+
         // Dispatch to the appropriate processor
         var response = action switch
         {
           BatchAction.Create => await BatchProcessor.ProcessCreateAsync(
-              envelope.Items, httpContext, repository, config,
+              envelope.Items, httpContext, repository, batchRepository, config,
               pipeline, options, jsonOptions, ct),
           BatchAction.Update => await BatchProcessor.ProcessUpdateAsync(
-              envelope.Items, httpContext, repository, config,
+              envelope.Items, httpContext, repository, batchRepository, config,
               pipeline, options, jsonOptions, ct),
           BatchAction.Patch => await BatchProcessor.ProcessPatchAsync(
-              envelope.Items, httpContext, repository, config,
+              envelope.Items, httpContext, repository, batchRepository, config,
               pipeline, options, jsonOptions, ct),
           BatchAction.Delete => await BatchProcessor.ProcessDeleteAsync(
-              envelope.Items, httpContext, repository, config,
+              envelope.Items, httpContext, repository, batchRepository, config,
               pipeline, jsonOptions, ct),
           _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
         };

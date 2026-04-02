@@ -10,7 +10,9 @@ namespace RestLib.Batch;
 
 /// <summary>
 /// Orchestrates the processing of batch requests, handling per-item
-/// validation, hooks, and repository operations.
+/// validation, hooks, and repository operations. When an
+/// <see cref="IBatchRepository{TEntity, TKey}"/> is available, bulk
+/// methods are used; otherwise operations fall back to one-at-a-time calls.
 /// </summary>
 internal static class BatchProcessor
 {
@@ -22,6 +24,7 @@ internal static class BatchProcessor
     /// <param name="itemsElement">The raw JSON items array.</param>
     /// <param name="httpContext">The current HTTP context.</param>
     /// <param name="repository">The entity repository.</param>
+    /// <param name="batchRepository">The optional batch-optimized repository.</param>
     /// <param name="config">The endpoint configuration.</param>
     /// <param name="pipeline">The optional hook pipeline.</param>
     /// <param name="options">The global RestLib options.</param>
@@ -32,6 +35,7 @@ internal static class BatchProcessor
         JsonElement itemsElement,
         HttpContext httpContext,
         IRepository<TEntity, TKey> repository,
+        IBatchRepository<TEntity, TKey>? batchRepository,
         RestLibEndpointConfiguration<TEntity, TKey> config,
         HookPipeline<TEntity, TKey>? pipeline,
         RestLibOptions options,
@@ -48,21 +52,24 @@ internal static class BatchProcessor
                     httpContext.Request.Path));
         }
 
-        var results = new List<BatchItemResult>(items.Count);
+        var results = new BatchItemResult?[items.Count];
+
+        // Phase 1: Validate all items and run pre-persist hooks, collecting valid ones.
+        var validItems = new List<(int Index, TEntity Entity)>();
 
         for (var i = 0; i < items.Count; i++)
         {
             var entity = items[i];
             if (entity is null)
             {
-                results.Add(new BatchItemResult
+                results[i] = new BatchItemResult
                 {
                     Index = i,
                     Status = StatusCodes.Status400BadRequest,
                     Error = ProblemDetailsFactory.BadRequest(
                         $"Item at index {i} could not be deserialized.",
                         httpContext.Request.Path)
-                });
+                };
                 continue;
             }
 
@@ -72,14 +79,14 @@ internal static class BatchProcessor
                 var validationResult = EntityValidator.Validate(entity, jsonOptions.PropertyNamingPolicy);
                 if (!validationResult.IsValid)
                 {
-                    results.Add(new BatchItemResult
+                    results[i] = new BatchItemResult
                     {
                         Index = i,
                         Status = StatusCodes.Status400BadRequest,
                         Error = ProblemDetailsFactory.ValidationFailed(
                             new Dictionary<string, string[]>(validationResult.Errors),
                             httpContext.Request.Path)
-                    });
+                    };
                     continue;
                 }
             }
@@ -93,54 +100,96 @@ internal static class BatchProcessor
                 var received = await pipeline.ExecuteOnRequestReceivedAsync(hookContext);
                 if (!received)
                 {
-                    results.Add(HookShortCircuitResult(i, hookContext));
+                    results[i] = HookShortCircuitResult(i, hookContext);
                     continue;
                 }
 
                 var validated = await pipeline.ExecuteOnRequestValidatedAsync(hookContext);
                 if (!validated)
                 {
-                    results.Add(HookShortCircuitResult(i, hookContext));
+                    results[i] = HookShortCircuitResult(i, hookContext);
                     continue;
                 }
 
                 var before = await pipeline.ExecuteBeforePersistAsync(hookContext);
                 if (!before)
                 {
-                    results.Add(HookShortCircuitResult(i, hookContext));
+                    results[i] = HookShortCircuitResult(i, hookContext);
                     continue;
                 }
 
                 entity = hookContext.Entity ?? entity;
             }
 
-            // Persist
+            validItems.Add((i, entity));
+        }
+
+        // Phase 2 & 3: Persist and run AfterPersist hooks.
+        if (batchRepository is not null && validItems.Count > 0)
+        {
             try
             {
-                var created = await repository.CreateAsync(entity, ct);
+                var entities = validItems.Select(v => v.Entity).ToList();
+                var created = await batchRepository.CreateManyAsync(entities, ct);
 
-                // Hook: AfterPersist
-                if (pipeline is not null)
+                for (var j = 0; j < validItems.Count; j++)
                 {
-                    var afterContext = pipeline.CreateContext(
-                        httpContext, RestLibOperation.BatchCreate, entity: created);
-                    await pipeline.ExecuteAfterPersistAsync(afterContext);
+                    var (index, _) = validItems[j];
+                    var createdEntity = created[j];
+
+                    if (pipeline is not null)
+                    {
+                        var afterContext = pipeline.CreateContext(
+                            httpContext, RestLibOperation.BatchCreate, entity: createdEntity);
+                        await pipeline.ExecuteAfterPersistAsync(afterContext);
+                    }
+
+                    results[index] = new BatchItemResult
+                    {
+                        Index = index,
+                        Status = StatusCodes.Status201Created,
+                        Entity = createdEntity
+                    };
                 }
-
-                results.Add(new BatchItemResult
-                {
-                    Index = i,
-                    Status = StatusCodes.Status201Created,
-                    Entity = created
-                });
             }
             catch (Exception ex)
             {
-                results.Add(ExceptionResult(i, ex, httpContext.Request.Path));
+                foreach (var (index, _) in validItems)
+                {
+                    results[index] = ExceptionResult(index, ex, httpContext.Request.Path);
+                }
+            }
+        }
+        else
+        {
+            foreach (var (index, entity) in validItems)
+            {
+                try
+                {
+                    var created = await repository.CreateAsync(entity, ct);
+
+                    if (pipeline is not null)
+                    {
+                        var afterContext = pipeline.CreateContext(
+                            httpContext, RestLibOperation.BatchCreate, entity: created);
+                        await pipeline.ExecuteAfterPersistAsync(afterContext);
+                    }
+
+                    results[index] = new BatchItemResult
+                    {
+                        Index = index,
+                        Status = StatusCodes.Status201Created,
+                        Entity = created
+                    };
+                }
+                catch (Exception ex)
+                {
+                    results[index] = ExceptionResult(index, ex, httpContext.Request.Path);
+                }
             }
         }
 
-        return new BatchResponse { Items = results };
+        return new BatchResponse { Items = results.ToList()! };
     }
 
     /// <summary>
@@ -151,6 +200,7 @@ internal static class BatchProcessor
     /// <param name="itemsElement">The raw JSON items array.</param>
     /// <param name="httpContext">The current HTTP context.</param>
     /// <param name="repository">The entity repository.</param>
+    /// <param name="batchRepository">The optional batch-optimized repository.</param>
     /// <param name="config">The endpoint configuration.</param>
     /// <param name="pipeline">The optional hook pipeline.</param>
     /// <param name="options">The global RestLib options.</param>
@@ -161,6 +211,7 @@ internal static class BatchProcessor
         JsonElement itemsElement,
         HttpContext httpContext,
         IRepository<TEntity, TKey> repository,
+        IBatchRepository<TEntity, TKey>? batchRepository,
         RestLibEndpointConfiguration<TEntity, TKey> config,
         HookPipeline<TEntity, TKey>? pipeline,
         RestLibOptions options,
@@ -177,21 +228,24 @@ internal static class BatchProcessor
                     httpContext.Request.Path));
         }
 
-        var results = new List<BatchItemResult>(items.Count);
+        var results = new BatchItemResult?[items.Count];
+
+        // Phase 1: Validate all items and run pre-persist hooks.
+        var validItems = new List<(int Index, TKey Id, TEntity Entity)>();
 
         for (var i = 0; i < items.Count; i++)
         {
             var item = items[i];
             if (item is null)
             {
-                results.Add(new BatchItemResult
+                results[i] = new BatchItemResult
                 {
                     Index = i,
                     Status = StatusCodes.Status400BadRequest,
                     Error = ProblemDetailsFactory.BadRequest(
                         $"Item at index {i} could not be deserialized.",
                         httpContext.Request.Path)
-                });
+                };
                 continue;
             }
 
@@ -203,27 +257,27 @@ internal static class BatchProcessor
             }
             catch (JsonException)
             {
-                results.Add(new BatchItemResult
+                results[i] = new BatchItemResult
                 {
                     Index = i,
                     Status = StatusCodes.Status400BadRequest,
                     Error = ProblemDetailsFactory.BadRequest(
                         $"Item at index {i} has an invalid body.",
                         httpContext.Request.Path)
-                });
+                };
                 continue;
             }
 
             if (entity is null)
             {
-                results.Add(new BatchItemResult
+                results[i] = new BatchItemResult
                 {
                     Index = i,
                     Status = StatusCodes.Status400BadRequest,
                     Error = ProblemDetailsFactory.BadRequest(
                         $"Item at index {i} body deserialized to null.",
                         httpContext.Request.Path)
-                });
+                };
                 continue;
             }
 
@@ -232,12 +286,12 @@ internal static class BatchProcessor
             if (existing is null)
             {
                 var entityName = typeof(TEntity).Name;
-                results.Add(new BatchItemResult
+                results[i] = new BatchItemResult
                 {
                     Index = i,
                     Status = StatusCodes.Status404NotFound,
                     Error = ProblemDetailsFactory.NotFound(entityName, item.Id!, httpContext.Request.Path)
-                });
+                };
                 continue;
             }
 
@@ -247,14 +301,14 @@ internal static class BatchProcessor
                 var validationResult = EntityValidator.Validate(entity, jsonOptions.PropertyNamingPolicy);
                 if (!validationResult.IsValid)
                 {
-                    results.Add(new BatchItemResult
+                    results[i] = new BatchItemResult
                     {
                         Index = i,
                         Status = StatusCodes.Status400BadRequest,
                         Error = ProblemDetailsFactory.ValidationFailed(
                             new Dictionary<string, string[]>(validationResult.Errors),
                             httpContext.Request.Path)
-                    });
+                    };
                     continue;
                 }
             }
@@ -269,66 +323,109 @@ internal static class BatchProcessor
                 var received = await pipeline.ExecuteOnRequestReceivedAsync(hookContext);
                 if (!received)
                 {
-                    results.Add(HookShortCircuitResult(i, hookContext));
+                    results[i] = HookShortCircuitResult(i, hookContext);
                     continue;
                 }
 
                 var validated = await pipeline.ExecuteOnRequestValidatedAsync(hookContext);
                 if (!validated)
                 {
-                    results.Add(HookShortCircuitResult(i, hookContext));
+                    results[i] = HookShortCircuitResult(i, hookContext);
                     continue;
                 }
 
                 var before = await pipeline.ExecuteBeforePersistAsync(hookContext);
                 if (!before)
                 {
-                    results.Add(HookShortCircuitResult(i, hookContext));
+                    results[i] = HookShortCircuitResult(i, hookContext);
                     continue;
                 }
 
                 entity = hookContext.Entity ?? entity;
             }
 
-            // Persist
+            validItems.Add((i, item.Id, entity));
+        }
+
+        // Phase 2 & 3: Persist and run AfterPersist hooks.
+        if (batchRepository is not null && validItems.Count > 0)
+        {
             try
             {
-                var updated = await repository.UpdateAsync(item.Id, entity, ct);
-                if (updated is null)
+                var entities = validItems.Select(v => v.Entity).ToList();
+                var updated = await batchRepository.UpdateManyAsync(entities, ct);
+
+                for (var j = 0; j < validItems.Count; j++)
                 {
-                    var entityName = typeof(TEntity).Name;
-                    results.Add(new BatchItemResult
+                    var (index, id, _) = validItems[j];
+                    var updatedEntity = updated[j];
+
+                    if (pipeline is not null)
                     {
-                        Index = i,
-                        Status = StatusCodes.Status404NotFound,
-                        Error = ProblemDetailsFactory.NotFound(entityName, item.Id!, httpContext.Request.Path)
-                    });
-                    continue;
-                }
+                        var afterContext = pipeline.CreateContext(
+                            httpContext, RestLibOperation.BatchUpdate,
+                            resourceId: id, entity: updatedEntity);
+                        await pipeline.ExecuteAfterPersistAsync(afterContext);
+                    }
 
-                // Hook: AfterPersist
-                if (pipeline is not null)
-                {
-                    var afterContext = pipeline.CreateContext(
-                        httpContext, RestLibOperation.BatchUpdate,
-                        resourceId: item.Id, entity: updated);
-                    await pipeline.ExecuteAfterPersistAsync(afterContext);
+                    results[index] = new BatchItemResult
+                    {
+                        Index = index,
+                        Status = StatusCodes.Status200OK,
+                        Entity = updatedEntity
+                    };
                 }
-
-                results.Add(new BatchItemResult
-                {
-                    Index = i,
-                    Status = StatusCodes.Status200OK,
-                    Entity = updated
-                });
             }
             catch (Exception ex)
             {
-                results.Add(ExceptionResult(i, ex, httpContext.Request.Path));
+                foreach (var (index, _, _) in validItems)
+                {
+                    results[index] = ExceptionResult(index, ex, httpContext.Request.Path);
+                }
+            }
+        }
+        else
+        {
+            foreach (var (index, id, entity) in validItems)
+            {
+                try
+                {
+                    var updated = await repository.UpdateAsync(id, entity, ct);
+                    if (updated is null)
+                    {
+                        var entityName = typeof(TEntity).Name;
+                        results[index] = new BatchItemResult
+                        {
+                            Index = index,
+                            Status = StatusCodes.Status404NotFound,
+                            Error = ProblemDetailsFactory.NotFound(entityName, id!, httpContext.Request.Path)
+                        };
+                        continue;
+                    }
+
+                    if (pipeline is not null)
+                    {
+                        var afterContext = pipeline.CreateContext(
+                            httpContext, RestLibOperation.BatchUpdate,
+                            resourceId: id, entity: updated);
+                        await pipeline.ExecuteAfterPersistAsync(afterContext);
+                    }
+
+                    results[index] = new BatchItemResult
+                    {
+                        Index = index,
+                        Status = StatusCodes.Status200OK,
+                        Entity = updated
+                    };
+                }
+                catch (Exception ex)
+                {
+                    results[index] = ExceptionResult(index, ex, httpContext.Request.Path);
+                }
             }
         }
 
-        return new BatchResponse { Items = results };
+        return new BatchResponse { Items = results.ToList()! };
     }
 
     /// <summary>
@@ -339,6 +436,7 @@ internal static class BatchProcessor
     /// <param name="itemsElement">The raw JSON items array.</param>
     /// <param name="httpContext">The current HTTP context.</param>
     /// <param name="repository">The entity repository.</param>
+    /// <param name="batchRepository">The optional batch-optimized repository.</param>
     /// <param name="config">The endpoint configuration.</param>
     /// <param name="pipeline">The optional hook pipeline.</param>
     /// <param name="options">The global RestLib options.</param>
@@ -349,6 +447,7 @@ internal static class BatchProcessor
         JsonElement itemsElement,
         HttpContext httpContext,
         IRepository<TEntity, TKey> repository,
+        IBatchRepository<TEntity, TKey>? batchRepository,
         RestLibEndpointConfiguration<TEntity, TKey> config,
         HookPipeline<TEntity, TKey>? pipeline,
         RestLibOptions options,
@@ -365,21 +464,24 @@ internal static class BatchProcessor
                     httpContext.Request.Path));
         }
 
-        var results = new List<BatchItemResult>(items.Count);
+        var results = new BatchItemResult?[items.Count];
+
+        // Phase 1: Validate items (existence check + hooks).
+        var validItems = new List<(int Index, TKey Id, JsonElement Body)>();
 
         for (var i = 0; i < items.Count; i++)
         {
             var item = items[i];
             if (item is null)
             {
-                results.Add(new BatchItemResult
+                results[i] = new BatchItemResult
                 {
                     Index = i,
                     Status = StatusCodes.Status400BadRequest,
                     Error = ProblemDetailsFactory.BadRequest(
                         $"Item at index {i} could not be deserialized.",
                         httpContext.Request.Path)
-                });
+                };
                 continue;
             }
 
@@ -388,12 +490,12 @@ internal static class BatchProcessor
             if (existing is null)
             {
                 var entityName = typeof(TEntity).Name;
-                results.Add(new BatchItemResult
+                results[i] = new BatchItemResult
                 {
                     Index = i,
                     Status = StatusCodes.Status404NotFound,
                     Error = ProblemDetailsFactory.NotFound(entityName, item.Id!, httpContext.Request.Path)
-                });
+                };
                 continue;
             }
 
@@ -407,83 +509,145 @@ internal static class BatchProcessor
                 var received = await pipeline.ExecuteOnRequestReceivedAsync(hookContext);
                 if (!received)
                 {
-                    results.Add(HookShortCircuitResult(i, hookContext));
+                    results[i] = HookShortCircuitResult(i, hookContext);
                     continue;
                 }
 
                 var validated = await pipeline.ExecuteOnRequestValidatedAsync(hookContext);
                 if (!validated)
                 {
-                    results.Add(HookShortCircuitResult(i, hookContext));
+                    results[i] = HookShortCircuitResult(i, hookContext);
                     continue;
                 }
 
                 var before = await pipeline.ExecuteBeforePersistAsync(hookContext);
                 if (!before)
                 {
-                    results.Add(HookShortCircuitResult(i, hookContext));
+                    results[i] = HookShortCircuitResult(i, hookContext);
                     continue;
                 }
             }
 
-            // Persist via PatchAsync — delegates merge semantics to the repository,
-            // consistent with single-item PATCH behavior.
+            validItems.Add((i, item.Id, item.Body));
+        }
+
+        // Phase 2 & 3: Persist and run AfterPersist hooks.
+        if (batchRepository is not null && validItems.Count > 0)
+        {
             try
             {
-                var patched = await repository.PatchAsync(item.Id, item.Body, ct);
-                if (patched is null)
-                {
-                    var entityName = typeof(TEntity).Name;
-                    results.Add(new BatchItemResult
-                    {
-                        Index = i,
-                        Status = StatusCodes.Status404NotFound,
-                        Error = ProblemDetailsFactory.NotFound(entityName, item.Id!, httpContext.Request.Path)
-                    });
-                    continue;
-                }
+                var patches = validItems
+                    .Select(v => (v.Id, v.Body))
+                    .ToList();
+                var patched = await batchRepository.PatchManyAsync(patches, ct);
 
-                // Validate patched entity (post-persist, consistent with single-item PATCH)
-                if (options.EnableValidation)
+                for (var j = 0; j < validItems.Count; j++)
                 {
-                    var validationResult = EntityValidator.Validate(patched, jsonOptions.PropertyNamingPolicy);
-                    if (!validationResult.IsValid)
+                    var (index, id, _) = validItems[j];
+                    var patchedEntity = patched[j];
+
+                    // Validate patched entity (post-persist, consistent with single-item PATCH)
+                    if (options.EnableValidation)
                     {
-                        results.Add(new BatchItemResult
+                        var validationResult = EntityValidator.Validate(patchedEntity, jsonOptions.PropertyNamingPolicy);
+                        if (!validationResult.IsValid)
                         {
-                            Index = i,
-                            Status = StatusCodes.Status400BadRequest,
-                            Error = ProblemDetailsFactory.ValidationFailed(
-                                new Dictionary<string, string[]>(validationResult.Errors),
-                                httpContext.Request.Path)
-                        });
-                        continue;
+                            results[index] = new BatchItemResult
+                            {
+                                Index = index,
+                                Status = StatusCodes.Status400BadRequest,
+                                Error = ProblemDetailsFactory.ValidationFailed(
+                                    new Dictionary<string, string[]>(validationResult.Errors),
+                                    httpContext.Request.Path)
+                            };
+                            continue;
+                        }
                     }
-                }
 
-                // Hook: AfterPersist
-                if (pipeline is not null)
-                {
-                    var afterContext = pipeline.CreateContext(
-                        httpContext, RestLibOperation.BatchPatch,
-                        resourceId: item.Id, entity: patched);
-                    await pipeline.ExecuteAfterPersistAsync(afterContext);
-                }
+                    if (pipeline is not null)
+                    {
+                        var afterContext = pipeline.CreateContext(
+                            httpContext, RestLibOperation.BatchPatch,
+                            resourceId: id, entity: patchedEntity);
+                        await pipeline.ExecuteAfterPersistAsync(afterContext);
+                    }
 
-                results.Add(new BatchItemResult
-                {
-                    Index = i,
-                    Status = StatusCodes.Status200OK,
-                    Entity = patched
-                });
+                    results[index] = new BatchItemResult
+                    {
+                        Index = index,
+                        Status = StatusCodes.Status200OK,
+                        Entity = patchedEntity
+                    };
+                }
             }
             catch (Exception ex)
             {
-                results.Add(ExceptionResult(i, ex, httpContext.Request.Path));
+                foreach (var (index, _, _) in validItems)
+                {
+                    results[index] = ExceptionResult(index, ex, httpContext.Request.Path);
+                }
+            }
+        }
+        else
+        {
+            foreach (var (index, id, body) in validItems)
+            {
+                try
+                {
+                    var patched = await repository.PatchAsync(id, body, ct);
+                    if (patched is null)
+                    {
+                        var entityName = typeof(TEntity).Name;
+                        results[index] = new BatchItemResult
+                        {
+                            Index = index,
+                            Status = StatusCodes.Status404NotFound,
+                            Error = ProblemDetailsFactory.NotFound(entityName, id!, httpContext.Request.Path)
+                        };
+                        continue;
+                    }
+
+                    // Validate patched entity (post-persist, consistent with single-item PATCH)
+                    if (options.EnableValidation)
+                    {
+                        var validationResult = EntityValidator.Validate(patched, jsonOptions.PropertyNamingPolicy);
+                        if (!validationResult.IsValid)
+                        {
+                            results[index] = new BatchItemResult
+                            {
+                                Index = index,
+                                Status = StatusCodes.Status400BadRequest,
+                                Error = ProblemDetailsFactory.ValidationFailed(
+                                    new Dictionary<string, string[]>(validationResult.Errors),
+                                    httpContext.Request.Path)
+                            };
+                            continue;
+                        }
+                    }
+
+                    if (pipeline is not null)
+                    {
+                        var afterContext = pipeline.CreateContext(
+                            httpContext, RestLibOperation.BatchPatch,
+                            resourceId: id, entity: patched);
+                        await pipeline.ExecuteAfterPersistAsync(afterContext);
+                    }
+
+                    results[index] = new BatchItemResult
+                    {
+                        Index = index,
+                        Status = StatusCodes.Status200OK,
+                        Entity = patched
+                    };
+                }
+                catch (Exception ex)
+                {
+                    results[index] = ExceptionResult(index, ex, httpContext.Request.Path);
+                }
             }
         }
 
-        return new BatchResponse { Items = results };
+        return new BatchResponse { Items = results.ToList()! };
     }
 
     /// <summary>
@@ -494,6 +658,7 @@ internal static class BatchProcessor
     /// <param name="itemsElement">The raw JSON items array.</param>
     /// <param name="httpContext">The current HTTP context.</param>
     /// <param name="repository">The entity repository.</param>
+    /// <param name="batchRepository">The optional batch-optimized repository.</param>
     /// <param name="config">The endpoint configuration.</param>
     /// <param name="pipeline">The optional hook pipeline.</param>
     /// <param name="jsonOptions">The JSON serializer options.</param>
@@ -503,6 +668,7 @@ internal static class BatchProcessor
         JsonElement itemsElement,
         HttpContext httpContext,
         IRepository<TEntity, TKey> repository,
+        IBatchRepository<TEntity, TKey>? batchRepository,
         RestLibEndpointConfiguration<TEntity, TKey> config,
         HookPipeline<TEntity, TKey>? pipeline,
         JsonSerializerOptions jsonOptions,
@@ -518,21 +684,24 @@ internal static class BatchProcessor
                     httpContext.Request.Path));
         }
 
-        var results = new List<BatchItemResult>(keys.Count);
+        var results = new BatchItemResult?[keys.Count];
+
+        // Phase 1: Validate keys and run pre-persist hooks.
+        var validKeys = new List<(int Index, TKey Key)>();
 
         for (var i = 0; i < keys.Count; i++)
         {
             var key = keys[i];
             if (key is null)
             {
-                results.Add(new BatchItemResult
+                results[i] = new BatchItemResult
                 {
                     Index = i,
                     Status = StatusCodes.Status400BadRequest,
                     Error = ProblemDetailsFactory.BadRequest(
                         $"Item at index {i} has a null or invalid ID.",
                         httpContext.Request.Path)
-                });
+                };
                 continue;
             }
 
@@ -545,62 +714,107 @@ internal static class BatchProcessor
                 var received = await pipeline.ExecuteOnRequestReceivedAsync(hookContext);
                 if (!received)
                 {
-                    results.Add(HookShortCircuitResult(i, hookContext));
+                    results[i] = HookShortCircuitResult(i, hookContext);
                     continue;
                 }
 
                 var validated = await pipeline.ExecuteOnRequestValidatedAsync(hookContext);
                 if (!validated)
                 {
-                    results.Add(HookShortCircuitResult(i, hookContext));
+                    results[i] = HookShortCircuitResult(i, hookContext);
                     continue;
                 }
 
                 var before = await pipeline.ExecuteBeforePersistAsync(hookContext);
                 if (!before)
                 {
-                    results.Add(HookShortCircuitResult(i, hookContext));
+                    results[i] = HookShortCircuitResult(i, hookContext);
                     continue;
                 }
             }
 
-            // Persist
+            validKeys.Add((i, key));
+        }
+
+        // Phase 2 & 3: Persist and run AfterPersist hooks.
+        if (batchRepository is not null && validKeys.Count > 0)
+        {
             try
             {
-                var deleted = await repository.DeleteAsync(key, ct);
-                if (!deleted)
+                var keysToDelete = validKeys.Select(v => v.Key).ToList();
+                var deletedCount = await batchRepository.DeleteManyAsync(keysToDelete, ct);
+
+                // DeleteManyAsync returns total count — we don't know which individual
+                // keys were not found. Mark all as succeeded (204) since the bulk
+                // operation was accepted. For fine-grained 404 detection, callers
+                // should fall back to the single-op path (i.e., don't register
+                // IBatchRepository if per-item 404s are required).
+                for (var j = 0; j < validKeys.Count; j++)
                 {
-                    var entityName = typeof(TEntity).Name;
-                    results.Add(new BatchItemResult
+                    var (index, key) = validKeys[j];
+
+                    if (pipeline is not null)
                     {
-                        Index = i,
-                        Status = StatusCodes.Status404NotFound,
-                        Error = ProblemDetailsFactory.NotFound(entityName, key, httpContext.Request.Path)
-                    });
-                    continue;
-                }
+                        var afterContext = pipeline.CreateContext(
+                            httpContext, RestLibOperation.BatchDelete, resourceId: key);
+                        await pipeline.ExecuteAfterPersistAsync(afterContext);
+                    }
 
-                // Hook: AfterPersist
-                if (pipeline is not null)
-                {
-                    var afterContext = pipeline.CreateContext(
-                        httpContext, RestLibOperation.BatchDelete, resourceId: key);
-                    await pipeline.ExecuteAfterPersistAsync(afterContext);
+                    results[index] = new BatchItemResult
+                    {
+                        Index = index,
+                        Status = StatusCodes.Status204NoContent
+                    };
                 }
-
-                results.Add(new BatchItemResult
-                {
-                    Index = i,
-                    Status = StatusCodes.Status204NoContent
-                });
             }
             catch (Exception ex)
             {
-                results.Add(ExceptionResult(i, ex, httpContext.Request.Path));
+                foreach (var (index, _) in validKeys)
+                {
+                    results[index] = ExceptionResult(index, ex, httpContext.Request.Path);
+                }
+            }
+        }
+        else
+        {
+            foreach (var (index, key) in validKeys)
+            {
+                try
+                {
+                    var deleted = await repository.DeleteAsync(key, ct);
+                    if (!deleted)
+                    {
+                        var entityName = typeof(TEntity).Name;
+                        results[index] = new BatchItemResult
+                        {
+                            Index = index,
+                            Status = StatusCodes.Status404NotFound,
+                            Error = ProblemDetailsFactory.NotFound(entityName, key!, httpContext.Request.Path)
+                        };
+                        continue;
+                    }
+
+                    if (pipeline is not null)
+                    {
+                        var afterContext = pipeline.CreateContext(
+                            httpContext, RestLibOperation.BatchDelete, resourceId: key);
+                        await pipeline.ExecuteAfterPersistAsync(afterContext);
+                    }
+
+                    results[index] = new BatchItemResult
+                    {
+                        Index = index,
+                        Status = StatusCodes.Status204NoContent
+                    };
+                }
+                catch (Exception ex)
+                {
+                    results[index] = ExceptionResult(index, ex, httpContext.Request.Path);
+                }
             }
         }
 
-        return new BatchResponse { Items = results };
+        return new BatchResponse { Items = results.ToList()! };
     }
 
     /// <summary>

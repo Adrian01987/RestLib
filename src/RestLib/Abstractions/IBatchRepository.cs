@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace RestLib.Abstractions;
 
 /// <summary>
@@ -29,6 +31,16 @@ public interface IBatchRepository<TEntity, TKey>
     /// <returns>The updated entities.</returns>
     Task<IReadOnlyList<TEntity>> UpdateManyAsync(
         IReadOnlyList<TEntity> entities,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Patches (partially updates) multiple entities in a single operation.
+    /// </summary>
+    /// <param name="patches">A list of tuples, each containing the entity key and a JSON merge-patch document.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The patched entities.</returns>
+    Task<IReadOnlyList<TEntity>> PatchManyAsync(
+        IReadOnlyList<(TKey Id, JsonElement PatchDocument)> patches,
         CancellationToken ct = default);
 
     /// <summary>

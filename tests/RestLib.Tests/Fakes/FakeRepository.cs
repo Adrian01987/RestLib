@@ -397,3 +397,61 @@ public class RepositorySpy<TEntity, TKey> : IRepository<TEntity, TKey>
   public Task<bool> DeleteAsync(TKey id, CancellationToken ct = default) =>
       _inner.DeleteAsync(id, ct);
 }
+
+/// <summary>
+/// A decorator that wraps an <see cref="IBatchRepository{TEntity, TKey}"/> and counts
+/// calls to each bulk method for verification in tests.
+/// </summary>
+public class BatchRepositorySpy<TEntity, TKey> : IBatchRepository<TEntity, TKey>
+    where TEntity : class
+{
+  private readonly IBatchRepository<TEntity, TKey> _inner;
+
+  /// <summary>
+  /// Initializes a new instance of the <see cref="BatchRepositorySpy{TEntity, TKey}"/> class.
+  /// </summary>
+  /// <param name="inner">The inner batch repository to delegate to.</param>
+  public BatchRepositorySpy(IBatchRepository<TEntity, TKey> inner) => _inner = inner;
+
+  /// <summary>Gets the number of times <c>CreateManyAsync</c> was called.</summary>
+  public int CreateManyCallCount { get; private set; }
+
+  /// <summary>Gets the number of times <c>UpdateManyAsync</c> was called.</summary>
+  public int UpdateManyCallCount { get; private set; }
+
+  /// <summary>Gets the number of times <c>PatchManyAsync</c> was called.</summary>
+  public int PatchManyCallCount { get; private set; }
+
+  /// <summary>Gets the number of times <c>DeleteManyAsync</c> was called.</summary>
+  public int DeleteManyCallCount { get; private set; }
+
+  /// <inheritdoc />
+  public Task<IReadOnlyList<TEntity>> CreateManyAsync(IReadOnlyList<TEntity> entities, CancellationToken ct = default)
+  {
+    CreateManyCallCount++;
+    return _inner.CreateManyAsync(entities, ct);
+  }
+
+  /// <inheritdoc />
+  public Task<IReadOnlyList<TEntity>> UpdateManyAsync(IReadOnlyList<TEntity> entities, CancellationToken ct = default)
+  {
+    UpdateManyCallCount++;
+    return _inner.UpdateManyAsync(entities, ct);
+  }
+
+  /// <inheritdoc />
+  public Task<IReadOnlyList<TEntity>> PatchManyAsync(
+      IReadOnlyList<(TKey Id, JsonElement PatchDocument)> patches,
+      CancellationToken ct = default)
+  {
+    PatchManyCallCount++;
+    return _inner.PatchManyAsync(patches, ct);
+  }
+
+  /// <inheritdoc />
+  public Task<int> DeleteManyAsync(IReadOnlyList<TKey> keys, CancellationToken ct = default)
+  {
+    DeleteManyCallCount++;
+    return _inner.DeleteManyAsync(keys, ct);
+  }
+}

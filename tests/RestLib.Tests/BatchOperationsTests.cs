@@ -1164,4 +1164,325 @@ public class BatchOperationsTests : IDisposable
   }
 
   #endregion
+
+  #region IBatchRepository Wiring
+
+  private BatchRepositorySpy<BatchEntity, Guid>? _batchSpy;
+  private RepositorySpy<BatchEntity, Guid>? _repositorySpy;
+
+  /// <summary>
+  /// Creates a test host that also registers <see cref="IBatchRepository{TEntity, TKey}"/>
+  /// via a <see cref="BatchRepositorySpy{TEntity, TKey}"/> so we can verify bulk calls.
+  /// </summary>
+  private void CreateHostWithBatchRepository(
+      Action<RestLibEndpointConfiguration<BatchEntity, Guid>> configure,
+      Action<RestLibOptions>? configureOptions = null)
+  {
+    _batchSpy = new BatchRepositorySpy<BatchEntity, Guid>(_repository);
+    _repositorySpy = new RepositorySpy<BatchEntity, Guid>(_repository);
+
+    _host = new HostBuilder()
+        .ConfigureWebHost(webBuilder =>
+        {
+          webBuilder
+              .UseTestServer()
+              .ConfigureServices(services =>
+              {
+                services.AddRestLib(options =>
+                {
+                  configureOptions?.Invoke(options);
+                });
+                services.AddSingleton<IRepository<BatchEntity, Guid>>(_repositorySpy);
+                services.AddSingleton<IBatchRepository<BatchEntity, Guid>>(_batchSpy);
+                services.AddRouting();
+              })
+              .Configure(app =>
+              {
+                app.UseRouting();
+                app.UseEndpoints(endpoints =>
+                {
+                  endpoints.MapRestLib<BatchEntity, Guid>("/api/items", configure);
+                });
+              });
+        })
+        .Build();
+
+    _host.Start();
+    _client = _host.GetTestClient();
+  }
+
+  [Fact]
+  [Trait("Category", "Story8.9")]
+  public async Task BatchCreate_UsesBatchRepository_WhenAvailable()
+  {
+    // Arrange
+    CreateHostWithBatchRepository(config =>
+    {
+      config.AllowAnonymous();
+      config.EnableBatch();
+    });
+
+    var payload = new
+    {
+      action = "create",
+      items = new[]
+      {
+        new { name = "Item1", price = 10m },
+        new { name = "Item2", price = 20m }
+      }
+    };
+
+    // Act
+    var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+    _batchSpy!.CreateManyCallCount.Should().Be(1);
+    _repositorySpy!.PatchAsyncCallCount.Should().Be(0);
+  }
+
+  [Fact]
+  [Trait("Category", "Story8.9")]
+  public async Task BatchUpdate_UsesBatchRepository_WhenAvailable()
+  {
+    // Arrange
+    var id1 = Guid.NewGuid();
+    var id2 = Guid.NewGuid();
+    _repository.Seed(new[]
+    {
+      new BatchEntity { Id = id1, Name = "Old1", Price = 1m },
+      new BatchEntity { Id = id2, Name = "Old2", Price = 2m }
+    });
+
+    CreateHostWithBatchRepository(config =>
+    {
+      config.AllowAnonymous();
+      config.EnableBatch();
+    });
+
+    var payload = new
+    {
+      action = "update",
+      items = new[]
+      {
+        new { id = id1, body = new { name = "New1", price = 11m, is_active = true } },
+        new { id = id2, body = new { name = "New2", price = 22m, is_active = true } }
+      }
+    };
+
+    // Act
+    var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+    _batchSpy!.UpdateManyCallCount.Should().Be(1);
+  }
+
+  [Fact]
+  [Trait("Category", "Story8.9")]
+  public async Task BatchPatch_UsesBatchRepository_WhenAvailable()
+  {
+    // Arrange
+    var id1 = Guid.NewGuid();
+    var id2 = Guid.NewGuid();
+    _repository.Seed(new[]
+    {
+      new BatchEntity { Id = id1, Name = "PatchMe1", Price = 1m },
+      new BatchEntity { Id = id2, Name = "PatchMe2", Price = 2m }
+    });
+
+    CreateHostWithBatchRepository(config =>
+    {
+      config.AllowAnonymous();
+      config.EnableBatch();
+    });
+
+    var payload = new
+    {
+      action = "patch",
+      items = new[]
+      {
+        new { id = id1, body = new { price = 99m } },
+        new { id = id2, body = new { price = 88m } }
+      }
+    };
+
+    // Act
+    var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+    _batchSpy!.PatchManyCallCount.Should().Be(1);
+  }
+
+  [Fact]
+  [Trait("Category", "Story8.9")]
+  public async Task BatchDelete_UsesBatchRepository_WhenAvailable()
+  {
+    // Arrange
+    var id1 = Guid.NewGuid();
+    var id2 = Guid.NewGuid();
+    _repository.Seed(new[]
+    {
+      new BatchEntity { Id = id1, Name = "Del1", Price = 1m },
+      new BatchEntity { Id = id2, Name = "Del2", Price = 2m }
+    });
+
+    CreateHostWithBatchRepository(config =>
+    {
+      config.AllowAnonymous();
+      config.EnableBatch();
+    });
+
+    var payload = new
+    {
+      action = "delete",
+      items = new[] { id1, id2 }
+    };
+
+    // Act
+    var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+    _batchSpy!.DeleteManyCallCount.Should().Be(1);
+  }
+
+  [Fact]
+  [Trait("Category", "Story8.9")]
+  public async Task BatchCreate_FallsBackToSingleOps_WhenNoBatchRepository()
+  {
+    // Arrange — use CreateHost which does NOT register IBatchRepository
+    var spy = new RepositorySpy<BatchEntity, Guid>(_repository);
+
+    _host = new HostBuilder()
+        .ConfigureWebHost(webBuilder =>
+        {
+          webBuilder
+              .UseTestServer()
+              .ConfigureServices(services =>
+              {
+                services.AddRestLib();
+                services.AddSingleton<IRepository<BatchEntity, Guid>>(spy);
+                services.AddRouting();
+              })
+              .Configure(app =>
+              {
+                app.UseRouting();
+                app.UseEndpoints(endpoints =>
+                {
+                  endpoints.MapRestLib<BatchEntity, Guid>("/api/items", config =>
+                  {
+                    config.AllowAnonymous();
+                    config.EnableBatch();
+                  });
+                });
+              });
+        })
+        .Build();
+
+    _host.Start();
+    _client = _host.GetTestClient();
+
+    var payload = new
+    {
+      action = "create",
+      items = new[]
+      {
+        new { name = "FallbackItem1", price = 5m },
+        new { name = "FallbackItem2", price = 6m }
+      }
+    };
+
+    // Act
+    var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    var items = json.GetProperty("items");
+    items.GetArrayLength().Should().Be(2);
+    items[0].GetProperty("status").GetInt32().Should().Be(201);
+    items[1].GetProperty("status").GetInt32().Should().Be(201);
+  }
+
+  [Fact]
+  [Trait("Category", "Story8.9")]
+  public async Task BatchCreate_BatchRepository_HooksStillFirePerItem()
+  {
+    // Arrange
+    var hookCallCount = 0;
+
+    CreateHostWithBatchRepository(config =>
+    {
+      config.AllowAnonymous();
+      config.EnableBatch();
+      config.UseHooks(hooks =>
+      {
+        hooks.AfterPersist = ctx =>
+        {
+          Interlocked.Increment(ref hookCallCount);
+          return Task.CompletedTask;
+        };
+      });
+    });
+
+    var payload = new
+    {
+      action = "create",
+      items = new[]
+      {
+        new { name = "HookItem1", price = 10m },
+        new { name = "HookItem2", price = 20m },
+        new { name = "HookItem3", price = 30m }
+      }
+    };
+
+    // Act
+    var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+    _batchSpy!.CreateManyCallCount.Should().Be(1, "bulk method should be called once");
+    hookCallCount.Should().Be(3, "AfterPersist hook should fire once per item");
+  }
+
+  [Fact]
+  [Trait("Category", "Story8.9")]
+  public async Task BatchCreate_BatchRepository_ValidationStillAppliesPerItem()
+  {
+    // Arrange
+    CreateHostWithBatchRepository(config =>
+    {
+      config.AllowAnonymous();
+      config.EnableBatch();
+    });
+
+    var payload = new
+    {
+      action = "create",
+      items = new[]
+      {
+        new { name = "ValidItem", price = 10m },
+        new { name = string.Empty, price = 20m }, // Name is [Required], empty fails
+      }
+    };
+
+    // Act
+    var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert — should be 207 (mixed results)
+    response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    var items = json.GetProperty("items");
+    items.GetArrayLength().Should().Be(2);
+
+    // First item succeeded
+    items[0].GetProperty("status").GetInt32().Should().Be(201);
+
+    // Second item failed validation
+    items[1].GetProperty("status").GetInt32().Should().Be(400);
+  }
+
+  #endregion
 }

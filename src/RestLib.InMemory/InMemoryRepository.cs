@@ -226,6 +226,38 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     return Task.FromResult(count);
   }
 
+  /// <inheritdoc />
+  public Task<IReadOnlyList<TEntity>> PatchManyAsync(
+      IReadOnlyList<(TKey Id, JsonElement PatchDocument)> patches,
+      CancellationToken ct = default)
+  {
+    ArgumentNullException.ThrowIfNull(patches);
+
+    var results = new List<TEntity>(patches.Count);
+    foreach (var (id, patchDocument) in patches)
+    {
+      if (!_store.TryGetValue(id, out var existing))
+      {
+        throw new KeyNotFoundException($"Entity with key '{id}' not found.");
+      }
+
+      var existingJson = JsonSerializer.Serialize(existing, _jsonOptions);
+      var existingDoc = JsonDocument.Parse(existingJson);
+      var merged = MergeJsonObjects(existingDoc.RootElement, patchDocument);
+
+      var updated = JsonSerializer.Deserialize<TEntity>(merged, _jsonOptions);
+      if (updated == null)
+      {
+        throw new InvalidOperationException($"Failed to deserialize patched entity with key '{id}'.");
+      }
+
+      _store[id] = updated;
+      results.Add(updated);
+    }
+
+    return Task.FromResult<IReadOnlyList<TEntity>>(results);
+  }
+
   /// <summary>
   /// Gets the current count of entities in the repository.
   /// </summary>
