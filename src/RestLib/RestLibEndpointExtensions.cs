@@ -114,9 +114,7 @@ public static class RestLibEndpointExtensions
           int? limit,
           CancellationToken ct) =>
       {
-        var jsonOptions = GetJsonOptions(httpContext);
-        var options = httpContext.RequestServices.GetService<RestLibOptions>()
-                      ?? new RestLibOptions();
+        var (jsonOptions, options) = ResolveOptions(httpContext);
 
         // Create hook pipeline if hooks are configured
         var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
@@ -210,11 +208,8 @@ public static class RestLibEndpointExtensions
           }
 
           // OnRequestValidated hook
-          if (pipeline is not null && hookContext is not null)
-          {
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestValidatedAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
-          }
+          var onValidatedResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
+          if (onValidatedResult is not null) return onValidatedResult;
 
           var effectiveLimit = Math.Clamp(limit ?? options.DefaultPageSize, 1, options.MaxPageSize);
           var paginationRequest = new PaginationRequest
@@ -230,11 +225,8 @@ public static class RestLibEndpointExtensions
           var response = BuildCollectionResponse(result, httpContext.Request, cursor, effectiveLimit, options);
 
           // BeforeResponse hook
-          if (pipeline is not null && hookContext is not null)
-          {
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforeResponseAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
-          }
+          var beforeResponseResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
+          if (beforeResponseResult is not null) return beforeResponseResult;
 
           // Apply field selection projection if requested
           if (selectedFields.Count > 0)
@@ -337,9 +329,7 @@ public static class RestLibEndpointExtensions
           HttpContext httpContext,
           CancellationToken ct) =>
       {
-        var jsonOptions = GetJsonOptions(httpContext);
-        var options = httpContext.RequestServices.GetService<RestLibOptions>()
-                      ?? new RestLibOptions();
+        var (jsonOptions, options) = ResolveOptions(httpContext);
 
         // Create hook pipeline if hooks are configured
         var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
@@ -392,17 +382,13 @@ public static class RestLibEndpointExtensions
           }
 
           // OnRequestValidated hook
-          if (pipeline is not null && hookContext is not null)
-          {
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestValidatedAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
-          }
+          var onValidatedResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
+          if (onValidatedResult is not null) return onValidatedResult;
 
           // Handle conditional requests when ETag support is enabled
           if (options.EnableETagSupport)
           {
-            var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
-                                ?? new HashBasedETagGenerator(jsonOptions);
+            var etagGenerator = ResolveETagGenerator(httpContext, jsonOptions);
             var etag = etagGenerator.Generate(entity);
 
             // Check If-None-Match header for conditional GET
@@ -418,11 +404,8 @@ public static class RestLibEndpointExtensions
           }
 
           // BeforeResponse hook
-          if (pipeline is not null && hookContext is not null)
-          {
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforeResponseAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
-          }
+          var beforeResponseResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
+          if (beforeResponseResult is not null) return beforeResponseResult;
 
           // Apply field selection projection if requested
           if (selectedFields.Count > 0)
@@ -476,9 +459,7 @@ public static class RestLibEndpointExtensions
           HttpContext httpContext,
           CancellationToken ct) =>
       {
-        var jsonOptions = GetJsonOptions(httpContext);
-        var options = httpContext.RequestServices.GetService<RestLibOptions>()
-                      ?? new RestLibOptions();
+        var (jsonOptions, options) = ResolveOptions(httpContext);
 
         // Create hook pipeline if hooks are configured
         var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
@@ -510,32 +491,23 @@ public static class RestLibEndpointExtensions
           }
 
           // OnRequestValidated hook
-          if (pipeline is not null && hookContext is not null)
-          {
-            hookContext.Entity = entity;
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestValidatedAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
-            entity = hookContext.Entity ?? entity;
-          }
+          if (hookContext is not null) hookContext.Entity = entity;
+          var onValidatedResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
+          if (onValidatedResult is not null) return onValidatedResult;
+          if (hookContext is not null) entity = hookContext.Entity ?? entity;
 
           // BeforePersist hook
-          if (pipeline is not null && hookContext is not null)
-          {
-            hookContext.Entity = entity;
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforePersistAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
-            entity = hookContext.Entity ?? entity;
-          }
+          if (hookContext is not null) hookContext.Entity = entity;
+          var beforePersistResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
+          if (beforePersistResult is not null) return beforePersistResult;
+          if (hookContext is not null) entity = hookContext.Entity ?? entity;
 
           var created = await repository.CreateAsync(entity, ct);
 
           // AfterPersist hook
-          if (pipeline is not null && hookContext is not null)
-          {
-            hookContext.Entity = created;
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteAfterPersistAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
-          }
+          if (hookContext is not null) hookContext.Entity = created;
+          var afterPersistResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
+          if (afterPersistResult is not null) return afterPersistResult;
 
           // Extract ID from created entity and set Location header
           var createdId = GetEntityKey(created, config.KeySelector);
@@ -545,17 +517,13 @@ public static class RestLibEndpointExtensions
           // Add ETag header when enabled
           if (options.EnableETagSupport)
           {
-            var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
-                                ?? new HashBasedETagGenerator(jsonOptions);
+            var etagGenerator = ResolveETagGenerator(httpContext, jsonOptions);
             httpContext.Response.Headers.ETag = etagGenerator.Generate(created);
           }
 
           // BeforeResponse hook
-          if (pipeline is not null && hookContext is not null)
-          {
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforeResponseAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
-          }
+          var beforeResponseResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
+          if (beforeResponseResult is not null) return beforeResponseResult;
 
           return Results.Json(created, jsonOptions, statusCode: StatusCodes.Status201Created);
         }
@@ -579,9 +547,7 @@ public static class RestLibEndpointExtensions
           HttpContext httpContext,
           CancellationToken ct) =>
       {
-        var jsonOptions = GetJsonOptions(httpContext);
-        var options = httpContext.RequestServices.GetService<RestLibOptions>()
-                      ?? new RestLibOptions();
+        var (jsonOptions, options) = ResolveOptions(httpContext);
 
         // Create hook pipeline if hooks are configured
         var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
@@ -613,13 +579,10 @@ public static class RestLibEndpointExtensions
           }
 
           // OnRequestValidated hook
-          if (pipeline is not null && hookContext is not null)
-          {
-            hookContext.Entity = entity;
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestValidatedAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
-            entity = hookContext.Entity ?? entity;
-          }
+          if (hookContext is not null) hookContext.Entity = entity;
+          var onValidatedResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
+          if (onValidatedResult is not null) return onValidatedResult;
+          if (hookContext is not null) entity = hookContext.Entity ?? entity;
 
           // Check for ETag precondition (If-Match header)
           if (options.EnableETagSupport)
@@ -638,8 +601,7 @@ public static class RestLibEndpointExtensions
                     jsonOptions);
               }
 
-              var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
-                                  ?? new HashBasedETagGenerator(jsonOptions);
+              var etagGenerator = ResolveETagGenerator(httpContext, jsonOptions);
               var currentETag = etagGenerator.Generate(current);
 
               if (!ETagComparer.IfMatchSucceeds(ifMatchHeader, currentETag))
@@ -661,14 +623,15 @@ public static class RestLibEndpointExtensions
           }
 
           // BeforePersist hook — update existing context with original entity
-          if (pipeline is not null && hookContext is not null)
+          if (hookContext is not null)
           {
             hookContext.Entity = entity;
             hookContext.SetOriginalEntity(originalEntity);
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforePersistAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
-            entity = hookContext.Entity ?? entity;
           }
+
+          var beforePersistResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
+          if (beforePersistResult is not null) return beforePersistResult;
+          if (hookContext is not null) entity = hookContext.Entity ?? entity;
 
           var updated = await repository.UpdateAsync(id, entity, ct);
 
@@ -682,27 +645,20 @@ public static class RestLibEndpointExtensions
           }
 
           // AfterPersist hook
-          if (pipeline is not null && hookContext is not null)
-          {
-            hookContext.Entity = updated;
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteAfterPersistAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
-          }
+          if (hookContext is not null) hookContext.Entity = updated;
+          var afterPersistResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
+          if (afterPersistResult is not null) return afterPersistResult;
 
           // Add ETag header when enabled
           if (options.EnableETagSupport)
           {
-            var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
-                                ?? new HashBasedETagGenerator(jsonOptions);
+            var etagGenerator = ResolveETagGenerator(httpContext, jsonOptions);
             httpContext.Response.Headers.ETag = etagGenerator.Generate(updated);
           }
 
           // BeforeResponse hook
-          if (pipeline is not null && hookContext is not null)
-          {
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforeResponseAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
-          }
+          var beforeResponseResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
+          if (beforeResponseResult is not null) return beforeResponseResult;
 
           return Results.Json(updated, jsonOptions);
         }
@@ -726,9 +682,7 @@ public static class RestLibEndpointExtensions
           HttpContext httpContext,
           CancellationToken ct) =>
       {
-        var jsonOptions = GetJsonOptions(httpContext);
-        var options = httpContext.RequestServices.GetService<RestLibOptions>()
-                      ?? new RestLibOptions();
+        var (jsonOptions, options) = ResolveOptions(httpContext);
 
         // Create hook pipeline if hooks are configured
         var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
@@ -746,11 +700,8 @@ public static class RestLibEndpointExtensions
           }
 
           // OnRequestValidated hook
-          if (pipeline is not null && hookContext is not null)
-          {
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestValidatedAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
-          }
+          var onValidatedResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
+          if (onValidatedResult is not null) return onValidatedResult;
 
           // Check for ETag precondition (If-Match header)
           if (options.EnableETagSupport)
@@ -769,8 +720,7 @@ public static class RestLibEndpointExtensions
                     jsonOptions);
               }
 
-              var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
-                                  ?? new HashBasedETagGenerator(jsonOptions);
+              var etagGenerator = ResolveETagGenerator(httpContext, jsonOptions);
               var currentETag = etagGenerator.Generate(current);
 
               if (!ETagComparer.IfMatchSucceeds(ifMatchHeader, currentETag))
@@ -792,13 +742,14 @@ public static class RestLibEndpointExtensions
           }
 
           // BeforePersist hook — update existing context with original entity
-          if (pipeline is not null && hookContext is not null)
+          if (hookContext is not null)
           {
             hookContext.Entity = originalEntity;
             hookContext.SetOriginalEntity(originalEntity);
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforePersistAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
           }
+
+          var beforePersistResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
+          if (beforePersistResult is not null) return beforePersistResult;
 
           var patched = await repository.PatchAsync(id, patchDocument, ct);
 
@@ -825,27 +776,20 @@ public static class RestLibEndpointExtensions
           }
 
           // AfterPersist hook
-          if (pipeline is not null && hookContext is not null)
-          {
-            hookContext.Entity = patched;
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteAfterPersistAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
-          }
+          if (hookContext is not null) hookContext.Entity = patched;
+          var afterPersistResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
+          if (afterPersistResult is not null) return afterPersistResult;
 
           // Add ETag header when enabled
           if (options.EnableETagSupport)
           {
-            var etagGenerator = httpContext.RequestServices.GetService<IETagGenerator>()
-                                ?? new HashBasedETagGenerator(jsonOptions);
+            var etagGenerator = ResolveETagGenerator(httpContext, jsonOptions);
             httpContext.Response.Headers.ETag = etagGenerator.Generate(patched);
           }
 
           // BeforeResponse hook
-          if (pipeline is not null && hookContext is not null)
-          {
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforeResponseAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
-          }
+          var beforeResponseResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
+          if (beforeResponseResult is not null) return beforeResponseResult;
 
           return Results.Json(patched, jsonOptions);
         }
@@ -886,11 +830,8 @@ public static class RestLibEndpointExtensions
           }
 
           // OnRequestValidated hook
-          if (pipeline is not null && hookContext is not null)
-          {
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestValidatedAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
-          }
+          var onValidatedResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
+          if (onValidatedResult is not null) return onValidatedResult;
 
           // Fetch entity for hooks if pipeline exists
           if (pipeline is not null)
@@ -899,12 +840,9 @@ public static class RestLibEndpointExtensions
           }
 
           // BeforePersist hook
-          if (pipeline is not null && hookContext is not null)
-          {
-            hookContext.Entity = entityToDelete;
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforePersistAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
-          }
+          if (hookContext is not null) hookContext.Entity = entityToDelete;
+          var beforePersistResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
+          if (beforePersistResult is not null) return beforePersistResult;
 
           var deleted = await repository.DeleteAsync(id, ct);
 
@@ -918,18 +856,12 @@ public static class RestLibEndpointExtensions
           }
 
           // AfterPersist hook
-          if (pipeline is not null && hookContext is not null)
-          {
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteAfterPersistAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
-          }
+          var afterPersistResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
+          if (afterPersistResult is not null) return afterPersistResult;
 
           // BeforeResponse hook
-          if (pipeline is not null && hookContext is not null)
-          {
-            var earlyResult = await ExecuteHookAsync(pipeline.ExecuteBeforeResponseAsync, hookContext);
-            if (earlyResult is not null) return earlyResult;
-          }
+          var beforeResponseResult = await RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
+          if (beforeResponseResult is not null) return beforeResponseResult;
 
           return Results.NoContent();
         }
@@ -948,9 +880,7 @@ public static class RestLibEndpointExtensions
     {
       var batchEndpoint = group.MapPost("batch", async (HttpContext httpContext) =>
       {
-        var jsonOptions = GetJsonOptions(httpContext);
-        var options = httpContext.RequestServices.GetService<RestLibOptions>()
-                      ?? new RestLibOptions();
+        var (jsonOptions, options) = ResolveOptions(httpContext);
         var repository = httpContext.RequestServices.GetRequiredService<IRepository<TEntity, TKey>>();
         var ct = httpContext.RequestAborted;
         var instance = httpContext.Request.Path.ToString();
@@ -1797,6 +1727,31 @@ public static class RestLibEndpointExtensions
   }
 
   /// <summary>
+  /// Runs a hook stage if the pipeline and context are available.
+  /// Returns <c>null</c> if the hook was skipped or the pipeline should continue;
+  /// returns an <see cref="IResult"/> if the hook short-circuited processing.
+  /// </summary>
+  /// <typeparam name="TEntity">The entity type being processed.</typeparam>
+  /// <typeparam name="TKey">The key type of the entity.</typeparam>
+  /// <param name="pipeline">The hook pipeline, or null if no hooks are configured.</param>
+  /// <param name="hookContext">The hook context, or null if the pipeline was not initialised.</param>
+  /// <param name="stageSelector">A function that selects the hook stage to execute.</param>
+  /// <returns>An early result if the hook short-circuited; otherwise <c>null</c>.</returns>
+  private static async Task<IResult?> RunHookStageAsync<TEntity, TKey>(
+      HookPipeline<TEntity, TKey>? pipeline,
+      HookContext<TEntity, TKey>? hookContext,
+      Func<HookPipeline<TEntity, TKey>, Func<HookContext<TEntity, TKey>, Task<bool>>> stageSelector)
+      where TEntity : class
+  {
+    if (pipeline is null || hookContext is null)
+    {
+      return null;
+    }
+
+    return await ExecuteHookAsync(stageSelector(pipeline), hookContext);
+  }
+
+  /// <summary>
   /// Executes the error hook pipeline and returns an error result if handled.
   /// Returns <c>null</c> if the error was not handled (caller should rethrow).
   /// </summary>
@@ -1815,6 +1770,35 @@ public static class RestLibEndpointExtensions
     var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
 
     return handled && errorResult is not null ? errorResult : null;
+  }
+
+  /// <summary>
+  /// Resolves the JSON serializer options and RestLib options from the request services.
+  /// </summary>
+  /// <param name="httpContext">The current HTTP context.</param>
+  /// <returns>A tuple containing the JSON serializer options and RestLib options.</returns>
+  private static (JsonSerializerOptions JsonOptions, RestLibOptions Options) ResolveOptions(
+      HttpContext httpContext)
+  {
+    var jsonOptions = httpContext.RequestServices.GetService<JsonSerializerOptions>()
+                      ?? RestLibJsonOptions.CreateDefault();
+    var options = httpContext.RequestServices.GetService<RestLibOptions>()
+                  ?? new RestLibOptions();
+    return (jsonOptions, options);
+  }
+
+  /// <summary>
+  /// Resolves the ETag generator from the service provider, falling back to a hash-based implementation.
+  /// </summary>
+  /// <param name="httpContext">The current HTTP context.</param>
+  /// <param name="jsonOptions">The JSON serializer options for the hash-based fallback.</param>
+  /// <returns>The resolved ETag generator.</returns>
+  private static IETagGenerator ResolveETagGenerator(
+      HttpContext httpContext,
+      JsonSerializerOptions jsonOptions)
+  {
+    return httpContext.RequestServices.GetService<IETagGenerator>()
+           ?? new HashBasedETagGenerator(jsonOptions);
   }
 
   /// <summary>
