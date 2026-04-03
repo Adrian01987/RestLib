@@ -300,4 +300,22 @@ public static class ProblemDetailsFactory
       Instance = instance
     };
   }
+
+  /// <summary>
+  /// Creates a problem details response for an operation short-circuited by a hook.
+  /// The status code is determined by the hook's early result.
+  /// </summary>
+  /// <param name="statusCode">The HTTP status code from the hook's early result.</param>
+  /// <param name="instance">The request path.</param>
+  public static RestLibProblemDetails HookShortCircuit(int statusCode, string? instance = null)
+  {
+    return new RestLibProblemDetails
+    {
+      Type = ProblemTypes.HookShortCircuit,
+      Title = "Hook Short-Circuit",
+      Status = statusCode,
+      Detail = "The operation was short-circuited by a hook.",
+      Instance = instance
+    };
+  }
 }

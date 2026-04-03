@@ -855,18 +855,40 @@ internal static class BatchProcessor
 
     /// <summary>
     /// Creates a batch item result from a hook short-circuit.
+    /// When the hook provides an <see cref="HookContext{TEntity,TKey}.EarlyResult"/>,
+    /// the status code and problem details are extracted from it.
+    /// When no early result is set, falls back to 500 Internal Server Error,
+    /// consistent with the single-item endpoint behaviour.
     /// </summary>
     private static BatchItemResult HookShortCircuitResult<TEntity, TKey>(
         int index,
         HookContext<TEntity, TKey> hookContext)
         where TEntity : class
     {
+        if (hookContext.EarlyResult is null)
+        {
+            return new BatchItemResult
+            {
+                Index = index,
+                Status = StatusCodes.Status500InternalServerError,
+                Error = ProblemDetailsFactory.InternalError(
+                    detail: "The operation was short-circuited by a hook.")
+            };
+        }
+
+        var statusCode = hookContext.EarlyResult is IStatusCodeHttpResult statusResult
+            ? statusResult.StatusCode ?? StatusCodes.Status500InternalServerError
+            : StatusCodes.Status500InternalServerError;
+
+        var error = hookContext.EarlyResult is IValueHttpResult { Value: RestLibProblemDetails problem }
+            ? problem
+            : ProblemDetailsFactory.HookShortCircuit(statusCode);
+
         return new BatchItemResult
         {
             Index = index,
-            Status = StatusCodes.Status400BadRequest,
-            Error = ProblemDetailsFactory.BadRequest(
-                "The operation was short-circuited by a hook.")
+            Status = statusCode,
+            Error = error
         };
     }
 

@@ -52,4 +52,7 @@ public static class ProblemTypes
 
   /// <summary>Internal server error (500).</summary>
   public const string InternalError = "/problems/internal-error";
+
+  /// <summary>Hook short-circuited the operation (varies).</summary>
+  public const string HookShortCircuit = "/problems/hook-short-circuit";
 }

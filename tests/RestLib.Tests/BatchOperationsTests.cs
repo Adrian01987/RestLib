@@ -1053,7 +1053,7 @@ public class BatchOperationsTests : IDisposable
   [Trait("Category", "Story8.7")]
   public async Task BatchCreate_HookShortCircuit_AffectsOnlyThatItem()
   {
-    // Arrange — short-circuit item at index 1
+    // Arrange — short-circuit item at index 1 without setting EarlyResult
     CreateHost(config =>
     {
       config.AllowAnonymous();
@@ -1097,12 +1097,257 @@ public class BatchOperationsTests : IDisposable
     // Item 0: succeeded
     items[0].GetProperty("status").GetInt32().Should().Be(201);
 
-    // Item 1: short-circuited
-    items[1].GetProperty("status").GetInt32().Should().Be(400);
+    // Item 1: short-circuited without EarlyResult → falls back to 500
+    items[1].GetProperty("status").GetInt32().Should().Be(500);
     items[1].TryGetProperty("error", out _).Should().BeTrue();
 
     // Item 2: succeeded
     items[2].GetProperty("status").GetInt32().Should().Be(201);
+  }
+
+  [Fact]
+  [Trait("Category", "Story8.7")]
+  public async Task BatchCreate_HookShortCircuit_WithEarlyResult_RespectsStatusCode()
+  {
+    // Arrange — short-circuit with a 403 Forbidden ProblemDetails EarlyResult
+    CreateHost(config =>
+    {
+      config.AllowAnonymous();
+      config.EnableBatch();
+      config.UseHooks(hooks =>
+      {
+        hooks.OnRequestReceived = async ctx =>
+        {
+          if (ctx.Entity?.Name == "Forbidden")
+          {
+            ctx.ShouldContinue = false;
+            ctx.EarlyResult = ProblemDetailsResult.Create(
+                new RestLibProblemDetails
+                {
+                  Type = ProblemTypes.Forbidden,
+                  Title = "Forbidden",
+                  Status = StatusCodes.Status403Forbidden,
+                  Detail = "You do not have permission to create this item."
+                });
+          }
+
+          await Task.CompletedTask;
+        };
+      });
+    });
+
+    var payload = new
+    {
+      action = "create",
+      items = new[]
+      {
+        new { name = "Item0", price = 1m },
+        new { name = "Forbidden", price = 2m },
+        new { name = "Item2", price = 3m }
+      }
+    };
+
+    // Act
+    var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    var items = json.GetProperty("items");
+    items.GetArrayLength().Should().Be(3);
+
+    // Item 0: succeeded
+    items[0].GetProperty("status").GetInt32().Should().Be(201);
+
+    // Item 1: short-circuited with 403 and custom problem details
+    items[1].GetProperty("status").GetInt32().Should().Be(403);
+    var error = items[1].GetProperty("error");
+    error.GetProperty("type").GetString().Should().Be(ProblemTypes.Forbidden);
+    error.GetProperty("title").GetString().Should().Be("Forbidden");
+    error.GetProperty("status").GetInt32().Should().Be(403);
+    error.GetProperty("detail").GetString().Should().Be("You do not have permission to create this item.");
+
+    // Item 2: succeeded
+    items[2].GetProperty("status").GetInt32().Should().Be(201);
+  }
+
+  [Fact]
+  [Trait("Category", "Story8.7")]
+  public async Task BatchCreate_HookShortCircuit_WithStatusCodeResult_ExtractsStatusCode()
+  {
+    // Arrange — short-circuit with a plain status-code-only EarlyResult (no body)
+    CreateHost(config =>
+    {
+      config.AllowAnonymous();
+      config.EnableBatch();
+      config.UseHooks(hooks =>
+      {
+        hooks.OnRequestReceived = async ctx =>
+        {
+          if (ctx.Entity?.Name == "Unauthorized")
+          {
+            ctx.ShouldContinue = false;
+            ctx.EarlyResult = Results.StatusCode(StatusCodes.Status401Unauthorized);
+          }
+
+          await Task.CompletedTask;
+        };
+      });
+    });
+
+    var payload = new
+    {
+      action = "create",
+      items = new[]
+      {
+        new { name = "Item0", price = 1m },
+        new { name = "Unauthorized", price = 2m },
+        new { name = "Item2", price = 3m }
+      }
+    };
+
+    // Act
+    var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    var items = json.GetProperty("items");
+    items.GetArrayLength().Should().Be(3);
+
+    // Item 0: succeeded
+    items[0].GetProperty("status").GetInt32().Should().Be(201);
+
+    // Item 1: short-circuited with 401 and generic hook short-circuit error
+    items[1].GetProperty("status").GetInt32().Should().Be(401);
+    var error = items[1].GetProperty("error");
+    error.GetProperty("type").GetString().Should().Be(ProblemTypes.HookShortCircuit);
+    error.GetProperty("status").GetInt32().Should().Be(401);
+
+    // Item 2: succeeded
+    items[2].GetProperty("status").GetInt32().Should().Be(201);
+  }
+
+  [Fact]
+  [Trait("Category", "Story8.7")]
+  public async Task BatchUpdate_HookShortCircuit_WithEarlyResult_RespectsStatusCode()
+  {
+    // Arrange — seed entities and short-circuit update with 403
+    var id0 = Guid.NewGuid();
+    var id1 = Guid.NewGuid();
+    var id2 = Guid.NewGuid();
+    _repository.Seed([
+      new BatchEntity { Id = id0, Name = "A", Price = 1m },
+      new BatchEntity { Id = id1, Name = "B", Price = 2m },
+      new BatchEntity { Id = id2, Name = "C", Price = 3m }
+    ]);
+
+    CreateHost(config =>
+    {
+      config.AllowAnonymous();
+      config.EnableBatch(BatchAction.Create, BatchAction.Update);
+      config.UseHooks(hooks =>
+      {
+        hooks.BeforePersist = async ctx =>
+        {
+          if (ctx.Entity?.Name == "BlockedUpdate")
+          {
+            ctx.ShouldContinue = false;
+            ctx.EarlyResult = ProblemDetailsResult.Create(
+                new RestLibProblemDetails
+                {
+                  Type = ProblemTypes.Forbidden,
+                  Title = "Forbidden",
+                  Status = StatusCodes.Status403Forbidden,
+                  Detail = "Cannot update this item."
+                });
+          }
+
+          await Task.CompletedTask;
+        };
+      });
+    });
+
+    var payload = new
+    {
+      action = "update",
+      items = new[]
+      {
+        new { id = id0, body = new { name = "Updated0", price = 10m, is_active = true } },
+        new { id = id1, body = new { name = "BlockedUpdate", price = 20m, is_active = true } },
+        new { id = id2, body = new { name = "Updated2", price = 30m, is_active = true } }
+      }
+    };
+
+    // Act
+    var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    var items = json.GetProperty("items");
+    items.GetArrayLength().Should().Be(3);
+
+    items[0].GetProperty("status").GetInt32().Should().Be(200);
+    items[1].GetProperty("status").GetInt32().Should().Be(403);
+    items[1].GetProperty("error").GetProperty("detail").GetString()
+        .Should().Be("Cannot update this item.");
+    items[2].GetProperty("status").GetInt32().Should().Be(200);
+  }
+
+  [Fact]
+  [Trait("Category", "Story8.7")]
+  public async Task BatchDelete_HookShortCircuit_WithoutEarlyResult_Returns500()
+  {
+    // Arrange — seed entities and short-circuit delete without EarlyResult
+    var id0 = Guid.NewGuid();
+    var id1 = Guid.NewGuid();
+    _repository.Seed([
+      new BatchEntity { Id = id0, Name = "ToDelete0", Price = 1m },
+      new BatchEntity { Id = id1, Name = "ToDelete1", Price = 2m }
+    ]);
+
+    CreateHost(config =>
+    {
+      config.AllowAnonymous();
+      config.EnableBatch(BatchAction.Create, BatchAction.Delete);
+      config.UseHooks(hooks =>
+      {
+        hooks.OnRequestReceived = async ctx =>
+        {
+          if (ctx.ResourceId is Guid rid && rid == id1)
+          {
+            ctx.ShouldContinue = false;
+            // Not setting EarlyResult — should fall back to 500
+          }
+
+          await Task.CompletedTask;
+        };
+      });
+    });
+
+    var payload = new
+    {
+      action = "delete",
+      items = new[] { id0, id1 }
+    };
+
+    // Act
+    var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    var items = json.GetProperty("items");
+    items.GetArrayLength().Should().Be(2);
+
+    items[0].GetProperty("status").GetInt32().Should().Be(204);
+    items[1].GetProperty("status").GetInt32().Should().Be(500);
+    items[1].TryGetProperty("error", out _).Should().BeTrue();
   }
 
   #endregion

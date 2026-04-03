@@ -147,6 +147,11 @@ public static class FilterParser
       if (converter.CanConvertFrom(typeof(string)))
       {
         var converted = converter.ConvertFromString(rawValue);
+        if (converted is null)
+        {
+          return (false, null, $"Cannot convert '{rawValue}' to {GetFriendlyTypeName(targetType)}.");
+        }
+
         return (true, converted, null);
       }
 

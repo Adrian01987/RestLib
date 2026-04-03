@@ -212,4 +212,19 @@ public static class ProblemDetailsResult
     var problem = ProblemDetailsFactory.InternalError(detail, instance);
     return Create(problem, jsonOptions);
   }
+
+  /// <summary>
+  /// Creates a hook short-circuit result with the given status code.
+  /// </summary>
+  /// <param name="statusCode">The HTTP status code from the hook's early result.</param>
+  /// <param name="instance">The request path.</param>
+  /// <param name="jsonOptions">Optional JSON serializer options.</param>
+  public static IResult HookShortCircuit(
+      int statusCode,
+      string? instance = null,
+      JsonSerializerOptions? jsonOptions = null)
+  {
+    var problem = ProblemDetailsFactory.HookShortCircuit(statusCode, instance);
+    return Create(problem, jsonOptions);
+  }
 }

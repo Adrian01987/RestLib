@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Reflection;
@@ -37,6 +39,46 @@ public enum ProductStatus
   Draft,
   Active,
   Discontinued
+}
+
+/// <summary>
+/// A custom type whose TypeConverter returns null from ConvertFrom.
+/// </summary>
+[TypeConverter(typeof(NullReturningConverter))]
+public class NullConvertedType
+{
+  /// <summary>Gets or sets the inner value.</summary>
+  public string Value { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// A TypeConverter that always returns null from ConvertFrom.
+/// </summary>
+public class NullReturningConverter : TypeConverter
+{
+  /// <inheritdoc />
+  public override bool CanConvertFrom(ITypeDescriptorContext? context, Type sourceType)
+  {
+    return sourceType == typeof(string) || base.CanConvertFrom(context, sourceType);
+  }
+
+  /// <inheritdoc />
+  public override object? ConvertFrom(ITypeDescriptorContext? context, CultureInfo? culture, object value)
+  {
+    return null;
+  }
+}
+
+/// <summary>
+/// Entity with a custom-typed property for testing the TypeConverter null path.
+/// </summary>
+public class NullConverterEntity
+{
+  /// <summary>Gets or sets the identifier.</summary>
+  public Guid Id { get; set; }
+
+  /// <summary>Gets or sets the custom value.</summary>
+  public NullConvertedType CustomProp { get; set; } = new();
 }
 
 /// <summary>
@@ -875,6 +917,31 @@ public class FilterParserTests
     result.Errors[0].Message.Should().Contain("Draft");
     result.Errors[0].Message.Should().Contain("Active");
     result.Errors[0].Message.Should().Contain("Discontinued");
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.3")]
+  public void Parse_TypeConverterReturnsNull_ReturnsError()
+  {
+    // Arrange — a custom type whose TypeConverter.ConvertFrom returns null
+    var config = new FilterConfiguration<NullConverterEntity>();
+    config.AddProperty(p => p.CustomProp);
+
+    var query = new Microsoft.AspNetCore.Http.QueryCollection(
+        new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
+        {
+            { "custom_prop", "anything" }
+        });
+
+    // Act
+    var result = FilterParser.Parse(query, config);
+
+    // Assert — should be treated as a conversion failure, not a success with null value
+    result.IsValid.Should().BeFalse();
+    result.Errors.Should().HaveCount(1);
+    result.Errors[0].ParameterName.Should().Be("custom_prop");
+    result.Errors[0].ProvidedValue.Should().Be("anything");
+    result.Errors[0].Message.Should().Contain("Cannot convert");
   }
 }
 
