@@ -110,9 +110,11 @@ public static class ProblemDetailsFactory
       IReadOnlyList<FilterValidationError> errors,
       string? instance = null)
   {
-    var errorDict = errors.ToDictionary(
-        e => e.ParameterName,
-        e => new[] { e.Message });
+    var errorDict = errors
+        .GroupBy(e => e.ParameterName)
+        .ToDictionary(
+            g => g.Key,
+            g => g.Select(e => e.Message).ToArray());
 
     return new RestLibProblemDetails
     {
@@ -136,9 +138,11 @@ public static class ProblemDetailsFactory
       IReadOnlyList<SortValidationError> errors,
       string? instance = null)
   {
-    var errorDict = errors.ToDictionary(
-        e => e.Field,
-        e => new[] { e.Message });
+    var errorDict = errors
+        .GroupBy(e => e.Field)
+        .ToDictionary(
+            g => g.Key,
+            g => g.Select(e => e.Message).ToArray());
 
     return new RestLibProblemDetails
     {
@@ -162,9 +166,11 @@ public static class ProblemDetailsFactory
       IReadOnlyList<FieldSelectionValidationError> errors,
       string? instance = null)
   {
-    var errorDict = errors.ToDictionary(
-        e => e.Field,
-        e => new[] { e.Message });
+    var errorDict = errors
+        .GroupBy(e => e.Field)
+        .ToDictionary(
+            g => g.Key,
+            g => g.Select(e => e.Message).ToArray());
 
     return new RestLibProblemDetails
     {

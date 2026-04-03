@@ -8,7 +8,10 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using RestLib.Abstractions;
+using RestLib.FieldSelection;
+using RestLib.Filtering;
 using RestLib.Responses;
+using RestLib.Sorting;
 using RestLib.Tests.Fakes;
 using Xunit;
 
@@ -556,6 +559,136 @@ public class ProblemDetailsTests : IDisposable
     // Assert
     response.StatusCode.Should().Be(HttpStatusCode.Created);
     rawJson.Should().NotContain("\"type\":\"/problems/");
+  }
+
+  #endregion
+
+  #region Duplicate Key Safety Tests
+
+  [Fact]
+  public void InvalidFilters_DuplicateParameterNames_DoesNotThrow()
+  {
+    // Arrange — two errors for the same parameter
+    var errors = new List<FilterValidationError>
+    {
+      new()
+      {
+        ParameterName = "price",
+        ProvidedValue = "abc",
+        ExpectedType = typeof(decimal),
+        Message = "Value 'abc' is not a valid decimal."
+      },
+      new()
+      {
+        ParameterName = "price",
+        ProvidedValue = "xyz",
+        ExpectedType = typeof(decimal),
+        Message = "Value 'xyz' is not a valid decimal."
+      }
+    };
+
+    // Act
+    var problem = ProblemDetailsFactory.InvalidFilters(errors);
+
+    // Assert
+    problem.Errors.Should().ContainKey("price");
+    problem.Errors!["price"].Should().HaveCount(2);
+    problem.Errors["price"].Should().Contain("Value 'abc' is not a valid decimal.");
+    problem.Errors["price"].Should().Contain("Value 'xyz' is not a valid decimal.");
+  }
+
+  [Fact]
+  public void InvalidFilters_MixedDuplicateAndUniqueKeys_GroupsCorrectly()
+  {
+    // Arrange
+    var errors = new List<FilterValidationError>
+    {
+      new()
+      {
+        ParameterName = "price",
+        ProvidedValue = "abc",
+        ExpectedType = typeof(decimal),
+        Message = "Value 'abc' is not a valid decimal."
+      },
+      new()
+      {
+        ParameterName = "quantity",
+        ProvidedValue = "none",
+        ExpectedType = typeof(int),
+        Message = "Value 'none' is not a valid integer."
+      },
+      new()
+      {
+        ParameterName = "price",
+        ProvidedValue = "---",
+        ExpectedType = typeof(decimal),
+        Message = "Value '---' is not a valid decimal."
+      }
+    };
+
+    // Act
+    var problem = ProblemDetailsFactory.InvalidFilters(errors);
+
+    // Assert
+    problem.Errors.Should().HaveCount(2);
+    problem.Errors!["price"].Should().HaveCount(2);
+    problem.Errors["quantity"].Should().HaveCount(1);
+  }
+
+  [Fact]
+  public void InvalidSort_DuplicateFieldNames_DoesNotThrow()
+  {
+    // Arrange — two errors for the same sort field
+    var errors = new List<SortValidationError>
+    {
+      new()
+      {
+        Field = "unknown_field",
+        Message = "'unknown_field' is not a sortable field."
+      },
+      new()
+      {
+        Field = "unknown_field",
+        Message = "'unknown_field' appears more than once."
+      }
+    };
+
+    // Act
+    var problem = ProblemDetailsFactory.InvalidSort(errors);
+
+    // Assert
+    problem.Errors.Should().ContainKey("unknown_field");
+    problem.Errors!["unknown_field"].Should().HaveCount(2);
+    problem.Errors["unknown_field"].Should().Contain("'unknown_field' is not a sortable field.");
+    problem.Errors["unknown_field"].Should().Contain("'unknown_field' appears more than once.");
+  }
+
+  [Fact]
+  public void InvalidFields_DuplicateFieldNames_DoesNotThrow()
+  {
+    // Arrange — two errors for the same field
+    var errors = new List<FieldSelectionValidationError>
+    {
+      new()
+      {
+        Field = "secret",
+        Message = "'secret' is not a selectable field."
+      },
+      new()
+      {
+        Field = "secret",
+        Message = "'secret' has been deprecated."
+      }
+    };
+
+    // Act
+    var problem = ProblemDetailsFactory.InvalidFields(errors);
+
+    // Assert
+    problem.Errors.Should().ContainKey("secret");
+    problem.Errors!["secret"].Should().HaveCount(2);
+    problem.Errors["secret"].Should().Contain("'secret' is not a selectable field.");
+    problem.Errors["secret"].Should().Contain("'secret' has been deprecated.");
   }
 
   #endregion
