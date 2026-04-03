@@ -5,6 +5,12 @@ namespace RestLib.Validation;
 /// </summary>
 public class EntityValidationResult
 {
+  private EntityValidationResult(bool isValid, IReadOnlyDictionary<string, string[]>? errors = null)
+  {
+    IsValid = isValid;
+    Errors = errors ?? new Dictionary<string, string[]>();
+  }
+
   /// <summary>
   /// Gets whether the validation was successful.
   /// </summary>
@@ -14,12 +20,6 @@ public class EntityValidationResult
   /// Gets the validation errors keyed by field name (in configured naming convention).
   /// </summary>
   public IReadOnlyDictionary<string, string[]> Errors { get; }
-
-  private EntityValidationResult(bool isValid, IReadOnlyDictionary<string, string[]>? errors = null)
-  {
-    IsValid = isValid;
-    Errors = errors ?? new Dictionary<string, string[]>();
-  }
 
   /// <summary>
   /// Creates a successful validation result.

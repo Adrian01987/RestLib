@@ -13,8 +13,12 @@ env:
 
 jobs:
   build:
-    name: Build & Test
-    runs-on: ubuntu-latest
+    name: Build & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       - name: Checkout
@@ -25,6 +29,14 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/Directory.Build.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
       - name: Restore dependencies
         run: dotnet restore
 
@@ -32,22 +44,23 @@ jobs:
         run: dotnet build --no-restore --configuration Release
 
       - name: Test with coverage
-        run: |
-          dotnet test --no-build --configuration Release \
-            --collect:"XPlat Code Coverage" \
-            --results-directory TestResults \
-            --logger trx \
-            -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
+        run: >
+          dotnet test --no-build --configuration Release
+          --collect:"XPlat Code Coverage"
+          --results-directory TestResults
+          --logger trx
+          -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-results
+          name: test-results-${{ matrix.os }}
           path: TestResults/*.trx
           retention-days: 30
 
       - name: Upload coverage to Codecov
+        if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v4
         with:
           files: TestResults/**/coverage.cobertura.xml
@@ -58,33 +71,36 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
-      - name: Generate coverage report summary
+      - name: Check coverage threshold
+        if: matrix.os == 'ubuntu-latest'
         run: |
+          COVERAGE_FILE=$(find TestResults -name "coverage.cobertura.xml" -type f | head -1)
+          if [ ! -f "$COVERAGE_FILE" ]; then
+            echo "::error::Coverage file not found"
+            exit 1
+          fi
+
+          LINE_RATE=$(grep -oP 'line-rate="\K[^"]+' "$COVERAGE_FILE" | head -1)
+          PERCENTAGE=$(echo "$LINE_RATE * 100" | bc -l | xargs printf "%.1f")
+
           echo "## Code Coverage Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          # Find and display coverage percentage from cobertura XML
-          COVERAGE_FILE=$(find TestResults -name "coverage.cobertura.xml" -type f | head -1)
-          if [ -f "$COVERAGE_FILE" ]; then
-            LINE_RATE=$(grep -oP 'line-rate="\K[^"]+' "$COVERAGE_FILE" | head -1)
-            PERCENTAGE=$(echo "$LINE_RATE * 100" | bc -l | xargs printf "%.1f")
-            echo "📊 **Line Coverage:** ${PERCENTAGE}%" >> $GITHUB_STEP_SUMMARY
-            
-            # Check coverage threshold
-            THRESHOLD=80
-            if (( $(echo "$PERCENTAGE >= $THRESHOLD" | bc -l) )); then
-              echo "✅ Coverage meets minimum threshold of ${THRESHOLD}%" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "⚠️ Coverage is below minimum threshold of ${THRESHOLD}%" >> $GITHUB_STEP_SUMMARY
-              echo "::warning::Code coverage ${PERCENTAGE}% is below the ${THRESHOLD}% threshold"
-            fi
+          echo "**Line Coverage:** ${PERCENTAGE}%" >> $GITHUB_STEP_SUMMARY
+
+          THRESHOLD=80
+          if (( $(echo "$PERCENTAGE >= $THRESHOLD" | bc -l) )); then
+            echo "Coverage ${PERCENTAGE}% meets minimum threshold of ${THRESHOLD}%" >> $GITHUB_STEP_SUMMARY
           else
-            echo "⚠️ Coverage file not found" >> $GITHUB_STEP_SUMMARY
+            echo "::error::Code coverage ${PERCENTAGE}% is below the ${THRESHOLD}% threshold"
+            exit 1
           fi
 
       - name: Pack
+        if: matrix.os == 'ubuntu-latest'
         run: dotnet pack --no-build --configuration Release --output ./artifacts
 
       - name: Upload NuGet packages
+        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
           name: nuget-packages
@@ -92,6 +108,7 @@ jobs:
           retention-days: 30
 
       - name: Upload symbol packages
+        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
           name: symbol-packages
@@ -100,8 +117,45 @@ jobs:
           retention-days: 30
 
       - name: Upload coverage artifacts
+        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: TestResults/**/coverage.cobertura.xml
+          retention-days: 30
+
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/Directory.Build.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Install prerequisites
+        run: sudo apt-get update && sudo apt-get install -y curl jq bc
+
+      - name: Run E2E tests
+        run: bash tests/e2eTests/run-all.sh
+
+      - name: Upload E2E test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-test-results
+          path: tests/e2eTests/TestResults/
           retention-days: 30

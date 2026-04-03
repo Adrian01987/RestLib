@@ -79,6 +79,11 @@ public sealed class RestLibJsonResourceRegistry
     throw new InvalidOperationException($"No RestLib JSON resource named '{name}' has been registered.");
   }
 
+  /// <summary>
+  /// Registers a named JSON resource with its endpoint mapping action.
+  /// </summary>
+  /// <param name="name">The unique resource name.</param>
+  /// <param name="mapAction">The action that maps the resource endpoints.</param>
   internal void Add(string name, Action<IEndpointRouteBuilder> mapAction)
   {
     ArgumentException.ThrowIfNullOrWhiteSpace(name);

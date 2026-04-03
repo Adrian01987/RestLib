@@ -1,9 +1,17 @@
 [*.cs]
-dotnet_diagnostic.SA1111.severity = none
-dotnet_diagnostic.SA1202.severity = none
-dotnet_diagnostic.SA1107.severity = none
-dotnet_diagnostic.SA1137.severity = none
-dotnet_diagnostic.SA1505.severity = none
-dotnet_diagnostic.SA1500.severity = none
-dotnet_diagnostic.SA1518.severity = none
-dotnet_diagnostic.SA1316.severity = none
+# Pre-existing test suppressions
+dotnet_diagnostic.SA1111.severity = none   # Closing parenthesis on same line
+dotnet_diagnostic.SA1202.severity = none   # Public before internal ordering
+dotnet_diagnostic.SA1107.severity = none   # Multiple statements on single line
+dotnet_diagnostic.SA1137.severity = none   # Elements at same indentation level
+dotnet_diagnostic.SA1505.severity = none   # Opening brace followed by blank line
+dotnet_diagnostic.SA1500.severity = none   # Braces for multi-line statements
+dotnet_diagnostic.SA1518.severity = none   # File must end with single newline
+dotnet_diagnostic.SA1316.severity = none   # Tuple element names should be PascalCase
+
+# Test-specific suppressions — rules too noisy for test code
+dotnet_diagnostic.SA1009.severity = none   # Closing parenthesis spacing — fires on collection expressions [...]
+dotnet_diagnostic.SA1201.severity = none   # Element ordering — test helpers/fields interspersed with tests is fine
+dotnet_diagnostic.SA1312.severity = none   # Variable _ must begin with lower-case — discard variables in tests
+dotnet_diagnostic.SA1401.severity = none   # Fields must be private — test fixtures use internal/protected fields
+dotnet_diagnostic.SA1501.severity = none   # Statement must not be on single line — compact test helpers

@@ -98,5 +98,4 @@ public class SortConfiguration<TEntity> where TEntity : class
       PropertyType = propertyType
     });
   }
-
 }

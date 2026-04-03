@@ -202,7 +202,6 @@ v2.MapRestLib<Product, Guid>("/products", cfg =>
   cfg.OpenApi.Tag = "Products (v2)";
 });
 
-
 // Custom statistics endpoint for categories
 app.MapGet("/api/categories/statistics", async (IRepository<Category, Guid> repository, CancellationToken ct) =>
 {

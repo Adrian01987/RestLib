@@ -18,7 +18,7 @@ namespace RestLib.Tests;
 /// <summary>
 /// Tests for Story 7.1: OpenAPI 3.1 Integration
 /// Verifies that RestLib endpoints are properly documented in OpenAPI spec.
-/// 
+///
 /// Acceptance Criteria:
 /// - [ ] All endpoints in OpenAPI spec
 /// - [ ] Schemas documented

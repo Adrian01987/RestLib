@@ -109,12 +109,11 @@ public static class CursorEncoder
         .Replace('_', '/');
 
     // Add padding if necessary
-    var paddingLength = (4 - base64.Length % 4) % 4;
+    var paddingLength = (4 - (base64.Length % 4)) % 4;
     base64 = base64.PadRight(base64.Length + paddingLength, '=');
 
     return Convert.FromBase64String(base64);
   }
-
 }
 
 /// <summary>

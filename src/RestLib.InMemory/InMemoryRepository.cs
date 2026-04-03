@@ -44,6 +44,11 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     };
   }
 
+  /// <summary>
+  /// Gets the current count of entities in the repository.
+  /// </summary>
+  public int Count => _store.Count;
+
   /// <inheritdoc />
   public Task<TEntity?> GetByIdAsync(TKey id, CancellationToken cancellationToken = default)
   {
@@ -259,11 +264,6 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
   }
 
   /// <summary>
-  /// Gets the current count of entities in the repository.
-  /// </summary>
-  public int Count => _store.Count;
-
-  /// <summary>
   /// Clears all entities from the repository.
   /// </summary>
   public void Clear() => _store.Clear();
@@ -281,72 +281,6 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
       var key = _keySelector(entity);
       _store[key] = entity;
     }
-  }
-
-  private IEnumerable<TEntity> ApplyFilters(IEnumerable<TEntity> items, IReadOnlyList<FilterValue> filters)
-  {
-    foreach (var filter in filters)
-    {
-      items = items.Where(e => MatchesFilter(e, filter));
-    }
-    return items;
-  }
-
-  private IEnumerable<TEntity> ApplySorting(
-      IEnumerable<TEntity> items,
-      IReadOnlyList<SortField> sortFields)
-  {
-    if (sortFields.Count == 0)
-    {
-      // No sort requested — fall back to key ordering (preserves current behavior)
-      return items.OrderBy(e => _keySelector(e));
-    }
-
-    IOrderedEnumerable<TEntity>? ordered = null;
-
-    foreach (var field in sortFields)
-    {
-      var property = typeof(TEntity).GetProperty(
-          field.PropertyName,
-          BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)!;
-
-      Func<TEntity, object?> selector = e => property.GetValue(e);
-
-      if (ordered is null)
-      {
-        ordered = field.Direction == SortDirection.Asc
-            ? items.OrderBy(selector)
-            : items.OrderByDescending(selector);
-      }
-      else
-      {
-        ordered = field.Direction == SortDirection.Asc
-            ? ordered.ThenBy(selector)
-            : ordered.ThenByDescending(selector);
-      }
-    }
-
-    // Always append key as tie-breaker for stable cursor pagination
-    return ordered!.ThenBy(e => _keySelector(e));
-  }
-
-  private bool MatchesFilter(TEntity entity, FilterValue filter)
-  {
-    var property = typeof(TEntity).GetProperty(filter.PropertyName,
-        System.Reflection.BindingFlags.Public |
-        System.Reflection.BindingFlags.Instance |
-        System.Reflection.BindingFlags.IgnoreCase);
-
-    if (property == null)
-    {
-      return true; // Skip unknown properties
-    }
-
-    var entityValue = property.GetValue(entity);
-    var filterValue = filter.TypedValue ?? ConvertFilterValue(filter.RawValue, property.PropertyType);
-
-    // Use equality comparison for in-memory filtering
-    return Equals(entityValue, filterValue);
   }
 
   private static object? ConvertFilterValue(string? value, Type targetType)
@@ -382,71 +316,6 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     {
       return value;
     }
-  }
-
-  private TEntity SetKeyOnEntity(TEntity entity, TKey key)
-  {
-    // Serialize entity to JSON, set the key property, and deserialize back
-    var json = JsonSerializer.Serialize(entity, _jsonOptions);
-    var doc = JsonDocument.Parse(json);
-    var dict = new Dictionary<string, JsonElement>();
-
-    foreach (var prop in doc.RootElement.EnumerateObject())
-    {
-      dict[prop.Name] = prop.Value;
-    }
-
-    // Find the key property name
-    var keyPropertyName = FindKeyPropertyName();
-    if (keyPropertyName != null)
-    {
-      var keyJson = JsonSerializer.Serialize(key, _jsonOptions);
-      using var keyDoc = JsonDocument.Parse(keyJson);
-      dict[keyPropertyName] = keyDoc.RootElement.Clone();
-    }
-
-    var mergedJson = JsonSerializer.Serialize(dict, _jsonOptions);
-    return JsonSerializer.Deserialize<TEntity>(mergedJson, _jsonOptions)!;
-  }
-
-  private string? FindKeyPropertyName()
-  {
-    // Try to find a property that looks like a key
-    var properties = typeof(TEntity).GetProperties();
-
-    // First, try to find the property that the keySelector uses
-    // by creating a dummy instance and checking which property returns the key
-    var idProperty = properties.FirstOrDefault(p =>
-        p.Name.Equals("Id", StringComparison.OrdinalIgnoreCase) ||
-        p.Name.Equals($"{typeof(TEntity).Name}Id", StringComparison.OrdinalIgnoreCase));
-
-    return idProperty?.Name;
-  }
-
-  private string MergeJsonObjects(JsonElement original, JsonElement patch)
-  {
-    var merged = new Dictionary<string, object?>();
-
-    // Start with original values
-    foreach (var prop in original.EnumerateObject())
-    {
-      merged[prop.Name] = GetJsonValue(prop.Value);
-    }
-
-    // Build a lookup from the C# property names to the serialized key names
-    // so we can map patch keys (which may use a different naming convention)
-    // back to the original's key names.
-    var propertyNameMap = BuildPropertyNameMap(merged.Keys);
-
-    // Apply patch values (overwriting originals)
-    foreach (var prop in patch.EnumerateObject())
-    {
-      // Resolve the patch key to the corresponding original key
-      var key = ResolvePropertyName(prop.Name, propertyNameMap);
-      merged[key] = GetJsonValue(prop.Value);
-    }
-
-    return JsonSerializer.Serialize(merged, _jsonOptions);
   }
 
   /// <summary>
@@ -521,5 +390,136 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
       JsonValueKind.Object => element.EnumerateObject().ToDictionary(p => p.Name, p => GetJsonValue(p.Value)),
       _ => element.GetRawText()
     };
+  }
+
+  private IEnumerable<TEntity> ApplyFilters(IEnumerable<TEntity> items, IReadOnlyList<FilterValue> filters)
+  {
+    foreach (var filter in filters)
+    {
+      items = items.Where(e => MatchesFilter(e, filter));
+    }
+    return items;
+  }
+
+  private IEnumerable<TEntity> ApplySorting(
+      IEnumerable<TEntity> items,
+      IReadOnlyList<SortField> sortFields)
+  {
+    if (sortFields.Count == 0)
+    {
+      // No sort requested — fall back to key ordering (preserves current behavior)
+      return items.OrderBy(e => _keySelector(e));
+    }
+
+    IOrderedEnumerable<TEntity>? ordered = null;
+
+    foreach (var field in sortFields)
+    {
+      var property = typeof(TEntity).GetProperty(
+          field.PropertyName,
+          BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)!;
+
+      Func<TEntity, object?> selector = e => property.GetValue(e);
+
+      if (ordered is null)
+      {
+        ordered = field.Direction == SortDirection.Asc
+            ? items.OrderBy(selector)
+            : items.OrderByDescending(selector);
+      }
+      else
+      {
+        ordered = field.Direction == SortDirection.Asc
+            ? ordered.ThenBy(selector)
+            : ordered.ThenByDescending(selector);
+      }
+    }
+
+    // Always append key as tie-breaker for stable cursor pagination
+    return ordered!.ThenBy(e => _keySelector(e));
+  }
+
+  private bool MatchesFilter(TEntity entity, FilterValue filter)
+  {
+    var property = typeof(TEntity).GetProperty(filter.PropertyName,
+        System.Reflection.BindingFlags.Public |
+        System.Reflection.BindingFlags.Instance |
+        System.Reflection.BindingFlags.IgnoreCase);
+
+    if (property == null)
+    {
+      return true; // Skip unknown properties
+    }
+
+    var entityValue = property.GetValue(entity);
+    var filterValue = filter.TypedValue ?? ConvertFilterValue(filter.RawValue, property.PropertyType);
+
+    // Use equality comparison for in-memory filtering
+    return Equals(entityValue, filterValue);
+  }
+
+  private TEntity SetKeyOnEntity(TEntity entity, TKey key)
+  {
+    // Serialize entity to JSON, set the key property, and deserialize back
+    var json = JsonSerializer.Serialize(entity, _jsonOptions);
+    var doc = JsonDocument.Parse(json);
+    var dict = new Dictionary<string, JsonElement>();
+
+    foreach (var prop in doc.RootElement.EnumerateObject())
+    {
+      dict[prop.Name] = prop.Value;
+    }
+
+    // Find the key property name
+    var keyPropertyName = FindKeyPropertyName();
+    if (keyPropertyName != null)
+    {
+      var keyJson = JsonSerializer.Serialize(key, _jsonOptions);
+      using var keyDoc = JsonDocument.Parse(keyJson);
+      dict[keyPropertyName] = keyDoc.RootElement.Clone();
+    }
+
+    var mergedJson = JsonSerializer.Serialize(dict, _jsonOptions);
+    return JsonSerializer.Deserialize<TEntity>(mergedJson, _jsonOptions)!;
+  }
+
+  private string? FindKeyPropertyName()
+  {
+    // Try to find a property that looks like a key
+    var properties = typeof(TEntity).GetProperties();
+
+    // First, try to find the property that the keySelector uses
+    // by creating a dummy instance and checking which property returns the key
+    var idProperty = properties.FirstOrDefault(p =>
+        p.Name.Equals("Id", StringComparison.OrdinalIgnoreCase) ||
+        p.Name.Equals($"{typeof(TEntity).Name}Id", StringComparison.OrdinalIgnoreCase));
+
+    return idProperty?.Name;
+  }
+
+  private string MergeJsonObjects(JsonElement original, JsonElement patch)
+  {
+    var merged = new Dictionary<string, object?>();
+
+    // Start with original values
+    foreach (var prop in original.EnumerateObject())
+    {
+      merged[prop.Name] = GetJsonValue(prop.Value);
+    }
+
+    // Build a lookup from the C# property names to the serialized key names
+    // so we can map patch keys (which may use a different naming convention)
+    // back to the original's key names.
+    var propertyNameMap = BuildPropertyNameMap(merged.Keys);
+
+    // Apply patch values (overwriting originals)
+    foreach (var prop in patch.EnumerateObject())
+    {
+      // Resolve the patch key to the corresponding original key
+      var key = ResolvePropertyName(prop.Name, propertyNameMap);
+      merged[key] = GetJsonValue(prop.Value);
+    }
+
+    return JsonSerializer.Serialize(merged, _jsonOptions);
   }
 }

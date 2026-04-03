@@ -41,13 +41,6 @@ public class HookContext<TEntity, TKey> where TEntity : class
   public TEntity? OriginalEntity { get; private set; }
 
   /// <summary>
-  /// Sets the original entity. Used internally by the pipeline when the original
-  /// entity becomes available after the context has been created.
-  /// </summary>
-  /// <param name="originalEntity">The original entity before modifications.</param>
-  internal void SetOriginalEntity(TEntity? originalEntity) => OriginalEntity = originalEntity;
-
-  /// <summary>
   /// Gets or sets whether the pipeline should continue execution.
   /// Set to false to short-circuit the pipeline.
   /// </summary>
@@ -77,4 +70,11 @@ public class HookContext<TEntity, TKey> where TEntity : class
   /// Gets the cancellation token for the current request.
   /// </summary>
   public required CancellationToken CancellationToken { get; init; }
+
+  /// <summary>
+  /// Sets the original entity. Used internally by the pipeline when the original
+  /// entity becomes available after the context has been created.
+  /// </summary>
+  /// <param name="originalEntity">The original entity before modifications.</param>
+  internal void SetOriginalEntity(TEntity? originalEntity) => OriginalEntity = originalEntity;
 }

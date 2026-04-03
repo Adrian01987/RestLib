@@ -4,7 +4,6 @@
     <!-- Package metadata -->
     <PackageId>RestLib.InMemory</PackageId>
     <Description>In-memory repository adapter for RestLib — ideal for testing, prototyping, and demo applications. Thread-safe with full cursor-based pagination support.</Description>
-    <PackageVersion>0.3.0</PackageVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 

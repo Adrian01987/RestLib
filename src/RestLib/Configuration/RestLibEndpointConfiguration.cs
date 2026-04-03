@@ -22,11 +22,11 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   private readonly SortConfiguration<TEntity> _sortConfiguration = new();
   private readonly FieldSelectionConfiguration<TEntity> _fieldSelectionConfiguration = new();
   private readonly HashSet<BatchAction> _enabledBatchActions = [];
-  private string? _defaultRateLimitPolicy;
   private readonly Dictionary<RestLibOperation, string> _rateLimitPolicies = [];
   private readonly HashSet<RestLibOperation> _disabledRateLimitOperations = [];
-  private RestLibHooks<TEntity, TKey>? _hooks;
   private readonly RestLibOpenApiConfiguration _openApi = new();
+  private string? _defaultRateLimitPolicy;
+  private RestLibHooks<TEntity, TKey>? _hooks;
   private HashSet<RestLibOperation>? _includedOperations;
   private HashSet<RestLibOperation>? _excludedOperations;
 
@@ -52,6 +52,46 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   /// Gets the filter configuration for this entity.
   /// </summary>
   internal FilterConfiguration<TEntity> FilterConfiguration => _filterConfiguration;
+
+  /// <summary>
+  /// Gets whether any filters have been configured.
+  /// </summary>
+  internal bool HasFilters => _filterConfiguration.Properties.Count > 0;
+
+  /// <summary>
+  /// Gets the sort configuration for this entity.
+  /// </summary>
+  internal SortConfiguration<TEntity> SortConfiguration => _sortConfiguration;
+
+  /// <summary>
+  /// Gets whether any sortable properties have been configured.
+  /// </summary>
+  internal bool HasSorting => _sortConfiguration.Properties.Count > 0;
+
+  /// <summary>
+  /// Gets the field selection configuration for this entity.
+  /// </summary>
+  internal FieldSelectionConfiguration<TEntity> FieldSelectionConfiguration => _fieldSelectionConfiguration;
+
+  /// <summary>
+  /// Gets whether any selectable fields have been configured.
+  /// </summary>
+  internal bool HasFieldSelection => _fieldSelectionConfiguration.Properties.Count > 0;
+
+  /// <summary>
+  /// Gets the set of enabled batch actions.
+  /// </summary>
+  internal IReadOnlySet<BatchAction> EnabledBatchActions => _enabledBatchActions;
+
+  /// <summary>
+  /// Gets a value indicating whether any batch actions have been enabled.
+  /// </summary>
+  internal bool HasBatch => _enabledBatchActions.Count > 0;
+
+  /// <summary>
+  /// Gets the configured hooks for the request processing pipeline.
+  /// </summary>
+  internal RestLibHooks<TEntity, TKey>? Hooks => _hooks;
 
   /// <summary>
   /// Marks all operations as allowing anonymous access.
@@ -473,42 +513,6 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   }
 
   /// <summary>
-  /// Checks if an operation allows anonymous access.
-  /// </summary>
-  internal bool IsAnonymous(RestLibOperation operation) => _anonymousOperations.Contains(operation);
-
-  /// <summary>
-  /// Gets the policies required for an operation.
-  /// </summary>
-  internal string[]? GetPolicies(RestLibOperation operation) =>
-      _operationPolicies.TryGetValue(operation, out var policies) ? policies : null;
-
-  /// <summary>
-  /// Gets whether any filters have been configured.
-  /// </summary>
-  internal bool HasFilters => _filterConfiguration.Properties.Count > 0;
-
-  /// <summary>
-  /// Gets the sort configuration for this entity.
-  /// </summary>
-  internal SortConfiguration<TEntity> SortConfiguration => _sortConfiguration;
-
-  /// <summary>
-  /// Gets whether any sortable properties have been configured.
-  /// </summary>
-  internal bool HasSorting => _sortConfiguration.Properties.Count > 0;
-
-  /// <summary>
-  /// Gets the field selection configuration for this entity.
-  /// </summary>
-  internal FieldSelectionConfiguration<TEntity> FieldSelectionConfiguration => _fieldSelectionConfiguration;
-
-  /// <summary>
-  /// Gets whether any selectable fields have been configured.
-  /// </summary>
-  internal bool HasFieldSelection => _fieldSelectionConfiguration.Properties.Count > 0;
-
-  /// <summary>
   /// Configures hooks for the request processing pipeline.
   /// </summary>
   /// <param name="configure">An action to configure the hooks.</param>
@@ -532,14 +536,15 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   }
 
   /// <summary>
-  /// Gets the set of enabled batch actions.
+  /// Checks if an operation allows anonymous access.
   /// </summary>
-  internal IReadOnlySet<BatchAction> EnabledBatchActions => _enabledBatchActions;
+  internal bool IsAnonymous(RestLibOperation operation) => _anonymousOperations.Contains(operation);
 
   /// <summary>
-  /// Gets a value indicating whether any batch actions have been enabled.
+  /// Gets the policies required for an operation.
   /// </summary>
-  internal bool HasBatch => _enabledBatchActions.Count > 0;
+  internal string[]? GetPolicies(RestLibOperation operation) =>
+      _operationPolicies.TryGetValue(operation, out var policies) ? policies : null;
 
   /// <summary>
   /// Checks whether a specific batch action is enabled.
@@ -547,11 +552,6 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   /// <param name="action">The batch action to check.</param>
   /// <returns><c>true</c> if the action is enabled; otherwise, <c>false</c>.</returns>
   internal bool IsBatchActionEnabled(BatchAction action) => _enabledBatchActions.Contains(action);
-
-  /// <summary>
-  /// Gets the configured hooks for the request processing pipeline.
-  /// </summary>
-  internal RestLibHooks<TEntity, TKey>? Hooks => _hooks;
 
   /// <summary>
   /// Gets whether rate limiting is explicitly disabled for an operation.

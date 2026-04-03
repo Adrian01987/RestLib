@@ -1,0 +1,148 @@
+using System.Text.Json;
+using Microsoft.AspNetCore.Http;
+using RestLib.Abstractions;
+using RestLib.Caching;
+using RestLib.Configuration;
+using RestLib.Hooks;
+
+namespace RestLib.Endpoints;
+
+/// <summary>
+/// Handles PATCH requests for partial entity updates (JSON Merge Patch - RFC 7396).
+/// </summary>
+internal static class PatchHandler
+{
+    /// <summary>
+    /// Creates the delegate for the Patch endpoint.
+    /// </summary>
+    /// <typeparam name="TEntity">The entity type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="config">The endpoint configuration.</param>
+    /// <param name="entityName">The unique entity name used in error messages.</param>
+    /// <returns>The request delegate.</returns>
+    internal static Func<TKey, JsonElement, IRepository<TEntity, TKey>, HttpContext, CancellationToken, Task<IResult>>
+        CreateDelegate<TEntity, TKey>(
+            RestLibEndpointConfiguration<TEntity, TKey> config,
+            string entityName)
+        where TEntity : class
+    {
+        return async (
+            TKey id,
+            JsonElement patchDocument,
+            IRepository<TEntity, TKey> repository,
+            HttpContext httpContext,
+            CancellationToken ct) =>
+        {
+            var (jsonOptions, options) = EndpointHelpers.ResolveOptions(httpContext);
+
+            // Initialize hook pipeline and run OnRequestReceived
+            var (pipeline, hookContext, pipelineEarlyResult) = await EndpointHelpers.InitializePipelineAsync<TEntity, TKey>(
+                config.Hooks, httpContext, RestLibOperation.Patch, id);
+            if (pipelineEarlyResult is not null) return pipelineEarlyResult;
+            TEntity? originalEntity = null;
+
+            try
+            {
+                // OnRequestValidated hook
+                var onValidatedResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
+                if (onValidatedResult is not null) return onValidatedResult;
+
+                // Check for ETag precondition (If-Match header)
+                if (options.EnableETagSupport)
+                {
+                    var ifMatchHeader = httpContext.Request.Headers.IfMatch;
+                    if (!Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(ifMatchHeader))
+                    {
+                        // Get current entity to compare ETags
+                        var current = await repository.GetByIdAsync(id, ct);
+                        if (current is null)
+                        {
+                            return Responses.ProblemDetailsResult.NotFound(
+                                entityName,
+                                id!,
+                                httpContext.Request.Path,
+                                jsonOptions);
+                        }
+
+                        var etagGenerator = EndpointHelpers.ResolveETagGenerator(httpContext, jsonOptions);
+                        var currentETag = etagGenerator.Generate(current);
+
+                        if (!ETagComparer.IfMatchSucceeds(ifMatchHeader, currentETag))
+                        {
+                            return Responses.ProblemDetailsResult.PreconditionFailed(
+                                "The resource has been modified since you last retrieved it.",
+                                httpContext.Request.Path,
+                                jsonOptions);
+                        }
+
+                        originalEntity = current;
+                    }
+                }
+
+                // Fetch original entity if not already fetched (for hooks)
+                if (originalEntity is null && pipeline is not null)
+                {
+                    originalEntity = await repository.GetByIdAsync(id, ct);
+                }
+
+                // BeforePersist hook — update existing context with original entity
+                if (hookContext is not null)
+                {
+                    hookContext.Entity = originalEntity;
+                    hookContext.SetOriginalEntity(originalEntity);
+                }
+
+                var beforePersistResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
+                if (beforePersistResult is not null) return beforePersistResult;
+
+                var patched = await repository.PatchAsync(id, patchDocument, ct);
+
+                if (patched is null)
+                {
+                    return Responses.ProblemDetailsResult.NotFound(
+                        entityName,
+                        id!,
+                        httpContext.Request.Path,
+                        jsonOptions);
+                }
+
+                // Validate patched entity using Data Annotations
+                if (options.EnableValidation)
+                {
+                    var validationResult = Validation.EntityValidator.Validate(patched, options.JsonNamingPolicy);
+                    if (!validationResult.IsValid)
+                    {
+                        return Responses.ProblemDetailsResult.ValidationFailed(
+                            validationResult.Errors.ToDictionary(e => e.Key, e => e.Value),
+                            httpContext.Request.Path,
+                            jsonOptions);
+                    }
+                }
+
+                // AfterPersist hook
+                if (hookContext is not null) hookContext.Entity = patched;
+                var afterPersistResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
+                if (afterPersistResult is not null) return afterPersistResult;
+
+                // Add ETag header when enabled
+                if (options.EnableETagSupport)
+                {
+                    var etagGenerator = EndpointHelpers.ResolveETagGenerator(httpContext, jsonOptions);
+                    httpContext.Response.Headers.ETag = etagGenerator.Generate(patched);
+                }
+
+                // BeforeResponse hook
+                var beforeResponseResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
+                if (beforeResponseResult is not null) return beforeResponseResult;
+
+                return Results.Json(patched, jsonOptions);
+            }
+            catch (Exception ex)
+            {
+                var errorResult = await EndpointHelpers.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Patch, ex, id, originalEntity);
+                if (errorResult is not null) return errorResult;
+                throw;
+            }
+        };
+    }
+}

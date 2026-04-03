@@ -12,7 +12,7 @@ namespace RestLib.Caching;
 /// <remarks>
 /// This implementation serializes the entity to JSON and computes a SHA-256 hash.
 /// The hash is then encoded as base64url and wrapped in quotes per RFC 9110.
-/// 
+///
 /// The ETag will change whenever any property of the entity changes, making it
 /// suitable for detecting modifications.
 /// </remarks>

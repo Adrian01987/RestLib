@@ -8,6 +8,10 @@ public static class SeedData
   public static readonly Guid ElectronicsId = Guid.Parse("11111111-1111-1111-1111-111111111111");
   public static readonly Guid BooksId = Guid.Parse("22222222-2222-2222-2222-222222222222");
   public static readonly Guid ClothingId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+  public static readonly Guid HeadphonesId = Guid.Parse("aaaa1111-1111-1111-1111-111111111111");
+  public static readonly Guid KeyboardId = Guid.Parse("aaaa2222-2222-2222-2222-222222222222");
+  public static readonly Guid CleanCodeId = Guid.Parse("aaaa3333-3333-3333-3333-333333333333");
+  public static readonly Guid TShirtId = Guid.Parse("aaaa4444-4444-4444-4444-444444444444");
 
   public static IEnumerable<Category> GetCategories() =>
   [
@@ -15,11 +19,6 @@ public static class SeedData
       new() { Id = BooksId, Name = "Books", Description = "Physical and digital books", CreatedAt = DateTime.UtcNow },
       new() { Id = ClothingId, Name = "Clothing", Description = "Apparel and accessories", CreatedAt = DateTime.UtcNow }
   ];
-
-  public static readonly Guid HeadphonesId = Guid.Parse("aaaa1111-1111-1111-1111-111111111111");
-  public static readonly Guid KeyboardId = Guid.Parse("aaaa2222-2222-2222-2222-222222222222");
-  public static readonly Guid CleanCodeId = Guid.Parse("aaaa3333-3333-3333-3333-333333333333");
-  public static readonly Guid TShirtId = Guid.Parse("aaaa4444-4444-4444-4444-444444444444");
 
   public static IEnumerable<Product> GetProducts() =>
   [

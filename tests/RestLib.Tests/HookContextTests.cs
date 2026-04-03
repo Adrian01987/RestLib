@@ -19,7 +19,7 @@ namespace RestLib.Tests;
 /// <summary>
 /// Tests for Story 6.2: Hook Context Object
 /// Verifies that the HookContext provides rich context for inspection/modification.
-/// 
+///
 /// Acceptance Criteria:
 /// - [ ] Can inspect request/entity
 /// - [ ] Can modify entity

@@ -73,5 +73,4 @@ public class FilterConfiguration<TEntity> where TEntity : class
       PropertyType = propertyType
     });
   }
-
 }

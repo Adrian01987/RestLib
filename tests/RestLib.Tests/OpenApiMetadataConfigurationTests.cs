@@ -19,7 +19,7 @@ namespace RestLib.Tests;
 /// <summary>
 /// Tests for Story 7.2: API Metadata Configuration
 /// Verifies that OpenAPI metadata can be customized per resource.
-/// 
+///
 /// Acceptance Criteria:
 /// - [ ] Custom tags
 /// - [ ] Custom summaries

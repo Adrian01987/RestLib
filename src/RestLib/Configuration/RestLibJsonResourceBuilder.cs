@@ -5,8 +5,20 @@ using RestLib.Hooks;
 
 namespace RestLib.Configuration;
 
+/// <summary>
+/// Applies a <see cref="RestLibJsonResourceConfiguration"/> onto an
+/// <see cref="RestLibEndpointConfiguration{TEntity, TKey}"/>, translating
+/// JSON-based resource settings into the strongly-typed configuration model.
+/// </summary>
 internal static class RestLibJsonResourceBuilder
 {
+  /// <summary>
+  /// Applies the JSON resource configuration to the endpoint configuration.
+  /// </summary>
+  /// <typeparam name="TEntity">The entity type.</typeparam>
+  /// <typeparam name="TKey">The key type.</typeparam>
+  /// <param name="endpointConfiguration">The endpoint configuration to populate.</param>
+  /// <param name="jsonConfiguration">The JSON-based resource configuration to apply.</param>
   public static void Apply<TEntity, TKey>(
       RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
       RestLibJsonResourceConfiguration jsonConfiguration)
@@ -26,6 +38,16 @@ internal static class RestLibJsonResourceBuilder
     ApplyOpenApi(endpointConfiguration, jsonConfiguration.OpenApi);
   }
 
+  /// <summary>
+  /// Builds a <see cref="RestLibHooks{TEntity, TKey}"/> instance from the
+  /// JSON hook configuration, resolving named hooks via the service provider.
+  /// Returns <c>null</c> when no hooks are configured.
+  /// </summary>
+  /// <typeparam name="TEntity">The entity type.</typeparam>
+  /// <typeparam name="TKey">The key type.</typeparam>
+  /// <param name="services">The service provider for resolving named hooks.</param>
+  /// <param name="hookConfiguration">The JSON hook configuration, or <c>null</c>.</param>
+  /// <returns>A configured hooks instance, or <c>null</c> if no hooks are configured.</returns>
   public static RestLibHooks<TEntity, TKey>? BuildHooks<TEntity, TKey>(
       IServiceProvider services,
       RestLibJsonHookConfiguration? hookConfiguration)

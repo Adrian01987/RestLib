@@ -12,6 +12,11 @@ internal sealed class HookPipeline<TEntity, TKey> where TEntity : class
   private readonly RestLibHooks<TEntity, TKey> _hooks;
   private readonly IDictionary<string, object?> _sharedItems;
 
+  /// <summary>
+  /// Initializes a new instance of the <see cref="HookPipeline{TEntity, TKey}"/> class
+  /// with the specified hook definitions.
+  /// </summary>
+  /// <param name="hooks">The hook definitions to execute during request processing.</param>
   public HookPipeline(RestLibHooks<TEntity, TKey> hooks)
   {
     _hooks = hooks;
