@@ -22,6 +22,7 @@ Or run specific benchmarks:
 
 ```bash
 dotnet run -c Release -- --filter "*GetById*"
+dotnet run -c Release -- --filter "*FieldProjection*"
 ```
 
 ### Quick Test Run (Debug Mode)
@@ -32,26 +33,59 @@ For a quick sanity check (not for accurate measurements):
 dotnet run -c Debug -- --job Dry
 ```
 
-## Benchmark Categories
+## Benchmark Suites
 
-| Benchmark               | Description                             |
-| ----------------------- | --------------------------------------- |
-| `RawMinimalApi_GetById` | Raw Minimal API GET by ID (baseline)    |
-| `RestLib_GetById`       | RestLib GET by ID                       |
-| `RawMinimalApi_GetAll`  | Raw Minimal API GET all                 |
-| `RestLib_GetAll`        | RestLib GET all with pagination wrapper |
-| `RawMinimalApi_Create`  | Raw Minimal API POST                    |
-| `RestLib_Create`        | RestLib POST                            |
-| `RawMinimalApi_Update`  | Raw Minimal API PUT                     |
-| `RestLib_Update`        | RestLib PUT                             |
+### CrudBenchmarks
+
+End-to-end HTTP benchmarks comparing RestLib against raw Minimal API endpoints.
+
+| Benchmark | Category | Description |
+| --- | --- | --- |
+| `Raw Minimal API - GET by ID` | GetById | Raw Minimal API GET by ID (baseline) |
+| `RestLib - GET by ID` | GetById | RestLib GET by ID |
+| `Raw Minimal API - GET all` | GetAll | Raw Minimal API GET all |
+| `RestLib - GET all` | GetAll | RestLib GET all with pagination wrapper |
+| `Raw Minimal API - POST` | Create | Raw Minimal API POST |
+| `RestLib - POST` | Create | RestLib POST |
+| `Raw Minimal API - PUT` | Update | Raw Minimal API PUT |
+| `RestLib - PUT` | Update | RestLib PUT |
+| `RestLib - GET by ID (no fields)` | GetById_Fields | RestLib GET by ID without field selection (baseline) |
+| `RestLib - GET by ID (?fields=id,name)` | GetById_Fields | RestLib GET by ID with 2-field selection |
+| `RestLib - GET all (no fields)` | GetAll_Fields | RestLib GET all without field selection (baseline) |
+| `RestLib - GET all (?fields=id,name)` | GetAll_Fields | RestLib GET all with 2-field selection |
+| `RestLib - GET all (?fields=id,name,price)` | GetAll_Fields | RestLib GET all with 3-field selection |
+
+### FieldProjectionBenchmarks
+
+Micro-benchmarks comparing the old serialize-then-pick approach against the current hybrid
+`FieldProjector` implementation. Uses a 15-property `RichProduct` entity to measure
+projection overhead in isolation (no HTTP round-trip).
+
+| Category | Old approach | New approach | What it measures |
+| --- | --- | --- | --- |
+| Single_2Fields | Serialize-then-pick | Hybrid (reflection) | 1 entity, 2 of 15 fields |
+| Single_5Fields | Serialize-then-pick | Hybrid (reflection) | 1 entity, 5 of 15 fields |
+| Single_AllFields | Serialize-then-pick | Hybrid (serialize fallback) | 1 entity, all 15 fields |
+| Many_10x5Fields | Serialize-then-pick | Hybrid (reflection) | 10 entities, 5 fields each |
+| Many_100x5Fields | Serialize-then-pick | Hybrid (reflection) | 100 entities, 5 fields each |
+| Many_1000x5Fields | Serialize-then-pick | Hybrid (reflection) | 1000 entities, 5 fields each |
+| Many_100xAllFields | Serialize-then-pick | Hybrid (serialize fallback) | 100 entities, all 15 fields |
+| Many_1000xAllFields | Serialize-then-pick | Hybrid (serialize fallback) | 1000 entities, all 15 fields |
+
+The hybrid strategy uses compiled expression tree getters for sparse selections (≤50% of
+properties) and falls back to serialize-then-pick for dense selections (>50%). See
+[ADR-007](../../docs/adr/007-field-selection.md) for design rationale and benchmark results.
 
 ## Data Seeding
 
-The benchmarks seed **100 products** to simulate realistic scenarios:
+The CRUD benchmarks seed **100 products** to simulate realistic scenarios:
 
 - One product is designated for GetById operations
 - All 100 products are returned in GetAll operations (testing pagination overhead)
-- This provides a more accurate comparison of real-world performance
+- The field selection host enables `fields` on `Id`, `Name`, and `Price`
+
+The field projection benchmarks use a 15-property `RichProduct` entity with collections
+of 1, 10, 100, and 1000 entities to measure scaling behavior.
 
 ## Output
 
@@ -66,13 +100,13 @@ Results are exported in multiple formats:
 
 Key metrics to observe:
 
-| Metric        | Description                                      |
-| ------------- | ------------------------------------------------ |
-| **Mean**      | Average execution time                           |
-| **Error**     | Half of 99.9% confidence interval                |
-| **StdDev**    | Standard deviation of measurements               |
-| **Ratio**     | Comparison to baseline (1.00 = same as baseline) |
-| **Allocated** | Memory allocated per operation                   |
+| Metric | Description |
+| --- | --- |
+| **Mean** | Average execution time |
+| **Error** | Half of 99.9% confidence interval |
+| **StdDev** | Standard deviation of measurements |
+| **Ratio** | Comparison to baseline (1.00 = same as baseline) |
+| **Allocated** | Memory allocated per operation |
 
 ### Target Performance
 
@@ -109,12 +143,12 @@ Intel Core i3-8130U CPU 2.20GHz (Kaby Lake), 1 CPU, 4 logical and 2 physical cor
 
 ### Summary
 
-| Operation | Overhead | Memory | Status                 |
-| --------- | -------- | ------ | ---------------------- |
-| POST      | +2%      | +13%   | ✅ Excellent           |
-| GET all   | **-33%** | +7%    | ⚡ Faster than raw!    |
-| GET by ID | +3%      | +2%    | ✅ Excellent           |
-| PUT       | +29%     | +13%   | ⚠️ Under investigation |
+| Operation | Overhead | Memory | Status |
+| --- | --- | --- | --- |
+| POST | +2% | +13% | Excellent |
+| GET all | **-33%** | +7% | Faster than raw |
+| GET by ID | +3% | +2% | Excellent |
+| PUT | +29% | +13% | Under investigation |
 
 **Key Findings:**
 

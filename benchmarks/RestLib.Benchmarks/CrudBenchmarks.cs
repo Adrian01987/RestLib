@@ -36,8 +36,10 @@ public class CrudBenchmarks
   };
   private HttpClient _restLibClient = null!;
   private HttpClient _rawClient = null!;
+  private HttpClient _restLibFieldsClient = null!;
   private IHost _restLibHost = null!;
   private IHost _rawHost = null!;
+  private IHost _restLibFieldsHost = null!;
   private Guid _existingProductId;
 
   [GlobalSetup]
@@ -47,6 +49,11 @@ public class CrudBenchmarks
     _restLibHost = CreateRestLibHost();
     _restLibHost.Start();
     _restLibClient = _restLibHost.GetTestClient();
+
+    // Setup RestLib with field selection test server
+    _restLibFieldsHost = CreateRestLibFieldsHost();
+    _restLibFieldsHost.Start();
+    _restLibFieldsClient = _restLibFieldsHost.GetTestClient();
 
     // Setup Raw Minimal API test server
     _rawHost = CreateRawHost();
@@ -65,6 +72,7 @@ public class CrudBenchmarks
     };
 
     _restLibClient.PostAsJsonAsync("/api/products", primaryProduct, JsonOptions).GetAwaiter().GetResult();
+    _restLibFieldsClient.PostAsJsonAsync("/api/products", primaryProduct, JsonOptions).GetAwaiter().GetResult();
     _rawClient.PostAsJsonAsync("/api/products", primaryProduct).GetAwaiter().GetResult();
 
     // Seed additional products for GetAll benchmarks
@@ -78,6 +86,7 @@ public class CrudBenchmarks
       };
 
       _restLibClient.PostAsJsonAsync("/api/products", product, JsonOptions).GetAwaiter().GetResult();
+      _restLibFieldsClient.PostAsJsonAsync("/api/products", product, JsonOptions).GetAwaiter().GetResult();
       _rawClient.PostAsJsonAsync("/api/products", product).GetAwaiter().GetResult();
     }
   }
@@ -86,8 +95,10 @@ public class CrudBenchmarks
   public void Cleanup()
   {
     _restLibClient?.Dispose();
+    _restLibFieldsClient?.Dispose();
     _rawClient?.Dispose();
     _restLibHost?.Dispose();
+    _restLibFieldsHost?.Dispose();
     _rawHost?.Dispose();
   }
 
@@ -169,6 +180,33 @@ public class CrudBenchmarks
     return await _restLibClient.PutAsJsonAsync($"/api/products/{_existingProductId}", product, JsonOptions);
   }
 
+  // ========== Field Selection Benchmarks ==========
+
+  [BenchmarkCategory("GetById_Fields")]
+  [Benchmark(Baseline = true, Description = "RestLib - GET by ID (no fields)")]
+  public async Task<HttpResponseMessage> RestLib_GetById_NoFields()
+    => await _restLibFieldsClient.GetAsync($"/api/products/{_existingProductId}");
+
+  [BenchmarkCategory("GetById_Fields")]
+  [Benchmark(Description = "RestLib - GET by ID (?fields=id,name)")]
+  public async Task<HttpResponseMessage> RestLib_GetById_2Fields()
+    => await _restLibFieldsClient.GetAsync($"/api/products/{_existingProductId}?fields=id,name");
+
+  [BenchmarkCategory("GetAll_Fields")]
+  [Benchmark(Baseline = true, Description = "RestLib - GET all (no fields)")]
+  public async Task<HttpResponseMessage> RestLib_GetAll_NoFields()
+    => await _restLibFieldsClient.GetAsync("/api/products");
+
+  [BenchmarkCategory("GetAll_Fields")]
+  [Benchmark(Description = "RestLib - GET all (?fields=id,name)")]
+  public async Task<HttpResponseMessage> RestLib_GetAll_2Fields()
+    => await _restLibFieldsClient.GetAsync("/api/products?fields=id,name");
+
+  [BenchmarkCategory("GetAll_Fields")]
+  [Benchmark(Description = "RestLib - GET all (?fields=id,name,price)")]
+  public async Task<HttpResponseMessage> RestLib_GetAll_3Fields()
+    => await _restLibFieldsClient.GetAsync("/api/products?fields=id,name,price");
+
   /// <summary>
   /// Creates a TestServer host with RestLib endpoints.
   /// </summary>
@@ -194,6 +232,39 @@ public class CrudBenchmarks
             endpoints.MapRestLib<BenchmarkProduct, Guid>("/api/products", config =>
             {
               config.AllowAnonymous();
+            });
+          });
+        });
+      })
+      .Build();
+  }
+
+  /// <summary>
+  /// Creates a TestServer host with RestLib endpoints and field selection enabled.
+  /// </summary>
+  private static IHost CreateRestLibFieldsHost()
+  {
+    return new HostBuilder()
+      .ConfigureWebHost(webBuilder =>
+      {
+        webBuilder.UseTestServer();
+        webBuilder.ConfigureServices(services =>
+        {
+          services.AddRestLib();
+          services.AddRestLibInMemory<BenchmarkProduct, Guid>(p => p.Id, Guid.NewGuid);
+          services.AddRouting();
+          services.AddAuthorization();
+        });
+        webBuilder.Configure(app =>
+        {
+          app.UseRouting();
+          app.UseAuthorization();
+          app.UseEndpoints(endpoints =>
+          {
+            endpoints.MapRestLib<BenchmarkProduct, Guid>("/api/products", config =>
+            {
+              config.AllowAnonymous();
+              config.AllowFieldSelection(p => p.Id, p => p.Name, p => p.Price);
             });
           });
         });
