@@ -24,17 +24,13 @@ public class EntityValidationResult
   /// <summary>
   /// Creates a successful validation result.
   /// </summary>
-  public static EntityValidationResult Success()
-  {
-    return new EntityValidationResult(true);
-  }
+  public static EntityValidationResult Success() =>
+    new(true);
 
   /// <summary>
   /// Creates a failed validation result with the specified errors.
   /// </summary>
   /// <param name="errors">Dictionary of field names to error messages.</param>
-  public static EntityValidationResult Failed(IDictionary<string, string[]> errors)
-  {
-    return new EntityValidationResult(false, new Dictionary<string, string[]>(errors));
-  }
+  public static EntityValidationResult Failed(IDictionary<string, string[]> errors) =>
+    new(false, new Dictionary<string, string[]>(errors));
 }

@@ -1,7 +1,6 @@
 using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Exporters;
 using BenchmarkDotNet.Running;
-using RestLib.Benchmarks;
 
 // Configure BenchmarkDotNet to export results to Markdown
 var config = DefaultConfig.Instance

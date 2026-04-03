@@ -15,10 +15,8 @@ internal static class NamingUtils
     /// </summary>
     /// <param name="propertyName">The PascalCase property name.</param>
     /// <returns>The snake_case equivalent.</returns>
-    internal static string ConvertToSnakeCase(string propertyName)
-    {
-        return JsonNamingPolicy.SnakeCaseLower.ConvertName(propertyName);
-    }
+    internal static string ConvertToSnakeCase(string propertyName) =>
+        JsonNamingPolicy.SnakeCaseLower.ConvertName(propertyName);
 
     /// <summary>
     /// Extracts the <see cref="MemberExpression"/> from a lambda expression body,
@@ -33,16 +31,10 @@ internal static class NamingUtils
     /// </exception>
     internal static MemberExpression GetMemberExpression(Expression body, string parameterName)
     {
-        var memberExpression = body as MemberExpression
-            ?? (body as UnaryExpression)?.Operand as MemberExpression;
-
-        if (memberExpression is null)
-        {
-            throw new ArgumentException(
+        var memberExpression = (body as MemberExpression
+            ?? (body as UnaryExpression)?.Operand as MemberExpression) ?? throw new ArgumentException(
                 "Each expression must be a property access expression (e.g., p => p.PropertyName)",
                 parameterName);
-        }
-
         return memberExpression;
     }
 

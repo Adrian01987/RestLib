@@ -35,8 +35,6 @@ public static class RestLibJsonOptions
   /// Creates default JSON serializer options with snake_case naming and null omission.
   /// </summary>
   /// <returns>Default JsonSerializerOptions for RestLib.</returns>
-  public static JsonSerializerOptions CreateDefault()
-  {
-    return Create(new RestLibOptions());
-  }
+  public static JsonSerializerOptions CreateDefault() =>
+    Create(new RestLibOptions());
 }

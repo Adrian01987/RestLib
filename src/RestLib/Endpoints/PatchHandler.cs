@@ -3,7 +3,6 @@ using Microsoft.AspNetCore.Http;
 using RestLib.Abstractions;
 using RestLib.Caching;
 using RestLib.Configuration;
-using RestLib.Hooks;
 
 namespace RestLib.Endpoints;
 

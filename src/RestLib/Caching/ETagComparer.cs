@@ -129,12 +129,7 @@ public static class ETagComparer
   /// Compares the opaque-tag portion, ignoring the weak indicator.
   /// </summary>
   private static bool WeakComparison(string etag1, string etag2)
-  {
-    var opaqueTag1 = GetOpaqueTag(etag1);
-    var opaqueTag2 = GetOpaqueTag(etag2);
-
-    return string.Equals(opaqueTag1, opaqueTag2, StringComparison.Ordinal);
-  }
+    => string.Equals(GetOpaqueTag(etag1), GetOpaqueTag(etag2), StringComparison.Ordinal);
 
   /// <summary>
   /// Extracts the opaque-tag portion from an ETag, stripping the weak indicator if present.
@@ -153,7 +148,5 @@ public static class ETagComparer
   /// Determines if an ETag is a weak ETag (prefixed with W/).
   /// </summary>
   private static bool IsWeakETag(string etag)
-  {
-    return etag.StartsWith("W/", StringComparison.OrdinalIgnoreCase);
-  }
+    => etag.StartsWith("W/", StringComparison.OrdinalIgnoreCase);
 }

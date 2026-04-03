@@ -1,3 +1,5 @@
+using System.Net.Http.Json;
+using System.Text.Json;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
 using Microsoft.AspNetCore.Builder;
@@ -6,10 +8,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using RestLib;
 using RestLib.InMemory;
-using System.Net.Http.Json;
-using System.Text.Json;
 
 namespace RestLib.Benchmarks;
 
@@ -18,7 +17,7 @@ namespace RestLib.Benchmarks;
 /// Measures the overhead introduced by the RestLib library.
 /// </summary>
 /// <remarks>
-/// Uses TestServer directly (not WebApplicationFactory) to avoid 
+/// Uses TestServer directly (not WebApplicationFactory) to avoid
 /// command-line argument conflicts with BenchmarkDotNet.
 /// </remarks>
 [MemoryDiagnoser]
@@ -27,29 +26,27 @@ namespace RestLib.Benchmarks;
 [CategoriesColumn]
 public class CrudBenchmarks
 {
-  private HttpClient _RestLibClient = null!;
-  private HttpClient _rawClient = null!;
-  private IHost _RestLibHost = null!;
-  private IHost _rawHost = null!;
-  private Guid _existingProductId;
-
   /// <summary>
   /// Number of products to seed for realistic GetAll pagination benchmarks.
   /// </summary>
   private const int SeedProductCount = 100;
-
   private static readonly JsonSerializerOptions JsonOptions = new()
   {
     PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
   };
+  private HttpClient _restLibClient = null!;
+  private HttpClient _rawClient = null!;
+  private IHost _restLibHost = null!;
+  private IHost _rawHost = null!;
+  private Guid _existingProductId;
 
   [GlobalSetup]
   public void Setup()
   {
     // Setup RestLib test server
-    _RestLibHost = CreateRestLibHost();
-    _RestLibHost.Start();
-    _RestLibClient = _RestLibHost.GetTestClient();
+    _restLibHost = CreateRestLibHost();
+    _restLibHost.Start();
+    _restLibClient = _restLibHost.GetTestClient();
 
     // Setup Raw Minimal API test server
     _rawHost = CreateRawHost();
@@ -67,11 +64,11 @@ public class CrudBenchmarks
       Price = 99.99m
     };
 
-    _RestLibClient.PostAsJsonAsync("/api/products", primaryProduct, JsonOptions).GetAwaiter().GetResult();
+    _restLibClient.PostAsJsonAsync("/api/products", primaryProduct, JsonOptions).GetAwaiter().GetResult();
     _rawClient.PostAsJsonAsync("/api/products", primaryProduct).GetAwaiter().GetResult();
 
     // Seed additional products for GetAll benchmarks
-    for (int i = 0; i < SeedProductCount - 1; i++)
+    for (var i = 0; i < SeedProductCount - 1; i++)
     {
       var product = new BenchmarkProduct
       {
@@ -80,7 +77,7 @@ public class CrudBenchmarks
         Price = 10.00m + (i * 0.5m)
       };
 
-      _RestLibClient.PostAsJsonAsync("/api/products", product, JsonOptions).GetAwaiter().GetResult();
+      _restLibClient.PostAsJsonAsync("/api/products", product, JsonOptions).GetAwaiter().GetResult();
       _rawClient.PostAsJsonAsync("/api/products", product).GetAwaiter().GetResult();
     }
   }
@@ -88,9 +85,9 @@ public class CrudBenchmarks
   [GlobalCleanup]
   public void Cleanup()
   {
-    _RestLibClient?.Dispose();
+    _restLibClient?.Dispose();
     _rawClient?.Dispose();
-    _RestLibHost?.Dispose();
+    _restLibHost?.Dispose();
     _rawHost?.Dispose();
   }
 
@@ -99,32 +96,24 @@ public class CrudBenchmarks
   [BenchmarkCategory("GetById")]
   [Benchmark(Baseline = true, Description = "Raw Minimal API - GET by ID")]
   public async Task<HttpResponseMessage> RawMinimalApi_GetById()
-  {
-    return await _rawClient.GetAsync($"/api/products/{_existingProductId}");
-  }
+    => await _rawClient.GetAsync($"/api/products/{_existingProductId}");
 
   [BenchmarkCategory("GetById")]
   [Benchmark(Description = "RestLib - GET by ID")]
-  public async Task<HttpResponseMessage> RestLib_GetById()
-  {
-    return await _RestLibClient.GetAsync($"/api/products/{_existingProductId}");
-  }
+  public async Task<HttpResponseMessage> RestLib_GetById() =>
+    await _restLibClient.GetAsync($"/api/products/{_existingProductId}");
 
   // ========== GET All Benchmarks ==========
 
   [BenchmarkCategory("GetAll")]
   [Benchmark(Baseline = true, Description = "Raw Minimal API - GET all")]
   public async Task<HttpResponseMessage> RawMinimalApi_GetAll()
-  {
-    return await _rawClient.GetAsync("/api/products");
-  }
+    => await _rawClient.GetAsync("/api/products");
 
   [BenchmarkCategory("GetAll")]
   [Benchmark(Description = "RestLib - GET all")]
   public async Task<HttpResponseMessage> RestLib_GetAll()
-  {
-    return await _RestLibClient.GetAsync("/api/products");
-  }
+    => await _restLibClient.GetAsync("/api/products");
 
   // ========== POST Benchmarks ==========
 
@@ -132,26 +121,24 @@ public class CrudBenchmarks
   [Benchmark(Baseline = true, Description = "Raw Minimal API - POST")]
   public async Task<HttpResponseMessage> RawMinimalApi_Create()
   {
-    var product = new BenchmarkProduct
+    return await _rawClient.PostAsJsonAsync("/api/products", new BenchmarkProduct
     {
       Id = Guid.NewGuid(),
       Name = "New Product",
       Price = 49.99m
-    };
-    return await _rawClient.PostAsJsonAsync("/api/products", product);
+    });
   }
 
   [BenchmarkCategory("Create")]
   [Benchmark(Description = "RestLib - POST")]
   public async Task<HttpResponseMessage> RestLib_Create()
   {
-    var product = new BenchmarkProduct
+    return await _restLibClient.PostAsJsonAsync("/api/products", new BenchmarkProduct
     {
       Id = Guid.NewGuid(),
       Name = "New Product",
       Price = 49.99m
-    };
-    return await _RestLibClient.PostAsJsonAsync("/api/products", product, JsonOptions);
+    }, JsonOptions);
   }
 
   // ========== PUT Benchmarks ==========
@@ -179,7 +166,7 @@ public class CrudBenchmarks
       Name = "Updated Product",
       Price = 149.99m
     };
-    return await _RestLibClient.PutAsJsonAsync($"/api/products/{_existingProductId}", product, JsonOptions);
+    return await _restLibClient.PutAsJsonAsync($"/api/products/{_existingProductId}", product, JsonOptions);
   }
 
   /// <summary>
@@ -280,7 +267,7 @@ public class BenchmarkProduct
 /// </summary>
 public class RawProductStore
 {
-  private readonly Dictionary<Guid, BenchmarkProduct> _products = new();
+  private readonly Dictionary<Guid, BenchmarkProduct> _products = [];
 
   public IEnumerable<BenchmarkProduct> GetAll() => _products.Values;
 

@@ -75,32 +75,32 @@ internal sealed class HookPipeline<TEntity, TKey> where TEntity : class
   /// <summary>
   /// Executes the OnRequestReceived hook if configured.
   /// </summary>
-  public Task<bool> ExecuteOnRequestReceivedAsync(HookContext<TEntity, TKey> context)
-      => ExecuteStageAsync(_hooks.OnRequestReceived, context, isFirstStage: true);
+  public Task<bool> ExecuteOnRequestReceivedAsync(HookContext<TEntity, TKey> context) =>
+    ExecuteStageAsync(_hooks.OnRequestReceived, context, isFirstStage: true);
 
   /// <summary>
   /// Executes the OnRequestValidated hook if configured.
   /// </summary>
-  public Task<bool> ExecuteOnRequestValidatedAsync(HookContext<TEntity, TKey> context)
-      => ExecuteStageAsync(_hooks.OnRequestValidated, context);
+  public Task<bool> ExecuteOnRequestValidatedAsync(HookContext<TEntity, TKey> context) =>
+    ExecuteStageAsync(_hooks.OnRequestValidated, context);
 
   /// <summary>
   /// Executes the BeforePersist hook if configured.
   /// </summary>
-  public Task<bool> ExecuteBeforePersistAsync(HookContext<TEntity, TKey> context)
-      => ExecuteStageAsync(_hooks.BeforePersist, context);
+  public Task<bool> ExecuteBeforePersistAsync(HookContext<TEntity, TKey> context) =>
+    ExecuteStageAsync(_hooks.BeforePersist, context);
 
   /// <summary>
   /// Executes the AfterPersist hook if configured.
   /// </summary>
-  public Task<bool> ExecuteAfterPersistAsync(HookContext<TEntity, TKey> context)
-      => ExecuteStageAsync(_hooks.AfterPersist, context);
+  public Task<bool> ExecuteAfterPersistAsync(HookContext<TEntity, TKey> context) =>
+    ExecuteStageAsync(_hooks.AfterPersist, context);
 
   /// <summary>
   /// Executes the BeforeResponse hook if configured.
   /// </summary>
-  public Task<bool> ExecuteBeforeResponseAsync(HookContext<TEntity, TKey> context)
-      => ExecuteStageAsync(_hooks.BeforeResponse, context);
+  public Task<bool> ExecuteBeforeResponseAsync(HookContext<TEntity, TKey> context) =>
+    ExecuteStageAsync(_hooks.BeforeResponse, context);
 
   /// <summary>
   /// Executes the OnError hook if configured.

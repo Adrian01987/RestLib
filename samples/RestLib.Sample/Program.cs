@@ -13,9 +13,9 @@ var builder = WebApplication.CreateBuilder(args);
 // Add RestLib services with in-memory repositories (pre-seeded)
 // EnableETagSupport is a global option — applies to all resources (Categories, Products, and Orders)
 builder.Services.AddRestLib(opts => { opts.EnableETagSupport = true; });
-builder.Services.AddRestLibInMemoryWithData<Category, Guid>(c => c.Id, Guid.NewGuid, SeedData.GetCategories());
-builder.Services.AddRestLibInMemoryWithData<Product, Guid>(p => p.Id, Guid.NewGuid, SeedData.GetProducts());
-builder.Services.AddRestLibInMemoryWithData<Order, Guid>(o => o.Id, Guid.NewGuid, SeedData.GetOrders());
+builder.Services.AddRestLibInMemoryWithData(c => c.Id, Guid.NewGuid, SeedData.GetCategories());
+builder.Services.AddRestLibInMemoryWithData(p => p.Id, Guid.NewGuid, SeedData.GetProducts());
+builder.Services.AddRestLibInMemoryWithData(o => o.Id, Guid.NewGuid, SeedData.GetOrders());
 builder.Services.AddNamedHook<Product, Guid>(HookNames.SetUpdatedAt, ctx =>
 {
   if (ctx.Entity is Product product)

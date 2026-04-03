@@ -16,9 +16,13 @@ namespace RestLib.Caching;
 /// The ETag will change whenever any property of the entity changes, making it
 /// suitable for detecting modifications.
 /// </remarks>
-public class HashBasedETagGenerator : IETagGenerator
+/// <remarks>
+/// Initializes a new instance with custom JSON options.
+/// </remarks>
+/// <param name="jsonOptions">The JSON serializer options to use.</param>
+public class HashBasedETagGenerator(JsonSerializerOptions jsonOptions) : IETagGenerator
 {
-  private readonly JsonSerializerOptions _jsonOptions;
+  private readonly JsonSerializerOptions _jsonOptions = jsonOptions ?? throw new ArgumentNullException(nameof(jsonOptions));
 
   /// <summary>
   /// Initializes a new instance with default JSON options.
@@ -26,15 +30,6 @@ public class HashBasedETagGenerator : IETagGenerator
   public HashBasedETagGenerator()
       : this(new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower })
   {
-  }
-
-  /// <summary>
-  /// Initializes a new instance with custom JSON options.
-  /// </summary>
-  /// <param name="jsonOptions">The JSON serializer options to use.</param>
-  public HashBasedETagGenerator(JsonSerializerOptions jsonOptions)
-  {
-    _jsonOptions = jsonOptions ?? throw new ArgumentNullException(nameof(jsonOptions));
   }
 
   /// <inheritdoc />
@@ -81,19 +76,15 @@ public class HashBasedETagGenerator : IETagGenerator
   /// Computes the SHA-256 hash of the input string.
   /// </summary>
   private static byte[] ComputeHash(string input)
-  {
-    var bytes = Encoding.UTF8.GetBytes(input);
-    return SHA256.HashData(bytes);
-  }
+    => SHA256.HashData(Encoding.UTF8.GetBytes(input));
 
   /// <summary>
   /// Encodes bytes to base64url (URL-safe base64 without padding).
+  /// Use first 16 bytes (128 bits) for a shorter but still unique ETag.
   /// </summary>
   private static string EncodeToBase64Url(byte[] bytes)
   {
-    // Use first 16 bytes (128 bits) for a shorter but still unique ETag
-    var truncated = bytes[..16];
-    return Convert.ToBase64String(truncated)
+    return Convert.ToBase64String(bytes[..16])
         .Replace('+', '-')
         .Replace('/', '_')
         .TrimEnd('=');

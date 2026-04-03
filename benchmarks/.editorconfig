@@ -1,0 +1,6 @@
+[*.cs]
+# Benchmark projects don't need strict documentation or ordering rules.
+dotnet_diagnostic.SA1600.severity = none   # Elements should be documented
+dotnet_diagnostic.CS1591.severity = none   # Missing XML comment for publicly visible type or member
+dotnet_diagnostic.SA1601.severity = none   # Partial elements should be documented
+dotnet_diagnostic.SA1602.severity = none   # Enumeration items should be documented

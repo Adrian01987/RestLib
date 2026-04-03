@@ -538,7 +538,8 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   /// <summary>
   /// Checks if an operation allows anonymous access.
   /// </summary>
-  internal bool IsAnonymous(RestLibOperation operation) => _anonymousOperations.Contains(operation);
+  internal bool IsAnonymous(RestLibOperation operation) =>
+    _anonymousOperations.Contains(operation);
 
   /// <summary>
   /// Gets the policies required for an operation.
@@ -551,7 +552,8 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   /// </summary>
   /// <param name="action">The batch action to check.</param>
   /// <returns><c>true</c> if the action is enabled; otherwise, <c>false</c>.</returns>
-  internal bool IsBatchActionEnabled(BatchAction action) => _enabledBatchActions.Contains(action);
+  internal bool IsBatchActionEnabled(BatchAction action) =>
+    _enabledBatchActions.Contains(action);
 
   /// <summary>
   /// Gets whether rate limiting is explicitly disabled for an operation.

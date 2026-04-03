@@ -27,11 +27,11 @@ internal static class GetAllHandler
         where TEntity : class
     {
         return async (
-            IRepository<TEntity, TKey> repository,
-            HttpContext httpContext,
-            string? cursor,
-            int? limit,
-            CancellationToken ct) =>
+            repository,
+            httpContext,
+            cursor,
+            limit,
+            ct) =>
         {
             var (jsonOptions, options) = EndpointHelpers.ResolveOptions(httpContext);
 

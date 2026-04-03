@@ -24,7 +24,7 @@ internal static class BatchHandler
         CreateDelegate<TEntity, TKey>(RestLibEndpointConfiguration<TEntity, TKey> config)
         where TEntity : class
     {
-        return async (HttpContext httpContext) =>
+        return async httpContext =>
         {
             var (jsonOptions, options) = EndpointHelpers.ResolveOptions(httpContext);
             var repository = httpContext.RequestServices.GetRequiredService<IRepository<TEntity, TKey>>();

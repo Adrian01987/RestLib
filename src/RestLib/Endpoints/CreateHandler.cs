@@ -1,8 +1,6 @@
-using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using RestLib.Abstractions;
 using RestLib.Configuration;
-using RestLib.Hooks;
 
 namespace RestLib.Endpoints;
 
