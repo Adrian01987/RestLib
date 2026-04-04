@@ -360,7 +360,7 @@ public class JsonResourceConfigurationTests
   }
 
   [Fact]
-  public async Task AddJsonResource_WithOpenApiDeprecationAndDescriptions_PropagatesToSwagger()
+  public async Task AddJsonResource_WithOpenApiDeprecationAndDescriptions_PropagatesToOpenApiDocument()
   {
     using var host = await CreateHost(services =>
     {

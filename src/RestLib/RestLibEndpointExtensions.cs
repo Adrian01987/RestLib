@@ -96,6 +96,15 @@ public static class RestLibEndpointExtensions
                        ?? _fallbackNameRegistry;
     var entityName = nameRegistry.GetUniqueEndpointName(candidateName);
 
+    // Register tag description for the OpenAPI document if configured
+    var openApiConfig = config.OpenApi;
+    if (!string.IsNullOrEmpty(openApiConfig.TagDescription))
+    {
+      var tag = string.IsNullOrEmpty(openApiConfig.Tag) ? baseEntityName : openApiConfig.Tag;
+      var tagRegistry = ((IEndpointRouteBuilder)group).ServiceProvider.GetService<TagDescriptionRegistry>();
+      tagRegistry?.Set(tag, openApiConfig.TagDescription);
+    }
+
     // GET /prefix - Get all (paginated)
     if (config.IsOperationEnabled(RestLibOperation.GetAll))
     {

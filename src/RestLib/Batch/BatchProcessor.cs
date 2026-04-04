@@ -25,7 +25,6 @@ internal static class BatchProcessor
     /// <param name="httpContext">The current HTTP context.</param>
     /// <param name="repository">The entity repository.</param>
     /// <param name="batchRepository">The optional batch-optimized repository.</param>
-    /// <param name="config">The endpoint configuration.</param>
     /// <param name="pipeline">The optional hook pipeline.</param>
     /// <param name="options">The global RestLib options.</param>
     /// <param name="jsonOptions">The JSON serializer options.</param>
@@ -36,7 +35,6 @@ internal static class BatchProcessor
         HttpContext httpContext,
         IRepository<TEntity, TKey> repository,
         IBatchRepository<TEntity, TKey>? batchRepository,
-        RestLibEndpointConfiguration<TEntity, TKey> config,
         HookPipeline<TEntity, TKey>? pipeline,
         RestLibOptions options,
         JsonSerializerOptions jsonOptions,
@@ -84,7 +82,6 @@ internal static class BatchProcessor
     /// <param name="httpContext">The current HTTP context.</param>
     /// <param name="repository">The entity repository.</param>
     /// <param name="batchRepository">The optional batch-optimized repository.</param>
-    /// <param name="config">The endpoint configuration.</param>
     /// <param name="pipeline">The optional hook pipeline.</param>
     /// <param name="options">The global RestLib options.</param>
     /// <param name="jsonOptions">The JSON serializer options.</param>
@@ -95,7 +92,6 @@ internal static class BatchProcessor
         HttpContext httpContext,
         IRepository<TEntity, TKey> repository,
         IBatchRepository<TEntity, TKey>? batchRepository,
-        RestLibEndpointConfiguration<TEntity, TKey> config,
         HookPipeline<TEntity, TKey>? pipeline,
         RestLibOptions options,
         JsonSerializerOptions jsonOptions,
@@ -143,7 +139,6 @@ internal static class BatchProcessor
     /// <param name="httpContext">The current HTTP context.</param>
     /// <param name="repository">The entity repository.</param>
     /// <param name="batchRepository">The optional batch-optimized repository.</param>
-    /// <param name="config">The endpoint configuration.</param>
     /// <param name="pipeline">The optional hook pipeline.</param>
     /// <param name="options">The global RestLib options.</param>
     /// <param name="jsonOptions">The JSON serializer options.</param>
@@ -154,7 +149,6 @@ internal static class BatchProcessor
         HttpContext httpContext,
         IRepository<TEntity, TKey> repository,
         IBatchRepository<TEntity, TKey>? batchRepository,
-        RestLibEndpointConfiguration<TEntity, TKey> config,
         HookPipeline<TEntity, TKey>? pipeline,
         RestLibOptions options,
         JsonSerializerOptions jsonOptions,
@@ -202,7 +196,6 @@ internal static class BatchProcessor
     /// <param name="httpContext">The current HTTP context.</param>
     /// <param name="repository">The entity repository.</param>
     /// <param name="batchRepository">The optional batch-optimized repository.</param>
-    /// <param name="config">The endpoint configuration.</param>
     /// <param name="pipeline">The optional hook pipeline.</param>
     /// <param name="jsonOptions">The JSON serializer options.</param>
     /// <param name="ct">Cancellation token.</param>
@@ -212,7 +205,6 @@ internal static class BatchProcessor
         HttpContext httpContext,
         IRepository<TEntity, TKey> repository,
         IBatchRepository<TEntity, TKey>? batchRepository,
-        RestLibEndpointConfiguration<TEntity, TKey> config,
         HookPipeline<TEntity, TKey>? pipeline,
         JsonSerializerOptions jsonOptions,
         CancellationToken ct)

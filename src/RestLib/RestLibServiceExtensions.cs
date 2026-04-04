@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.Json;
+using Microsoft.AspNetCore.OpenApi;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -37,6 +38,14 @@ public static class RestLibServiceExtensions
 
     // Register endpoint name registry for unique OpenAPI operation IDs
     services.TryAddSingleton(new EndpointNameRegistry());
+
+    // Register tag description registry and document transformer
+    var tagDescriptionRegistry = new TagDescriptionRegistry();
+    services.TryAddSingleton(tagDescriptionRegistry);
+    services.ConfigureAll<OpenApiOptions>(openApiOptions =>
+    {
+        openApiOptions.AddDocumentTransformer(new TagDescriptionDocumentTransformer(tagDescriptionRegistry));
+    });
 
     // Register JSON serializer options configured per RestLib settings
     var jsonOptions = RestLibJsonOptions.Create(options);

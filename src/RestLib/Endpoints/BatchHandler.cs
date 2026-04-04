@@ -130,16 +130,16 @@ internal static class BatchHandler
             var response = action switch
             {
                 BatchAction.Create => await BatchProcessor.ProcessCreateAsync(
-                    envelope.Items, httpContext, repository, batchRepository, config,
+                    envelope.Items, httpContext, repository, batchRepository,
                     pipeline, options, jsonOptions, ct),
                 BatchAction.Update => await BatchProcessor.ProcessUpdateAsync(
-                    envelope.Items, httpContext, repository, batchRepository, config,
+                    envelope.Items, httpContext, repository, batchRepository,
                     pipeline, options, jsonOptions, ct),
                 BatchAction.Patch => await BatchProcessor.ProcessPatchAsync(
-                    envelope.Items, httpContext, repository, batchRepository, config,
+                    envelope.Items, httpContext, repository, batchRepository,
                     pipeline, options, jsonOptions, ct),
                 BatchAction.Delete => await BatchProcessor.ProcessDeleteAsync(
-                    envelope.Items, httpContext, repository, batchRepository, config,
+                    envelope.Items, httpContext, repository, batchRepository,
                     pipeline, jsonOptions, ct),
                 _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
             };

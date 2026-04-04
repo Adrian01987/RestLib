@@ -476,17 +476,20 @@ internal static class BatchActionExecutor
 
     /// <summary>
     /// Creates a batch item result from an exception.
+    /// Includes the exception type and message in the problem details to
+    /// aid debugging; callers should avoid exposing raw stack traces.
     /// </summary>
     private static BatchItemResult ExceptionResult(
         int index,
         Exception ex,
         string? instance)
     {
+        var detail = $"{ex.GetType().Name}: {ex.Message}";
         return new BatchItemResult
         {
             Index = index,
             Status = StatusCodes.Status500InternalServerError,
-            Error = ProblemDetailsFactory.InternalError(instance: instance)
+            Error = ProblemDetailsFactory.InternalError(detail: detail, instance: instance)
         };
     }
 }
