@@ -105,8 +105,7 @@ public static class RestLibEndpointExtensions
       // Add OpenAPI documentation for filter parameters
       if (config.HasFilters)
       {
-#pragma warning disable ASPDEPR002
-        getAllEndpoint.WithOpenApi(operation =>
+        getAllEndpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
         {
           foreach (var filter in config.FilterConfiguration.Properties)
           {
@@ -132,16 +131,14 @@ public static class RestLibEndpointExtensions
             operation.Parameters.Add(param);
           }
 
-          return operation;
+          return Task.CompletedTask;
         });
-#pragma warning restore ASPDEPR002
       }
 
       // Add OpenAPI documentation for sort parameter
       if (config.HasSorting)
       {
-#pragma warning disable ASPDEPR002
-        getAllEndpoint.WithOpenApi(operation =>
+        getAllEndpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
         {
           var allowedFields = string.Join(", ",
               config.SortConfiguration.Properties.Select(p => p.QueryParameterName));
@@ -158,16 +155,14 @@ public static class RestLibEndpointExtensions
             Schema = new OpenApiSchema { Type = JsonSchemaType.String }
           });
 
-          return operation;
+          return Task.CompletedTask;
         });
-#pragma warning restore ASPDEPR002
       }
 
       // Add OpenAPI documentation for fields parameter
       if (config.HasFieldSelection)
       {
-#pragma warning disable ASPDEPR002
-        getAllEndpoint.WithOpenApi(operation =>
+        getAllEndpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
         {
           var allowedFields = string.Join(", ",
               config.FieldSelectionConfiguration.Properties.Select(p => p.QueryFieldName));
@@ -183,9 +178,8 @@ public static class RestLibEndpointExtensions
             Schema = new OpenApiSchema { Type = JsonSchemaType.String }
           });
 
-          return operation;
+          return Task.CompletedTask;
         });
-#pragma warning restore ASPDEPR002
       }
     } // end GetAll
 
@@ -198,8 +192,7 @@ public static class RestLibEndpointExtensions
       // Add OpenAPI documentation for fields parameter
       if (config.HasFieldSelection)
       {
-#pragma warning disable ASPDEPR002
-        getByIdEndpoint.WithOpenApi(operation =>
+        getByIdEndpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
         {
           var allowedFields = string.Join(", ",
               config.FieldSelectionConfiguration.Properties.Select(p => p.QueryFieldName));
@@ -215,9 +208,8 @@ public static class RestLibEndpointExtensions
             Schema = new OpenApiSchema { Type = JsonSchemaType.String }
           });
 
-          return operation;
+          return Task.CompletedTask;
         });
-#pragma warning restore ASPDEPR002
       }
     } // end GetById
 

@@ -10,7 +10,6 @@ using Microsoft.OpenApi;
 using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.Pagination;
-using Swashbuckle.AspNetCore.SwaggerGen;
 using Xunit;
 
 namespace RestLib.Tests;
@@ -63,21 +62,17 @@ public partial class OpenApiMetadataConfigurationTests
           webBuilder.ConfigureServices(services =>
           {
             services.AddRouting();
-            services.AddEndpointsApiExplorer();
-            services.AddSwaggerGen(c =>
-            {
-              c.SwaggerDoc("v1", new OpenApiInfo { Title = "Test API", Version = "v1" });
-              c.SupportNonNullableReferenceTypes();
-            });
+            services.AddOpenApi();
             services.AddSingleton<IRepository<MetadataTestEntity, int>>(metadataRepository);
             services.AddSingleton<IRepository<ItemTestEntity, Guid>>(itemRepository);
           });
           webBuilder.Configure(app =>
           {
             app.UseRouting();
-            app.UseSwagger();
             app.UseEndpoints(endpoints =>
             {
+              endpoints.MapOpenApi();
+
               // First entity with custom tag
               endpoints.MapRestLib<MetadataTestEntity, int>("/api/products", config =>
               {

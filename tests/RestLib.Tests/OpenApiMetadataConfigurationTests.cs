@@ -10,7 +10,6 @@ using Microsoft.OpenApi;
 using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.Pagination;
-using Swashbuckle.AspNetCore.SwaggerGen;
 using Xunit;
 
 namespace RestLib.Tests;
@@ -135,20 +134,15 @@ public partial class OpenApiMetadataConfigurationTests
           webBuilder.ConfigureServices(services =>
           {
             services.AddRouting();
-            services.AddEndpointsApiExplorer();
-            services.AddSwaggerGen(c =>
-            {
-              c.SwaggerDoc("v1", new OpenApiInfo { Title = "Test API", Version = "v1" });
-              c.SupportNonNullableReferenceTypes();
-            });
+            services.AddOpenApi();
             services.AddSingleton<IRepository<MetadataTestEntity, int>>(repository);
           });
           webBuilder.Configure(app =>
           {
             app.UseRouting();
-            app.UseSwagger();
             app.UseEndpoints(endpoints =>
             {
+              endpoints.MapOpenApi();
               endpoints.MapRestLib<MetadataTestEntity, int>("/api/items", configure);
             });
           });
@@ -160,7 +154,7 @@ public partial class OpenApiMetadataConfigurationTests
 
   private static async Task<OpenApiDocument> GetOpenApiDocument(HttpClient client)
   {
-    var response = await client.GetAsync("/swagger/v1/swagger.json");
+    var response = await client.GetAsync("/openapi/v1.json");
     response.EnsureSuccessStatusCode();
 
     var content = await response.Content.ReadAsStreamAsync();

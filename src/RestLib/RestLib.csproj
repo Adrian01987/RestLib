@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <NoWarn>AD0001;ASPDEPR002</NoWarn>
+    <NoWarn>AD0001</NoWarn>
     
     <!-- Package metadata -->
     <PackageId>RestLib</PackageId>

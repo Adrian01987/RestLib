@@ -10,7 +10,6 @@ using Microsoft.OpenApi;
 using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.Pagination;
-using Swashbuckle.AspNetCore.SwaggerGen;
 using Xunit;
 
 namespace RestLib.Tests;

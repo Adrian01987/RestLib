@@ -10,7 +10,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi;
 using RestLib.Abstractions;
 using RestLib.Pagination;
-using Swashbuckle.AspNetCore.SwaggerGen;
 using Xunit;
 
 namespace RestLib.Tests;
@@ -61,7 +60,7 @@ public partial class OpenApiDocumentationTests
     limitParam.Schema!.Type.Should().Be(JsonSchemaType.Integer);
 
     // Constraints may be serialized as schema properties or documented in description
-    // Swashbuckle may not serialize min/max directly - check description for constraint info
+    // The OpenAPI generator may not serialize min/max directly - check description for constraint info
     var hasSchemaConstraints = limitParam.Schema.Minimum != null && limitParam.Schema.Maximum != null;
     var hasDescriptionConstraints = limitParam.Description?.Contains("1") == true &&
                                      limitParam.Description?.Contains("100") == true;

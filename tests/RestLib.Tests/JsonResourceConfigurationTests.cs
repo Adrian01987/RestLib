@@ -60,7 +60,7 @@ public class JsonResourceConfigurationTests
     create.StatusCode.Should().Be(HttpStatusCode.Created);
     delete.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
 
-    var openApi = await client.GetStringAsync("/swagger/v1/swagger.json");
+    var openApi = await client.GetStringAsync("/openapi/v1.json");
     var result = OpenApiDocument.Parse(openApi, "json");
     var document = result.Document!;
     var pathItem = document.Paths!["/api/items"]!;
@@ -391,7 +391,7 @@ public class JsonResourceConfigurationTests
     });
 
     var client = host.GetTestClient();
-    var openApi = await client.GetStringAsync("/swagger/v1/swagger.json");
+    var openApi = await client.GetStringAsync("/openapi/v1.json");
     var document = OpenApiDocument.Parse(openApi, "json").Document;
 
     var getAllOperation = document!.Paths!["/api/items"]!.Operations![HttpMethod.Get]!;
@@ -580,16 +580,15 @@ public class JsonResourceConfigurationTests
                 services.AddSingleton<TestEntityRepository>();
                 services.AddSingleton<IRepository<TestEntity, Guid>>(sp => sp.GetRequiredService<TestEntityRepository>());
                 services.AddRouting();
-                services.AddEndpointsApiExplorer();
-                services.AddSwaggerGen();
+                services.AddOpenApi();
                 configureServices(services);
               })
               .Configure(app =>
               {
                 app.UseRouting();
-                app.UseSwagger();
                 app.UseEndpoints(endpoints =>
                 {
+                  endpoints.MapOpenApi();
                   if (mapResourceName is not null)
                   {
                     endpoints.MapJsonResource(mapResourceName);

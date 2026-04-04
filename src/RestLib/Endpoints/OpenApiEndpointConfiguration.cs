@@ -57,13 +57,11 @@ internal static class OpenApiEndpointConfiguration
         // Mark as deprecated if configured
         if (openApiConfig.Deprecated)
         {
-#pragma warning disable ASPDEPR002
-            endpoint.WithOpenApi(op =>
+            endpoint.AddOpenApiOperationTransformer((op, context, ct) =>
             {
                 op.Deprecated = true;
-                return op;
+                return Task.CompletedTask;
             });
-#pragma warning restore ASPDEPR002
         }
 
         if (config.IsAnonymous(operation))
@@ -120,8 +118,7 @@ internal static class OpenApiEndpointConfiguration
             "Supports cursor-based pagination via the `cursor` and `limit` query parameters. " +
             "Results are wrapped in a collection object with pagination links.");
 
-#pragma warning disable ASPDEPR002
-        endpoint.WithOpenApi(operation =>
+        endpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
         {
             // Document cursor parameter
             AddOrUpdateParameter(operation, "cursor", ParameterLocation.Query, false,
@@ -159,9 +156,8 @@ internal static class OpenApiEndpointConfiguration
                 ["403"] = CreateProblemDetailsResponse("Forbidden - Insufficient permissions")
             };
 
-            return operation;
+            return Task.CompletedTask;
         });
-#pragma warning restore ASPDEPR002
     }
 
     /// <summary>
@@ -185,8 +181,7 @@ internal static class OpenApiEndpointConfiguration
             $"Returns a single {entityName} entity by its unique identifier. " +
             "Supports conditional requests via If-None-Match header when ETag support is enabled.");
 
-#pragma warning disable ASPDEPR002
-        endpoint.WithOpenApi(operation =>
+        endpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
         {
             // Document id parameter
             AddOrUpdateParameter(operation, "id", ParameterLocation.Path, true,
@@ -226,9 +221,8 @@ internal static class OpenApiEndpointConfiguration
                 ["404"] = CreateProblemDetailsResponse($"{entityName} not found")
             };
 
-            return operation;
+            return Task.CompletedTask;
         });
-#pragma warning restore ASPDEPR002
     }
 
     /// <summary>
@@ -252,8 +246,7 @@ internal static class OpenApiEndpointConfiguration
             $"Creates a new {entityName} entity. " +
             "Returns the created entity with its generated ID and a Location header pointing to the new resource.");
 
-#pragma warning disable ASPDEPR002
-        endpoint.WithOpenApi(operation =>
+        endpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
         {
             // Document request body
             operation.RequestBody = new OpenApiRequestBody
@@ -301,9 +294,8 @@ internal static class OpenApiEndpointConfiguration
                 ["403"] = CreateProblemDetailsResponse("Forbidden - Insufficient permissions")
             };
 
-            return operation;
+            return Task.CompletedTask;
         });
-#pragma warning restore ASPDEPR002
     }
 
     /// <summary>
@@ -328,8 +320,7 @@ internal static class OpenApiEndpointConfiguration
             "Supports optimistic locking via If-Match header when ETag support is enabled. " +
             "All fields must be provided as this performs a full replacement.");
 
-#pragma warning disable ASPDEPR002
-        endpoint.WithOpenApi(operation =>
+        endpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
         {
             // Document id parameter
             AddOrUpdateParameter(operation, "id", ParameterLocation.Path, true,
@@ -384,9 +375,8 @@ internal static class OpenApiEndpointConfiguration
                 ["412"] = CreateProblemDetailsResponse("Precondition Failed - ETag mismatch (resource was modified)")
             };
 
-            return operation;
+            return Task.CompletedTask;
         });
-#pragma warning restore ASPDEPR002
     }
 
     /// <summary>
@@ -411,8 +401,7 @@ internal static class OpenApiEndpointConfiguration
             "Only the provided fields will be updated. " +
             "Supports optimistic locking via If-Match header when ETag support is enabled.");
 
-#pragma warning disable ASPDEPR002
-        endpoint.WithOpenApi(operation =>
+        endpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
         {
             // Document id parameter
             AddOrUpdateParameter(operation, "id", ParameterLocation.Path, true,
@@ -472,9 +461,8 @@ internal static class OpenApiEndpointConfiguration
                 ["412"] = CreateProblemDetailsResponse("Precondition Failed - ETag mismatch (resource was modified)")
             };
 
-            return operation;
+            return Task.CompletedTask;
         });
-#pragma warning restore ASPDEPR002
     }
 
     /// <summary>
@@ -499,8 +487,7 @@ internal static class OpenApiEndpointConfiguration
             "Returns 204 No Content on success. " +
             "Supports optimistic locking via If-Match header when ETag support is enabled.");
 
-#pragma warning disable ASPDEPR002
-        endpoint.WithOpenApi(operation =>
+        endpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
         {
             // Document id parameter
             AddOrUpdateParameter(operation, "id", ParameterLocation.Path, true,
@@ -522,9 +509,8 @@ internal static class OpenApiEndpointConfiguration
                 ["412"] = CreateProblemDetailsResponse("Precondition Failed - ETag mismatch (resource was modified)")
             };
 
-            return operation;
+            return Task.CompletedTask;
         });
-#pragma warning restore ASPDEPR002
     }
 
     /// <summary>
@@ -549,8 +535,7 @@ internal static class OpenApiEndpointConfiguration
             $"Perform batch create, update, patch, or delete operations on {entityName} resources. " +
             $"Enabled actions: {string.Join(", ", config.EnabledBatchActions.Select(a => a.ToString().ToLowerInvariant()))}.");
 
-#pragma warning disable ASPDEPR002
-        endpoint.WithOpenApi(operation =>
+        endpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
         {
             // Document responses
             operation.Responses = new OpenApiResponses
@@ -562,9 +547,8 @@ internal static class OpenApiEndpointConfiguration
                 ["403"] = CreateProblemDetailsResponse("Forbidden - Insufficient permissions")
             };
 
-            return operation;
+            return Task.CompletedTask;
         });
-#pragma warning restore ASPDEPR002
     }
 
     /// <summary>
