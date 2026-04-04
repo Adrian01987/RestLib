@@ -18,7 +18,7 @@
     <PackageTags>rest;rest-api;api;aspnetcore;crud;scaffolding;minimal-api;dotnet;dotnet10;csharp;openapi;swagger;pagination;problem-details</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageVersion>1.0.0</PackageVersion>
-    <PackageReleaseNotes>See https://github.com/Adrian01987/RestLib/blob/main/CHANGELOG.md for release notes.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.0.0 — BREAKING: Retargeted to .NET 10 (net10.0). Projects on .NET 8 should pin to v0.8.x. See https://github.com/Adrian01987/RestLib/blob/main/CHANGELOG.md for full release notes.</PackageReleaseNotes>
     
     <!-- SourceLink support -->
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
