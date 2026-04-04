@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-04-04
+
+### Added
+
+- `TagDescription` now wired up to OpenAPI documents via `TagDescriptionRegistry` and a document transformer — descriptions set via `RestLibEndpointConfiguration.TagDescription()` appear in the generated OpenAPI spec
+- `RestLibOptions.MaxFilterInListSize` — configurable maximum number of items in `in` operator filter lists (default: 50)
+- Exception type and message included in the `detail` field of batch 500 ProblemDetails responses for easier debugging
+- Batch `BeforeResponse` and `OnError` hooks — batch operations now invoke hook pipeline stages that were previously skipped
+- `/health` endpoint added to the sample app
+
+### Changed
+
+- Sample app migrated from Swashbuckle.AspNetCore to built-in ASP.NET OpenAPI (`Microsoft.AspNetCore.OpenApi`) + Scalar.AspNetCore for API documentation UI
+- E2E test scripts updated to use `/health` endpoint for server readiness polling instead of `/swagger/v1/swagger.json`
+- `FieldSelectionParser` now rejects duplicate field names (consistent with sort and filter parsers)
+- README Quick Start updated to reflect OpenAPI + Scalar instead of Swashbuckle
+
+### Fixed
+
+- Removed unused `config` parameter from `BatchProcessor` internal method
+- Renamed test method from `PropagatesToSwagger` to `PropagatesToOpenApiDocument` to reflect actual behavior
+
+### Documentation
+
+- ADR-008 (Batch Operations): added Known Limitations section documenting post-persist PATCH validation behavior
+- ADR-011 (Filtering): added Repository Contract Enforcement section documenting that filter/sort enforcement depends on the repository implementation
+
+## [1.2.0] - 2026-04-04
+
+### Changed
+
+- Migrated OpenAPI metadata from deprecated `WithOpenApi()` extension to `AddOpenApiOperationTransformer()` — removes dependency on the deprecated API and aligns with .NET 10 best practices
+- OpenAPI operation summaries, descriptions, deprecation flags, and response metadata now applied via endpoint-level transformers
+
+## [1.1.0] - 2026-04-04
+
 ### Added
 
 - Filter operators beyond equality — bracket syntax (`?price[gte]=10&price[lte]=100`) with nine operators: `eq`, `neq`, `gt`, `lt`, `gte`, `lte`, `contains`, `starts_with`, `in`
@@ -129,7 +165,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Architecture Decision Records (ADRs) for key design choices
 - XML documentation for public APIs
 
-[Unreleased]: https://github.com/Adrian01987/RestLib/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/Adrian01987/RestLib/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/Adrian01987/RestLib/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/Adrian01987/RestLib/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/Adrian01987/RestLib/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Adrian01987/RestLib/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/Adrian01987/RestLib/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Adrian01987/RestLib/compare/v0.1.0...v0.2.0

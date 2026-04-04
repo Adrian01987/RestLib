@@ -48,18 +48,18 @@ Configure RestLib:
 ```csharp
 using RestLib;
 using RestLib.InMemory;
+using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRestLib();
 builder.Services.AddRestLibInMemory<Product, Guid>(p => p.Id, Guid.NewGuid);
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-app.UseSwagger();
-app.UseSwaggerUI();
+app.MapOpenApi();
+app.MapScalarApiReference();
 
 app.MapRestLib<Product, Guid>("/api/products", config =>
 {
@@ -69,7 +69,7 @@ app.MapRestLib<Product, Guid>("/api/products", config =>
 app.Run();
 ```
 
-Run the app and open Swagger:
+Run the app and open the API reference at `/scalar`:
 
 ```bash
 dotnet run
@@ -468,7 +468,9 @@ RestLib adds minimal overhead compared to hand-written Minimal APIs. In some cas
 | POST      | 97.3 us  | 99.4 us  | +2%      | +13%   |
 | PUT       | 88.6 us  | 114.2 us | +29%     | +13%   |
 
-Benchmarks were run on .NET 8.0 with 100 seeded items.
+Benchmarks were run on .NET 8.0 with 100 seeded items. Results on .NET 10 may
+differ — re-run with `cd benchmarks/RestLib.Benchmarks && dotnet run -c Release`
+to get current numbers.
 
 <details>
 <summary>Full benchmark results</summary>
