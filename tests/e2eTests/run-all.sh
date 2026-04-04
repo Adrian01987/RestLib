@@ -102,6 +102,8 @@ start_server() {
   header "Starting sample app"
   info "Launching on ${BASE_URL}..."
 
+  mkdir -p "${RESULTS_DIR}"
+
   dotnet run --project "${SAMPLE_DIR}/RestLib.Sample.csproj" --configuration Release --no-build \
     --urls "${BASE_URL}" > "${RESULTS_DIR}/server.log" 2>&1 &
   SERVER_PID=$!
