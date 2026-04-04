@@ -46,10 +46,12 @@ jobs:
       - name: Test with coverage
         run: >
           dotnet test --no-build --configuration Release
-          --collect:"XPlat Code Coverage"
           --results-directory TestResults
           --logger trx
-          -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
+          /p:CollectCoverage=true
+          /p:CoverletOutputFormat=cobertura
+          /p:CoverletOutput=../../TestResults/coverage.cobertura.xml
+          /p:Exclude="[RestLib.InMemory]*%2c[RestLib]Microsoft.AspNetCore.OpenApi.Generated.*%2c[RestLib]System.Runtime.CompilerServices.*"
 
       - name: Upload test results
         uses: actions/upload-artifact@v7
@@ -63,7 +65,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v6
         with:
-          files: TestResults/**/coverage.cobertura.xml
+          files: TestResults/coverage.cobertura.xml
           flags: unittests
           name: RestLib-coverage
           fail_ci_if_error: false
@@ -74,7 +76,7 @@ jobs:
       - name: Check coverage threshold
         if: matrix.os == 'ubuntu-latest'
         run: |
-          COVERAGE_FILE=$(find TestResults -name "coverage.cobertura.xml" -type f | head -1)
+          COVERAGE_FILE="TestResults/coverage.cobertura.xml"
           if [ ! -f "$COVERAGE_FILE" ]; then
             echo "::error::Coverage file not found"
             exit 1
@@ -121,7 +123,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: coverage-report
-          path: TestResults/**/coverage.cobertura.xml
+          path: TestResults/coverage.cobertura.xml
           retention-days: 30
 
   e2e:
