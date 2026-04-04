@@ -87,32 +87,52 @@ public static class CursorEncoder
 
   /// <summary>
   /// Encodes bytes to a base64url string (RFC 4648 §5).
+  /// Uses span replacement to avoid intermediate string allocations.
   /// </summary>
   private static string Base64UrlEncode(byte[] bytes)
   {
     var base64 = Convert.ToBase64String(bytes);
-    // Convert to base64url: replace + with -, / with _, and remove padding =
-    return base64
-        .Replace('+', '-')
-        .Replace('/', '_')
-        .TrimEnd('=');
+    var len = base64.AsSpan().TrimEnd('=').Length;
+    return string.Create(len, (base64, len), static (span, state) =>
+    {
+      state.base64.AsSpan(0, state.len).CopyTo(span);
+      span.Replace('+', '-');
+      span.Replace('/', '_');
+    });
   }
 
   /// <summary>
   /// Decodes a base64url string to bytes (RFC 4648 §5).
+  /// Uses a rented char array to avoid intermediate string allocations.
   /// </summary>
   private static byte[]? Base64UrlDecode(string base64Url)
   {
-    // Convert from base64url: replace - with +, _ with /
-    var base64 = base64Url
-        .Replace('-', '+')
-        .Replace('_', '/');
+    // Calculate the padded length
+    var paddingLength = (4 - (base64Url.Length % 4)) % 4;
+    var totalLength = base64Url.Length + paddingLength;
 
-    // Add padding if necessary
-    var paddingLength = (4 - (base64.Length % 4)) % 4;
-    base64 = base64.PadRight(base64.Length + paddingLength, '=');
+    var buffer = System.Buffers.ArrayPool<char>.Shared.Rent(totalLength);
+    try
+    {
+      base64Url.AsSpan().CopyTo(buffer);
 
-    return Convert.FromBase64String(base64);
+      // Replace base64url characters with standard base64
+      var span = buffer.AsSpan(0, base64Url.Length);
+      span.Replace('-', '+');
+      span.Replace('_', '/');
+
+      // Add padding
+      for (var i = base64Url.Length; i < totalLength; i++)
+      {
+        buffer[i] = '=';
+      }
+
+      return Convert.FromBase64CharArray(buffer, 0, totalLength);
+    }
+    finally
+    {
+      System.Buffers.ArrayPool<char>.Shared.Return(buffer);
+    }
   }
 }
 

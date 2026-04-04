@@ -56,6 +56,12 @@ public class FieldSelectionConfiguration<TEntity> where TEntity : class
         var propertyName = memberExpression.Member.Name;
         var queryFieldName = NamingUtils.ConvertToSnakeCase(propertyName);
 
+        if (_properties.Any(p => string.Equals(p.PropertyName, propertyName, StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException(
+                $"Property '{propertyName}' is already configured for field selection.");
+        }
+
         _properties.Add(new FieldPropertyConfiguration
         {
             PropertyName = propertyName,
@@ -70,6 +76,12 @@ public class FieldSelectionConfiguration<TEntity> where TEntity : class
     /// <param name="queryFieldName">The snake_case query field name.</param>
     internal void AddProperty(string propertyName, string queryFieldName)
     {
+        if (_properties.Any(p => string.Equals(p.PropertyName, propertyName, StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException(
+                $"Property '{propertyName}' is already configured for field selection.");
+        }
+
         _properties.Add(new FieldPropertyConfiguration
         {
             PropertyName = propertyName,

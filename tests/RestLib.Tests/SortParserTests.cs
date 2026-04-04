@@ -293,4 +293,20 @@ public class SortConfigurationTests
     // Assert
     result.Should().BeNull();
   }
+
+  [Fact]
+  [Trait("Category", "Story5.1")]
+  public void SortConfiguration_DuplicateProperty_ThrowsInvalidOperationException()
+  {
+    // Arrange
+    var config = new SortConfiguration<FilterableEntity>();
+    config.AddProperty(p => p.Price);
+
+    // Act
+    var act = () => config.AddProperty(p => p.Price);
+
+    // Assert
+    act.Should().Throw<InvalidOperationException>()
+        .WithMessage("*'Price'*already configured*sorting*");
+  }
 }

@@ -50,6 +50,12 @@ public class FilterConfiguration<TEntity> where TEntity : class
     var propertyName = memberExpression.Member.Name;
     var queryParamName = NamingUtils.ConvertToSnakeCase(propertyName);
 
+    if (_properties.Any(p => string.Equals(p.PropertyName, propertyName, StringComparison.Ordinal)))
+    {
+      throw new InvalidOperationException(
+          $"Property '{propertyName}' is already configured for filtering.");
+    }
+
     _properties.Add(new FilterPropertyConfiguration
     {
       PropertyName = propertyName,
@@ -66,6 +72,12 @@ public class FilterConfiguration<TEntity> where TEntity : class
   /// <param name="propertyType">The property type.</param>
   internal void AddProperty(string propertyName, string queryParameterName, Type propertyType)
   {
+    if (_properties.Any(p => string.Equals(p.PropertyName, propertyName, StringComparison.Ordinal)))
+    {
+      throw new InvalidOperationException(
+          $"Property '{propertyName}' is already configured for filtering.");
+    }
+
     _properties.Add(new FilterPropertyConfiguration
     {
       PropertyName = propertyName,

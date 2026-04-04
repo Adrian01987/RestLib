@@ -22,7 +22,7 @@ internal static class FieldProjector
     /// </summary>
     private const double SerializeThresholdRatio = 0.5;
 
-    private static readonly ConcurrentDictionary<Type, PropertyAccessorMap> AccessorCache = new();
+    private static readonly ConcurrentDictionary<(Type EntityType, JsonNamingPolicy? NamingPolicy), PropertyAccessorMap> AccessorCache = new();
 
     /// <summary>
     /// Projects a single entity to a dictionary containing only the selected fields.
@@ -142,7 +142,8 @@ internal static class FieldProjector
 
     private static PropertyAccessorMap GetOrBuildAccessorMap(Type entityType, JsonSerializerOptions jsonOptions)
     {
-        return AccessorCache.GetOrAdd(entityType, type => PropertyAccessorMap.Build(type, jsonOptions));
+        var key = (entityType, jsonOptions.PropertyNamingPolicy);
+        return AccessorCache.GetOrAdd(key, k => PropertyAccessorMap.Build(k.EntityType, jsonOptions));
     }
 
     /// <summary>

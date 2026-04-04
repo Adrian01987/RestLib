@@ -520,6 +520,14 @@ Key decisions are documented as Architecture Decision Records:
 - .NET 10.0 or later
 - ASP.NET Core Minimal APIs
 
+## Known Limitations
+
+- **Equality-only filtering** — filter operators are limited to exact equality; range, comparison, and contains operators are not yet supported.
+- **Forward-only cursor pagination** — cursors support forward traversal only; there is no backward/previous-page navigation.
+- **Post-fetch field selection** — field projection is applied after the full entity is retrieved from the repository, not pushed down to the data source.
+- **Flat properties only** — filtering, sorting, and field selection operate on top-level entity properties; nested or related entity paths are not supported.
+- **No built-in search** — full-text or fuzzy search is not included; implement it in your repository if needed.
+
 ## Contributing
 
 Contributions are welcome. Read the [contributing guide](https://github.com/Adrian01987/RestLib/blob/main/CONTRIBUTING.md).

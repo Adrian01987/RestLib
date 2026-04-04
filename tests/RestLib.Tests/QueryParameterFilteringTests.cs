@@ -943,6 +943,32 @@ public class FilterParserTests
     result.Errors[0].ProvidedValue.Should().Be("anything");
     result.Errors[0].Message.Should().Contain("Cannot convert");
   }
+
+  [Fact]
+  [Trait("Category", "Story4.3")]
+  public void Parse_MultipleValuesForSameProperty_ReturnsError()
+  {
+    // Arrange
+    var config = new FilterConfiguration<FilterableEntity>();
+    config.AddProperty(p => p.Status);
+
+    var query = new Microsoft.AspNetCore.Http.QueryCollection(
+        new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
+        {
+            { "status", new Microsoft.Extensions.Primitives.StringValues(["Active", "Draft"]) }
+        });
+
+    // Act
+    var result = FilterParser.Parse(query, config);
+
+    // Assert
+    result.IsValid.Should().BeFalse();
+    result.Errors.Should().HaveCount(1);
+    result.Errors[0].ParameterName.Should().Be("status");
+    result.Errors[0].Message.Should().Contain("Multiple values");
+    result.Errors[0].Message.Should().Contain("not supported");
+    result.Values.Should().BeEmpty();
+  }
 }
 
 /// <summary>
@@ -1019,5 +1045,21 @@ public class FilterOpenApiTests : IDisposable
 
     config.Properties[2].PropertyName.Should().Be("Status");
     config.Properties[2].PropertyType.Should().Be(typeof(ProductStatus));
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.3")]
+  public void FilterConfiguration_DuplicateProperty_ThrowsInvalidOperationException()
+  {
+    // Arrange
+    var config = new FilterConfiguration<FilterableEntity>();
+    config.AddProperty(p => p.IsActive);
+
+    // Act
+    var act = () => config.AddProperty(p => p.IsActive);
+
+    // Assert
+    act.Should().Throw<InvalidOperationException>()
+        .WithMessage("*'IsActive'*already configured*filtering*");
   }
 }

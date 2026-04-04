@@ -637,6 +637,22 @@ public class FieldSelectionConfigurationTests
     config.Properties[0].PropertyName.Should().Be("CreatedAt");
     config.Properties[0].QueryFieldName.Should().Be("created_at");
   }
+
+  [Fact]
+  [Trait("Category", "Story7.1")]
+  public void Configuration_DuplicateProperty_ThrowsInvalidOperationException()
+  {
+    // Arrange
+    var config = new FieldSelectionConfiguration<FieldSelectableEntity>();
+    config.AddProperty(p => p.CreatedAt);
+
+    // Act
+    var act = () => config.AddProperty(p => p.CreatedAt);
+
+    // Assert
+    act.Should().Throw<InvalidOperationException>()
+        .WithMessage("*'CreatedAt'*already configured*field selection*");
+  }
 }
 
 /// <summary>

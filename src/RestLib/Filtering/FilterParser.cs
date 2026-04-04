@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using Microsoft.AspNetCore.Http;
 
 namespace RestLib.Filtering;
@@ -27,6 +28,20 @@ public static class FilterParser
     {
       if (!query.TryGetValue(property.QueryParameterName, out var rawValues))
       {
+        continue;
+      }
+
+      // Reject multiple values for the same filter property
+      var nonEmptyValues = rawValues.Where(v => !string.IsNullOrEmpty(v)).ToList();
+      if (nonEmptyValues.Count > 1)
+      {
+        errors.Add(new FilterValidationError
+        {
+          ParameterName = property.QueryParameterName,
+          ProvidedValue = string.Join(", ", nonEmptyValues),
+          ExpectedType = property.PropertyType,
+          Message = $"Multiple values for filter '{property.QueryParameterName}' are not supported. Provide a single value."
+        });
         continue;
       }
 
@@ -116,7 +131,7 @@ public static class FilterParser
 
       if (underlyingType == typeof(DateTime))
       {
-        if (DateTime.TryParse(rawValue, out var dateValue))
+        if (DateTime.TryParse(rawValue, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dateValue))
         {
           return (true, dateValue, null);
         }
@@ -125,7 +140,7 @@ public static class FilterParser
 
       if (underlyingType == typeof(DateTimeOffset))
       {
-        if (DateTimeOffset.TryParse(rawValue, out var dateValue))
+        if (DateTimeOffset.TryParse(rawValue, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dateValue))
         {
           return (true, dateValue, null);
         }
@@ -157,9 +172,9 @@ public static class FilterParser
 
       return (false, null, $"Cannot convert to {GetFriendlyTypeName(targetType)}.");
     }
-    catch (Exception ex)
+    catch (Exception)
     {
-      return (false, null, ex.Message);
+      return (false, null, $"Cannot convert '{rawValue}' to {GetFriendlyTypeName(targetType)}.");
     }
   }
 
