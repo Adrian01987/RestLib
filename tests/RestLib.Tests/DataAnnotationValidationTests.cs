@@ -299,7 +299,7 @@ public class DataAnnotationValidationTests : IDisposable
     // Assert
     problem.Should().NotBeNull();
     problem!.Errors.Should().NotBeNull();
-    problem.Errors!.Should().HaveCountGreaterOrEqualTo(2); // At least name and one other
+    problem.Errors!.Should().HaveCountGreaterThanOrEqualTo(2); // At least name and one other
     problem.Errors.Should().ContainKey("name");
     // Price or email error should also be present
   }

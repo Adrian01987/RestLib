@@ -6,8 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.OpenApi.Models;
-using Microsoft.OpenApi.Readers;
+using Microsoft.OpenApi;
 using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.Pagination;
@@ -140,17 +139,17 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert - All operations should use entity type name as tag
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Tags
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Tags
         .Should().Contain(t => t.Name == "MetadataTestEntity");
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Post].Tags
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Tags
         .Should().Contain(t => t.Name == "MetadataTestEntity");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Get].Tags
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Tags
         .Should().Contain(t => t.Name == "MetadataTestEntity");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Put].Tags
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.Tags
         .Should().Contain(t => t.Name == "MetadataTestEntity");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Patch].Tags
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.Tags
         .Should().Contain(t => t.Name == "MetadataTestEntity");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Delete].Tags
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.Tags
         .Should().Contain(t => t.Name == "MetadataTestEntity");
   }
 
@@ -170,17 +169,17 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert - All operations should use custom tag
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Tags
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Tags
         .Should().Contain(t => t.Name == "Products");
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Post].Tags
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Tags
         .Should().Contain(t => t.Name == "Products");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Get].Tags
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Tags
         .Should().Contain(t => t.Name == "Products");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Put].Tags
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.Tags
         .Should().Contain(t => t.Name == "Products");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Patch].Tags
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.Tags
         .Should().Contain(t => t.Name == "Products");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Delete].Tags
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.Tags
         .Should().Contain(t => t.Name == "Products");
   }
 
@@ -200,9 +199,9 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert - Should NOT contain the default entity name tag
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Tags
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Tags
         .Should().NotContain(t => t.Name == "MetadataTestEntity");
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Tags
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Tags
         .Should().ContainSingle(t => t.Name == "Items");
   }
 
@@ -223,7 +222,7 @@ public class OpenApiMetadataConfigurationTests
 
     // Assert - Should use entity name when tag is empty
     // Note: Empty string is truthy in C# so it won't fall back. Let's check actual behavior
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Tags
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Tags
         .Should().HaveCount(1);
   }
 
@@ -248,7 +247,7 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Summary
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Summary
         .Should().Be(customSummary);
   }
 
@@ -269,7 +268,7 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Get].Summary
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Summary
         .Should().Be(customSummary);
   }
 
@@ -290,7 +289,7 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Post].Summary
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Summary
         .Should().Be(customSummary);
   }
 
@@ -311,7 +310,7 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Put].Summary
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.Summary
         .Should().Be(customSummary);
   }
 
@@ -332,7 +331,7 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Patch].Summary
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.Summary
         .Should().Be(customSummary);
   }
 
@@ -353,7 +352,7 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Delete].Summary
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.Summary
         .Should().Be(customSummary);
   }
 
@@ -378,12 +377,12 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Summary.Should().Be("List products");
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Post].Summary.Should().Be("Add product");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Get].Summary.Should().Be("Get product");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Put].Summary.Should().Be("Replace product");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Patch].Summary.Should().Be("Update product fields");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Delete].Summary.Should().Be("Remove product");
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Summary.Should().Be("List products");
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Summary.Should().Be("Add product");
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Summary.Should().Be("Get product");
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.Summary.Should().Be("Replace product");
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.Summary.Should().Be("Update product fields");
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.Summary.Should().Be("Remove product");
   }
 
   [Fact]
@@ -402,13 +401,13 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert - GetAll should use custom summary
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Summary
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Summary
         .Should().Be("Custom list products");
 
     // Other operations should use default summaries (containing entity name)
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Post].Summary
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Summary
         .Should().Contain("Create");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Get].Summary
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Summary
         .Should().Contain("Get");
   }
 
@@ -433,7 +432,7 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Description
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Description
         .Should().Be(customDescription);
   }
 
@@ -454,7 +453,7 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Post].Description
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Description
         .Should().Be(customDescription);
   }
 
@@ -479,17 +478,17 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Description
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Description
         .Should().Be("Custom GetAll description");
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Post].Description
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Description
         .Should().Be("Custom Create description");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Get].Description
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Description
         .Should().Be("Custom GetById description");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Put].Description
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.Description
         .Should().Be("Custom Update description");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Patch].Description
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.Description
         .Should().Be("Custom Patch description");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Delete].Description
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.Description
         .Should().Be("Custom Delete description");
   }
 
@@ -513,12 +512,12 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert - All operations should be marked as deprecated
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Deprecated.Should().BeTrue();
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Post].Deprecated.Should().BeTrue();
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Get].Deprecated.Should().BeTrue();
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Put].Deprecated.Should().BeTrue();
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Patch].Deprecated.Should().BeTrue();
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Delete].Deprecated.Should().BeTrue();
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Deprecated.Should().BeTrue();
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Deprecated.Should().BeTrue();
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Deprecated.Should().BeTrue();
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.Deprecated.Should().BeTrue();
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.Deprecated.Should().BeTrue();
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.Deprecated.Should().BeTrue();
   }
 
   [Fact]
@@ -537,12 +536,12 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert - No operations should be marked as deprecated
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Deprecated.Should().BeFalse();
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Post].Deprecated.Should().BeFalse();
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Get].Deprecated.Should().BeFalse();
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Put].Deprecated.Should().BeFalse();
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Patch].Deprecated.Should().BeFalse();
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Delete].Deprecated.Should().BeFalse();
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Deprecated.Should().BeFalse();
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Deprecated.Should().BeFalse();
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Deprecated.Should().BeFalse();
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.Deprecated.Should().BeFalse();
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.Deprecated.Should().BeFalse();
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.Deprecated.Should().BeFalse();
   }
 
   [Fact]
@@ -563,9 +562,9 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert - Descriptions should contain the deprecation message
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Description
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Description
         .Should().Contain("DEPRECATED");
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Description
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Description
         .Should().Contain(deprecationMessage);
   }
 
@@ -586,9 +585,9 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert - Should have a default deprecation notice
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Description
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Description
         .Should().Contain("DEPRECATED");
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Description
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Description
         .Should().Contain("deprecated");
   }
 
@@ -609,9 +608,9 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert - Descriptions should NOT contain deprecation message
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Description
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Description
         .Should().NotContain("DEPRECATED");
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Description
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Description
         .Should().NotContain("This should not appear");
   }
 
@@ -639,7 +638,7 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert - All configurations should be applied
-    var getAllOp = openApiDoc.Paths["/api/items"].Operations[OperationType.Get];
+    var getAllOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!;
 
     getAllOp.Tags.Should().Contain(t => t.Name == "Legacy Products");
     getAllOp.Deprecated.Should().BeTrue();
@@ -704,9 +703,9 @@ public class OpenApiMetadataConfigurationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert - Each endpoint group should have its own tag
-    openApiDoc.Paths["/api/products"].Operations[OperationType.Get].Tags
+    openApiDoc.Paths!["/api/products"]!.Operations[HttpMethod.Get]!.Tags
         .Should().Contain(t => t.Name == "Products");
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Tags
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Tags
         .Should().Contain(t => t.Name == "Inventory Items");
   }
 
@@ -868,16 +867,9 @@ public class OpenApiMetadataConfigurationTests
     response.EnsureSuccessStatusCode();
 
     var content = await response.Content.ReadAsStreamAsync();
-    var reader = new OpenApiStreamReader();
-    var result = await reader.ReadAsync(content);
+    var result = await OpenApiDocument.LoadAsync(content, "json");
 
-    if (result.OpenApiDiagnostic.Errors.Count > 0)
-    {
-      throw new InvalidOperationException(
-          $"OpenAPI document has errors: {string.Join(", ", result.OpenApiDiagnostic.Errors.Select(e => e.Message))}");
-    }
-
-    return result.OpenApiDocument;
+    return result.Document!;
   }
 
   #endregion

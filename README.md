@@ -7,7 +7,7 @@
 [![NuGet](https://img.shields.io/nuget/v/RestLib.svg)](https://www.nuget.org/packages/RestLib/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/Adrian01987/RestLib/blob/main/LICENSE)
 
-RestLib is a .NET 8 library for ASP.NET Core Minimal APIs that generates CRUD endpoints from your model and repository. It bakes in secure defaults, cursor pagination, filtering, sorting, OpenAPI metadata, and RFC 9457 Problem Details so you can ship consistent APIs faster.
+RestLib is a .NET 10 library for ASP.NET Core Minimal APIs that generates CRUD endpoints from your model and repository. It bakes in secure defaults, cursor pagination, filtering, sorting, OpenAPI metadata, and RFC 9457 Problem Details so you can ship consistent APIs faster.
 
 ## Install
 
@@ -517,7 +517,7 @@ Key decisions are documented as Architecture Decision Records:
 
 ## Requirements
 
-- .NET 8.0 or later
+- .NET 10.0 or later
 - ASP.NET Core Minimal APIs
 
 ## Contributing

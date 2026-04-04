@@ -4,7 +4,7 @@ Guidelines for AI coding agents working in this repository.
 
 ## Project Overview
 
-RestLib is a .NET 8 library for ASP.NET Core Minimal APIs that generates CRUD REST
+RestLib is a .NET 10 library for ASP.NET Core Minimal APIs that generates CRUD REST
 endpoints from a model and repository. It uses cursor pagination, filtering, sorting,
 field selection, RFC 9457 Problem Details, and OpenAPI metadata out of the box.
 
@@ -13,7 +13,7 @@ field selection, RFC 9457 Problem Details, and OpenAPI metadata out of the box.
 ```bash
 dotnet restore                # Restore packages
 dotnet build                  # Build all projects
-dotnet test                   # Run all tests (764 tests)
+dotnet test                   # Run all tests (773 tests)
 ```
 
 ### Run a single test

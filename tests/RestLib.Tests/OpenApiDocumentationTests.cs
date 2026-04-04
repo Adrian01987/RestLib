@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
@@ -6,8 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.OpenApi.Models;
-using Microsoft.OpenApi.Readers;
+using Microsoft.OpenApi;
 using RestLib.Abstractions;
 using RestLib.Pagination;
 using Swashbuckle.AspNetCore.SwaggerGen;
@@ -103,21 +103,21 @@ public class OpenApiDocumentationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert - Should have 6 endpoints
-    openApiDoc.Paths.Should().ContainKey("/api/items");
-    openApiDoc.Paths.Should().ContainKey("/api/items/{id}");
+    openApiDoc.Paths!.Should().ContainKey("/api/items");
+    openApiDoc.Paths!.Should().ContainKey("/api/items/{id}");
 
     // GET /api/items (GetAll)
-    openApiDoc.Paths["/api/items"].Operations.Should().ContainKey(OperationType.Get);
+    openApiDoc.Paths!["/api/items"]!.Operations.Should().ContainKey(HttpMethod.Get);
     // POST /api/items (Create)
-    openApiDoc.Paths["/api/items"].Operations.Should().ContainKey(OperationType.Post);
+    openApiDoc.Paths!["/api/items"]!.Operations.Should().ContainKey(HttpMethod.Post);
     // GET /api/items/{id} (GetById)
-    openApiDoc.Paths["/api/items/{id}"].Operations.Should().ContainKey(OperationType.Get);
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations.Should().ContainKey(HttpMethod.Get);
     // PUT /api/items/{id} (Update)
-    openApiDoc.Paths["/api/items/{id}"].Operations.Should().ContainKey(OperationType.Put);
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations.Should().ContainKey(HttpMethod.Put);
     // PATCH /api/items/{id} (Patch)
-    openApiDoc.Paths["/api/items/{id}"].Operations.Should().ContainKey(OperationType.Patch);
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations.Should().ContainKey(HttpMethod.Patch);
     // DELETE /api/items/{id} (Delete)
-    openApiDoc.Paths["/api/items/{id}"].Operations.Should().ContainKey(OperationType.Delete);
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations.Should().ContainKey(HttpMethod.Delete);
   }
 
   [Fact]
@@ -131,17 +131,17 @@ public class OpenApiDocumentationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].OperationId
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.OperationId
         .Should().Be("OpenApiTestEntity_api_items_GetAll");
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Post].OperationId
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.OperationId
         .Should().Be("OpenApiTestEntity_api_items_Create");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Get].OperationId
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.OperationId
         .Should().Be("OpenApiTestEntity_api_items_GetById");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Put].OperationId
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.OperationId
         .Should().Be("OpenApiTestEntity_api_items_Update");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Patch].OperationId
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.OperationId
         .Should().Be("OpenApiTestEntity_api_items_Patch");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Delete].OperationId
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.OperationId
         .Should().Be("OpenApiTestEntity_api_items_Delete");
   }
 
@@ -156,17 +156,17 @@ public class OpenApiDocumentationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Summary
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Summary
         .Should().Contain("Get all");
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Post].Summary
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Summary
         .Should().Contain("Create");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Get].Summary
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Summary
         .Should().Contain("Get");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Put].Summary
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.Summary
         .Should().Contain("update");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Patch].Summary
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.Summary
         .Should().Contain("Partial");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Delete].Summary
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.Summary
         .Should().Contain("Delete");
   }
 
@@ -181,17 +181,17 @@ public class OpenApiDocumentationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert - All endpoints should have descriptions
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Description
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Description
         .Should().NotBeNullOrEmpty();
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Post].Description
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Description
         .Should().NotBeNullOrEmpty();
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Get].Description
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Description
         .Should().NotBeNullOrEmpty();
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Put].Description
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.Description
         .Should().NotBeNullOrEmpty();
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Patch].Description
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.Description
         .Should().NotBeNullOrEmpty();
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Delete].Description
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.Description
         .Should().NotBeNullOrEmpty();
   }
 
@@ -206,11 +206,11 @@ public class OpenApiDocumentationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert - All endpoints should be tagged with entity name
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Get].Tags
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Tags
         .Should().Contain(t => t.Name == "OpenApiTestEntity");
-    openApiDoc.Paths["/api/items"].Operations[OperationType.Post].Tags
+    openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Tags
         .Should().Contain(t => t.Name == "OpenApiTestEntity");
-    openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Get].Tags
+    openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Tags
         .Should().Contain(t => t.Name == "OpenApiTestEntity");
   }
 
@@ -229,7 +229,7 @@ public class OpenApiDocumentationTests
     var openApiDoc = await GetOpenApiDocument(client);
 
     // Assert - Entity schema should exist
-    openApiDoc.Components.Schemas.Should().ContainKey("OpenApiTestEntity");
+    openApiDoc.Components!.Schemas.Should().ContainKey("OpenApiTestEntity");
   }
 
   [Fact]
@@ -241,31 +241,31 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var getAllOp = openApiDoc.Paths["/api/items"].Operations[OperationType.Get];
+    var getAllOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!;
     var response200 = getAllOp.Responses["200"];
 
     // Assert - Response should have application/json content
     response200.Content.Should().ContainKey("application/json");
-    var schema = response200.Content["application/json"].Schema;
+    var schema = response200.Content["application/json"].Schema!;
 
     // Schema may have properties directly or via reference
     // The schema should represent a collection response
     schema.Should().NotBeNull();
 
     // Check if it has direct properties or is a reference to a schema with properties
-    if (schema.Properties.Count > 0)
+    if (schema.Properties != null && schema.Properties.Count > 0)
     {
       schema.Properties.Should().ContainKey("items");
     }
-    else if (schema.Reference != null)
+    else if (schema is OpenApiSchemaReference)
     {
       // Schema is referenced - this is acceptable for OpenAPI
-      schema.Reference.Should().NotBeNull();
+      schema.Should().NotBeNull();
     }
-    else if (schema.Type == "object")
+    else if (schema.Type == JsonSchemaType.Object)
     {
       // Schema is an object type - acceptable
-      schema.Type.Should().Be("object");
+      schema.Type.Should().Be(JsonSchemaType.Object);
     }
   }
 
@@ -278,11 +278,11 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var createOp = openApiDoc.Paths["/api/items"].Operations[OperationType.Post];
+    var createOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!;
 
     // Assert
     createOp.RequestBody.Should().NotBeNull();
-    createOp.RequestBody.Required.Should().BeTrue();
+    createOp.RequestBody!.Required.Should().BeTrue();
     createOp.RequestBody.Content.Should().ContainKey("application/json");
   }
 
@@ -295,11 +295,11 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var updateOp = openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Put];
+    var updateOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!;
 
     // Assert
     updateOp.RequestBody.Should().NotBeNull();
-    updateOp.RequestBody.Required.Should().BeTrue();
+    updateOp.RequestBody!.Required.Should().BeTrue();
     updateOp.RequestBody.Content.Should().ContainKey("application/json");
   }
 
@@ -312,11 +312,11 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var patchOp = openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Patch];
+    var patchOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!;
 
     // Assert
     patchOp.RequestBody.Should().NotBeNull();
-    patchOp.RequestBody.Required.Should().BeTrue();
+    patchOp.RequestBody!.Required.Should().BeTrue();
     patchOp.RequestBody.Content.Should().ContainKey("application/json");
     patchOp.RequestBody.Description.Should().Contain("JSON Merge Patch");
   }
@@ -334,7 +334,7 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var getAllOp = openApiDoc.Paths["/api/items"].Operations[OperationType.Get];
+    var getAllOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!;
 
     // Assert
     getAllOp.Responses.Should().ContainKey("200"); // Success
@@ -352,7 +352,7 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var getByIdOp = openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Get];
+    var getByIdOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!;
 
     // Assert
     getByIdOp.Responses.Should().ContainKey("200"); // Success
@@ -371,7 +371,7 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var createOp = openApiDoc.Paths["/api/items"].Operations[OperationType.Post];
+    var createOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!;
 
     // Assert
     createOp.Responses.Should().ContainKey("201"); // Created
@@ -389,12 +389,12 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var createOp = openApiDoc.Paths["/api/items"].Operations[OperationType.Post];
+    var createOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!;
     var response201 = createOp.Responses["201"];
 
     // Assert
     response201.Headers.Should().ContainKey("Location");
-    response201.Headers["Location"].Description.Should().Contain("URL");
+    response201.Headers["Location"]!.Description.Should().Contain("URL");
   }
 
   [Fact]
@@ -406,7 +406,7 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var updateOp = openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Put];
+    var updateOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!;
 
     // Assert
     updateOp.Responses.Should().ContainKey("200"); // Success
@@ -426,7 +426,7 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var patchOp = openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Patch];
+    var patchOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!;
 
     // Assert
     patchOp.Responses.Should().ContainKey("200"); // Success
@@ -446,7 +446,7 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var deleteOp = openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Delete];
+    var deleteOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!;
 
     // Assert
     deleteOp.Responses.Should().ContainKey("204"); // No Content
@@ -465,12 +465,12 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var getByIdOp = openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Get];
+    var getByIdOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!;
     var response404 = getByIdOp.Responses["404"];
 
     // Assert - Should use application/problem+json
     response404.Content.Should().ContainKey("application/problem+json");
-    var schema = response404.Content["application/problem+json"].Schema;
+    var schema = response404.Content["application/problem+json"].Schema!;
     schema.Properties.Should().ContainKey("type");
     schema.Properties.Should().ContainKey("title");
     schema.Properties.Should().ContainKey("status");
@@ -491,15 +491,15 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var getAllOp = openApiDoc.Paths["/api/items"].Operations[OperationType.Get];
-    var cursorParam = getAllOp.Parameters.FirstOrDefault(p => p.Name == "cursor");
+    var getAllOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!;
+    var cursorParam = getAllOp.Parameters!.FirstOrDefault(p => p.Name == "cursor");
 
     // Assert
     cursorParam.Should().NotBeNull();
     cursorParam!.In.Should().Be(ParameterLocation.Query);
     cursorParam.Required.Should().BeFalse();
     cursorParam.Description.Should().Contain("cursor");
-    cursorParam.Schema.Type.Should().Be("string");
+    cursorParam.Schema!.Type.Should().Be(JsonSchemaType.String);
   }
 
   [Fact]
@@ -511,18 +511,18 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var getAllOp = openApiDoc.Paths["/api/items"].Operations[OperationType.Get];
-    var limitParam = getAllOp.Parameters.FirstOrDefault(p => p.Name == "limit");
+    var getAllOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!;
+    var limitParam = getAllOp.Parameters!.FirstOrDefault(p => p.Name == "limit");
 
     // Assert
     limitParam.Should().NotBeNull();
     limitParam!.In.Should().Be(ParameterLocation.Query);
     limitParam.Required.Should().BeFalse();
-    limitParam.Schema.Type.Should().Be("integer");
+    limitParam.Schema!.Type.Should().Be(JsonSchemaType.Integer);
 
     // Constraints may be serialized as schema properties or documented in description
     // Swashbuckle may not serialize min/max directly - check description for constraint info
-    var hasSchemaConstraints = limitParam.Schema.Minimum.HasValue && limitParam.Schema.Maximum.HasValue;
+    var hasSchemaConstraints = limitParam.Schema.Minimum != null && limitParam.Schema.Maximum != null;
     var hasDescriptionConstraints = limitParam.Description?.Contains("1") == true &&
                                      limitParam.Description?.Contains("100") == true;
 
@@ -539,15 +539,15 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var getByIdOp = openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Get];
-    var idParam = getByIdOp.Parameters.FirstOrDefault(p => p.Name == "id");
+    var getByIdOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!;
+    var idParam = getByIdOp.Parameters!.FirstOrDefault(p => p.Name == "id");
 
     // Assert
     idParam.Should().NotBeNull();
     idParam!.In.Should().Be(ParameterLocation.Path);
     idParam.Required.Should().BeTrue();
     idParam.Description.Should().Contain("identifier");
-    idParam.Schema.Type.Should().Be("integer");
+    idParam.Schema!.Type.Should().Be(JsonSchemaType.Integer);
   }
 
   [Fact]
@@ -559,8 +559,8 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var getByIdOp = openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Get];
-    var ifNoneMatchParam = getByIdOp.Parameters.FirstOrDefault(p => p.Name == "If-None-Match");
+    var getByIdOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!;
+    var ifNoneMatchParam = getByIdOp.Parameters!.FirstOrDefault(p => p.Name == "If-None-Match");
 
     // Assert
     ifNoneMatchParam.Should().NotBeNull();
@@ -578,8 +578,8 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var updateOp = openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Put];
-    var ifMatchParam = updateOp.Parameters.FirstOrDefault(p => p.Name == "If-Match");
+    var updateOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!;
+    var ifMatchParam = updateOp.Parameters!.FirstOrDefault(p => p.Name == "If-Match");
 
     // Assert
     ifMatchParam.Should().NotBeNull();
@@ -597,8 +597,8 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var deleteOp = openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Delete];
-    var ifMatchParam = deleteOp.Parameters.FirstOrDefault(p => p.Name == "If-Match");
+    var deleteOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!;
+    var ifMatchParam = deleteOp.Parameters!.FirstOrDefault(p => p.Name == "If-Match");
 
     // Assert
     ifMatchParam.Should().NotBeNull();
@@ -615,17 +615,17 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var getAllOp = openApiDoc.Paths["/api/items"].Operations[OperationType.Get];
+    var getAllOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!;
 
     // Assert - Should have filter parameters
-    var isActiveParam = getAllOp.Parameters.FirstOrDefault(p => p.Name == "is_active");
+    var isActiveParam = getAllOp.Parameters!.FirstOrDefault(p => p.Name == "is_active");
     isActiveParam.Should().NotBeNull();
     isActiveParam!.In.Should().Be(ParameterLocation.Query);
-    isActiveParam.Schema.Type.Should().Be("boolean");
+    isActiveParam.Schema!.Type.Should().Be(JsonSchemaType.Boolean);
 
-    var categoryIdParam = getAllOp.Parameters.FirstOrDefault(p => p.Name == "category_id");
+    var categoryIdParam = getAllOp.Parameters!.FirstOrDefault(p => p.Name == "category_id");
     categoryIdParam.Should().NotBeNull();
-    categoryIdParam!.Schema.Type.Should().Be("string");
+    categoryIdParam!.Schema!.Type.Should().Be(JsonSchemaType.String);
     categoryIdParam.Schema.Format.Should().Be("uuid");
   }
 
@@ -642,12 +642,12 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var getByIdOp = openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Get];
+    var getByIdOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!;
     var response200 = getByIdOp.Responses["200"];
 
     // Assert
     response200.Headers.Should().ContainKey("ETag");
-    response200.Headers["ETag"].Description.Should().Contain("cache");
+    response200.Headers["ETag"]!.Description.Should().Contain("cache");
   }
 
   [Fact]
@@ -659,7 +659,7 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var createOp = openApiDoc.Paths["/api/items"].Operations[OperationType.Post];
+    var createOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!;
     var response201 = createOp.Responses["201"];
 
     // Assert
@@ -675,7 +675,7 @@ public class OpenApiDocumentationTests
 
     // Act
     var openApiDoc = await GetOpenApiDocument(client);
-    var updateOp = openApiDoc.Paths["/api/items/{id}"].Operations[OperationType.Put];
+    var updateOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!;
     var response200 = updateOp.Responses["200"];
 
     // Assert
@@ -772,16 +772,9 @@ public class OpenApiDocumentationTests
     response.EnsureSuccessStatusCode();
 
     var content = await response.Content.ReadAsStreamAsync();
-    var reader = new OpenApiStreamReader();
-    var result = await reader.ReadAsync(content);
+    var result = await OpenApiDocument.LoadAsync(content, "json");
 
-    if (result.OpenApiDiagnostic.Errors.Count > 0)
-    {
-      throw new InvalidOperationException(
-          $"OpenAPI document has errors: {string.Join(", ", result.OpenApiDiagnostic.Errors.Select(e => e.Message))}");
-    }
-
-    return result.OpenApiDocument;
+    return result.Document!;
   }
 
   #endregion

@@ -1,11 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- Suppress nullable dereference warnings in test code (CS8602, CS8604) -->
+    <NoWarn>$(NoWarn);CS8602;CS8604</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,11 +12,10 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.*" />
-    <PackageReference Include="Microsoft.OpenApi.Readers" Version="1.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.*" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.*" />
     <PackageReference Include="NSubstitute" Version="5.*" />
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.*" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.*" />
     <PackageReference Include="xunit" Version="2.*" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.*">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

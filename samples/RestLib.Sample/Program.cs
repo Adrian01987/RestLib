@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using RestLib;
 using RestLib.Abstractions;
 using RestLib.Batch;

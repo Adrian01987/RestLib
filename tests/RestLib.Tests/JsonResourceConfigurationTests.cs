@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.OpenApi.Readers;
+using Microsoft.OpenApi;
 using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.Hooks;
@@ -61,12 +61,12 @@ public class JsonResourceConfigurationTests
     delete.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
 
     var openApi = await client.GetStringAsync("/swagger/v1/swagger.json");
-    var document = new OpenApiStringReader().Read(openApi, out _);
-
-    document.Paths["/api/items"].Operations[Microsoft.OpenApi.Models.OperationType.Get].Summary
-        .Should().Be("List configured items");
-    document.Paths["/api/items"].Operations[Microsoft.OpenApi.Models.OperationType.Get].Tags
-        .Should().Contain(tag => tag.Name == "Items");
+    var result = OpenApiDocument.Parse(openApi, "json");
+    var document = result.Document!;
+    var pathItem = document.Paths!["/api/items"]!;
+    var getOp = pathItem.Operations![HttpMethod.Get]!;
+    getOp.Summary.Should().Be("List configured items");
+    getOp.Tags.Should().Contain(tag => tag.Name == "Items");
   }
 
   [Fact]
@@ -392,9 +392,9 @@ public class JsonResourceConfigurationTests
 
     var client = host.GetTestClient();
     var openApi = await client.GetStringAsync("/swagger/v1/swagger.json");
-    var document = new OpenApiStringReader().Read(openApi, out _);
+    var document = OpenApiDocument.Parse(openApi, "json").Document;
 
-    var getAllOperation = document.Paths["/api/items"].Operations[Microsoft.OpenApi.Models.OperationType.Get];
+    var getAllOperation = document!.Paths!["/api/items"]!.Operations![HttpMethod.Get]!;
 
     getAllOperation.Summary.Should().Be("List all legacy items");
     getAllOperation.Deprecated.Should().BeTrue();

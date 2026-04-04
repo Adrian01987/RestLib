@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <NoWarn>AD0001</NoWarn>
+    <NoWarn>AD0001;ASPDEPR002</NoWarn>
     
     <!-- Package metadata -->
     <PackageId>RestLib</PackageId>
@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.*" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.*" />
     <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.*" PrivateAssets="All" />
   </ItemGroup>
 

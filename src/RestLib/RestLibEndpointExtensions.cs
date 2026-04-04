@@ -1,10 +1,12 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.OpenApi;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using RestLib.Configuration;
 using RestLib.Endpoints;
 
@@ -104,6 +106,7 @@ public static class RestLibEndpointExtensions
       // Add OpenAPI documentation for filter parameters
       if (config.HasFilters)
       {
+#pragma warning disable ASPDEPR002
         getAllEndpoint.WithOpenApi(operation =>
         {
           foreach (var filter in config.FilterConfiguration.Properties)
@@ -116,20 +119,25 @@ public static class RestLibEndpointExtensions
               Description = $"Filter by {filter.PropertyName}",
               Schema = GetOpenApiSchema(filter.PropertyType)
             };
+            operation.Parameters ??= [];
             operation.Parameters.Add(param);
           }
+
           return operation;
         });
+#pragma warning restore ASPDEPR002
       }
 
       // Add OpenAPI documentation for sort parameter
       if (config.HasSorting)
       {
+#pragma warning disable ASPDEPR002
         getAllEndpoint.WithOpenApi(operation =>
         {
           var allowedFields = string.Join(", ",
               config.SortConfiguration.Properties.Select(p => p.QueryParameterName));
 
+          operation.Parameters ??= [];
           operation.Parameters.Add(new OpenApiParameter
           {
             Name = "sort",
@@ -138,21 +146,24 @@ public static class RestLibEndpointExtensions
             Description = $"Sort by comma-separated property:direction pairs. " +
                           $"Allowed fields: {allowedFields}. Directions: asc, desc. " +
                           $"Example: price:asc,name:desc",
-            Schema = new OpenApiSchema { Type = "string" }
+            Schema = new OpenApiSchema { Type = JsonSchemaType.String }
           });
 
           return operation;
         });
+#pragma warning restore ASPDEPR002
       }
 
       // Add OpenAPI documentation for fields parameter
       if (config.HasFieldSelection)
       {
+#pragma warning disable ASPDEPR002
         getAllEndpoint.WithOpenApi(operation =>
         {
           var allowedFields = string.Join(", ",
               config.FieldSelectionConfiguration.Properties.Select(p => p.QueryFieldName));
 
+          operation.Parameters ??= [];
           operation.Parameters.Add(new OpenApiParameter
           {
             Name = "fields",
@@ -160,10 +171,12 @@ public static class RestLibEndpointExtensions
             Required = false,
             Description = $"Comma-separated list of fields to include in the response. " +
                           $"Allowed fields: {allowedFields}.",
-            Schema = new OpenApiSchema { Type = "string" }
+            Schema = new OpenApiSchema { Type = JsonSchemaType.String }
           });
+
           return operation;
         });
+#pragma warning restore ASPDEPR002
       }
     } // end GetAll
 
@@ -176,11 +189,13 @@ public static class RestLibEndpointExtensions
       // Add OpenAPI documentation for fields parameter
       if (config.HasFieldSelection)
       {
+#pragma warning disable ASPDEPR002
         getByIdEndpoint.WithOpenApi(operation =>
         {
           var allowedFields = string.Join(", ",
               config.FieldSelectionConfiguration.Properties.Select(p => p.QueryFieldName));
 
+          operation.Parameters ??= [];
           operation.Parameters.Add(new OpenApiParameter
           {
             Name = "fields",
@@ -188,10 +203,12 @@ public static class RestLibEndpointExtensions
             Required = false,
             Description = $"Comma-separated list of fields to include in the response. " +
                           $"Allowed fields: {allowedFields}.",
-            Schema = new OpenApiSchema { Type = "string" }
+            Schema = new OpenApiSchema { Type = JsonSchemaType.String }
           });
+
           return operation;
         });
+#pragma warning restore ASPDEPR002
       }
     } // end GetById
 
@@ -248,7 +265,7 @@ public static class RestLibEndpointExtensions
     var openApiConfig = config.OpenApi;
 
     // Use custom tag or fall back to the base entity type name (without registration suffix)
-    var tag = openApiConfig.Tag ?? typeof(TEntity).Name;
+    var tag = string.IsNullOrEmpty(openApiConfig.Tag) ? typeof(TEntity).Name : openApiConfig.Tag;
 
     // Use custom summary or fall back to default
     var summary = openApiConfig.Summaries.GetSummary(operation) ?? defaultSummary;
@@ -272,11 +289,13 @@ public static class RestLibEndpointExtensions
     // Mark as deprecated if configured
     if (openApiConfig.Deprecated)
     {
-      endpoint.WithOpenApi(operation =>
+#pragma warning disable ASPDEPR002
+      endpoint.WithOpenApi(op =>
       {
-        operation.Deprecated = true;
-        return operation;
+        op.Deprecated = true;
+        return op;
       });
+#pragma warning restore ASPDEPR002
     }
 
     if (config.IsAnonymous(operation))
@@ -333,23 +352,24 @@ public static class RestLibEndpointExtensions
         "Supports cursor-based pagination via the `cursor` and `limit` query parameters. " +
         "Results are wrapped in a collection object with pagination links.");
 
+#pragma warning disable ASPDEPR002
     endpoint.WithOpenApi(operation =>
     {
       // Document cursor parameter
       AddOrUpdateParameter(operation, "cursor", ParameterLocation.Query, false,
           "Opaque cursor for pagination. Use the value from the `next` link in the response to get the next page.",
-          new OpenApiSchema { Type = "string" });
+          new OpenApiSchema { Type = JsonSchemaType.String });
 
       // Document limit parameter
       AddOrUpdateParameter(operation, "limit", ParameterLocation.Query, false,
           "Maximum number of items to return per page. Valid range: 1-100. Default: 20.",
           new OpenApiSchema
           {
-            Type = "integer",
+            Type = JsonSchemaType.Integer,
             Format = "int32",
-            Minimum = 1,
-            Maximum = 100,
-            Default = new Microsoft.OpenApi.Any.OpenApiInteger(20)
+            Minimum = "1",
+            Maximum = "100",
+            Default = JsonValue.Create(20)
           });
 
       // Document responses
@@ -373,6 +393,7 @@ public static class RestLibEndpointExtensions
 
       return operation;
     });
+#pragma warning restore ASPDEPR002
   }
 
   /// <summary>
@@ -396,6 +417,7 @@ public static class RestLibEndpointExtensions
         $"Returns a single {entityName} entity by its unique identifier. " +
         "Supports conditional requests via If-None-Match header when ETag support is enabled.");
 
+#pragma warning disable ASPDEPR002
     endpoint.WithOpenApi(operation =>
     {
       // Document id parameter
@@ -406,7 +428,7 @@ public static class RestLibEndpointExtensions
       // Document If-None-Match header
       AddOrUpdateParameter(operation, "If-None-Match", ParameterLocation.Header, false,
           "ETag value for conditional request. Returns 304 Not Modified if the resource hasn't changed.",
-          new OpenApiSchema { Type = "string" });
+          new OpenApiSchema { Type = JsonSchemaType.String });
 
       // Document responses
       operation.Responses = new OpenApiResponses
@@ -418,18 +440,15 @@ public static class RestLibEndpointExtensions
           {
             ["application/json"] = new OpenApiMediaType
             {
-              Schema = new OpenApiSchema
-              {
-                Reference = new OpenApiReference { Type = ReferenceType.Schema, Id = entityName }
-              }
+              Schema = CreateEntityRefSchema(entityName)
             }
           },
-          Headers = new Dictionary<string, OpenApiHeader>
+          Headers = new Dictionary<string, IOpenApiHeader>
           {
             ["ETag"] = new OpenApiHeader
             {
               Description = "Entity tag for cache validation",
-              Schema = new OpenApiSchema { Type = "string" }
+              Schema = new OpenApiSchema { Type = JsonSchemaType.String }
             }
           }
         },
@@ -441,6 +460,7 @@ public static class RestLibEndpointExtensions
 
       return operation;
     });
+#pragma warning restore ASPDEPR002
   }
 
   /// <summary>
@@ -464,6 +484,7 @@ public static class RestLibEndpointExtensions
         $"Creates a new {entityName} entity. " +
         "Returns the created entity with its generated ID and a Location header pointing to the new resource.");
 
+#pragma warning disable ASPDEPR002
     endpoint.WithOpenApi(operation =>
     {
       // Document request body
@@ -475,10 +496,7 @@ public static class RestLibEndpointExtensions
         {
           ["application/json"] = new OpenApiMediaType
           {
-            Schema = new OpenApiSchema
-            {
-              Reference = new OpenApiReference { Type = ReferenceType.Schema, Id = entityName }
-            }
+            Schema = CreateEntityRefSchema(entityName)
           }
         }
       };
@@ -493,23 +511,20 @@ public static class RestLibEndpointExtensions
           {
             ["application/json"] = new OpenApiMediaType
             {
-              Schema = new OpenApiSchema
-              {
-                Reference = new OpenApiReference { Type = ReferenceType.Schema, Id = entityName }
-              }
+              Schema = CreateEntityRefSchema(entityName)
             }
           },
-          Headers = new Dictionary<string, OpenApiHeader>
+          Headers = new Dictionary<string, IOpenApiHeader>
           {
             ["Location"] = new OpenApiHeader
             {
               Description = "URL of the newly created resource",
-              Schema = new OpenApiSchema { Type = "string", Format = "uri" }
+              Schema = new OpenApiSchema { Type = JsonSchemaType.String, Format = "uri" }
             },
             ["ETag"] = new OpenApiHeader
             {
               Description = "Entity tag for cache validation (when ETag support is enabled)",
-              Schema = new OpenApiSchema { Type = "string" }
+              Schema = new OpenApiSchema { Type = JsonSchemaType.String }
             }
           }
         },
@@ -520,6 +535,7 @@ public static class RestLibEndpointExtensions
 
       return operation;
     });
+#pragma warning restore ASPDEPR002
   }
 
   /// <summary>
@@ -544,6 +560,7 @@ public static class RestLibEndpointExtensions
         "Supports optimistic locking via If-Match header when ETag support is enabled. " +
         "All fields must be provided as this performs a full replacement.");
 
+#pragma warning disable ASPDEPR002
     endpoint.WithOpenApi(operation =>
     {
       // Document id parameter
@@ -554,7 +571,7 @@ public static class RestLibEndpointExtensions
       // Document If-Match header
       AddOrUpdateParameter(operation, "If-Match", ParameterLocation.Header, false,
           "ETag value for optimistic locking. Update will fail with 412 if the resource has been modified.",
-          new OpenApiSchema { Type = "string" });
+          new OpenApiSchema { Type = JsonSchemaType.String });
 
       // Document request body
       operation.RequestBody = new OpenApiRequestBody
@@ -565,10 +582,7 @@ public static class RestLibEndpointExtensions
         {
           ["application/json"] = new OpenApiMediaType
           {
-            Schema = new OpenApiSchema
-            {
-              Reference = new OpenApiReference { Type = ReferenceType.Schema, Id = entityName }
-            }
+            Schema = CreateEntityRefSchema(entityName)
           }
         }
       };
@@ -583,18 +597,15 @@ public static class RestLibEndpointExtensions
           {
             ["application/json"] = new OpenApiMediaType
             {
-              Schema = new OpenApiSchema
-              {
-                Reference = new OpenApiReference { Type = ReferenceType.Schema, Id = entityName }
-              }
+              Schema = CreateEntityRefSchema(entityName)
             }
           },
-          Headers = new Dictionary<string, OpenApiHeader>
+          Headers = new Dictionary<string, IOpenApiHeader>
           {
             ["ETag"] = new OpenApiHeader
             {
               Description = "New entity tag after update (when ETag support is enabled)",
-              Schema = new OpenApiSchema { Type = "string" }
+              Schema = new OpenApiSchema { Type = JsonSchemaType.String }
             }
           }
         },
@@ -607,6 +618,7 @@ public static class RestLibEndpointExtensions
 
       return operation;
     });
+#pragma warning restore ASPDEPR002
   }
 
   /// <summary>
@@ -631,6 +643,7 @@ public static class RestLibEndpointExtensions
         "Only the provided fields will be updated. " +
         "Supports optimistic locking via If-Match header when ETag support is enabled.");
 
+#pragma warning disable ASPDEPR002
     endpoint.WithOpenApi(operation =>
     {
       // Document id parameter
@@ -641,7 +654,7 @@ public static class RestLibEndpointExtensions
       // Document If-Match header
       AddOrUpdateParameter(operation, "If-Match", ParameterLocation.Header, false,
           "ETag value for optimistic locking. Patch will fail with 412 if the resource has been modified.",
-          new OpenApiSchema { Type = "string" });
+          new OpenApiSchema { Type = JsonSchemaType.String });
 
       // Document request body
       operation.RequestBody = new OpenApiRequestBody
@@ -654,7 +667,7 @@ public static class RestLibEndpointExtensions
           {
             Schema = new OpenApiSchema
             {
-              Type = "object",
+              Type = JsonSchemaType.Object,
               Description = "Partial update document. Only include the fields you want to modify.",
               AdditionalPropertiesAllowed = true
             }
@@ -672,18 +685,15 @@ public static class RestLibEndpointExtensions
           {
             ["application/json"] = new OpenApiMediaType
             {
-              Schema = new OpenApiSchema
-              {
-                Reference = new OpenApiReference { Type = ReferenceType.Schema, Id = entityName }
-              }
+              Schema = CreateEntityRefSchema(entityName)
             }
           },
-          Headers = new Dictionary<string, OpenApiHeader>
+          Headers = new Dictionary<string, IOpenApiHeader>
           {
             ["ETag"] = new OpenApiHeader
             {
               Description = "New entity tag after patch (when ETag support is enabled)",
-              Schema = new OpenApiSchema { Type = "string" }
+              Schema = new OpenApiSchema { Type = JsonSchemaType.String }
             }
           }
         },
@@ -696,6 +706,7 @@ public static class RestLibEndpointExtensions
 
       return operation;
     });
+#pragma warning restore ASPDEPR002
   }
 
   /// <summary>
@@ -720,6 +731,7 @@ public static class RestLibEndpointExtensions
         "Returns 204 No Content on success. " +
         "Supports optimistic locking via If-Match header when ETag support is enabled.");
 
+#pragma warning disable ASPDEPR002
     endpoint.WithOpenApi(operation =>
     {
       // Document id parameter
@@ -730,7 +742,7 @@ public static class RestLibEndpointExtensions
       // Document If-Match header
       AddOrUpdateParameter(operation, "If-Match", ParameterLocation.Header, false,
           "ETag value for optimistic locking. Delete will fail with 412 if the resource has been modified.",
-          new OpenApiSchema { Type = "string" });
+          new OpenApiSchema { Type = JsonSchemaType.String });
 
       // Document responses
       operation.Responses = new OpenApiResponses
@@ -744,6 +756,7 @@ public static class RestLibEndpointExtensions
 
       return operation;
     });
+#pragma warning restore ASPDEPR002
   }
 
   /// <summary>
@@ -768,6 +781,7 @@ public static class RestLibEndpointExtensions
         $"Perform batch create, update, patch, or delete operations on {entityName} resources. " +
         $"Enabled actions: {string.Join(", ", config.EnabledBatchActions.Select(a => a.ToString().ToLowerInvariant()))}.");
 
+#pragma warning disable ASPDEPR002
     endpoint.WithOpenApi(operation =>
     {
       // Document responses
@@ -782,10 +796,13 @@ public static class RestLibEndpointExtensions
 
       return operation;
     });
+#pragma warning restore ASPDEPR002
   }
 
   /// <summary>
   /// Adds or updates a parameter in the OpenAPI operation.
+  /// In OpenApi v2, parameter properties (Required, Schema) are read-only on
+  /// <see cref="IOpenApiParameter"/>, so we must remove and re-add.
   /// </summary>
   private static void AddOrUpdateParameter(
       OpenApiOperation operation,
@@ -795,26 +812,36 @@ public static class RestLibEndpointExtensions
       string description,
       OpenApiSchema schema)
   {
+    operation.Parameters ??= [];
+
     var existing = operation.Parameters.FirstOrDefault(p =>
-        p.Name.Equals(name, StringComparison.OrdinalIgnoreCase) && p.In == location);
+        p.Name != null && p.Name.Equals(name, StringComparison.OrdinalIgnoreCase) && p.In == location);
 
     if (existing is not null)
     {
-      existing.Description = description;
-      existing.Required = required;
-      existing.Schema = schema;
+      operation.Parameters.Remove(existing);
     }
-    else
+
+    operation.Parameters.Add(new OpenApiParameter
     {
-      operation.Parameters.Add(new OpenApiParameter
-      {
-        Name = name,
-        In = location,
-        Required = required,
-        Description = description,
-        Schema = schema
-      });
-    }
+      Name = name,
+      In = location,
+      Required = required,
+      Description = description,
+      Schema = schema
+    });
+  }
+
+  /// <summary>
+  /// Creates an OpenAPI schema reference for an entity type.
+  /// In OpenApi v2, schema references use <see cref="OpenApiSchemaReference"/> instead of
+  /// <c>OpenApiSchema.Reference</c>.
+  /// </summary>
+  /// <param name="entityName">The schema name to reference.</param>
+  /// <returns>An <see cref="OpenApiSchemaReference"/> pointing to the named schema.</returns>
+  private static OpenApiSchemaReference CreateEntityRefSchema(string entityName)
+  {
+    return new OpenApiSchemaReference(entityName);
   }
 
   /// <summary>
@@ -824,44 +851,37 @@ public static class RestLibEndpointExtensions
   {
     return new OpenApiSchema
     {
-      Type = "object",
-      Properties = new Dictionary<string, OpenApiSchema>
+      Type = JsonSchemaType.Object,
+      Properties = new Dictionary<string, IOpenApiSchema>
       {
         ["items"] = new OpenApiSchema
         {
-          Type = "array",
-          Items = new OpenApiSchema
-          {
-            Reference = new OpenApiReference { Type = ReferenceType.Schema, Id = entityName }
-          }
+          Type = JsonSchemaType.Array,
+          Items = CreateEntityRefSchema(entityName)
         },
         ["self"] = new OpenApiSchema
         {
-          Type = "string",
+          Type = JsonSchemaType.String | JsonSchemaType.Null,
           Format = "uri",
-          Description = "URL to the current page",
-          Nullable = true
+          Description = "URL to the current page"
         },
         ["first"] = new OpenApiSchema
         {
-          Type = "string",
+          Type = JsonSchemaType.String | JsonSchemaType.Null,
           Format = "uri",
-          Description = "URL to the first page",
-          Nullable = true
+          Description = "URL to the first page"
         },
         ["next"] = new OpenApiSchema
         {
-          Type = "string",
+          Type = JsonSchemaType.String | JsonSchemaType.Null,
           Format = "uri",
-          Description = "URL to the next page (null if on last page)",
-          Nullable = true
+          Description = "URL to the next page (null if on last page)"
         },
         ["prev"] = new OpenApiSchema
         {
-          Type = "string",
+          Type = JsonSchemaType.String | JsonSchemaType.Null,
           Format = "uri",
-          Description = "URL to the previous page (null if on first page)",
-          Nullable = true
+          Description = "URL to the previous page (null if on first page)"
         }
       },
       Required = new HashSet<string> { "items" }
@@ -882,48 +902,45 @@ public static class RestLibEndpointExtensions
         {
           Schema = new OpenApiSchema
           {
-            Type = "object",
-            Properties = new Dictionary<string, OpenApiSchema>
+            Type = JsonSchemaType.Object,
+            Properties = new Dictionary<string, IOpenApiSchema>
             {
               ["type"] = new OpenApiSchema
               {
-                Type = "string",
+                Type = JsonSchemaType.String,
                 Format = "uri",
                 Description = "A URI reference that identifies the problem type"
               },
               ["title"] = new OpenApiSchema
               {
-                Type = "string",
+                Type = JsonSchemaType.String,
                 Description = "A short, human-readable summary of the problem type"
               },
               ["status"] = new OpenApiSchema
               {
-                Type = "integer",
+                Type = JsonSchemaType.Integer,
                 Description = "The HTTP status code"
               },
               ["detail"] = new OpenApiSchema
               {
-                Type = "string",
-                Description = "A human-readable explanation specific to this occurrence",
-                Nullable = true
+                Type = JsonSchemaType.String | JsonSchemaType.Null,
+                Description = "A human-readable explanation specific to this occurrence"
               },
               ["instance"] = new OpenApiSchema
               {
-                Type = "string",
+                Type = JsonSchemaType.String | JsonSchemaType.Null,
                 Format = "uri",
-                Description = "A URI reference that identifies the specific occurrence",
-                Nullable = true
+                Description = "A URI reference that identifies the specific occurrence"
               },
               ["errors"] = new OpenApiSchema
               {
-                Type = "object",
+                Type = JsonSchemaType.Object | JsonSchemaType.Null,
                 Description = "Validation errors keyed by field name",
-                Nullable = true,
                 AdditionalPropertiesAllowed = true,
                 AdditionalProperties = new OpenApiSchema
                 {
-                  Type = "array",
-                  Items = new OpenApiSchema { Type = "string" }
+                  Type = JsonSchemaType.Array,
+                  Items = new OpenApiSchema { Type = JsonSchemaType.String }
                 }
               }
             },
@@ -937,56 +954,57 @@ public static class RestLibEndpointExtensions
   /// <summary>
   /// Gets the OpenAPI schema for a filter property type.
   /// </summary>
-  private static Microsoft.OpenApi.Models.OpenApiSchema GetOpenApiSchema(Type propertyType)
+  private static OpenApiSchema GetOpenApiSchema(Type propertyType)
   {
     var underlyingType = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
+    var isNullable = Nullable.GetUnderlyingType(propertyType) != null;
 
-    var schema = new Microsoft.OpenApi.Models.OpenApiSchema();
+    var schema = new OpenApiSchema();
 
     if (underlyingType == typeof(string))
     {
-      schema.Type = "string";
+      schema.Type = JsonSchemaType.String;
     }
     else if (underlyingType == typeof(bool))
     {
-      schema.Type = "boolean";
+      schema.Type = JsonSchemaType.Boolean;
     }
     else if (underlyingType == typeof(int) || underlyingType == typeof(long) ||
              underlyingType == typeof(short) || underlyingType == typeof(byte))
     {
-      schema.Type = "integer";
+      schema.Type = JsonSchemaType.Integer;
     }
     else if (underlyingType == typeof(decimal) || underlyingType == typeof(double) ||
              underlyingType == typeof(float))
     {
-      schema.Type = "number";
+      schema.Type = JsonSchemaType.Number;
     }
     else if (underlyingType == typeof(Guid))
     {
-      schema.Type = "string";
+      schema.Type = JsonSchemaType.String;
       schema.Format = "uuid";
     }
     else if (underlyingType == typeof(DateTime) || underlyingType == typeof(DateTimeOffset))
     {
-      schema.Type = "string";
+      schema.Type = JsonSchemaType.String;
       schema.Format = "date-time";
     }
     else if (underlyingType.IsEnum)
     {
-      schema.Type = "string";
+      schema.Type = JsonSchemaType.String;
       schema.Enum = Enum.GetNames(underlyingType)
-          .Select(name => (Microsoft.OpenApi.Any.IOpenApiAny)new Microsoft.OpenApi.Any.OpenApiString(name))
+          .Select(name => (JsonNode)JsonValue.Create(name)!)
           .ToList();
     }
     else
     {
-      schema.Type = "string";
+      schema.Type = JsonSchemaType.String;
     }
 
-    // Mark as nullable if it's a nullable type
-    if (Nullable.GetUnderlyingType(propertyType) != null)
+    // Mark as nullable if it's a nullable type by combining with JsonSchemaType.Null
+    if (isNullable)
     {
-      schema.Nullable = true;
+      schema.Type |= JsonSchemaType.Null;
     }
 
     return schema;

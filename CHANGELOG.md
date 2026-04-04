@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-04-04
+
+### Breaking Changes
+
+- **Retargeted to .NET 10.** RestLib now requires .NET 10 (net10.0). Projects using .NET 8 should pin to v0.3.0.
+- **Upgraded Microsoft.AspNetCore.OpenApi** from 8.x to 10.x.
+- **Upgraded Microsoft.OpenApi** (transitive) from 1.x to 2.x. Custom code that reads or manipulates `OpenApiDocument` objects from RestLib may need updates for the v2 API (namespace changes, `JsonSchemaType` enum instead of string, `OpenApiSchemaReference` instead of `OpenApiReference`, etc.).
+- **Upgraded Swashbuckle.AspNetCore** to 10.x in the sample app.
+- **Empty OpenAPI tags now fall back to the entity type name** instead of passing an empty string, which .NET 10's OpenAPI infrastructure rejects.
+
 ### Added
 
 - Prefix-less `MapRestLib<TEntity, TKey>(this RouteGroupBuilder, ...)` overload for versioned API groups
@@ -41,7 +51,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fields preserved in pagination links
 - JSON configuration support for field selection (`FieldSelection` property)
 - JSON Schema updated for field selection configuration
-- E2E bash test suite covering CRUD, pagination, filtering, sorting, field selection, batch, and error handling (90 tests)
+- E2E bash test suite covering CRUD, pagination, filtering, sorting, field selection, batch, and error handling (103 tests across 8 suites)
+
+### Changed
+
+- Upgraded all dependency versions (FluentAssertions 8.x, xunit runner 3.x, Microsoft.NET.Test.Sdk 18.x, BenchmarkDotNet 0.15.x, coverlet 8.x)
 
 ### Fixed
 
@@ -103,7 +117,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Architecture Decision Records (ADRs) for key design choices
 - XML documentation for public APIs
 
-[Unreleased]: https://github.com/Adrian01987/RestLib/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Adrian01987/RestLib/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/Adrian01987/RestLib/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/Adrian01987/RestLib/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Adrian01987/RestLib/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Adrian01987/RestLib/releases/tag/v0.1.0
