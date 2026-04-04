@@ -57,7 +57,7 @@ sep()   { echo -e "────────────────────�
 # wait_for_server — Block until the server is reachable (or timeout)
 # ---------------------------------------------------------------------------
 wait_for_server() {
-  local check_url="${1:-${BASE_URL}/swagger/v1/swagger.json}"
+  local check_url="${1:-${BASE_URL}/health}"
   local max_wait=30
   local waited=0
   info "Waiting for server at ${BASE_URL} ..."

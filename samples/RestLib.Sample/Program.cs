@@ -8,6 +8,7 @@ using RestLib.Filtering;
 using RestLib.InMemory;
 using RestLib.Sample;
 using RestLib.Sample.Models;
+using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -56,30 +57,37 @@ builder.Services.AddRateLimiter(options =>
   });
 });
 
-// Configure Swagger/OpenAPI
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
+// Configure OpenAPI document with document transformer
+builder.Services.AddOpenApi(options =>
 {
-  c.SwaggerDoc("v1", new OpenApiInfo
+  options.AddDocumentTransformer((document, context, ct) =>
   {
-    Title = "RestLib Sample API",
-    Version = "v1",
-    Description = "A sample API demonstrating RestLib — full CRUD with pagination, filtering, and OpenAPI in just a few lines.",
-    Contact = new OpenApiContact { Name = "RestLib", Url = new Uri("https://github.com/Adrian01987/RestLib") }
+    document.Info = new OpenApiInfo
+    {
+      Title = "RestLib Sample API",
+      Version = "v1",
+      Description = "A sample API demonstrating RestLib — full CRUD with pagination, filtering, and OpenAPI in just a few lines.",
+      Contact = new OpenApiContact { Name = "RestLib", Url = new Uri("https://github.com/Adrian01987/RestLib") },
+    };
+    return Task.CompletedTask;
   });
 });
 
+// Health check endpoint for server readiness probing
+builder.Services.AddHealthChecks();
+
 var app = builder.Build();
 
-// Swagger UI at root
-app.UseSwagger();
-app.UseSwaggerUI(c =>
+// OpenAPI document + Scalar API Reference UI
+app.MapOpenApi();
+app.MapScalarApiReference("/", options =>
 {
-  c.SwaggerEndpoint("/swagger/v1/swagger.json", "RestLib Sample API v1");
-  c.RoutePrefix = string.Empty;
-  c.DocumentTitle = "RestLib Sample API";
-  c.DefaultModelsExpandDepth(-1);
+  options.WithTitle("RestLib Sample API")
+         .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient);
 });
+
+// Health check endpoint
+app.MapHealthChecks("/health");
 
 // Map RestLib endpoints from JSON resource configuration (Categories + Products)
 app.UseRateLimiter();

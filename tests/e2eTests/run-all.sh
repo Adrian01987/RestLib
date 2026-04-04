@@ -12,7 +12,7 @@
 #   BASE_URL=http://localhost:5000  # override server URL
 #   SUITE=crud                      # run only one suite (crud, pagination, etc.)
 #
-# Prerequisites: curl, jq, dotnet SDK 8+
+# Prerequisites: curl, jq, dotnet SDK 10+
 # =============================================================================
 
 set -euo pipefail
@@ -112,7 +112,7 @@ start_server() {
   # Wait for it to be reachable
   local max_wait=60
   local waited=0
-  while ! curl -sf -o /dev/null "${BASE_URL}/swagger/v1/swagger.json" 2>/dev/null; do
+  while ! curl -sf -o /dev/null "${BASE_URL}/health" 2>/dev/null; do
     sleep 1
     waited=$((waited + 1))
     if ! kill -0 "$SERVER_PID" 2>/dev/null; then
