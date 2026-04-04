@@ -46,3 +46,21 @@ hooks full per-item control.
 - Hooks fire N times for N items (may be slow for very large batches)
 - Patch always processes items individually (no bulk path) due to per-item
   merge logic
+
+## Known Limitations
+
+### Post-persist validation for PATCH
+
+Data annotation validation for batch PATCH runs **after** persistence because
+the merged entity is only available once the repository has applied the patch
+document. This mirrors single-item PATCH behavior and is by-design, but it
+means that invalid data may be persisted with no automatic rollback.
+
+The bulk `IBatchRepository.PatchManyAsync()` path amplifies the risk: all items
+are persisted in a single call, then validation runs per-item. If a repository
+needs transactional rollback semantics, it should implement compensating logic
+inside `PatchManyAsync()` or avoid exposing the bulk path for PATCH operations.
+
+This limitation is documented in `BatchActionValidator.cs` (see
+`ValidatePatchItemAsync`) and in `BatchActionExecutor.cs` (see
+`ExecutePatchesAsync`).

@@ -73,9 +73,10 @@ internal static class BatchActionExecutor
             }
             catch (Exception ex)
             {
-                foreach (var (index, _) in validItems)
+                foreach (var (index, entity) in validItems)
                 {
-                    results[index] = ExceptionResult(index, ex, httpContext.Request.Path);
+                    results[index] = await HandleItemErrorAsync(
+                        index, ex, httpContext, RestLibOperation.BatchCreate, pipeline, entity: entity);
                 }
             }
         }
@@ -103,7 +104,8 @@ internal static class BatchActionExecutor
                 }
                 catch (Exception ex)
                 {
-                    results[index] = ExceptionResult(index, ex, httpContext.Request.Path);
+                    results[index] = await HandleItemErrorAsync(
+                        index, ex, httpContext, RestLibOperation.BatchCreate, pipeline, entity: entity);
                 }
             }
         }
@@ -168,9 +170,10 @@ internal static class BatchActionExecutor
             }
             catch (Exception ex)
             {
-                foreach (var (index, _, _) in validItems)
+                foreach (var (index, id, entity) in validItems)
                 {
-                    results[index] = ExceptionResult(index, ex, httpContext.Request.Path);
+                    results[index] = await HandleItemErrorAsync(
+                        index, ex, httpContext, RestLibOperation.BatchUpdate, pipeline, resourceId: id, entity: entity);
                 }
             }
         }
@@ -210,7 +213,8 @@ internal static class BatchActionExecutor
                 }
                 catch (Exception ex)
                 {
-                    results[index] = ExceptionResult(index, ex, httpContext.Request.Path);
+                    results[index] = await HandleItemErrorAsync(
+                        index, ex, httpContext, RestLibOperation.BatchUpdate, pipeline, resourceId: id, entity: entity);
                 }
             }
         }
@@ -301,9 +305,10 @@ internal static class BatchActionExecutor
             }
             catch (Exception ex)
             {
-                foreach (var (index, _, _) in validItems)
+                foreach (var (index, id, _) in validItems)
                 {
-                    results[index] = ExceptionResult(index, ex, httpContext.Request.Path);
+                    results[index] = await HandleItemErrorAsync(
+                        index, ex, httpContext, RestLibOperation.BatchPatch, pipeline, resourceId: id);
                 }
             }
         }
@@ -361,7 +366,8 @@ internal static class BatchActionExecutor
                 }
                 catch (Exception ex)
                 {
-                    results[index] = ExceptionResult(index, ex, httpContext.Request.Path);
+                    results[index] = await HandleItemErrorAsync(
+                        index, ex, httpContext, RestLibOperation.BatchPatch, pipeline, resourceId: id);
                 }
             }
         }
@@ -428,9 +434,10 @@ internal static class BatchActionExecutor
             }
             catch (Exception ex)
             {
-                foreach (var (index, _) in validKeys)
+                foreach (var (index, key) in validKeys)
                 {
-                    results[index] = ExceptionResult(index, ex, httpContext.Request.Path);
+                    results[index] = await HandleItemErrorAsync(
+                        index, ex, httpContext, RestLibOperation.BatchDelete, pipeline, resourceId: key);
                 }
             }
         }
@@ -468,7 +475,8 @@ internal static class BatchActionExecutor
                 }
                 catch (Exception ex)
                 {
-                    results[index] = ExceptionResult(index, ex, httpContext.Request.Path);
+                    results[index] = await HandleItemErrorAsync(
+                        index, ex, httpContext, RestLibOperation.BatchDelete, pipeline, resourceId: key);
                 }
             }
         }
@@ -491,5 +499,50 @@ internal static class BatchActionExecutor
             Status = StatusCodes.Status500InternalServerError,
             Error = ProblemDetailsFactory.InternalError(detail: detail, instance: instance)
         };
+    }
+
+    /// <summary>
+    /// Runs the OnError hook for a batch item exception. If the hook handles the error,
+    /// returns a <see cref="BatchItemResult"/> from the hook result; otherwise falls back
+    /// to the default <see cref="ExceptionResult"/>.
+    /// </summary>
+    private static async Task<BatchItemResult> HandleItemErrorAsync<TEntity, TKey>(
+        int index,
+        Exception ex,
+        HttpContext httpContext,
+        RestLibOperation operation,
+        HookPipeline<TEntity, TKey>? pipeline,
+        TKey? resourceId = default,
+        TEntity? entity = default)
+        where TEntity : class
+    {
+        if (pipeline is not null)
+        {
+            var errorContext = pipeline.CreateErrorContext(
+                httpContext, operation, ex, resourceId, entity);
+            var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
+
+            if (handled && errorResult is not null)
+            {
+                var statusCode = errorResult is IStatusCodeHttpResult statusResult
+                    ? statusResult.StatusCode ?? StatusCodes.Status500InternalServerError
+                    : StatusCodes.Status500InternalServerError;
+
+                var error = errorResult is IValueHttpResult { Value: RestLibProblemDetails problem }
+                    ? problem
+                    : ProblemDetailsFactory.InternalError(
+                        detail: $"{ex.GetType().Name}: {ex.Message}",
+                        instance: httpContext.Request.Path);
+
+                return new BatchItemResult
+                {
+                    Index = index,
+                    Status = statusCode,
+                    Error = error
+                };
+            }
+        }
+
+        return ExceptionResult(index, ex, httpContext.Request.Path);
     }
 }

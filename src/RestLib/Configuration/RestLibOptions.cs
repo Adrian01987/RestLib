@@ -73,4 +73,10 @@ public class RestLibOptions
   /// Defaults to 100. Set to 0 to disable the limit.
   /// </summary>
   public int MaxBatchSize { get; set; } = 100;
+
+  /// <summary>
+  /// Gets or sets the maximum number of values allowed in a filter <c>in</c> operator list.
+  /// Defaults to 50.
+  /// </summary>
+  public int MaxFilterInListSize { get; set; } = 50;
 }

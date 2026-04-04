@@ -299,17 +299,16 @@ public class FieldSelectionTests : IDisposable
 
   [Fact]
   [Trait("Category", "Story7.1")]
-  public async Task DuplicateFields_Deduplicated()
+  public async Task DuplicateFields_ReturnsBadRequest()
   {
     // Act
     var response = await _client.GetAsync($"/api/items/{_knownId}?fields=id,id,name");
 
     // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.OK);
+    response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-    json.TryGetProperty("id", out _).Should().BeTrue();
-    json.TryGetProperty("name", out _).Should().BeTrue();
-    json.TryGetProperty("price", out _).Should().BeFalse();
+    json.GetProperty("type").GetString().Should().Be("/problems/invalid-fields");
+    json.GetProperty("errors").GetProperty("id").GetArrayLength().Should().BeGreaterThanOrEqualTo(1);
   }
 
   // ──────────────────────── Combination Tests ────────────────────────
@@ -586,7 +585,7 @@ public class FieldSelectionParserTests
 
   [Fact]
   [Trait("Category", "Story7.1")]
-  public void Parse_DuplicateFields_Deduplicated()
+  public void Parse_DuplicateFields_ReturnsError()
   {
     // Arrange
     var config = CreateConfiguration();
@@ -595,7 +594,8 @@ public class FieldSelectionParserTests
     var result = FieldSelectionParser.Parse("id,id,name", config);
 
     // Assert
-    result.IsValid.Should().BeTrue();
+    result.IsValid.Should().BeFalse();
+    result.Errors.Should().ContainSingle(e => e.Field == "id" && e.Message == "Duplicate field.");
     result.Fields.Should().HaveCount(2);
     result.Fields[0].PropertyName.Should().Be("Id");
     result.Fields[1].PropertyName.Should().Be("Name");

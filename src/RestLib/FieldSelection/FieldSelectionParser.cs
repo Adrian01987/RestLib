@@ -38,9 +38,14 @@ public static class FieldSelectionParser
                 continue; // Skip empty segments (e.g., trailing comma)
             }
 
-            // Deduplicate silently
+            // Reject duplicates
             if (!seenFields.Add(trimmed.ToLowerInvariant()))
             {
+                errors.Add(new FieldSelectionValidationError
+                {
+                    Field = trimmed,
+                    Message = "Duplicate field."
+                });
                 continue;
             }
 

@@ -99,6 +99,24 @@ If `AllowFiltering()` is not called for a resource, any query parameters that wo
 - Unknown query parameters are silently ignored, which means a typo in a filter property name will not produce an error. This trade-off favors forward compatibility over strict validation.
 - Repository implementations must handle `Filters` in `PaginationRequest`. An empty list means no filters were requested.
 
+### Repository contract enforcement
+
+RestLib validates and parses filter (and sort) query parameters before calling
+`GetAllAsync()`, but it does **not** verify that the repository actually applied
+them. A repository that ignores `PaginationRequest.Filters` or
+`PaginationRequest.SortFields` will return unfiltered/unsorted data silently.
+
+This is by design — RestLib does not impose a particular data-access technology
+and therefore cannot inspect or modify the query the repository builds.
+Repository authors should:
+
+1. **Verify filter/sort support in integration tests.** Seed known data, apply
+   filters via the HTTP client, and assert that only matching items are returned.
+2. **Return the full `PaginationRequest` fields list** to `InMemoryRepository`
+   or similar test doubles that manually implement filtering logic.
+
+The same consideration applies to sorting (ADR-009).
+
 ## JSON Configuration
 
 Filtering can also be configured declaratively via `appsettings.json`:

@@ -1421,7 +1421,7 @@ public class FilterParserOperatorTests
     var config = new FilterConfiguration<FilterableEntity>();
     config.AddProperty(p => p.Quantity, FilterOperator.In);
 
-    var tooManyValues = string.Join(",", Enumerable.Range(1, FilterParser.MaxInListSize + 1));
+    var tooManyValues = string.Join(",", Enumerable.Range(1, FilterParser.DefaultMaxInListSize + 1));
     var query = new Microsoft.AspNetCore.Http.QueryCollection(
         new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
         {
@@ -1434,7 +1434,7 @@ public class FilterParserOperatorTests
     // Assert
     result.IsValid.Should().BeFalse();
     result.Errors[0].Message.Should().Contain("maximum");
-    result.Errors[0].Message.Should().Contain(FilterParser.MaxInListSize.ToString());
+    result.Errors[0].Message.Should().Contain(FilterParser.DefaultMaxInListSize.ToString());
   }
 
   [Fact]
@@ -2062,4 +2062,89 @@ public class FilterOperatorIntegrationTests : IDisposable
   }
 
   #endregion
+}
+
+/// <summary>
+/// Tests that <see cref="RestLibOptions.MaxFilterInListSize"/> is configurable
+/// and threaded through to the filter parser.
+/// </summary>
+public class MaxFilterInListSizeTests : IDisposable
+{
+  private readonly IHost _host;
+  private readonly HttpClient _client;
+  private readonly InMemoryRepository<FilterableEntity, Guid> _repository;
+
+  public MaxFilterInListSizeTests()
+  {
+    _repository = new InMemoryRepository<FilterableEntity, Guid>(e => e.Id, Guid.NewGuid);
+
+    _host = new HostBuilder()
+        .ConfigureWebHost(webBuilder =>
+        {
+          webBuilder
+                  .UseTestServer()
+                  .ConfigureServices(services =>
+                  {
+                    services.AddRestLib(options =>
+                    {
+                      options.MaxFilterInListSize = 3;
+                    });
+                    services.AddSingleton<IRepository<FilterableEntity, Guid>>(_repository);
+                    services.AddRouting();
+                  })
+                  .Configure(app =>
+                  {
+                    app.UseRouting();
+                    app.UseEndpoints(endpoints =>
+                    {
+                      endpoints.MapRestLib<FilterableEntity, Guid>("/api/items", config =>
+                      {
+                        config.AllowAnonymous();
+                        config.AllowFiltering(p => p.Quantity, FilterOperator.In);
+                      });
+                    });
+                  });
+        })
+        .Build();
+
+    _host.Start();
+    _client = _host.GetTestClient();
+  }
+
+  public void Dispose()
+  {
+    _client.Dispose();
+    _host.Dispose();
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.3.Operators")]
+  public async Task GetAll_InListWithinCustomLimit_Succeeds()
+  {
+    // Arrange — custom limit is 3, send exactly 3 values
+    await _repository.CreateAsync(new FilterableEntity { Id = Guid.NewGuid(), Name = "A", Quantity = 1 });
+
+    // Act
+    var response = await _client.GetAsync("/api/items?quantity[in]=1,2,3");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+  }
+
+  [Fact]
+  [Trait("Category", "Story4.3.Operators")]
+  public async Task GetAll_InListExceedingCustomLimit_ReturnsBadRequest()
+  {
+    // Arrange — custom limit is 3, send 4 values
+    // Act
+    var response = await _client.GetAsync("/api/items?quantity[in]=1,2,3,4");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    var errors = json.GetProperty("errors").GetProperty("quantity[in]");
+    var errorMessage = errors[0].GetString();
+    errorMessage.Should().Contain("maximum");
+    errorMessage.Should().Contain("3");
+  }
 }

@@ -144,6 +144,23 @@ internal static class BatchHandler
                 _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
             };
 
+            // BeforeResponse hook — runs once for the entire batch, after all items are processed.
+            if (pipeline is not null)
+            {
+                var batchOperation = action switch
+                {
+                    BatchAction.Create => RestLibOperation.BatchCreate,
+                    BatchAction.Update => RestLibOperation.BatchUpdate,
+                    BatchAction.Patch => RestLibOperation.BatchPatch,
+                    BatchAction.Delete => RestLibOperation.BatchDelete,
+                    _ => RestLibOperation.BatchCreate
+                };
+                var hookContext = pipeline.CreateContext(httpContext, batchOperation);
+                var beforeResponseResult = await EndpointHelpers.ExecuteHookAsync(
+                    pipeline.ExecuteBeforeResponseAsync, hookContext);
+                if (beforeResponseResult is not null) return beforeResponseResult;
+            }
+
             // Determine response status code
             var allSucceeded = response.Items.All(r => r.Status is >= 200 and < 300);
             var statusCode = allSucceeded

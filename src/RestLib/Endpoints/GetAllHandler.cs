@@ -66,7 +66,7 @@ internal static class GetAllHandler
                 IReadOnlyList<FilterValue> filterValues = [];
                 if (config.HasFilters)
                 {
-                    var filterResult = FilterParser.Parse(httpContext.Request.Query, config.FilterConfiguration);
+                    var filterResult = FilterParser.Parse(httpContext.Request.Query, config.FilterConfiguration, options.MaxFilterInListSize);
                     if (!filterResult.IsValid)
                     {
                         return Responses.ProblemDetailsResult.InvalidFilters(

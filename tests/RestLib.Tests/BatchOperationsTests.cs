@@ -15,6 +15,7 @@ using RestLib.Batch;
 using RestLib.Configuration;
 using RestLib.Hooks;
 using RestLib.InMemory;
+using RestLib.Pagination;
 using RestLib.Responses;
 using RestLib.Tests.Fakes;
 using Xunit;
@@ -39,6 +40,36 @@ public class BatchEntity
 
   /// <summary>Gets or sets a value indicating whether the entity is active.</summary>
   public bool IsActive { get; set; } = true;
+}
+
+/// <summary>
+/// Repository that throws on every write operation, used to test OnError hooks.
+/// </summary>
+public class ThrowingBatchRepository : IRepository<BatchEntity, Guid>
+{
+  /// <inheritdoc />
+  public Task<BatchEntity?> GetByIdAsync(Guid id, CancellationToken ct = default)
+      => Task.FromResult<BatchEntity?>(null);
+
+  /// <inheritdoc />
+  public Task<PagedResult<BatchEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default)
+      => Task.FromResult(new PagedResult<BatchEntity> { Items = [] });
+
+  /// <inheritdoc />
+  public Task<BatchEntity> CreateAsync(BatchEntity entity, CancellationToken ct = default)
+      => throw new InvalidOperationException("Simulated repository failure");
+
+  /// <inheritdoc />
+  public Task<BatchEntity?> UpdateAsync(Guid id, BatchEntity entity, CancellationToken ct = default)
+      => throw new InvalidOperationException("Simulated repository failure");
+
+  /// <inheritdoc />
+  public Task<BatchEntity?> PatchAsync(Guid id, JsonElement patchDocument, CancellationToken ct = default)
+      => throw new InvalidOperationException("Simulated repository failure");
+
+  /// <inheritdoc />
+  public Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
+      => throw new InvalidOperationException("Simulated repository failure");
 }
 
 /// <summary>
@@ -1348,6 +1379,168 @@ public class BatchOperationsTests : IDisposable
     items[0].GetProperty("status").GetInt32().Should().Be(204);
     items[1].GetProperty("status").GetInt32().Should().Be(500);
     items[1].TryGetProperty("error", out _).Should().BeTrue();
+  }
+
+  [Fact]
+  [Trait("Category", "Story8.7")]
+  public async Task BatchCreate_BeforeResponseHook_FiresOnce()
+  {
+    // Arrange
+    var beforeResponseCount = 0;
+
+    CreateHost(config =>
+    {
+      config.AllowAnonymous();
+      config.EnableBatch();
+      config.UseHooks(hooks =>
+      {
+        hooks.BeforeResponse = async ctx =>
+        {
+          Interlocked.Increment(ref beforeResponseCount);
+          await Task.CompletedTask;
+        };
+      });
+    });
+
+    var payload = new
+    {
+      action = "create",
+      items = new[]
+      {
+        new { name = "Item1", price = 1m },
+        new { name = "Item2", price = 2m },
+        new { name = "Item3", price = 3m }
+      }
+    };
+
+    // Act
+    var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+    beforeResponseCount.Should().Be(1, "BeforeResponse should fire once for the entire batch");
+  }
+
+  [Fact]
+  [Trait("Category", "Story8.7")]
+  public async Task BatchCreate_BeforeResponseHook_ShortCircuit_ReturnsEarlyResult()
+  {
+    // Arrange — BeforeResponse hook short-circuits the whole batch response
+    CreateHost(config =>
+    {
+      config.AllowAnonymous();
+      config.EnableBatch();
+      config.UseHooks(hooks =>
+      {
+        hooks.BeforeResponse = async ctx =>
+        {
+          ctx.ShouldContinue = false;
+          ctx.EarlyResult = Results.Json(
+            new { message = "blocked_by_hook" },
+            statusCode: StatusCodes.Status403Forbidden);
+          await Task.CompletedTask;
+        };
+      });
+    });
+
+    var payload = new
+    {
+      action = "create",
+      items = new[]
+      {
+        new { name = "Item1", price = 1m }
+      }
+    };
+
+    // Act
+    var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert — hook replaces the entire batch response
+    response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+  }
+
+  [Fact]
+  [Trait("Category", "Story8.7")]
+  public async Task BatchCreate_OnErrorHook_HandlesPerItemException()
+  {
+    // Arrange — use a throwing repository
+    var errorHandledCount = 0;
+
+    var throwingRepo = new ThrowingBatchRepository();
+    var host = new HostBuilder()
+        .ConfigureWebHost(webBuilder =>
+        {
+          webBuilder
+              .UseTestServer()
+              .ConfigureServices(services =>
+              {
+                services.AddRestLib();
+                services.AddSingleton<IRepository<BatchEntity, Guid>>(throwingRepo);
+                services.AddRouting();
+              })
+              .Configure(app =>
+              {
+                app.UseRouting();
+                app.UseEndpoints(endpoints =>
+                {
+                  endpoints.MapRestLib<BatchEntity, Guid>("/api/items", config =>
+                  {
+                    config.AllowAnonymous();
+                    config.EnableBatch();
+                    config.UseHooks(hooks =>
+                    {
+                      hooks.OnError = async ctx =>
+                      {
+                        Interlocked.Increment(ref errorHandledCount);
+                        ctx.Handled = true;
+                        ctx.ErrorResult = Results.Json(
+                          new RestLibProblemDetails
+                          {
+                            Type = "/problems/custom-error",
+                            Title = "Custom Error",
+                            Status = StatusCodes.Status503ServiceUnavailable,
+                            Detail = "Handled by hook"
+                          },
+                          statusCode: StatusCodes.Status503ServiceUnavailable);
+                        await Task.CompletedTask;
+                      };
+                    });
+                  });
+                });
+              });
+        })
+        .Build();
+
+    host.Start();
+    var client = host.GetTestClient();
+
+    var payload = new
+    {
+      action = "create",
+      items = new[]
+      {
+        new { name = "Item1", price = 1m },
+        new { name = "Item2", price = 2m }
+      }
+    };
+
+    // Act
+    var response = await client.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    var items = json.GetProperty("items");
+    items.GetArrayLength().Should().Be(2);
+
+    // Both items should have been handled by the OnError hook
+    errorHandledCount.Should().Be(2);
+    items[0].GetProperty("status").GetInt32().Should().Be(503);
+    items[0].GetProperty("error").GetProperty("detail").GetString().Should().Be("Handled by hook");
+    items[1].GetProperty("status").GetInt32().Should().Be(503);
+
+    client.Dispose();
+    host.Dispose();
   }
 
   #endregion

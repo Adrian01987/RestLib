@@ -13,9 +13,9 @@ namespace RestLib.Filtering;
 public static partial class FilterParser
 {
     /// <summary>
-    /// Maximum number of values allowed in an <c>in</c> operator list.
+    /// Default maximum number of values allowed in an <c>in</c> operator list.
     /// </summary>
-    internal const int MaxInListSize = 50;
+    internal const int DefaultMaxInListSize = 50;
 
     /// <summary>
     /// Maps bracket operator strings to <see cref="FilterOperator"/> values.
@@ -60,10 +60,15 @@ public static partial class FilterParser
     /// <typeparam name="TEntity">The entity type.</typeparam>
     /// <param name="query">The query collection from the request.</param>
     /// <param name="configuration">The filter configuration.</param>
+    /// <param name="maxInListSize">
+    /// Maximum number of values allowed in an <c>in</c> operator list.
+    /// Defaults to <see cref="DefaultMaxInListSize"/>.
+    /// </param>
     /// <returns>A parse result containing values and any errors.</returns>
     public static FilterParseResult Parse<TEntity>(
         IQueryCollection query,
-        FilterConfiguration<TEntity> configuration)
+        FilterConfiguration<TEntity> configuration,
+        int maxInListSize = DefaultMaxInListSize)
         where TEntity : class
     {
         var values = new List<FilterValue>();
@@ -172,7 +177,7 @@ public static partial class FilterParser
             // Parse the value
             if (filterOp == FilterOperator.In)
             {
-                ParseInOperatorValue(property, key, rawValue, filterOp, values, errors);
+                ParseInOperatorValue(property, key, rawValue, filterOp, values, errors, maxInListSize);
             }
             else
             {
@@ -426,7 +431,8 @@ public static partial class FilterParser
         string rawValue,
         FilterOperator filterOp,
         List<FilterValue> values,
-        List<FilterValidationError> errors)
+        List<FilterValidationError> errors,
+        int maxInListSize)
     {
         var parts = rawValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
@@ -442,7 +448,7 @@ public static partial class FilterParser
             return;
         }
 
-        if (parts.Length > MaxInListSize)
+        if (parts.Length > maxInListSize)
         {
             errors.Add(new FilterValidationError
             {
@@ -450,7 +456,7 @@ public static partial class FilterParser
                 ProvidedValue = $"{parts.Length} values",
                 ExpectedType = property.PropertyType,
                 Message = $"The 'in' filter for '{property.QueryParameterName}' contains {parts.Length} values, " +
-                          $"but the maximum is {MaxInListSize}.",
+                          $"but the maximum is {maxInListSize}.",
             });
             return;
         }
