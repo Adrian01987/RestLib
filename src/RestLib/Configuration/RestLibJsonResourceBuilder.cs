@@ -156,10 +156,44 @@ internal static class RestLibJsonResourceBuilder
       RestLibJsonResourceConfiguration jsonConfiguration)
       where TEntity : class
   {
-    if (jsonConfiguration.Filtering.Count == 0)
-      return;
+    // Properties with explicit operators (takes precedence)
+    var operatorProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var entry in jsonConfiguration.FilteringOperators)
+    {
+      operatorProperties.Add(entry.Key);
+      var operators = entry.Value
+          .Select(ParseFilterOperator)
+          .ToArray();
+      endpointConfiguration.AllowFiltering(entry.Key, operators);
+    }
 
-    endpointConfiguration.AllowFiltering([.. jsonConfiguration.Filtering]);
+    // Simple equality-only properties (skip any already configured via FilteringOperators)
+    foreach (var propertyName in jsonConfiguration.Filtering)
+    {
+      if (!operatorProperties.Contains(propertyName))
+      {
+        endpointConfiguration.AllowFiltering(propertyName);
+      }
+    }
+  }
+
+  private static Filtering.FilterOperator ParseFilterOperator(string operatorName)
+  {
+    return operatorName.ToLowerInvariant() switch
+    {
+      "eq" => Filtering.FilterOperator.Eq,
+      "neq" => Filtering.FilterOperator.Neq,
+      "gt" => Filtering.FilterOperator.Gt,
+      "lt" => Filtering.FilterOperator.Lt,
+      "gte" => Filtering.FilterOperator.Gte,
+      "lte" => Filtering.FilterOperator.Lte,
+      "contains" => Filtering.FilterOperator.Contains,
+      "starts_with" => Filtering.FilterOperator.StartsWith,
+      "in" => Filtering.FilterOperator.In,
+      _ => throw new InvalidOperationException(
+          $"'{operatorName}' is not a valid filter operator. " +
+          $"Valid operators: eq, neq, gt, lt, gte, lte, contains, starts_with, in.")
+    };
   }
 
   private static void ApplySorting<TEntity, TKey>(

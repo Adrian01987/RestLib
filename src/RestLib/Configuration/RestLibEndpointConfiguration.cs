@@ -202,6 +202,68 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   }
 
   /// <summary>
+  /// Configures a single property for filtering with specific allowed operators.
+  /// The property name is automatically converted to snake_case in the query string.
+  /// </summary>
+  /// <param name="propertyExpression">Expression selecting the filterable property.</param>
+  /// <param name="operators">
+  /// The operators to allow for this property.
+  /// <see cref="Filtering.FilterOperator.Eq"/> is always implicitly included.
+  /// Use <see cref="Filtering.FilterOperators"/> presets for common operator sets.
+  /// </param>
+  /// <returns>This configuration instance for chaining.</returns>
+  /// <example>
+  /// <code>
+  /// config.AllowFiltering(p => p.Price, FilterOperators.Comparison);
+  /// // Allows: ?price=10, ?price[gte]=10, ?price[lte]=100, etc.
+  ///
+  /// config.AllowFiltering(p => p.Name, FilterOperators.String);
+  /// // Allows: ?name=Widget, ?name[contains]=wid, ?name[starts_with]=Wid
+  /// </code>
+  /// </example>
+  public RestLibEndpointConfiguration<TEntity, TKey> AllowFiltering(
+      Expression<Func<TEntity, object?>> propertyExpression,
+      params FilterOperator[] operators)
+  {
+    var memberExpression = NamingUtils.GetMemberExpression(propertyExpression.Body, nameof(propertyExpression));
+
+    var propertyName = memberExpression.Member.Name;
+    var propertyType = memberExpression.Type;
+    var queryParamName = NamingUtils.ConvertToSnakeCase(propertyName);
+
+    _filterConfiguration.AddProperty(propertyName, queryParamName, propertyType, operators);
+    return this;
+  }
+
+  /// <summary>
+  /// Configures a single property for filtering with specific allowed operators (string-based).
+  /// The property name is automatically converted to snake_case in the query string.
+  /// </summary>
+  /// <param name="propertyName">The entity property name to allow for filtering.</param>
+  /// <param name="operators">
+  /// The operators to allow for this property.
+  /// <see cref="Filtering.FilterOperator.Eq"/> is always implicitly included.
+  /// Use <see cref="Filtering.FilterOperators"/> presets for common operator sets.
+  /// </param>
+  /// <returns>This configuration instance for chaining.</returns>
+  /// <example>
+  /// <code>
+  /// config.AllowFiltering("Price", FilterOperators.Comparison);
+  /// config.AllowFiltering("Name", FilterOperators.String);
+  /// </code>
+  /// </example>
+  public RestLibEndpointConfiguration<TEntity, TKey> AllowFiltering(
+      string propertyName,
+      params FilterOperator[] operators)
+  {
+    var property = NamingUtils.ResolveProperty<TEntity>(propertyName, nameof(propertyName));
+
+    var queryParamName = NamingUtils.ConvertToSnakeCase(property.Name);
+    _filterConfiguration.AddProperty(property.Name, queryParamName, property.PropertyType, operators);
+    return this;
+  }
+
+  /// <summary>
   /// Configures which properties can be sorted on via the sort query parameter.
   /// Property names are automatically converted to snake_case in the query string.
   /// </summary>

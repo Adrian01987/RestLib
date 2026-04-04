@@ -392,6 +392,51 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     };
   }
 
+  private static int CompareValues(object? entityValue, object? filterValue)
+  {
+    if (entityValue is null && filterValue is null) return 0;
+    if (entityValue is null) return -1;
+    if (filterValue is null) return 1;
+
+    if (entityValue is IComparable comparable)
+    {
+      return comparable.CompareTo(filterValue);
+    }
+
+    // Fallback: equality only
+    return Equals(entityValue, filterValue) ? 0 : -1;
+  }
+
+  private static bool ContainsString(object? entityValue, object? filterValue)
+  {
+    if (entityValue is not string entityStr || filterValue is not string filterStr)
+    {
+      return false;
+    }
+
+    return entityStr.Contains(filterStr, StringComparison.OrdinalIgnoreCase);
+  }
+
+  private static bool StartsWithString(object? entityValue, object? filterValue)
+  {
+    if (entityValue is not string entityStr || filterValue is not string filterStr)
+    {
+      return false;
+    }
+
+    return entityStr.StartsWith(filterStr, StringComparison.OrdinalIgnoreCase);
+  }
+
+  private static bool InValues(object? entityValue, IReadOnlyList<object?>? typedValues)
+  {
+    if (typedValues is null || typedValues.Count == 0)
+    {
+      return false;
+    }
+
+    return typedValues.Any(v => Equals(entityValue, v));
+  }
+
   private IEnumerable<TEntity> ApplyFilters(IEnumerable<TEntity> items, IReadOnlyList<FilterValue> filters)
   {
     foreach (var filter in filters)
@@ -454,8 +499,19 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     var entityValue = property.GetValue(entity);
     var filterValue = filter.TypedValue ?? ConvertFilterValue(filter.RawValue, property.PropertyType);
 
-    // Use equality comparison for in-memory filtering
-    return Equals(entityValue, filterValue);
+    return filter.Operator switch
+    {
+      FilterOperator.Eq => Equals(entityValue, filterValue),
+      FilterOperator.Neq => !Equals(entityValue, filterValue),
+      FilterOperator.Gt => CompareValues(entityValue, filterValue) > 0,
+      FilterOperator.Lt => CompareValues(entityValue, filterValue) < 0,
+      FilterOperator.Gte => CompareValues(entityValue, filterValue) >= 0,
+      FilterOperator.Lte => CompareValues(entityValue, filterValue) <= 0,
+      FilterOperator.Contains => ContainsString(entityValue, filterValue),
+      FilterOperator.StartsWith => StartsWithString(entityValue, filterValue),
+      FilterOperator.In => InValues(entityValue, filter.TypedValues),
+      _ => Equals(entityValue, filterValue),
+    };
   }
 
   private TEntity SetKeyOnEntity(TEntity entity, TKey key)

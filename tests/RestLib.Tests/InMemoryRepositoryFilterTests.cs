@@ -301,4 +301,288 @@ public partial class InMemoryRepositoryTests
   }
 
   #endregion
+
+  #region Operator Filter Tests
+
+  private static FilterValue CreateOperatorFilter(string propertyName, object? typedValue, FilterOperator op) => new()
+  {
+    PropertyName = propertyName,
+    QueryParameterName = propertyName.ToLowerInvariant(),
+    PropertyType = typedValue?.GetType() ?? typeof(string),
+    RawValue = typedValue?.ToString() ?? "",
+    TypedValue = typedValue,
+    Operator = op
+  };
+
+  private static FilterValue CreateInFilter(string propertyName, Type propertyType, IReadOnlyList<object?> typedValues) => new()
+  {
+    PropertyName = propertyName,
+    QueryParameterName = propertyName.ToLowerInvariant(),
+    PropertyType = propertyType,
+    RawValue = string.Join(",", typedValues),
+    TypedValue = null,
+    Operator = FilterOperator.In,
+    TypedValues = typedValues
+  };
+
+  [Fact]
+  public async Task GetAllAsync_WithNeqFilter_FiltersCorrectly()
+  {
+    // Arrange
+    var repository = CreateRepository();
+    await repository.CreateAsync(CreateEntity("Alice", 100));
+    await repository.CreateAsync(CreateEntity("Bob", 200));
+    await repository.CreateAsync(CreateEntity("Charlie", 300));
+
+    var filters = new List<FilterValue> { CreateOperatorFilter("Value", 100, FilterOperator.Neq) };
+    var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+    // Act
+    var result = await repository.GetAllAsync(request);
+
+    // Assert
+    result.Items.Should().HaveCount(2);
+    result.Items.Should().OnlyContain(e => e.Value != 100);
+  }
+
+  [Fact]
+  public async Task GetAllAsync_WithGtFilter_FiltersCorrectly()
+  {
+    // Arrange
+    var repository = CreateRepository();
+    await repository.CreateAsync(CreateEntity("Alice", 100));
+    await repository.CreateAsync(CreateEntity("Bob", 200));
+    await repository.CreateAsync(CreateEntity("Charlie", 300));
+
+    var filters = new List<FilterValue> { CreateOperatorFilter("Value", 200, FilterOperator.Gt) };
+    var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+    // Act
+    var result = await repository.GetAllAsync(request);
+
+    // Assert
+    result.Items.Should().HaveCount(1);
+    result.Items.Single().Value.Should().Be(300);
+  }
+
+  [Fact]
+  public async Task GetAllAsync_WithLtFilter_FiltersCorrectly()
+  {
+    // Arrange
+    var repository = CreateRepository();
+    await repository.CreateAsync(CreateEntity("Alice", 100));
+    await repository.CreateAsync(CreateEntity("Bob", 200));
+    await repository.CreateAsync(CreateEntity("Charlie", 300));
+
+    var filters = new List<FilterValue> { CreateOperatorFilter("Value", 200, FilterOperator.Lt) };
+    var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+    // Act
+    var result = await repository.GetAllAsync(request);
+
+    // Assert
+    result.Items.Should().HaveCount(1);
+    result.Items.Single().Value.Should().Be(100);
+  }
+
+  [Fact]
+  public async Task GetAllAsync_WithGteFilter_FiltersCorrectly()
+  {
+    // Arrange
+    var repository = CreateRepository();
+    await repository.CreateAsync(CreateEntity("Alice", 100));
+    await repository.CreateAsync(CreateEntity("Bob", 200));
+    await repository.CreateAsync(CreateEntity("Charlie", 300));
+
+    var filters = new List<FilterValue> { CreateOperatorFilter("Value", 200, FilterOperator.Gte) };
+    var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+    // Act
+    var result = await repository.GetAllAsync(request);
+
+    // Assert
+    result.Items.Should().HaveCount(2);
+    result.Items.Should().OnlyContain(e => e.Value >= 200);
+  }
+
+  [Fact]
+  public async Task GetAllAsync_WithLteFilter_FiltersCorrectly()
+  {
+    // Arrange
+    var repository = CreateRepository();
+    await repository.CreateAsync(CreateEntity("Alice", 100));
+    await repository.CreateAsync(CreateEntity("Bob", 200));
+    await repository.CreateAsync(CreateEntity("Charlie", 300));
+
+    var filters = new List<FilterValue> { CreateOperatorFilter("Value", 200, FilterOperator.Lte) };
+    var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+    // Act
+    var result = await repository.GetAllAsync(request);
+
+    // Assert
+    result.Items.Should().HaveCount(2);
+    result.Items.Should().OnlyContain(e => e.Value <= 200);
+  }
+
+  [Fact]
+  public async Task GetAllAsync_WithContainsFilter_FiltersCorrectly()
+  {
+    // Arrange
+    var repository = CreateRepository();
+    await repository.CreateAsync(CreateEntity("Alice Smith", 100));
+    await repository.CreateAsync(CreateEntity("Bob Jones", 200));
+    await repository.CreateAsync(CreateEntity("Alice Jones", 300));
+
+    var filters = new List<FilterValue> { CreateOperatorFilter("Name", "Alice", FilterOperator.Contains) };
+    var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+    // Act
+    var result = await repository.GetAllAsync(request);
+
+    // Assert
+    result.Items.Should().HaveCount(2);
+    result.Items.Should().OnlyContain(e => e.Name.Contains("Alice", StringComparison.OrdinalIgnoreCase));
+  }
+
+  [Fact]
+  public async Task GetAllAsync_WithContainsFilter_CaseInsensitive()
+  {
+    // Arrange
+    var repository = CreateRepository();
+    await repository.CreateAsync(CreateEntity("UPPERCASE", 100));
+    await repository.CreateAsync(CreateEntity("lowercase", 200));
+    await repository.CreateAsync(CreateEntity("MixedCase", 300));
+
+    var filters = new List<FilterValue> { CreateOperatorFilter("Name", "case", FilterOperator.Contains) };
+    var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+    // Act
+    var result = await repository.GetAllAsync(request);
+
+    // Assert
+    result.Items.Should().HaveCount(3); // All contain "case" in some form
+  }
+
+  [Fact]
+  public async Task GetAllAsync_WithStartsWithFilter_FiltersCorrectly()
+  {
+    // Arrange
+    var repository = CreateRepository();
+    await repository.CreateAsync(CreateEntity("Alice Smith", 100));
+    await repository.CreateAsync(CreateEntity("Alice Jones", 200));
+    await repository.CreateAsync(CreateEntity("Bob Smith", 300));
+
+    var filters = new List<FilterValue> { CreateOperatorFilter("Name", "Alice", FilterOperator.StartsWith) };
+    var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+    // Act
+    var result = await repository.GetAllAsync(request);
+
+    // Assert
+    result.Items.Should().HaveCount(2);
+    result.Items.Should().OnlyContain(e => e.Name.StartsWith("Alice", StringComparison.OrdinalIgnoreCase));
+  }
+
+  [Fact]
+  public async Task GetAllAsync_WithInFilter_FiltersCorrectly()
+  {
+    // Arrange
+    var repository = CreateRepository();
+    await repository.CreateAsync(CreateEntity("Alice", 100));
+    await repository.CreateAsync(CreateEntity("Bob", 200));
+    await repository.CreateAsync(CreateEntity("Charlie", 300));
+
+    var typedValues = new List<object?> { 100, 300 };
+    var filters = new List<FilterValue> { CreateInFilter("Value", typeof(int), typedValues) };
+    var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+    // Act
+    var result = await repository.GetAllAsync(request);
+
+    // Assert
+    result.Items.Should().HaveCount(2);
+    result.Items.Should().Contain(e => e.Value == 100);
+    result.Items.Should().Contain(e => e.Value == 300);
+  }
+
+  [Fact]
+  public async Task GetAllAsync_WithInFilter_EmptyTypedValues_ReturnsNoItems()
+  {
+    // Arrange
+    var repository = CreateRepository();
+    await repository.CreateAsync(CreateEntity("Alice", 100));
+
+    var typedValues = new List<object?>();
+    var filters = new List<FilterValue> { CreateInFilter("Value", typeof(int), typedValues) };
+    var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+    // Act
+    var result = await repository.GetAllAsync(request);
+
+    // Assert
+    result.Items.Should().BeEmpty();
+  }
+
+  [Fact]
+  public async Task GetAllAsync_WithRangeFilters_GteAndLte_FiltersCorrectly()
+  {
+    // Arrange
+    var repository = CreateRepository();
+    await repository.CreateAsync(CreateEntity("A", 10));
+    await repository.CreateAsync(CreateEntity("B", 20));
+    await repository.CreateAsync(CreateEntity("C", 30));
+    await repository.CreateAsync(CreateEntity("D", 40));
+    await repository.CreateAsync(CreateEntity("E", 50));
+
+    var filters = new List<FilterValue>
+    {
+      CreateOperatorFilter("Value", 20, FilterOperator.Gte),
+      CreateOperatorFilter("Value", 40, FilterOperator.Lte),
+    };
+    var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+    // Act
+    var result = await repository.GetAllAsync(request);
+
+    // Assert
+    result.Items.Should().HaveCount(3); // 20, 30, 40
+    result.Items.Should().OnlyContain(e => e.Value >= 20 && e.Value <= 40);
+  }
+
+  [Fact]
+  public async Task GetAllAsync_ContainsFilter_NonStringProperty_ReturnsFalse()
+  {
+    // Arrange — Contains on a non-string property should not match anything
+    var repository = CreateRepository();
+    await repository.CreateAsync(CreateEntity("Alice", 100));
+
+    var filters = new List<FilterValue> { CreateOperatorFilter("Value", 100, FilterOperator.Contains) };
+    var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+    // Act
+    var result = await repository.GetAllAsync(request);
+
+    // Assert — Contains requires strings; int won't match
+    result.Items.Should().BeEmpty();
+  }
+
+  [Fact]
+  public async Task GetAllAsync_StartsWithFilter_NonStringProperty_ReturnsFalse()
+  {
+    // Arrange — StartsWith on a non-string property should not match anything
+    var repository = CreateRepository();
+    await repository.CreateAsync(CreateEntity("Alice", 100));
+
+    var filters = new List<FilterValue> { CreateOperatorFilter("Value", 100, FilterOperator.StartsWith) };
+    var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+    // Act
+    var result = await repository.GetAllAsync(request);
+
+    // Assert — StartsWith requires strings; int won't match
+    result.Items.Should().BeEmpty();
+  }
+
+  #endregion
 }

@@ -137,14 +137,30 @@ Enable query-string filtering with no custom parser code:
 app.MapRestLib<Product, Guid>("/api/products", config =>
 {
     config.AllowFiltering(p => p.CategoryId, p => p.IsActive);
+    config.AllowFiltering(p => p.Price, FilterOperators.Comparison);
+    config.AllowFiltering(p => p.Name, FilterOperators.String);
 });
 ```
 
-Example request:
+Equality filters use direct query parameters:
 
 ```text
 GET /api/products?category_id=5&is_active=true
 ```
+
+Operator filters use bracket syntax for ranges, partial matches, and set membership:
+
+```text
+GET /api/products?price[gte]=20&price[lte]=100
+GET /api/products?name[contains]=widget
+GET /api/products?status[in]=active,pending
+```
+
+Nine operators are available: `eq`, `neq`, `gt`, `lt`, `gte`, `lte`, `contains`,
+`starts_with`, and `in`. Each property declares which operators it supports via
+preset arrays (`FilterOperators.Comparison`, `FilterOperators.String`,
+`FilterOperators.All`) or individual `FilterOperator` values. `Eq` is always
+implicitly allowed. See [ADR-013](docs/adr/013-filter-operators.md) for details.
 
 ### Sorting
 
@@ -507,6 +523,7 @@ Key decisions are documented as Architecture Decision Records:
 | [ADR-010](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/010-versioning.md) | API versioning via route groups |
 | [ADR-011](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/011-filtering.md) | Query parameter filtering |
 | [ADR-012](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/012-hook-pipeline.md) | Hook pipeline for extensibility |
+| [ADR-013](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/013-filter-operators.md) | Filter operators beyond equality |
 
 ## Packages
 
@@ -522,7 +539,6 @@ Key decisions are documented as Architecture Decision Records:
 
 ## Known Limitations
 
-- **Equality-only filtering** — filter operators are limited to exact equality; range, comparison, and contains operators are not yet supported.
 - **Forward-only cursor pagination** — cursors support forward traversal only; there is no backward/previous-page navigation.
 - **Post-fetch field selection** — field projection is applied after the full entity is retrieved from the repository, not pushed down to the data source.
 - **Flat properties only** — filtering, sorting, and field selection operate on top-level entity properties; nested or related entity paths are not supported.

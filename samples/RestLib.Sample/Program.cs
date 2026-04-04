@@ -4,6 +4,7 @@ using RestLib;
 using RestLib.Abstractions;
 using RestLib.Batch;
 using RestLib.Configuration;
+using RestLib.Filtering;
 using RestLib.InMemory;
 using RestLib.Sample;
 using RestLib.Sample.Models;
@@ -97,8 +98,10 @@ app.MapRestLib<Order, Guid>("/api/orders", cfg =>
   // BatchCreate is included so the batch endpoint is accessible without auth middleware in this demo
   cfg.AllowAnonymous(RestLibOperation.GetAll, RestLibOperation.GetById, RestLibOperation.BatchCreate);
 
-  // Filtering via strongly-typed expressions
-  cfg.AllowFiltering(o => o.Status, o => o.CustomerEmail);
+  // Filtering — equality for status, string operators for email, comparison for total
+  cfg.AllowFiltering(o => o.Status);
+  cfg.AllowFiltering(o => o.CustomerEmail, FilterOperators.String);
+  cfg.AllowFiltering(o => o.Total, FilterOperators.Comparison);
 
   // Sorting via strongly-typed expressions with a default sort
   cfg.AllowSorting(o => o.CreatedAt, o => o.Total);

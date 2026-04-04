@@ -279,7 +279,78 @@ public class ParserPropertyTests
         // Act
         var result = FilterParser.Parse(query, config);
 
-        // Assert
-        result.Should().NotBeNull();
-    }
+    // Assert
+    result.Should().NotBeNull();
+  }
+
+  /// <summary>
+  /// FilterParser with bracket-syntax operator query keys should never throw.
+  /// </summary>
+  [Property(MaxTest = 200)]
+  public bool FilterParser_NeverThrows_ForArbitraryBracketSyntax(NonNull<string> input)
+  {
+    var config = new FilterConfiguration<FilterableEntity>();
+    config.AddProperty(p => p.Quantity, FilterOperators.Comparison);
+
+    var query = new QueryCollection(
+        new Dictionary<string, StringValues>
+        {
+            { $"quantity[{input.Get}]", "42" }
+        });
+
+    var result = FilterParser.Parse(query, config);
+
+    return result != null && result.Values != null && result.Errors != null;
+  }
+
+  /// <summary>
+  /// FilterParser bracket syntax with random operator names should never throw.
+  /// </summary>
+  [Property(MaxTest = 200)]
+  public bool FilterParser_NeverThrows_ForArbitraryOperatorAndValue(NonNull<string> op, NonNull<string> value)
+  {
+    var config = new FilterConfiguration<FilterableEntity>();
+    config.AddProperty(p => p.Name, FilterOperators.All);
+
+    var query = new QueryCollection(
+        new Dictionary<string, StringValues>
+        {
+            { $"name[{op.Get}]", value.Get }
+        });
+
+    var result = FilterParser.Parse(query, config);
+
+    return result != null;
+  }
+
+  /// <summary>
+  /// FilterParser in operator with arbitrary comma-separated values should never throw.
+  /// </summary>
+  [Property(MaxTest = 200)]
+  public bool FilterParser_NeverThrows_ForArbitraryInOperatorValues(NonNull<string> input)
+  {
+    var config = new FilterConfiguration<FilterableEntity>();
+    config.AddProperty(p => p.Name, FilterOperator.In);
+
+    var query = new QueryCollection(
+        new Dictionary<string, StringValues>
+        {
+            { "name[in]", input.Get }
+        });
+
+    var result = FilterParser.Parse(query, config);
+
+    return result != null;
+  }
+
+  /// <summary>
+  /// ParseQueryParameterKey should never throw for any arbitrary string.
+  /// </summary>
+  [Property(MaxTest = 200)]
+  public bool FilterParser_ParseQueryParameterKey_NeverThrows(string? input)
+  {
+    var (paramName, operatorStr) = FilterParser.ParseQueryParameterKey(input ?? string.Empty);
+
+    return paramName != null;
+  }
 }

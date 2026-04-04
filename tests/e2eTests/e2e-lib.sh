@@ -90,7 +90,7 @@ _http_request() {
   tmpbody=$(mktemp)
   tmpheaders=$(mktemp)
 
-  local curl_args=(-s -D "$tmpheaders" -o "$tmpbody" -w "%{http_code}" -X "$method")
+  local curl_args=(-s -g -D "$tmpheaders" -o "$tmpbody" -w "%{http_code}" -X "$method")
   if [ -n "$body" ]; then
     curl_args+=(-H "Content-Type: application/json" -d "$body")
   fi

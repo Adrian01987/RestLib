@@ -44,9 +44,22 @@
     },
     "Filtering": {
       "type": "array",
-      "description": "Entity property names that can be filtered on via query parameters. Names are automatically converted to snake_case in the query string.",
+      "description": "Entity property names that can be filtered on via query parameters (equality only). Names are automatically converted to snake_case in the query string. For operator-based filtering, use FilteringOperators instead.",
       "items": { "type": "string" },
       "uniqueItems": true
+    },
+    "FilteringOperators": {
+      "type": "object",
+      "description": "Per-property filter operator configuration. Keys are entity property names, values are arrays of allowed operator names. Valid operators: eq, neq, gt, lt, gte, lte, contains, starts_with, in.",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": ["eq", "neq", "gt", "lt", "gte", "lte", "contains", "starts_with", "in"]
+        },
+        "uniqueItems": true,
+        "minItems": 1
+      }
     },
     "Sorting": {
       "type": "array",

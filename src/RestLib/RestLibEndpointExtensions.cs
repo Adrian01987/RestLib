@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi;
 using RestLib.Configuration;
 using RestLib.Endpoints;
+using RestLib.Filtering;
 
 namespace RestLib;
 
@@ -109,12 +110,22 @@ public static class RestLibEndpointExtensions
         {
           foreach (var filter in config.FilterConfiguration.Properties)
           {
+            var operatorNames = filter.AllowedOperators
+                .Select(FilterParser.GetOperatorName)
+                .OrderBy(n => n, StringComparer.Ordinal)
+                .ToList();
+
+            var description = filter.AllowedOperators.Count == 1
+                ? $"Filter by {filter.PropertyName} (equality only). Example: ?{filter.QueryParameterName}=value"
+                : $"Filter by {filter.PropertyName}. Allowed operators: {string.Join(", ", operatorNames)}. " +
+                  $"Use bracket syntax for non-equality operators: ?{filter.QueryParameterName}[operator]=value";
+
             var param = new OpenApiParameter
             {
               Name = filter.QueryParameterName,
               In = ParameterLocation.Query,
               Required = false,
-              Description = $"Filter by {filter.PropertyName}",
+              Description = description,
               Schema = OpenApiEndpointConfiguration.GetOpenApiSchema(filter.PropertyType)
             };
             operation.Parameters ??= [];

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Filter operators beyond equality — bracket syntax (`?price[gte]=10&price[lte]=100`) with nine operators: `eq`, `neq`, `gt`, `lt`, `gte`, `lte`, `contains`, `starts_with`, `in`
+- Per-property operator allow-lists via `AllowFiltering(prop, operators)` overloads and `FilterOperators` preset arrays (`Equality`, `Comparison`, `String`, `All`)
+- `in` operator for set membership filtering (`?status[in]=active,pending`) with configurable max list size
+- Type-safe operator validation — comparison operators require `IComparable`; string operators require `string`
+- JSON configuration support for filter operators via `FilteringOperators` property in resource config
+- JSON Schema updated for `FilteringOperators` configuration
+- ADR-013: Filter Operators Beyond Equality
+- E2E test suite for filter operators (17 tests)
+- 84 new unit/integration/property-based tests for filter operator parsing, validation, and execution
+
 ## [1.0.0] - 2026-04-04
 
 ### Breaking Changes

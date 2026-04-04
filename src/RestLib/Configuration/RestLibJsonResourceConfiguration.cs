@@ -44,9 +44,18 @@ public class RestLibJsonResourceConfiguration
   public Dictionary<string, string[]> Policies { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
   /// <summary>
-  /// Gets or sets the filterable entity property names.
+  /// Gets or sets the filterable entity property names (equality-only).
+  /// For operator-based filtering, use <see cref="FilteringOperators"/> instead.
+  /// When a property appears in both, the <see cref="FilteringOperators"/> entry takes precedence.
   /// </summary>
   public List<string> Filtering { get; set; } = [];
+
+  /// <summary>
+  /// Gets or sets per-property filter operator configuration.
+  /// Keys are entity property names, values are lists of operator names
+  /// (e.g., "eq", "neq", "gt", "lt", "gte", "lte", "contains", "starts_with", "in").
+  /// </summary>
+  public Dictionary<string, List<string>> FilteringOperators { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
   /// <summary>
   /// Gets or sets the sortable entity property names.
