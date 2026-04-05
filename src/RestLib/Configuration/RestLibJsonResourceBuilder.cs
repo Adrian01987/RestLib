@@ -168,7 +168,8 @@ internal static class RestLibJsonResourceBuilder
     {
       operatorProperties.Add(entry.Key);
       var operators = entry.Value
-          .Select(ParseFilterOperator)
+          .SelectMany(ParseFilterOperators)
+          .Distinct()
           .ToArray();
       endpointConfiguration.AllowFiltering(entry.Key, operators);
     }
@@ -183,22 +184,27 @@ internal static class RestLibJsonResourceBuilder
     }
   }
 
-  private static Filtering.FilterOperator ParseFilterOperator(string operatorName)
+  private static IEnumerable<Filtering.FilterOperator> ParseFilterOperators(string operatorName)
   {
     return operatorName.ToLowerInvariant() switch
     {
-      "eq" => Filtering.FilterOperator.Eq,
-      "neq" => Filtering.FilterOperator.Neq,
-      "gt" => Filtering.FilterOperator.Gt,
-      "lt" => Filtering.FilterOperator.Lt,
-      "gte" => Filtering.FilterOperator.Gte,
-      "lte" => Filtering.FilterOperator.Lte,
-      "contains" => Filtering.FilterOperator.Contains,
-      "starts_with" => Filtering.FilterOperator.StartsWith,
-      "in" => Filtering.FilterOperator.In,
+      "eq" => [Filtering.FilterOperator.Eq],
+      "neq" => [Filtering.FilterOperator.Neq],
+      "gt" => [Filtering.FilterOperator.Gt],
+      "lt" => [Filtering.FilterOperator.Lt],
+      "gte" => [Filtering.FilterOperator.Gte],
+      "lte" => [Filtering.FilterOperator.Lte],
+      "contains" => [Filtering.FilterOperator.Contains],
+      "starts_with" => [Filtering.FilterOperator.StartsWith],
+      "in" => [Filtering.FilterOperator.In],
+      "equality" => Filtering.FilterOperators.Equality,
+      "comparison" => Filtering.FilterOperators.Comparison,
+      "string" => Filtering.FilterOperators.String,
+      "all" => Filtering.FilterOperators.All,
       _ => throw new InvalidOperationException(
-          $"'{operatorName}' is not a valid filter operator. " +
-          $"Valid operators: eq, neq, gt, lt, gte, lte, contains, starts_with, in.")
+          $"'{operatorName}' is not a valid filter operator or preset. " +
+          $"Valid operators: eq, neq, gt, lt, gte, lte, contains, starts_with, in. " +
+          $"Valid presets: equality, comparison, string, all.")
     };
   }
 

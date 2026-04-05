@@ -565,6 +565,133 @@ public class JsonResourceConfigurationTests
         .WithMessage("*Key property 'NonExistentProperty' was not found*");
   }
 
+  [Fact]
+  public async Task AddJsonResource_WithFilteringOperatorPreset_ExpandsPresetToIndividualOperators()
+  {
+    // Arrange
+    using var host = await CreateHost(services =>
+    {
+      services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+      {
+        Name = "items",
+        Route = "/api/items",
+        AllowAnonymousAll = true,
+        FilteringOperators = new Dictionary<string, List<string>>
+        {
+          [nameof(TestEntity.Price)] = ["comparison"]
+        }
+      });
+    });
+
+    var client = host.GetTestClient();
+    var repository = host.Services.GetRequiredService<TestEntityRepository>();
+    repository.Seed(new TestEntity { Id = Guid.NewGuid(), Name = "item", Price = 10m });
+
+    // Act — "comparison" preset includes gt, so price[gt] should be accepted
+    var gtResponse = await client.GetAsync("/api/items?price[gt]=5");
+
+    // Act — "comparison" preset does NOT include contains, so it should be rejected
+    var containsResponse = await client.GetAsync("/api/items?price[contains]=5");
+
+    // Assert
+    gtResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    containsResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+  }
+
+  [Fact]
+  public async Task AddJsonResource_WithMixedPresetsAndOperators_ExpandsAndDeduplicates()
+  {
+    // Arrange — "equality" preset includes eq and neq; "contains" added individually
+    using var host = await CreateHost(services =>
+    {
+      services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+      {
+        Name = "items",
+        Route = "/api/items",
+        AllowAnonymousAll = true,
+        FilteringOperators = new Dictionary<string, List<string>>
+        {
+          [nameof(TestEntity.Name)] = ["equality", "contains"]
+        }
+      });
+    });
+
+    var client = host.GetTestClient();
+    var repository = host.Services.GetRequiredService<TestEntityRepository>();
+    repository.Seed(new TestEntity { Id = Guid.NewGuid(), Name = "alpha", Price = 1m });
+
+    // Act — "equality" includes eq; "contains" was added individually; both should be accepted
+    var eqResponse = await client.GetAsync("/api/items?name[eq]=alpha");
+    var containsResponse = await client.GetAsync("/api/items?name[contains]=lph");
+
+    // Act — "gt" is not in equality or contains, so it should be rejected
+    var gtResponse = await client.GetAsync("/api/items?name[gt]=a");
+
+    // Assert
+    eqResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    containsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    gtResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+  }
+
+  [Fact]
+  public void AddJsonResource_WithInvalidFilterOperatorName_ThrowsOnMapping()
+  {
+    // Arrange & Act
+    var act = async () =>
+    {
+      using var host = await CreateHost(services =>
+      {
+        services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+        {
+          Name = "items",
+          Route = "/api/items",
+          AllowAnonymousAll = true,
+          FilteringOperators = new Dictionary<string, List<string>>
+          {
+            [nameof(TestEntity.Price)] = ["invalid_operator"]
+          }
+        });
+      });
+    };
+
+    // Assert
+    act.Should().ThrowAsync<InvalidOperationException>()
+        .WithMessage("*'invalid_operator' is not a valid filter operator or preset*");
+  }
+
+  [Fact]
+  public async Task AddJsonResource_WithAllPreset_EnablesEveryFilterOperator()
+  {
+    // Arrange
+    using var host = await CreateHost(services =>
+    {
+      services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+      {
+        Name = "items",
+        Route = "/api/items",
+        AllowAnonymousAll = true,
+        FilteringOperators = new Dictionary<string, List<string>>
+        {
+          [nameof(TestEntity.Name)] = ["all"]
+        }
+      });
+    });
+
+    var client = host.GetTestClient();
+    var repository = host.Services.GetRequiredService<TestEntityRepository>();
+    repository.Seed(new TestEntity { Id = Guid.NewGuid(), Name = "hello", Price = 1m });
+
+    // Act — "all" preset includes every operator; starts_with should be accepted
+    var startsWithResponse = await client.GetAsync("/api/items?name[starts_with]=hel");
+    var eqResponse = await client.GetAsync("/api/items?name[eq]=hello");
+    var containsResponse = await client.GetAsync("/api/items?name[contains]=ell");
+
+    // Assert — all operators should be accepted (200), not rejected (400)
+    startsWithResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    eqResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    containsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+  }
+
   private static async Task<IHost> CreateHost(
       Action<IServiceCollection> configureServices,
       string? mapResourceName = null)
