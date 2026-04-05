@@ -304,17 +304,17 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
       }
       if (underlyingType == typeof(DateTime))
       {
-        return DateTime.Parse(value);
+        return DateTime.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
       }
       if (underlyingType == typeof(DateTimeOffset))
       {
-        return DateTimeOffset.Parse(value);
+        return DateTimeOffset.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
       }
       if (underlyingType.IsEnum)
       {
         return Enum.Parse(underlyingType, value, ignoreCase: true);
       }
-      return Convert.ChangeType(value, underlyingType);
+      return Convert.ChangeType(value, underlyingType, System.Globalization.CultureInfo.InvariantCulture);
     }
     catch
     {

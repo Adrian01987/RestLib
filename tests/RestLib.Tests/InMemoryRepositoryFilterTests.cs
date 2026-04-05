@@ -584,5 +584,114 @@ public partial class InMemoryRepositoryTests
     result.Items.Should().BeEmpty();
   }
 
+  [Fact]
+  public async Task GetAllAsync_WithDateTimeFilter_NonUsCulture_FiltersCorrectly()
+  {
+    // Arrange — set a culture where date format differs from ISO 8601
+    var originalCulture = System.Threading.Thread.CurrentThread.CurrentCulture;
+    try
+    {
+      System.Threading.Thread.CurrentThread.CurrentCulture =
+          new System.Globalization.CultureInfo("de-DE");
+
+      var targetDate = new DateTime(2026, 4, 5, 14, 30, 0, DateTimeKind.Unspecified);
+      var repository = CreateFilterTestRepository();
+      var matchingEntity = CreateFilterTestEntity(createdAt: targetDate);
+      var otherEntity = CreateFilterTestEntity(createdAt: new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Unspecified));
+      await repository.CreateAsync(matchingEntity);
+      await repository.CreateAsync(otherEntity);
+
+      // ISO 8601 format — should work regardless of thread culture
+      var filters = new List<FilterValue>
+      {
+        CreateFilterForProperty("CreatedAt", "2026-04-05T14:30:00", typeof(DateTime))
+      };
+      var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+      // Act
+      var result = await repository.GetAllAsync(request);
+
+      // Assert
+      result.Items.Should().HaveCount(1);
+      result.Items.Single().CreatedAt.Should().Be(targetDate);
+    }
+    finally
+    {
+      System.Threading.Thread.CurrentThread.CurrentCulture = originalCulture;
+    }
+  }
+
+  [Fact]
+  public async Task GetAllAsync_WithDateTimeOffsetFilter_NonUsCulture_FiltersCorrectly()
+  {
+    // Arrange — set a culture where date format differs from ISO 8601
+    var originalCulture = System.Threading.Thread.CurrentThread.CurrentCulture;
+    try
+    {
+      System.Threading.Thread.CurrentThread.CurrentCulture =
+          new System.Globalization.CultureInfo("fr-FR");
+
+      var targetDate = new DateTimeOffset(2026, 4, 5, 14, 30, 0, TimeSpan.Zero);
+      var repository = CreateFilterTestRepository();
+      var matchingEntity = CreateFilterTestEntity(modifiedAt: targetDate);
+      var otherEntity = CreateFilterTestEntity(modifiedAt: new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero));
+      await repository.CreateAsync(matchingEntity);
+      await repository.CreateAsync(otherEntity);
+
+      // ISO 8601 format with UTC offset — should work regardless of thread culture
+      var filters = new List<FilterValue>
+      {
+        CreateFilterForProperty("ModifiedAt", "2026-04-05T14:30:00+00:00", typeof(DateTimeOffset))
+      };
+      var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+      // Act
+      var result = await repository.GetAllAsync(request);
+
+      // Assert
+      result.Items.Should().HaveCount(1);
+      result.Items.Single().ModifiedAt.Should().Be(targetDate);
+    }
+    finally
+    {
+      System.Threading.Thread.CurrentThread.CurrentCulture = originalCulture;
+    }
+  }
+
+  [Fact]
+  public async Task GetAllAsync_WithDecimalFilter_NonUsCulture_FiltersCorrectly()
+  {
+    // Arrange — set a culture where decimal separator is comma (e.g., "1,5" instead of "1.5")
+    var originalCulture = System.Threading.Thread.CurrentThread.CurrentCulture;
+    try
+    {
+      System.Threading.Thread.CurrentThread.CurrentCulture =
+          new System.Globalization.CultureInfo("de-DE");
+
+      var repository = CreateRepository();
+      await repository.CreateAsync(CreateEntity("Expensive", 150));
+      await repository.CreateAsync(CreateEntity("Cheap", 50));
+
+      // Invariant format uses period as decimal separator — the value "150"
+      // should parse correctly even under de-DE culture.
+      var filters = new List<FilterValue>
+      {
+        CreateFilterForProperty("Value", "150", typeof(int))
+      };
+      var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+      // Act
+      var result = await repository.GetAllAsync(request);
+
+      // Assert
+      result.Items.Should().HaveCount(1);
+      result.Items.Single().Name.Should().Be("Expensive");
+    }
+    finally
+    {
+      System.Threading.Thread.CurrentThread.CurrentCulture = originalCulture;
+    }
+  }
+
   #endregion
 }
