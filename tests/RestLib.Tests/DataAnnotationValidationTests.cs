@@ -433,6 +433,37 @@ public class DataAnnotationValidationTests : IDisposable
   }
 
   [Fact]
+  [Trait("Category", "Story10.1")]
+  public async Task Patch_ThatResultsInInvalidEntity_DoesNotPersistInvalidData()
+  {
+    // Arrange
+    SetupHost();
+    var existingId = Guid.NewGuid();
+    _repository!.Seed(new ValidatedEntity
+    {
+      Id = existingId,
+      Name = "Existing Product",
+      UnitPrice = 10.00m
+    });
+
+    var patch = new { name = "" }; // Setting to empty should fail Required validation
+
+    // Act
+    var response = await _client!.PatchAsJsonAsync($"/api/validated/{existingId}", patch);
+
+    // Assert — response should be 400
+    response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+    // Assert — repository should still have the original valid entity
+    var getResponse = await _client!.GetAsync($"/api/validated/{existingId}");
+    getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+    var entity = await getResponse.Content.ReadFromJsonAsync<ValidatedEntity>();
+    entity.Should().NotBeNull();
+    entity!.Name.Should().Be("Existing Product");
+  }
+
+  [Fact]
   public async Task Patch_ThatKeepsEntityValid_Succeeds()
   {
     // Arrange

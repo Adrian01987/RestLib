@@ -78,10 +78,35 @@ internal static class PatchHandler
                     }
                 }
 
-                // Fetch original entity if not already fetched (for hooks)
-                if (originalEntity is null && pipeline is not null)
+                // Fetch original entity if not already fetched (needed for hooks or pre-persist validation)
+                if (originalEntity is null && (pipeline is not null || options.EnableValidation))
                 {
                     originalEntity = await repository.GetByIdAsync(id, ct);
+                    if (originalEntity is null && options.EnableValidation)
+                    {
+                        return Responses.ProblemDetailsResult.NotFound(
+                            entityName,
+                            id!,
+                            httpContext.Request.Path,
+                            jsonOptions);
+                    }
+                }
+
+                // Validate merged entity BEFORE persisting to prevent invalid data in the repository
+                if (options.EnableValidation && originalEntity is not null)
+                {
+                    var preview = EndpointHelpers.PreviewPatch(originalEntity, patchDocument, jsonOptions);
+                    if (preview is not null)
+                    {
+                        var validationResult = Validation.EntityValidator.Validate(preview, options.JsonNamingPolicy);
+                        if (!validationResult.IsValid)
+                        {
+                            return Responses.ProblemDetailsResult.ValidationFailed(
+                                validationResult.Errors.ToDictionary(e => e.Key, e => e.Value),
+                                httpContext.Request.Path,
+                                jsonOptions);
+                        }
+                    }
                 }
 
                 // BeforePersist hook — update existing context with original entity
@@ -103,19 +128,6 @@ internal static class PatchHandler
                         id!,
                         httpContext.Request.Path,
                         jsonOptions);
-                }
-
-                // Validate patched entity using Data Annotations
-                if (options.EnableValidation)
-                {
-                    var validationResult = Validation.EntityValidator.Validate(patched, options.JsonNamingPolicy);
-                    if (!validationResult.IsValid)
-                    {
-                        return Responses.ProblemDetailsResult.ValidationFailed(
-                            validationResult.Errors.ToDictionary(e => e.Key, e => e.Value),
-                            httpContext.Request.Path,
-                            jsonOptions);
-                    }
                 }
 
                 // AfterPersist hook

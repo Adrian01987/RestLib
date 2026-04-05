@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using RestLib.Abstractions;
 using RestLib.Configuration;
+using RestLib.Endpoints;
 using RestLib.Hooks;
 using RestLib.Responses;
 using RestLib.Validation;
@@ -221,11 +222,11 @@ internal static class BatchActionExecutor
     }
 
     /// <summary>
-    /// Persists patches and runs AfterPersist hooks, with post-persist validation.
+    /// Persists patches and runs AfterPersist hooks, with pre-persist validation.
+    /// When validation is enabled, the merged entity is previewed and validated
+    /// before the actual persist call to prevent invalid data in the repository.
     /// Uses the batch repository bulk path when available; otherwise falls back
     /// to individual <see cref="IRepository{TEntity, TKey}.PatchAsync"/> calls.
-    /// Patch validation is deferred to post-persist because the merged entity
-    /// is only available after the patch is applied.
     /// </summary>
     /// <typeparam name="TEntity">The entity type.</typeparam>
     /// <typeparam name="TKey">The key type.</typeparam>
@@ -259,48 +260,75 @@ internal static class BatchActionExecutor
         {
             try
             {
-                var patches = validItems
-                    .Select(v => (v.Id, v.Body))
-                    .ToList();
-                var patched = await batchRepository.PatchManyAsync(patches, ct);
-
-                for (var j = 0; j < validItems.Count; j++)
+                // Pre-persist validation: fetch originals, preview merges, validate before persisting
+                var itemsToPersist = validItems;
+                if (options.EnableValidation)
                 {
-                    var (index, id, _) = validItems[j];
-                    var patchedEntity = patched[j];
-
-                    // Validate patched entity (post-persist, consistent with single-item PATCH)
-                    if (options.EnableValidation)
+                    itemsToPersist = new List<(int Index, TKey Id, JsonElement Body)>();
+                    foreach (var (index, id, body) in validItems)
                     {
-                        var validationResult = EntityValidator.Validate(patchedEntity, jsonOptions.PropertyNamingPolicy);
-                        if (!validationResult.IsValid)
+                        var original = await repository.GetByIdAsync(id, ct);
+                        if (original is null)
                         {
+                            var entityName = typeof(TEntity).Name;
                             results[index] = new BatchItemResult
                             {
                                 Index = index,
-                                Status = StatusCodes.Status400BadRequest,
-                                Error = ProblemDetailsFactory.ValidationFailed(
-                                    new Dictionary<string, string[]>(validationResult.Errors),
-                                    httpContext.Request.Path)
+                                Status = StatusCodes.Status404NotFound,
+                                Error = ProblemDetailsFactory.NotFound(entityName, id!, httpContext.Request.Path)
                             };
                             continue;
                         }
-                    }
 
-                    if (pipeline is not null)
-                    {
-                        var afterContext = pipeline.CreateContext(
-                            httpContext, RestLibOperation.BatchPatch,
-                            resourceId: id, entity: patchedEntity);
-                        await pipeline.ExecuteAfterPersistAsync(afterContext);
-                    }
+                        var preview = EndpointHelpers.PreviewPatch(original, body, jsonOptions);
+                        if (preview is not null)
+                        {
+                            var validationResult = EntityValidator.Validate(preview, jsonOptions.PropertyNamingPolicy);
+                            if (!validationResult.IsValid)
+                            {
+                                results[index] = new BatchItemResult
+                                {
+                                    Index = index,
+                                    Status = StatusCodes.Status400BadRequest,
+                                    Error = ProblemDetailsFactory.ValidationFailed(
+                                        new Dictionary<string, string[]>(validationResult.Errors),
+                                        httpContext.Request.Path)
+                                };
+                                continue;
+                            }
+                        }
 
-                    results[index] = new BatchItemResult
+                        itemsToPersist.Add((index, id, body));
+                    }
+                }
+
+                if (itemsToPersist.Count > 0)
+                {
+                    var patches = itemsToPersist
+                        .Select(v => (v.Id, v.Body))
+                        .ToList();
+                    var patched = await batchRepository.PatchManyAsync(patches, ct);
+
+                    for (var j = 0; j < itemsToPersist.Count; j++)
                     {
-                        Index = index,
-                        Status = StatusCodes.Status200OK,
-                        Entity = patchedEntity
-                    };
+                        var (index, id, _) = itemsToPersist[j];
+                        var patchedEntity = patched[j];
+
+                        if (pipeline is not null)
+                        {
+                            var afterContext = pipeline.CreateContext(
+                                httpContext, RestLibOperation.BatchPatch,
+                                resourceId: id, entity: patchedEntity);
+                            await pipeline.ExecuteAfterPersistAsync(afterContext);
+                        }
+
+                        results[index] = new BatchItemResult
+                        {
+                            Index = index,
+                            Status = StatusCodes.Status200OK,
+                            Entity = patchedEntity
+                        };
+                    }
                 }
             }
             catch (Exception ex)
@@ -318,6 +346,41 @@ internal static class BatchActionExecutor
             {
                 try
                 {
+                    // Pre-persist validation: fetch original, preview merge, validate before persisting
+                    if (options.EnableValidation)
+                    {
+                        var original = await repository.GetByIdAsync(id, ct);
+                        if (original is null)
+                        {
+                            var entityName = typeof(TEntity).Name;
+                            results[index] = new BatchItemResult
+                            {
+                                Index = index,
+                                Status = StatusCodes.Status404NotFound,
+                                Error = ProblemDetailsFactory.NotFound(entityName, id!, httpContext.Request.Path)
+                            };
+                            continue;
+                        }
+
+                        var preview = EndpointHelpers.PreviewPatch(original, body, jsonOptions);
+                        if (preview is not null)
+                        {
+                            var validationResult = EntityValidator.Validate(preview, jsonOptions.PropertyNamingPolicy);
+                            if (!validationResult.IsValid)
+                            {
+                                results[index] = new BatchItemResult
+                                {
+                                    Index = index,
+                                    Status = StatusCodes.Status400BadRequest,
+                                    Error = ProblemDetailsFactory.ValidationFailed(
+                                        new Dictionary<string, string[]>(validationResult.Errors),
+                                        httpContext.Request.Path)
+                                };
+                                continue;
+                            }
+                        }
+                    }
+
                     var patched = await repository.PatchAsync(id, body, ct);
                     if (patched is null)
                     {
@@ -329,24 +392,6 @@ internal static class BatchActionExecutor
                             Error = ProblemDetailsFactory.NotFound(entityName, id!, httpContext.Request.Path)
                         };
                         continue;
-                    }
-
-                    // Validate patched entity (post-persist, consistent with single-item PATCH)
-                    if (options.EnableValidation)
-                    {
-                        var validationResult = EntityValidator.Validate(patched, jsonOptions.PropertyNamingPolicy);
-                        if (!validationResult.IsValid)
-                        {
-                            results[index] = new BatchItemResult
-                            {
-                                Index = index,
-                                Status = StatusCodes.Status400BadRequest,
-                                Error = ProblemDetailsFactory.ValidationFailed(
-                                    new Dictionary<string, string[]>(validationResult.Errors),
-                                    httpContext.Request.Path)
-                            };
-                            continue;
-                        }
                     }
 
                     if (pipeline is not null)
