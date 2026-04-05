@@ -89,7 +89,7 @@ public partial class InMemoryRepositoryTests
   }
 
   [Fact]
-  public async Task CreateManyAsync_OverwritesExistingKeys()
+  public async Task CreateManyAsync_WithDuplicateKey_ThrowsInvalidOperationException()
   {
     // Arrange
     var repository = CreateRepository();
@@ -97,14 +97,12 @@ public partial class InMemoryRepositoryTests
     await repository.CreateAsync(entity);
     var replacement = entity with { Name = "Replaced", Value = 999 };
 
-    // Act — CreateManyAsync uses _store[key] = current (no TryAdd check)
-    var result = await repository.CreateManyAsync(new List<TestEntity> { replacement });
+    // Act
+    var act = () => repository.CreateManyAsync(new List<TestEntity> { replacement });
 
-    // Assert
-    result.Should().HaveCount(1);
-    var retrieved = await repository.GetByIdAsync(entity.Id);
-    retrieved!.Name.Should().Be("Replaced");
-    retrieved.Value.Should().Be(999);
+    // Assert — consistent with CreateAsync, which throws on duplicate keys
+    await act.Should().ThrowAsync<InvalidOperationException>()
+        .WithMessage("*already exists*");
   }
 
   #endregion

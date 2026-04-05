@@ -187,7 +187,11 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
         current = SetKeyOnEntity(current, key);
       }
 
-      _store[key] = current;
+      if (!_store.TryAdd(key, current))
+      {
+        throw new InvalidOperationException($"An entity with key '{key}' already exists.");
+      }
+
       results.Add(current);
     }
 
