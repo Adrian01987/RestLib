@@ -59,14 +59,71 @@ public partial class OpenApiDocumentationTests
     limitParam.Required.Should().BeFalse();
     limitParam.Schema!.Type.Should().Be(JsonSchemaType.Integer);
 
-    // Constraints may be serialized as schema properties or documented in description
-    // The OpenAPI generator may not serialize min/max directly - check description for constraint info
-    var hasSchemaConstraints = limitParam.Schema.Minimum != null && limitParam.Schema.Maximum != null;
-    var hasDescriptionConstraints = limitParam.Description?.Contains("1") == true &&
-                                     limitParam.Description?.Contains("100") == true;
+    // Verify schema constraints reflect default RestLibOptions (MaxPageSize=100, DefaultPageSize=20)
+    limitParam.Schema.Minimum.Should().Be("1");
+    limitParam.Schema.Maximum.Should().Be("100");
+    limitParam.Schema.Default.Should().NotBeNull();
+    limitParam.Schema.Default!.GetValue<int>().Should().Be(20);
 
-    (hasSchemaConstraints || hasDescriptionConstraints).Should().BeTrue(
-      "limit parameter should have constraints either in schema (minimum/maximum) or in description");
+    // Description should reflect the same values
+    limitParam.Description.Should().Contain("1-100");
+    limitParam.Description.Should().Contain("Default: 20");
+  }
+
+  [Fact]
+  public async Task OpenApi_GetAll_Should_Document_LimitParameter_WithCustomPaginationLimits()
+  {
+    // Arrange — configure custom pagination limits
+    var repository = new OpenApiTestRepository();
+
+    using var host = await new HostBuilder()
+        .ConfigureWebHost(webBuilder =>
+        {
+          webBuilder.UseTestServer();
+          webBuilder.ConfigureServices(services =>
+          {
+            services.AddRestLib(options =>
+            {
+              options.DefaultPageSize = 50;
+              options.MaxPageSize = 500;
+            });
+            services.AddRouting();
+            services.AddOpenApi();
+            services.AddSingleton<IRepository<OpenApiTestEntity, int>>(repository);
+          });
+          webBuilder.Configure(app =>
+          {
+            app.UseRouting();
+            app.UseEndpoints(endpoints =>
+            {
+              endpoints.MapOpenApi();
+              endpoints.MapRestLib<OpenApiTestEntity, int>("/api/items", config =>
+              {
+                config.AllowAnonymous();
+                config.KeySelector = e => e.Id;
+              });
+            });
+          });
+        })
+        .StartAsync();
+
+    var client = host.GetTestClient();
+
+    // Act
+    var openApiDoc = await GetOpenApiDocument(client);
+    var getAllOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!;
+    var limitParam = getAllOp.Parameters!.FirstOrDefault(p => p.Name == "limit");
+
+    // Assert
+    limitParam.Should().NotBeNull();
+    limitParam!.Schema!.Minimum.Should().Be("1");
+    limitParam.Schema.Maximum.Should().Be("500");
+    limitParam.Schema.Default.Should().NotBeNull();
+    limitParam.Schema.Default!.GetValue<int>().Should().Be(50);
+
+    // Description should reflect custom values
+    limitParam.Description.Should().Contain("1-500");
+    limitParam.Description.Should().Contain("Default: 50");
   }
 
   [Fact]

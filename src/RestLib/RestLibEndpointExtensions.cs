@@ -105,11 +105,15 @@ public static class RestLibEndpointExtensions
       tagRegistry?.Set(tag, openApiConfig.TagDescription);
     }
 
+    // Resolve RestLib options for OpenAPI metadata (pagination limits)
+    var restLibOptions = ((IEndpointRouteBuilder)group).ServiceProvider.GetService<RestLibOptions>()
+                         ?? new RestLibOptions();
+
     // GET /prefix - Get all (paginated)
     if (config.IsOperationEnabled(RestLibOperation.GetAll))
     {
       var getAllEndpoint = group.MapGet("", GetAllHandler.CreateDelegate<TEntity, TKey>(config));
-      OpenApiEndpointConfiguration.ConfigureGetAllEndpoint(getAllEndpoint, config, baseEntityName, entityName);
+      OpenApiEndpointConfiguration.ConfigureGetAllEndpoint(getAllEndpoint, config, baseEntityName, entityName, restLibOptions);
 
       // Add OpenAPI documentation for filter parameters
       if (config.HasFilters)

@@ -99,11 +99,17 @@ internal static class OpenApiEndpointConfiguration
     /// <summary>
     /// Configures the GetAll endpoint with proper OpenAPI documentation.
     /// </summary>
+    /// <param name="endpoint">The route handler builder.</param>
+    /// <param name="config">The endpoint configuration.</param>
+    /// <param name="entityName">The clean entity type name.</param>
+    /// <param name="endpointNamePrefix">The unique endpoint name prefix for operation IDs.</param>
+    /// <param name="options">The RestLib options (used for pagination limits in OpenAPI schema).</param>
     internal static void ConfigureGetAllEndpoint<TEntity, TKey>(
         RouteHandlerBuilder endpoint,
         RestLibEndpointConfiguration<TEntity, TKey> config,
         string entityName,
-        string endpointNamePrefix)
+        string endpointNamePrefix,
+        RestLibOptions options)
         where TEntity : class
     {
         ConfigureEndpointBase(
@@ -127,14 +133,14 @@ internal static class OpenApiEndpointConfiguration
 
             // Document limit parameter
             AddOrUpdateParameter(operation, "limit", ParameterLocation.Query, false,
-                "Maximum number of items to return per page. Valid range: 1-100. Default: 20.",
+                $"Maximum number of items to return per page. Valid range: 1-{options.MaxPageSize}. Default: {options.DefaultPageSize}.",
                 new OpenApiSchema
                 {
                     Type = JsonSchemaType.Integer,
                     Format = "int32",
                     Minimum = "1",
-                    Maximum = "100",
-                    Default = JsonValue.Create(20)
+                    Maximum = options.MaxPageSize.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    Default = JsonValue.Create(options.DefaultPageSize)
                 });
 
             // Document responses
