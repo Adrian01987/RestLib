@@ -195,7 +195,7 @@ public static class RestLibEndpointExtensions
     // GET /prefix/{id} - Get by ID
     if (config.IsOperationEnabled(RestLibOperation.GetById))
     {
-      var getByIdEndpoint = group.MapGet("/{id}", GetByIdHandler.CreateDelegate<TEntity, TKey>(config, entityName));
+      var getByIdEndpoint = group.MapGet("/{id}", GetByIdHandler.CreateDelegate<TEntity, TKey>(config, baseEntityName));
       OpenApiEndpointConfiguration.ConfigureGetByIdEndpoint(getByIdEndpoint, config, baseEntityName, entityName);
 
       // Add OpenAPI documentation for fields parameter
@@ -232,21 +232,21 @@ public static class RestLibEndpointExtensions
     // PUT /prefix/{id} - Full Update
     if (config.IsOperationEnabled(RestLibOperation.Update))
     {
-      var updateEndpoint = group.MapPut("/{id}", UpdateHandler.CreateDelegate<TEntity, TKey>(config, entityName));
+      var updateEndpoint = group.MapPut("/{id}", UpdateHandler.CreateDelegate<TEntity, TKey>(config, baseEntityName));
       OpenApiEndpointConfiguration.ConfigureUpdateEndpoint(updateEndpoint, config, baseEntityName, entityName);
     } // end Update
 
     // PATCH /prefix/{id} - Partial Update (JSON Merge Patch - RFC 7396)
     if (config.IsOperationEnabled(RestLibOperation.Patch))
     {
-      var patchEndpoint = group.MapPatch("/{id}", PatchHandler.CreateDelegate<TEntity, TKey>(config, entityName));
+      var patchEndpoint = group.MapPatch("/{id}", PatchHandler.CreateDelegate<TEntity, TKey>(config, baseEntityName));
       OpenApiEndpointConfiguration.ConfigurePatchEndpoint(patchEndpoint, config, baseEntityName, entityName);
     } // end Patch
 
     // DELETE /prefix/{id} - Delete
     if (config.IsOperationEnabled(RestLibOperation.Delete))
     {
-      var deleteEndpoint = group.MapDelete("/{id}", DeleteHandler.CreateDelegate<TEntity, TKey>(config, entityName));
+      var deleteEndpoint = group.MapDelete("/{id}", DeleteHandler.CreateDelegate<TEntity, TKey>(config, baseEntityName));
       OpenApiEndpointConfiguration.ConfigureDeleteEndpoint(deleteEndpoint, config, baseEntityName, entityName);
     } // end Delete
 

@@ -209,6 +209,22 @@ public class ProblemDetailsTests : IDisposable
   }
 
   [Fact]
+  public async Task NotFound_Detail_Contains_CleanTypeName_Not_InternalEndpointName()
+  {
+    // Arrange
+    var nonExistentId = Guid.NewGuid();
+
+    // Act
+    var response = await _client.GetAsync($"/api/products/{nonExistentId}");
+    var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
+
+    // Assert — detail should contain the clean type name, not the internal endpoint name with route suffix
+    problem.Should().NotBeNull();
+    problem!.Detail.Should().Contain("ProductEntity");
+    problem.Detail.Should().NotContain("ProductEntity_");
+  }
+
+  [Fact]
   public async Task NotFound_Instance_Contains_RequestPath()
   {
     // Arrange

@@ -18,7 +18,7 @@ internal static class UpdateHandler
     /// <typeparam name="TEntity">The entity type.</typeparam>
     /// <typeparam name="TKey">The key type.</typeparam>
     /// <param name="config">The endpoint configuration.</param>
-    /// <param name="entityName">The unique entity name used in error messages.</param>
+    /// <param name="entityName">The clean entity type name used in error messages (e.g., "Product").</param>
     /// <returns>The request delegate.</returns>
     internal static Func<TKey, TEntity, IRepository<TEntity, TKey>, HttpContext, CancellationToken, Task<IResult>>
         CreateDelegate<TEntity, TKey>(
