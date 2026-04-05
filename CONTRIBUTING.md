@@ -8,7 +8,7 @@ The following is a set of guidelines for contributing to RestLib. These are most
 
 ### Prerequisites
 
-*   [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) or later.
+*   [.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) or later.
 *   An IDE of your choice (VS Code, Visual Studio, Rider).
 
 ### Building the Project

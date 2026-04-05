@@ -46,14 +46,14 @@ public static RouteGroupBuilder MapRestLib<TEntity, TKey>(
 
 1. **Alignment with vision:** RestLib's goal is "minimal boilerplate" — Minimal APIs embody this philosophy
 2. **Performance:** Faster startup time and lower memory footprint compared to controller-based routing
-3. **.NET 8 maturity:** Route groups, endpoint filters, and OpenAPI support are now feature-complete
+3. **.NET 10 maturity:** Route groups, endpoint filters, and OpenAPI support are now feature-complete
 4. **AOT compatibility:** Better support for Native AOT compilation, important for cloud-native scenarios
 5. **Simplicity:** No need for controller base classes, attributes, or conventions — just functions
 6. **Composability:** `RouteGroupBuilder` allows further customization by the consumer
 
 ## Consequences
 
-- **Requires .NET 8 or later** — we don't support older frameworks
+- **Requires .NET 10 or later** — we don't support older frameworks
 - **Some advanced filter scenarios** need custom implementation (though endpoint filters help)
 - **Documentation should cover** Minimal API concepts for developers unfamiliar with the paradigm
 - **Route groups enable** clean prefix handling and shared metadata
@@ -75,5 +75,5 @@ For `app.MapRestLib<Product, Guid>("/api/products")`:
 ## References
 
 - [Microsoft - Minimal APIs Overview](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/minimal-apis/overview)
-- [.NET 8 Minimal API Improvements](https://learn.microsoft.com/en-us/aspnet/core/release-notes/aspnetcore-8.0)
+- [.NET 10 Minimal API Improvements](https://learn.microsoft.com/en-us/aspnet/core/release-notes/aspnetcore-10.0)
 - [Route Groups in ASP.NET Core](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/minimal-apis/route-handlers#route-groups)
