@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using RestLib.Abstractions;
-using RestLib.Caching;
 using RestLib.Configuration;
 using RestLib.Hooks;
 
@@ -65,36 +64,10 @@ internal static class UpdateHandler
                 if (hookContext is not null) entity = hookContext.Entity ?? entity;
 
                 // Check for ETag precondition (If-Match header)
-                if (options.EnableETagSupport)
-                {
-                    var ifMatchHeader = httpContext.Request.Headers.IfMatch;
-                    if (!Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(ifMatchHeader))
-                    {
-                        // Get current entity to compare ETags
-                        var current = await repository.GetByIdAsync(id, ct);
-                        if (current is null)
-                        {
-                            return Responses.ProblemDetailsResult.NotFound(
-                                entityName,
-                                id!,
-                                httpContext.Request.Path,
-                                jsonOptions);
-                        }
-
-                        var etagGenerator = EndpointHelpers.ResolveETagGenerator(httpContext, jsonOptions);
-                        var currentETag = etagGenerator.Generate(current);
-
-                        if (!ETagComparer.IfMatchSucceeds(ifMatchHeader, currentETag))
-                        {
-                            return Responses.ProblemDetailsResult.PreconditionFailed(
-                                "The resource has been modified since you last retrieved it.",
-                                httpContext.Request.Path,
-                                jsonOptions);
-                        }
-
-                        originalEntity = current;
-                    }
-                }
+                var (etagEntity, etagError) = await EndpointHelpers.CheckIfMatchPreconditionAsync(
+                    httpContext, repository, id, entityName, options, jsonOptions, ct);
+                if (etagError is not null) return etagError;
+                if (etagEntity is not null) originalEntity = etagEntity;
 
                 // Fetch original entity if not already fetched (for hooks)
                 if (originalEntity is null && pipeline is not null)
