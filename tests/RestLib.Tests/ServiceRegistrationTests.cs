@@ -445,6 +445,36 @@ public class ServiceRegistrationTests
 
   [Fact]
   [Trait("Category", "Story1.3")]
+  public void AddRestLib_NegativeMaxFilterInListSize_ThrowsInvalidOperationException()
+  {
+    // Arrange
+    var services = new ServiceCollection();
+
+    // Act
+    var act = () => services.AddRestLib(o => o.MaxFilterInListSize = -1);
+
+    // Assert
+    act.Should().Throw<InvalidOperationException>()
+        .WithMessage("*MaxFilterInListSize*greater than 0*-1*");
+  }
+
+  [Fact]
+  [Trait("Category", "Story1.3")]
+  public void AddRestLib_ZeroMaxFilterInListSize_ThrowsInvalidOperationException()
+  {
+    // Arrange
+    var services = new ServiceCollection();
+
+    // Act
+    var act = () => services.AddRestLib(o => o.MaxFilterInListSize = 0);
+
+    // Assert
+    act.Should().Throw<InvalidOperationException>()
+        .WithMessage("*MaxFilterInListSize*greater than 0*0*");
+  }
+
+  [Fact]
+  [Trait("Category", "Story1.3")]
   public void AddRestLib_ValidCustomOptions_DoesNotThrow()
   {
     // Arrange

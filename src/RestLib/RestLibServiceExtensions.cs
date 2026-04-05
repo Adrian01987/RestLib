@@ -300,5 +300,11 @@ public static class RestLibServiceExtensions
       throw new InvalidOperationException(
           $"RestLibOptions.MaxBatchSize must be 0 or greater. Current value: {options.MaxBatchSize}.");
     }
+
+    if (options.MaxFilterInListSize <= 0)
+    {
+      throw new InvalidOperationException(
+          $"RestLibOptions.MaxFilterInListSize must be greater than 0. Current value: {options.MaxFilterInListSize}.");
+    }
   }
 }
