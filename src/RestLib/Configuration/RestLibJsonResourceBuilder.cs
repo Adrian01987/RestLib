@@ -23,6 +23,7 @@ internal static class RestLibJsonResourceBuilder
       RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
       RestLibJsonResourceConfiguration jsonConfiguration)
       where TEntity : class
+      where TKey : notnull
   {
     ArgumentNullException.ThrowIfNull(endpointConfiguration);
     ArgumentNullException.ThrowIfNull(jsonConfiguration);
@@ -52,6 +53,7 @@ internal static class RestLibJsonResourceBuilder
       IServiceProvider services,
       RestLibJsonHookConfiguration? hookConfiguration)
       where TEntity : class
+      where TKey : notnull
   {
     ArgumentNullException.ThrowIfNull(services);
 
@@ -82,6 +84,7 @@ internal static class RestLibJsonResourceBuilder
       RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
       RestLibJsonResourceConfiguration jsonConfiguration)
       where TEntity : class
+      where TKey : notnull
   {
     var keyPropertyName = jsonConfiguration.KeyProperty;
     if (string.IsNullOrWhiteSpace(keyPropertyName))
@@ -107,6 +110,7 @@ internal static class RestLibJsonResourceBuilder
       RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
       RestLibJsonResourceConfiguration jsonConfiguration)
       where TEntity : class
+      where TKey : notnull
   {
     if (jsonConfiguration.AllowAnonymousAll)
     {
@@ -129,6 +133,7 @@ internal static class RestLibJsonResourceBuilder
       RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
       RestLibJsonResourceConfiguration jsonConfiguration)
       where TEntity : class
+      where TKey : notnull
   {
     var operations = jsonConfiguration.Operations;
     if (operations is null)
@@ -155,6 +160,7 @@ internal static class RestLibJsonResourceBuilder
       RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
       RestLibJsonResourceConfiguration jsonConfiguration)
       where TEntity : class
+      where TKey : notnull
   {
     // Properties with explicit operators (takes precedence)
     var operatorProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -200,6 +206,7 @@ internal static class RestLibJsonResourceBuilder
       RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
       RestLibJsonResourceConfiguration jsonConfiguration)
       where TEntity : class
+      where TKey : notnull
   {
     if (jsonConfiguration.Sorting.Count == 0)
       return;
@@ -216,6 +223,7 @@ internal static class RestLibJsonResourceBuilder
       RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
       RestLibJsonResourceConfiguration jsonConfiguration)
       where TEntity : class
+      where TKey : notnull
   {
     if (jsonConfiguration.FieldSelection.Count == 0)
       return;
@@ -227,6 +235,7 @@ internal static class RestLibJsonResourceBuilder
       RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
       RestLibJsonResourceConfiguration jsonConfiguration)
       where TEntity : class
+      where TKey : notnull
   {
     var batch = jsonConfiguration.Batch;
     if (batch is null)
@@ -246,6 +255,7 @@ internal static class RestLibJsonResourceBuilder
       RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
       RestLibJsonResourceConfiguration jsonConfiguration)
       where TEntity : class
+      where TKey : notnull
   {
     var rateLimiting = jsonConfiguration.RateLimiting;
     if (rateLimiting is null)
@@ -272,6 +282,7 @@ internal static class RestLibJsonResourceBuilder
       RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
       RestLibJsonOpenApiConfiguration? openApiConfiguration)
       where TEntity : class
+      where TKey : notnull
   {
     if (openApiConfiguration is null)
       return;
@@ -351,6 +362,7 @@ internal static class RestLibJsonResourceBuilder
       IRestLibNamedHookResolver<TEntity, TKey> resolver,
       RestLibJsonHookStage? stage)
       where TEntity : class
+      where TKey : notnull
   {
     if (stage is null)
       return null;
@@ -386,6 +398,7 @@ internal static class RestLibJsonResourceBuilder
       IRestLibNamedHookResolver<TEntity, TKey> resolver,
       RestLibJsonErrorHookStage? stage)
       where TEntity : class
+      where TKey : notnull
   {
     if (stage is null)
       return null;
@@ -421,6 +434,7 @@ internal static class RestLibJsonResourceBuilder
       IRestLibNamedHookResolver<TEntity, TKey> resolver,
       IEnumerable<string> hookNames)
       where TEntity : class
+      where TKey : notnull
   {
     var hooks = new List<RestLibHookDelegate<TEntity, TKey>>();
     foreach (var hookName in hookNames)
@@ -435,6 +449,7 @@ internal static class RestLibJsonResourceBuilder
       IRestLibNamedHookResolver<TEntity, TKey> resolver,
       IReadOnlyDictionary<string, List<string>> stageConfiguration)
       where TEntity : class
+      where TKey : notnull
   {
     var hooks = new Dictionary<RestLibOperation, List<RestLibHookDelegate<TEntity, TKey>>>();
     foreach (var entry in stageConfiguration)
@@ -450,6 +465,7 @@ internal static class RestLibJsonResourceBuilder
       IRestLibNamedHookResolver<TEntity, TKey> resolver,
       IEnumerable<string> hookNames)
       where TEntity : class
+      where TKey : notnull
   {
     var hooks = new List<RestLibErrorHookDelegate<TEntity, TKey>>();
     foreach (var hookName in hookNames)
@@ -464,6 +480,7 @@ internal static class RestLibJsonResourceBuilder
       IRestLibNamedHookResolver<TEntity, TKey> resolver,
       IReadOnlyDictionary<string, List<string>> stageConfiguration)
       where TEntity : class
+      where TKey : notnull
   {
     var hooks = new Dictionary<RestLibOperation, List<RestLibErrorHookDelegate<TEntity, TKey>>>();
     foreach (var entry in stageConfiguration)

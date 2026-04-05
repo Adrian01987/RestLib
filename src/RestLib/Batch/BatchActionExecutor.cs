@@ -41,6 +41,7 @@ internal static class BatchActionExecutor
         RestLibOptions options,
         CancellationToken ct)
         where TEntity : class
+        where TKey : notnull
     {
         if (validItems.Count == 0)
         {
@@ -149,6 +150,7 @@ internal static class BatchActionExecutor
         RestLibOptions options,
         CancellationToken ct)
         where TEntity : class
+        where TKey : notnull
     {
         if (validItems.Count == 0)
         {
@@ -274,6 +276,7 @@ internal static class BatchActionExecutor
         JsonSerializerOptions jsonOptions,
         CancellationToken ct)
         where TEntity : class
+        where TKey : notnull
     {
         if (validItems.Count == 0)
         {
@@ -477,6 +480,7 @@ internal static class BatchActionExecutor
         RestLibOptions options,
         CancellationToken ct)
         where TEntity : class
+        where TKey : notnull
     {
         if (validKeys.Count == 0)
         {
@@ -642,6 +646,7 @@ internal static class BatchActionExecutor
         TKey? resourceId = default,
         TEntity? entity = default)
         where TEntity : class
+        where TKey : notnull
     {
         if (pipeline is not null)
         {

@@ -25,6 +25,7 @@ internal static class GetAllHandler
     internal static Func<IRepository<TEntity, TKey>, HttpContext, string?, int?, CancellationToken, Task<IResult>>
         CreateDelegate<TEntity, TKey>(RestLibEndpointConfiguration<TEntity, TKey> config)
         where TEntity : class
+        where TKey : notnull
     {
         return async (
             repository,

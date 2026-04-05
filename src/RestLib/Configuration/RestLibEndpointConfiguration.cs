@@ -15,6 +15,7 @@ namespace RestLib.Configuration;
 /// <typeparam name="TKey">The key type.</typeparam>
 public class RestLibEndpointConfiguration<TEntity, TKey>
     where TEntity : class
+    where TKey : notnull
 {
   private readonly HashSet<RestLibOperation> _anonymousOperations = [];
   private readonly Dictionary<RestLibOperation, string[]> _operationPolicies = [];

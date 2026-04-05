@@ -8,7 +8,9 @@ namespace RestLib.Abstractions;
 /// </summary>
 /// <typeparam name="TEntity">The entity type.</typeparam>
 /// <typeparam name="TKey">The key type.</typeparam>
-public interface IRepository<TEntity, TKey> where TEntity : class
+public interface IRepository<TEntity, TKey>
+    where TEntity : class
+    where TKey : notnull
 {
     /// <summary>
     /// Gets an entity by its identifier.

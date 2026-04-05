@@ -19,6 +19,7 @@ internal static class CreateHandler
     internal static Func<TEntity, IRepository<TEntity, TKey>, HttpContext, CancellationToken, Task<IResult>>
         CreateDelegate<TEntity, TKey>(RestLibEndpointConfiguration<TEntity, TKey> config)
         where TEntity : class
+        where TKey : notnull
     {
         return async (
             TEntity entity,

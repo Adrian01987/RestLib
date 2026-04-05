@@ -85,6 +85,7 @@ internal static class BatchActionValidator
         RestLibOptions options,
         JsonSerializerOptions jsonOptions)
         where TEntity : class
+        where TKey : notnull
     {
         if (entity is null)
         {
@@ -147,6 +148,7 @@ internal static class BatchActionValidator
         JsonSerializerOptions jsonOptions,
         CancellationToken ct)
         where TEntity : class
+        where TKey : notnull
     {
         if (item is null)
         {
@@ -232,6 +234,7 @@ internal static class BatchActionValidator
         HookPipeline<TEntity, TKey>? pipeline,
         CancellationToken ct)
         where TEntity : class
+        where TKey : notnull
     {
         if (item is null)
         {
@@ -282,6 +285,7 @@ internal static class BatchActionValidator
         HttpContext httpContext,
         HookPipeline<TEntity, TKey>? pipeline)
         where TEntity : class
+        where TKey : notnull
     {
         if (key is null)
         {
@@ -315,6 +319,7 @@ internal static class BatchActionValidator
         int index,
         HookContext<TEntity, TKey> hookContext)
         where TEntity : class
+        where TKey : notnull
     {
         if (hookContext.EarlyResult is null)
         {
@@ -352,6 +357,7 @@ internal static class BatchActionValidator
         HookPipeline<TEntity, TKey> pipeline,
         HookContext<TEntity, TKey> hookContext)
         where TEntity : class
+        where TKey : notnull
     {
         var received = await pipeline.ExecuteOnRequestReceivedAsync(hookContext);
         if (!received)

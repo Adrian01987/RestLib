@@ -26,6 +26,7 @@ internal static class GetByIdHandler
             RestLibEndpointConfiguration<TEntity, TKey> config,
             string entityName)
         where TEntity : class
+        where TKey : notnull
     {
         return async (
             TKey id,

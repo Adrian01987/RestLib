@@ -352,6 +352,7 @@ public class ProductEntityRepository : IRepository<ProductEntity, Guid>
 /// </summary>
 public class RepositorySpy<TEntity, TKey> : IRepository<TEntity, TKey>
     where TEntity : class
+    where TKey : notnull
 {
   private readonly IRepository<TEntity, TKey> _inner;
 
@@ -404,6 +405,7 @@ public class RepositorySpy<TEntity, TKey> : IRepository<TEntity, TKey>
 /// </summary>
 public class BatchRepositorySpy<TEntity, TKey> : IBatchRepository<TEntity, TKey>
     where TEntity : class
+    where TKey : notnull
 {
   private readonly IBatchRepository<TEntity, TKey> _inner;
 

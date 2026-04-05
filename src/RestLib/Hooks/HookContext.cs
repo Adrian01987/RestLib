@@ -11,7 +11,7 @@ namespace RestLib.Hooks;
 /// The context provides access to the HTTP context, the current operation,
 /// and allows hooks to inspect/modify the entity or short-circuit the pipeline.
 /// </remarks>
-public class HookContext<TEntity, TKey> where TEntity : class
+public class HookContext<TEntity, TKey> where TEntity : class where TKey : notnull
 {
   /// <summary>
   /// Gets the current HTTP context.

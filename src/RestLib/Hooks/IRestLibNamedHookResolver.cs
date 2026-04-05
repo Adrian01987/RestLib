@@ -7,6 +7,7 @@ namespace RestLib.Hooks;
 /// <typeparam name="TKey">The key type.</typeparam>
 public interface IRestLibNamedHookResolver<TEntity, TKey>
     where TEntity : class
+    where TKey : notnull
 {
   /// <summary>
   /// Resolves a named standard hook.
@@ -30,6 +31,7 @@ public interface IRestLibNamedHookResolver<TEntity, TKey>
 /// <typeparam name="TKey">The key type.</typeparam>
 public sealed class RestLibNamedHookResolver<TEntity, TKey> : IRestLibNamedHookResolver<TEntity, TKey>
     where TEntity : class
+    where TKey : notnull
 {
   private readonly Dictionary<string, RestLibHookDelegate<TEntity, TKey>> _hooks =
       new(StringComparer.OrdinalIgnoreCase);

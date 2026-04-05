@@ -23,6 +23,7 @@ internal static class BatchHandler
     internal static Func<HttpContext, Task<IResult>>
         CreateDelegate<TEntity, TKey>(RestLibEndpointConfiguration<TEntity, TKey> config)
         where TEntity : class
+        where TKey : notnull
     {
         return async httpContext =>
         {

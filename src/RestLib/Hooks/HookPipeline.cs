@@ -7,7 +7,7 @@ namespace RestLib.Hooks;
 /// </summary>
 /// <typeparam name="TEntity">The entity type being processed.</typeparam>
 /// <typeparam name="TKey">The key type of the entity.</typeparam>
-internal sealed class HookPipeline<TEntity, TKey> where TEntity : class
+internal sealed class HookPipeline<TEntity, TKey> where TEntity : class where TKey : notnull
 {
   private readonly RestLibHooks<TEntity, TKey> _hooks;
   private readonly IDictionary<string, object?> _sharedItems;

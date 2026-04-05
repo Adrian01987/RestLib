@@ -40,6 +40,7 @@ internal static class BatchProcessor
         JsonSerializerOptions jsonOptions,
         CancellationToken ct)
         where TEntity : class
+        where TKey : notnull
     {
         var items = BatchActionValidator.DeserializeArray<TEntity>(itemsElement, jsonOptions);
         if (items is null)
@@ -97,6 +98,7 @@ internal static class BatchProcessor
         JsonSerializerOptions jsonOptions,
         CancellationToken ct)
         where TEntity : class
+        where TKey : notnull
     {
         var items = BatchActionValidator.DeserializeArray<BatchUpdateItem<TKey>>(itemsElement, jsonOptions);
         if (items is null)
@@ -154,6 +156,7 @@ internal static class BatchProcessor
         JsonSerializerOptions jsonOptions,
         CancellationToken ct)
         where TEntity : class
+        where TKey : notnull
     {
         var items = BatchActionValidator.DeserializeArray<BatchUpdateItem<TKey>>(itemsElement, jsonOptions);
         if (items is null)
@@ -211,6 +214,7 @@ internal static class BatchProcessor
         JsonSerializerOptions jsonOptions,
         CancellationToken ct)
         where TEntity : class
+        where TKey : notnull
     {
         var keys = BatchActionValidator.DeserializeArray<TKey>(itemsElement, jsonOptions);
         if (keys is null)

@@ -29,6 +29,7 @@ internal static class OpenApiEndpointConfiguration
         string defaultSummary,
         string defaultDescription)
         where TEntity : class
+        where TKey : notnull
     {
         var openApiConfig = config.OpenApi;
 
@@ -111,6 +112,7 @@ internal static class OpenApiEndpointConfiguration
         string endpointNamePrefix,
         RestLibOptions options)
         where TEntity : class
+        where TKey : notnull
     {
         ConfigureEndpointBase(
             endpoint,
@@ -175,6 +177,7 @@ internal static class OpenApiEndpointConfiguration
         string entityName,
         string endpointNamePrefix)
         where TEntity : class
+        where TKey : notnull
     {
         ConfigureEndpointBase(
             endpoint,
@@ -240,6 +243,7 @@ internal static class OpenApiEndpointConfiguration
         string entityName,
         string endpointNamePrefix)
         where TEntity : class
+        where TKey : notnull
     {
         ConfigureEndpointBase(
             endpoint,
@@ -313,6 +317,7 @@ internal static class OpenApiEndpointConfiguration
         string entityName,
         string endpointNamePrefix)
         where TEntity : class
+        where TKey : notnull
     {
         ConfigureEndpointBase(
             endpoint,
@@ -394,6 +399,7 @@ internal static class OpenApiEndpointConfiguration
         string entityName,
         string endpointNamePrefix)
         where TEntity : class
+        where TKey : notnull
     {
         ConfigureEndpointBase(
             endpoint,
@@ -480,6 +486,7 @@ internal static class OpenApiEndpointConfiguration
         string entityName,
         string endpointNamePrefix)
         where TEntity : class
+        where TKey : notnull
     {
         ConfigureEndpointBase(
             endpoint,
@@ -528,6 +535,7 @@ internal static class OpenApiEndpointConfiguration
         string entityName,
         string endpointNamePrefix)
         where TEntity : class
+        where TKey : notnull
     {
         // Use BatchCreate as the representative operation for auth/rate-limiting
         ConfigureEndpointBase(

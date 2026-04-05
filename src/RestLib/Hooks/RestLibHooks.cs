@@ -8,7 +8,8 @@ namespace RestLib.Hooks;
 /// <param name="context">The hook context containing request information.</param>
 /// <returns>A task representing the asynchronous operation.</returns>
 public delegate Task RestLibHookDelegate<TEntity, TKey>(HookContext<TEntity, TKey> context)
-  where TEntity : class;
+  where TEntity : class
+  where TKey : notnull;
 
 /// <summary>
 /// Delegate for error hooks in the RestLib request processing pipeline.
@@ -18,7 +19,8 @@ public delegate Task RestLibHookDelegate<TEntity, TKey>(HookContext<TEntity, TKe
 /// <param name="context">The error hook context containing exception information.</param>
 /// <returns>A task representing the asynchronous operation.</returns>
 public delegate Task RestLibErrorHookDelegate<TEntity, TKey>(ErrorHookContext<TEntity, TKey> context)
-  where TEntity : class;
+  where TEntity : class
+  where TKey : notnull;
 
 /// <summary>
 /// Defines the hooks available in the RestLib request processing pipeline.
@@ -37,7 +39,7 @@ public delegate Task RestLibErrorHookDelegate<TEntity, TKey>(ErrorHookContext<TE
 /// <para>If an exception occurs, <see cref="OnError"/> is called instead of continuing the normal pipeline.</para>
 /// <para>All hooks are optional and support async execution.</para>
 /// </remarks>
-public class RestLibHooks<TEntity, TKey> where TEntity : class
+public class RestLibHooks<TEntity, TKey> where TEntity : class where TKey : notnull
 {
   /// <summary>
   /// Called when a request is first received, before any processing.

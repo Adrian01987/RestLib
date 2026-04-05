@@ -23,7 +23,8 @@ internal readonly record struct PipelineInitResult<TEntity, TKey>(
     HookPipeline<TEntity, TKey>? Pipeline,
     HookContext<TEntity, TKey>? Context,
     IResult? EarlyResult)
-    where TEntity : class;
+    where TEntity : class
+    where TKey : notnull;
 
 /// <summary>
 /// Shared helper methods used by the individual endpoint handlers.
@@ -55,6 +56,7 @@ internal static class EndpointHelpers
         TKey? resourceId = default,
         TEntity? entity = default)
         where TEntity : class
+        where TKey : notnull
     {
         if (hooks is null)
         {
@@ -81,6 +83,7 @@ internal static class EndpointHelpers
         Func<HookContext<TEntity, TKey>, Task<bool>> hookExecutor,
         HookContext<TEntity, TKey> hookContext)
         where TEntity : class
+        where TKey : notnull
     {
         if (!await hookExecutor(hookContext))
         {
@@ -106,6 +109,7 @@ internal static class EndpointHelpers
         HookContext<TEntity, TKey>? hookContext,
         Func<HookPipeline<TEntity, TKey>, Func<HookContext<TEntity, TKey>, Task<bool>>> stageSelector)
         where TEntity : class
+        where TKey : notnull
     {
         if (pipeline is null || hookContext is null)
         {
@@ -136,6 +140,7 @@ internal static class EndpointHelpers
         TKey? resourceId = default,
         TEntity? entity = default)
         where TEntity : class
+        where TKey : notnull
     {
         if (pipeline is null) return null;
 
@@ -373,6 +378,7 @@ internal static class EndpointHelpers
         JsonSerializerOptions jsonOptions,
         CancellationToken ct)
         where TEntity : class
+        where TKey : notnull
     {
         if (!options.EnableETagSupport)
         {
@@ -422,6 +428,7 @@ internal static class EndpointHelpers
     /// <returns>The extracted key value, or default if not found.</returns>
     internal static TKey? GetEntityKey<TEntity, TKey>(TEntity entity, Func<TEntity, TKey>? keySelector)
         where TEntity : class
+        where TKey : notnull
     {
         if (keySelector is not null)
         {

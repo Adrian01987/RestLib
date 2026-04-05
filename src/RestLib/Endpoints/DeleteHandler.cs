@@ -23,6 +23,7 @@ internal static class DeleteHandler
             RestLibEndpointConfiguration<TEntity, TKey> config,
             string entityName)
         where TEntity : class
+        where TKey : notnull
     {
         return async (
             TKey id,

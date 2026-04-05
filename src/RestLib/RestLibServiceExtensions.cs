@@ -77,6 +77,7 @@ public static class RestLibServiceExtensions
       this IServiceCollection services,
       RestLibJsonResourceConfiguration configuration)
       where TEntity : class
+      where TKey : notnull
   {
     ArgumentNullException.ThrowIfNull(services);
     ArgumentNullException.ThrowIfNull(configuration);
@@ -119,6 +120,7 @@ public static class RestLibServiceExtensions
       this IServiceCollection services,
       IConfigurationSection configurationSection)
       where TEntity : class
+      where TKey : notnull
   {
     ArgumentNullException.ThrowIfNull(services);
     ArgumentNullException.ThrowIfNull(configurationSection);
@@ -144,6 +146,7 @@ public static class RestLibServiceExtensions
       string name,
       RestLibHookDelegate<TEntity, TKey> hook)
       where TEntity : class
+      where TKey : notnull
   {
     ArgumentNullException.ThrowIfNull(services);
     ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -169,6 +172,7 @@ public static class RestLibServiceExtensions
       string name,
       RestLibErrorHookDelegate<TEntity, TKey> hook)
       where TEntity : class
+      where TKey : notnull
   {
     ArgumentNullException.ThrowIfNull(services);
     ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -193,6 +197,7 @@ public static class RestLibServiceExtensions
       this IServiceCollection services,
       ServiceLifetime lifetime = ServiceLifetime.Scoped)
       where TEntity : class
+      where TKey : notnull
       where TRepository : class, IRepository<TEntity, TKey>
   {
     ArgumentNullException.ThrowIfNull(services);
@@ -221,6 +226,7 @@ public static class RestLibServiceExtensions
       Func<IServiceProvider, IRepository<TEntity, TKey>> implementationFactory,
       ServiceLifetime lifetime = ServiceLifetime.Scoped)
       where TEntity : class
+      where TKey : notnull
   {
     ArgumentNullException.ThrowIfNull(services);
     ArgumentNullException.ThrowIfNull(implementationFactory);
@@ -254,6 +260,7 @@ public static class RestLibServiceExtensions
   private static RestLibNamedHookResolver<TEntity, TKey> GetOrCreateNamedHookResolver<TEntity, TKey>(
       IServiceCollection services)
       where TEntity : class
+      where TKey : notnull
   {
     var descriptor = services.LastOrDefault(d =>
         d.ServiceType == typeof(RestLibNamedHookResolver<TEntity, TKey>) &&

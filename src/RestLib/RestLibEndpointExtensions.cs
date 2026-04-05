@@ -36,6 +36,7 @@ public static class RestLibEndpointExtensions
       string prefix,
       Action<RestLibEndpointConfiguration<TEntity, TKey>>? configure = null)
       where TEntity : class
+      where TKey : notnull
   {
     var group = endpoints.MapGroup(prefix);
     ConfigureRestLibEndpoints(group, configure, prefix);
@@ -56,6 +57,7 @@ public static class RestLibEndpointExtensions
       this RouteGroupBuilder group,
       Action<RestLibEndpointConfiguration<TEntity, TKey>>? configure = null)
       where TEntity : class
+      where TKey : notnull
   {
     ArgumentNullException.ThrowIfNull(group);
     ConfigureRestLibEndpoints(group, configure, routePrefix: null);
@@ -70,6 +72,7 @@ public static class RestLibEndpointExtensions
       Action<RestLibEndpointConfiguration<TEntity, TKey>>? configure,
       string? routePrefix)
       where TEntity : class
+      where TKey : notnull
   {
     var config = new RestLibEndpointConfiguration<TEntity, TKey>();
     configure?.Invoke(config);

@@ -11,7 +11,7 @@ namespace RestLib.Hooks;
 /// The error context extends the standard hook context with exception information
 /// and allows hooks to handle errors and provide custom error responses.
 /// </remarks>
-public class ErrorHookContext<TEntity, TKey> where TEntity : class
+public class ErrorHookContext<TEntity, TKey> where TEntity : class where TKey : notnull
 {
   /// <summary>
   /// Gets the current HTTP context.

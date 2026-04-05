@@ -12,6 +12,7 @@ namespace RestLib.Abstractions;
 /// <typeparam name="TKey">The type of the entity's primary key.</typeparam>
 public interface IBatchRepository<TEntity, TKey>
     where TEntity : class
+    where TKey : notnull
 {
     /// <summary>
     /// Creates multiple entities in a single operation.
