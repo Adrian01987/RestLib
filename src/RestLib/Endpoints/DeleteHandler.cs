@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using RestLib.Abstractions;
+using RestLib.Caching;
 using RestLib.Configuration;
 using RestLib.Hooks;
 
@@ -30,7 +31,7 @@ internal static class DeleteHandler
             HttpContext httpContext,
             CancellationToken ct) =>
         {
-            var jsonOptions = EndpointHelpers.GetJsonOptions(httpContext);
+            var (jsonOptions, options) = EndpointHelpers.ResolveOptions(httpContext);
 
             // Initialize hook pipeline and run OnRequestReceived
             var (pipeline, hookContext, pipelineEarlyResult) = await EndpointHelpers.InitializePipelineAsync<TEntity, TKey>(
@@ -44,8 +45,40 @@ internal static class DeleteHandler
                 var onValidatedResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
                 if (onValidatedResult is not null) return onValidatedResult;
 
-                // Fetch entity for hooks if pipeline exists
-                if (pipeline is not null)
+                // Check for ETag precondition (If-Match header)
+                if (options.EnableETagSupport)
+                {
+                    var ifMatchHeader = httpContext.Request.Headers.IfMatch;
+                    if (!Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(ifMatchHeader))
+                    {
+                        // Get current entity to compare ETags
+                        var current = await repository.GetByIdAsync(id, ct);
+                        if (current is null)
+                        {
+                            return Responses.ProblemDetailsResult.NotFound(
+                                entityName,
+                                id!,
+                                httpContext.Request.Path,
+                                jsonOptions);
+                        }
+
+                        var etagGenerator = EndpointHelpers.ResolveETagGenerator(httpContext, jsonOptions);
+                        var currentETag = etagGenerator.Generate(current);
+
+                        if (!ETagComparer.IfMatchSucceeds(ifMatchHeader, currentETag))
+                        {
+                            return Responses.ProblemDetailsResult.PreconditionFailed(
+                                "The resource has been modified since you last retrieved it.",
+                                httpContext.Request.Path,
+                                jsonOptions);
+                        }
+
+                        entityToDelete = current;
+                    }
+                }
+
+                // Fetch entity for hooks if pipeline exists and not already fetched
+                if (entityToDelete is null && pipeline is not null)
                 {
                     entityToDelete = await repository.GetByIdAsync(id, ct);
                 }

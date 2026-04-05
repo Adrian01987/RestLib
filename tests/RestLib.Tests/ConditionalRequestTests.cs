@@ -424,6 +424,165 @@ public class ConditionalRequestTests : IDisposable
 
   #endregion
 
+  #region Delete If-Match Behavior
+
+  [Fact]
+  public async Task Delete_WithMatchingIfMatch_Returns_204()
+  {
+    // Arrange
+    var id = Guid.NewGuid();
+    _repository.Seed(
+        new ProductEntity { Id = id, ProductName = "Product", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
+    );
+
+    var getResponse = await _client.GetAsync($"/api/products/{id}");
+    var etag = getResponse.Headers.ETag!.Tag;
+
+    var request = new HttpRequestMessage(HttpMethod.Delete, $"/api/products/{id}");
+    request.Headers.TryAddWithoutValidation("If-Match", etag);
+
+    // Act
+    var response = await _client.SendAsync(request);
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+  }
+
+  [Fact]
+  public async Task Delete_WithNonMatchingIfMatch_Returns_412()
+  {
+    // Arrange
+    var id = Guid.NewGuid();
+    _repository.Seed(
+        new ProductEntity { Id = id, ProductName = "Product", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
+    );
+
+    var request = new HttpRequestMessage(HttpMethod.Delete, $"/api/products/{id}");
+    request.Headers.TryAddWithoutValidation("If-Match", "\"wrong-etag\"");
+
+    // Act
+    var response = await _client.SendAsync(request);
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
+  }
+
+  [Fact]
+  public async Task Delete_WithoutIfMatch_Returns_204()
+  {
+    // Arrange
+    var id = Guid.NewGuid();
+    _repository.Seed(
+        new ProductEntity { Id = id, ProductName = "Product", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
+    );
+
+    // Act
+    var response = await _client.DeleteAsync($"/api/products/{id}");
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+  }
+
+  [Fact]
+  public async Task Delete_NotFound_WithIfMatch_Returns_404()
+  {
+    // Arrange
+    var nonExistentId = Guid.NewGuid();
+    var request = new HttpRequestMessage(HttpMethod.Delete, $"/api/products/{nonExistentId}");
+    request.Headers.TryAddWithoutValidation("If-Match", "\"some-etag\"");
+
+    // Act
+    var response = await _client.SendAsync(request);
+
+    // Assert — 404 takes precedence
+    response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+  }
+
+  [Fact]
+  public async Task Delete_WithWildcardIfMatch_Returns_204()
+  {
+    // Arrange
+    var id = Guid.NewGuid();
+    _repository.Seed(
+        new ProductEntity { Id = id, ProductName = "Product", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
+    );
+
+    var request = new HttpRequestMessage(HttpMethod.Delete, $"/api/products/{id}");
+    request.Headers.TryAddWithoutValidation("If-Match", "*");
+
+    // Act
+    var response = await _client.SendAsync(request);
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+  }
+
+  [Fact]
+  public async Task Delete_WithWeakIfMatch_Returns_412_PerStrongComparison()
+  {
+    // Arrange — RFC 9110: If-Match uses strong comparison, weak ETags should not match
+    var id = Guid.NewGuid();
+    _repository.Seed(
+        new ProductEntity { Id = id, ProductName = "Product", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
+    );
+
+    var getResponse = await _client.GetAsync($"/api/products/{id}");
+    var strongETag = getResponse.Headers.ETag!.Tag;
+    var weakETag = $"W/{strongETag}";
+
+    var request = new HttpRequestMessage(HttpMethod.Delete, $"/api/products/{id}");
+    request.Headers.TryAddWithoutValidation("If-Match", weakETag);
+
+    // Act
+    var response = await _client.SendAsync(request);
+
+    // Assert — Strong comparison should fail for weak ETags
+    response.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
+  }
+
+  [Fact]
+  public async Task Delete_WithMultipleIfMatchETags_Returns_204_WhenOneMatches()
+  {
+    // Arrange
+    var id = Guid.NewGuid();
+    _repository.Seed(
+        new ProductEntity { Id = id, ProductName = "Product", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
+    );
+
+    var getResponse = await _client.GetAsync($"/api/products/{id}");
+    var etag = getResponse.Headers.ETag!.Tag;
+
+    var request = new HttpRequestMessage(HttpMethod.Delete, $"/api/products/{id}");
+    request.Headers.TryAddWithoutValidation("If-Match", $"\"wrong-1\", {etag}, \"wrong-2\"");
+
+    // Act
+    var response = await _client.SendAsync(request);
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+  }
+
+  [Fact]
+  public async Task Delete_WithMultipleIfMatchETags_Returns_412_WhenNoneMatch()
+  {
+    // Arrange
+    var id = Guid.NewGuid();
+    _repository.Seed(
+        new ProductEntity { Id = id, ProductName = "Product", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
+    );
+
+    var request = new HttpRequestMessage(HttpMethod.Delete, $"/api/products/{id}");
+    request.Headers.TryAddWithoutValidation("If-Match", "\"wrong-etag-1\", \"wrong-etag-2\", \"wrong-etag-3\"");
+
+    // Act
+    var response = await _client.SendAsync(request);
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
+  }
+
+  #endregion
+
   #region ETag Disabled
 
   [Fact]
@@ -471,6 +630,53 @@ public class ConditionalRequestTests : IDisposable
 
     // Assert - Should return 200, not 304
     response.StatusCode.Should().Be(HttpStatusCode.OK);
+  }
+
+  [Fact]
+  public async Task Delete_WithIfMatch_WhenETagDisabled_IgnoresHeader()
+  {
+    // Arrange
+    using var disabledHost = new HostBuilder()
+        .ConfigureWebHost(webBuilder =>
+        {
+          webBuilder
+                  .UseTestServer()
+                  .ConfigureServices(services =>
+                  {
+                    services.AddRestLib(options => options.EnableETagSupport = false);
+                    services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
+                    services.AddRouting();
+                  })
+                  .Configure(app =>
+                  {
+                    app.UseRouting();
+                    app.UseEndpoints(endpoints =>
+                        {
+                          endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
+                            {
+                              config.AllowAnonymous();
+                            });
+                        });
+                  });
+        })
+        .Build();
+
+    await disabledHost.StartAsync();
+    var disabledClient = disabledHost.GetTestClient();
+
+    var id = Guid.NewGuid();
+    _repository.Seed(
+        new ProductEntity { Id = id, ProductName = "Product", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
+    );
+
+    var request = new HttpRequestMessage(HttpMethod.Delete, $"/api/products/{id}");
+    request.Headers.TryAddWithoutValidation("If-Match", "\"wrong-etag\"");
+
+    // Act
+    var response = await disabledClient.SendAsync(request);
+
+    // Assert — Should return 204, not 412 (If-Match ignored when ETags disabled)
+    response.StatusCode.Should().Be(HttpStatusCode.NoContent);
   }
 
   #endregion
