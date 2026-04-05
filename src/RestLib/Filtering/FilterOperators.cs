@@ -8,7 +8,8 @@ public static class FilterOperators
     /// <summary>
     /// Equality operators: <see cref="FilterOperator.Eq"/> and <see cref="FilterOperator.Neq"/>.
     /// </summary>
-    public static readonly FilterOperator[] Equality = [FilterOperator.Eq, FilterOperator.Neq];
+    public static readonly IReadOnlyList<FilterOperator> Equality =
+        Array.AsReadOnly(new[] { FilterOperator.Eq, FilterOperator.Neq });
 
     /// <summary>
     /// Comparison operators suitable for numeric, date, and other <see cref="IComparable"/> types:
@@ -16,26 +17,27 @@ public static class FilterOperators
     /// <see cref="FilterOperator.Gt"/>, <see cref="FilterOperator.Lt"/>,
     /// <see cref="FilterOperator.Gte"/>, <see cref="FilterOperator.Lte"/>.
     /// </summary>
-    public static readonly FilterOperator[] Comparison =
-    [
+    public static readonly IReadOnlyList<FilterOperator> Comparison = Array.AsReadOnly(new[]
+    {
         FilterOperator.Eq, FilterOperator.Neq,
         FilterOperator.Gt, FilterOperator.Lt,
         FilterOperator.Gte, FilterOperator.Lte,
-    ];
+    });
 
     /// <summary>
     /// String operators:
     /// <see cref="FilterOperator.Eq"/>, <see cref="FilterOperator.Neq"/>,
     /// <see cref="FilterOperator.Contains"/>, <see cref="FilterOperator.StartsWith"/>.
     /// </summary>
-    public static readonly FilterOperator[] String =
-    [
+    public static readonly IReadOnlyList<FilterOperator> String = Array.AsReadOnly(new[]
+    {
         FilterOperator.Eq, FilterOperator.Neq,
         FilterOperator.Contains, FilterOperator.StartsWith,
-    ];
+    });
 
     /// <summary>
     /// All operators defined in <see cref="FilterOperator"/>.
     /// </summary>
-    public static readonly FilterOperator[] All = Enum.GetValues<FilterOperator>();
+    public static readonly IReadOnlyList<FilterOperator> All =
+        Array.AsReadOnly(Enum.GetValues<FilterOperator>());
 }

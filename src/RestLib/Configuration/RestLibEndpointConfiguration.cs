@@ -223,7 +223,7 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   /// </example>
   public RestLibEndpointConfiguration<TEntity, TKey> AllowFiltering(
       Expression<Func<TEntity, object?>> propertyExpression,
-      params FilterOperator[] operators)
+      params IReadOnlyList<FilterOperator> operators)
   {
     var memberExpression = NamingUtils.GetMemberExpression(propertyExpression.Body, nameof(propertyExpression));
 
@@ -254,7 +254,7 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
   /// </example>
   public RestLibEndpointConfiguration<TEntity, TKey> AllowFiltering(
       string propertyName,
-      params FilterOperator[] operators)
+      params IReadOnlyList<FilterOperator> operators)
   {
     var property = NamingUtils.ResolveProperty<TEntity>(propertyName, nameof(propertyName));
 

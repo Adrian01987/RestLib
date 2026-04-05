@@ -69,7 +69,7 @@ public class FilterConfiguration<TEntity>
     /// </param>
     public void AddProperty<TProperty>(
         Expression<Func<TEntity, TProperty>> propertyExpression,
-        params FilterOperator[] allowedOperators)
+        params IReadOnlyList<FilterOperator> allowedOperators)
     {
         var memberExpression = propertyExpression.Body as MemberExpression
             ?? throw new ArgumentException("Expression must be a member expression", nameof(propertyExpression));
@@ -100,12 +100,12 @@ public class FilterConfiguration<TEntity>
     /// <param name="allowedOperators">
     /// The operators to allow. When empty, only <see cref="FilterOperator.Eq"/> is allowed.
     /// </param>
-    internal void AddProperty(string propertyName, string queryParameterName, Type propertyType, FilterOperator[] allowedOperators)
+    internal void AddProperty(string propertyName, string queryParameterName, Type propertyType, IReadOnlyList<FilterOperator> allowedOperators)
     {
         AddPropertyInternal(propertyName, queryParameterName, propertyType, allowedOperators);
     }
 
-    private void AddPropertyInternal(string propertyName, string queryParameterName, Type propertyType, FilterOperator[] allowedOperators)
+    private void AddPropertyInternal(string propertyName, string queryParameterName, Type propertyType, IReadOnlyList<FilterOperator> allowedOperators)
     {
         if (_properties.Any(p => string.Equals(p.PropertyName, propertyName, StringComparison.Ordinal)))
         {
@@ -113,7 +113,7 @@ public class FilterConfiguration<TEntity>
                 $"Property '{propertyName}' is already configured for filtering.");
         }
 
-        var operators = allowedOperators.Length > 0
+        var operators = allowedOperators.Count > 0
             ? new HashSet<FilterOperator>(allowedOperators)
             : new HashSet<FilterOperator>(DefaultOperators);
 
