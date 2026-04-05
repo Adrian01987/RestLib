@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using RestLib.Abstractions;
 
@@ -37,8 +36,8 @@ public class HashBasedETagGenerator(JsonSerializerOptions jsonOptions) : IETagGe
   {
     ArgumentNullException.ThrowIfNull(entity);
 
-    var json = JsonSerializer.Serialize(entity, _jsonOptions);
-    var hash = ComputeHash(json);
+    var utf8Bytes = JsonSerializer.SerializeToUtf8Bytes(entity, _jsonOptions);
+    var hash = SHA256.HashData(utf8Bytes);
     var encoded = EncodeToBase64Url(hash);
 
     // RFC 9110: ETags are quoted strings
@@ -73,20 +72,19 @@ public class HashBasedETagGenerator(JsonSerializerOptions jsonOptions) : IETagGe
   }
 
   /// <summary>
-  /// Computes the SHA-256 hash of the input string.
-  /// </summary>
-  private static byte[] ComputeHash(string input)
-    => SHA256.HashData(Encoding.UTF8.GetBytes(input));
-
-  /// <summary>
   /// Encodes bytes to base64url (URL-safe base64 without padding).
-  /// Use first 16 bytes (128 bits) for a shorter but still unique ETag.
+  /// Uses first 16 bytes (128 bits) for a shorter but still unique ETag.
+  /// Uses span-based replacement to avoid intermediate string allocations.
   /// </summary>
   private static string EncodeToBase64Url(byte[] bytes)
   {
-    return Convert.ToBase64String(bytes[..16])
-        .Replace('+', '-')
-        .Replace('/', '_')
-        .TrimEnd('=');
+    var base64 = Convert.ToBase64String(bytes, 0, 16);
+    var len = base64.AsSpan().TrimEnd('=').Length;
+    return string.Create(len, (base64, len), static (span, state) =>
+    {
+      state.base64.AsSpan(0, state.len).CopyTo(span);
+      span.Replace('+', '-');
+      span.Replace('/', '_');
+    });
   }
 }
