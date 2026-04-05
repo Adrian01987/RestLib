@@ -87,7 +87,7 @@ internal static class GetByIdHandler
                 // Handle conditional requests when ETag support is enabled
                 if (options.EnableETagSupport)
                 {
-                    var etagGenerator = EndpointHelpers.ResolveETagGenerator(httpContext, jsonOptions);
+                    var etagGenerator = EndpointHelpers.ResolveETagGenerator(httpContext);
                     var etag = etagGenerator.Generate(entity);
 
                     // Check If-None-Match header for conditional GET

@@ -166,17 +166,16 @@ internal static class EndpointHelpers
     }
 
     /// <summary>
-    /// Resolves the ETag generator from the service provider, falling back to a hash-based implementation.
+    /// Resolves the ETag generator from the service provider.
+    /// This method is only called when <see cref="RestLibOptions.EnableETagSupport"/> is <c>true</c>,
+    /// which guarantees an <see cref="IETagGenerator"/> singleton was registered by
+    /// <see cref="RestLibServiceExtensions.AddRestLib"/>.
     /// </summary>
     /// <param name="httpContext">The current HTTP context.</param>
-    /// <param name="jsonOptions">The JSON serializer options for the hash-based fallback.</param>
     /// <returns>The resolved ETag generator.</returns>
-    internal static IETagGenerator ResolveETagGenerator(
-        HttpContext httpContext,
-        JsonSerializerOptions jsonOptions)
+    internal static IETagGenerator ResolveETagGenerator(HttpContext httpContext)
     {
-        return httpContext.RequestServices.GetService<IETagGenerator>()
-               ?? new HashBasedETagGenerator(jsonOptions);
+        return httpContext.RequestServices.GetRequiredService<IETagGenerator>();
     }
 
     /// <summary>
@@ -403,7 +402,7 @@ internal static class EndpointHelpers
             return (null, notFoundResult);
         }
 
-        var etagGenerator = ResolveETagGenerator(httpContext, jsonOptions);
+        var etagGenerator = ResolveETagGenerator(httpContext);
         var currentETag = etagGenerator.Generate(current);
 
         if (!ETagComparer.IfMatchSucceeds(ifMatchHeader, currentETag))

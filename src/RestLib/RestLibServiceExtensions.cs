@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using RestLib.Abstractions;
+using RestLib.Caching;
 using RestLib.Configuration;
 using RestLib.Hooks;
 using RestLib.Serialization;
@@ -51,6 +52,13 @@ public static class RestLibServiceExtensions
     var jsonOptions = RestLibJsonOptions.Create(options);
     services.TryAddSingleton(jsonOptions);
     services.TryAddSingleton(new RestLibJsonResourceRegistry());
+
+    // Register default ETag generator when ETag support is enabled.
+    // Uses TryAddSingleton so custom IETagGenerator registrations take precedence.
+    if (options.EnableETagSupport)
+    {
+      services.TryAddSingleton<IETagGenerator>(new HashBasedETagGenerator(jsonOptions));
+    }
 
     // Configure HTTP JSON options for request deserialization (Minimal APIs)
     services.Configure<JsonOptions>(httpJsonOptions =>

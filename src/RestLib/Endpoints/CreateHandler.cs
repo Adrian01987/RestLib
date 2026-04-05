@@ -78,7 +78,7 @@ internal static class CreateHandler
                 // Add ETag header when enabled
                 if (options.EnableETagSupport)
                 {
-                    var etagGenerator = EndpointHelpers.ResolveETagGenerator(httpContext, jsonOptions);
+                    var etagGenerator = EndpointHelpers.ResolveETagGenerator(httpContext);
                     httpContext.Response.Headers.ETag = etagGenerator.Generate(created);
                 }
 
