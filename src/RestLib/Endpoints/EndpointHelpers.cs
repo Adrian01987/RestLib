@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Reflection;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,6 +33,12 @@ internal readonly record struct PipelineInitResult<TEntity, TKey>(
 /// </summary>
 internal static class EndpointHelpers
 {
+    /// <summary>
+    /// Cache for reflected "Id" property lookups, keyed by entity type.
+    /// Avoids repeated reflection when no explicit key selector is configured.
+    /// </summary>
+    private static readonly ConcurrentDictionary<Type, PropertyInfo?> IdPropertyCache = new();
+
     /// <summary>
     /// Creates a hook pipeline (if hooks are configured), builds a <see cref="HookContext{TEntity, TKey}"/>,
     /// and executes the <c>OnRequestReceived</c> stage. This consolidates the pipeline initialisation
@@ -434,8 +442,8 @@ internal static class EndpointHelpers
             return keySelector(entity);
         }
 
-        // Fall back to reflection: look for 'Id' property
-        var idProperty = typeof(TEntity).GetProperty("Id");
+        // Fall back to reflection: look for 'Id' property (cached)
+        var idProperty = IdPropertyCache.GetOrAdd(typeof(TEntity), t => t.GetProperty("Id"));
         if (idProperty is not null && idProperty.PropertyType == typeof(TKey))
         {
             return (TKey?)idProperty.GetValue(entity);
