@@ -1543,6 +1543,128 @@ public class BatchOperationsTests : IDisposable
     host.Dispose();
   }
 
+  [Fact]
+  [Trait("Category", "Story8.7")]
+  public async Task BatchCreate_AfterPersistHook_ShortCircuit_RespectsEarlyResult()
+  {
+    // Arrange — AfterPersist hook short-circuits with a 409 Conflict for specific items
+    CreateHost(config =>
+    {
+      config.AllowAnonymous();
+      config.EnableBatch();
+      config.UseHooks(hooks =>
+      {
+        hooks.AfterPersist = async ctx =>
+        {
+          if (ctx.Entity?.Name == "Conflicting")
+          {
+            ctx.ShouldContinue = false;
+            ctx.EarlyResult = ProblemDetailsResult.Create(
+                new RestLibProblemDetails
+                {
+                  Type = ProblemTypes.Conflict,
+                  Title = "Conflict",
+                  Status = StatusCodes.Status409Conflict,
+                  Detail = "Post-persist conflict detected by hook."
+                });
+          }
+
+          await Task.CompletedTask;
+        };
+      });
+    });
+
+    var payload = new
+    {
+      action = "create",
+      items = new[]
+      {
+        new { name = "Item0", price = 1m },
+        new { name = "Conflicting", price = 2m },
+        new { name = "Item2", price = 3m }
+      }
+    };
+
+    // Act
+    var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    var items = json.GetProperty("items");
+    items.GetArrayLength().Should().Be(3);
+
+    // Item 0: succeeded
+    items[0].GetProperty("status").GetInt32().Should().Be(201);
+
+    // Item 1: AfterPersist short-circuited with 409 and custom problem details
+    items[1].GetProperty("status").GetInt32().Should().Be(409);
+    var error = items[1].GetProperty("error");
+    error.GetProperty("type").GetString().Should().Be(ProblemTypes.Conflict);
+    error.GetProperty("title").GetString().Should().Be("Conflict");
+    error.GetProperty("detail").GetString().Should().Be("Post-persist conflict detected by hook.");
+
+    // Item 2: succeeded
+    items[2].GetProperty("status").GetInt32().Should().Be(201);
+  }
+
+  [Fact]
+  [Trait("Category", "Story8.7")]
+  public async Task BatchCreate_AfterPersistHook_ShortCircuit_WithoutEarlyResult_Returns500()
+  {
+    // Arrange — AfterPersist hook short-circuits without setting EarlyResult
+    CreateHost(config =>
+    {
+      config.AllowAnonymous();
+      config.EnableBatch();
+      config.UseHooks(hooks =>
+      {
+        hooks.AfterPersist = async ctx =>
+        {
+          if (ctx.Entity?.Name == "Blocked")
+          {
+            ctx.ShouldContinue = false;
+            // No EarlyResult set — should fall back to 500
+          }
+
+          await Task.CompletedTask;
+        };
+      });
+    });
+
+    var payload = new
+    {
+      action = "create",
+      items = new[]
+      {
+        new { name = "Item0", price = 1m },
+        new { name = "Blocked", price = 2m },
+        new { name = "Item2", price = 3m }
+      }
+    };
+
+    // Act
+    var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    var items = json.GetProperty("items");
+    items.GetArrayLength().Should().Be(3);
+
+    // Item 0: succeeded
+    items[0].GetProperty("status").GetInt32().Should().Be(201);
+
+    // Item 1: AfterPersist short-circuited without EarlyResult → falls back to 500
+    items[1].GetProperty("status").GetInt32().Should().Be(500);
+    items[1].TryGetProperty("error", out _).Should().BeTrue();
+
+    // Item 2: succeeded
+    items[2].GetProperty("status").GetInt32().Should().Be(201);
+  }
+
   #endregion
 
   #region Story 8.8 — JSON Config

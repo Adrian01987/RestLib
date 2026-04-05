@@ -61,7 +61,12 @@ internal static class BatchActionExecutor
                     {
                         var afterContext = pipeline.CreateContext(
                             httpContext, RestLibOperation.BatchCreate, entity: createdEntity);
-                        await pipeline.ExecuteAfterPersistAsync(afterContext);
+                        var shouldContinue = await pipeline.ExecuteAfterPersistAsync(afterContext);
+                        if (!shouldContinue)
+                        {
+                            results[index] = BuildHookResultItem(index, afterContext.EarlyResult, httpContext);
+                            continue;
+                        }
                     }
 
                     results[index] = new BatchItemResult
@@ -93,7 +98,12 @@ internal static class BatchActionExecutor
                     {
                         var afterContext = pipeline.CreateContext(
                             httpContext, RestLibOperation.BatchCreate, entity: created);
-                        await pipeline.ExecuteAfterPersistAsync(afterContext);
+                        var shouldContinue = await pipeline.ExecuteAfterPersistAsync(afterContext);
+                        if (!shouldContinue)
+                        {
+                            results[index] = BuildHookResultItem(index, afterContext.EarlyResult, httpContext);
+                            continue;
+                        }
                     }
 
                     results[index] = new BatchItemResult
@@ -158,7 +168,12 @@ internal static class BatchActionExecutor
                         var afterContext = pipeline.CreateContext(
                             httpContext, RestLibOperation.BatchUpdate,
                             resourceId: id, entity: updatedEntity);
-                        await pipeline.ExecuteAfterPersistAsync(afterContext);
+                        var shouldContinue = await pipeline.ExecuteAfterPersistAsync(afterContext);
+                        if (!shouldContinue)
+                        {
+                            results[index] = BuildHookResultItem(index, afterContext.EarlyResult, httpContext);
+                            continue;
+                        }
                     }
 
                     results[index] = new BatchItemResult
@@ -202,7 +217,12 @@ internal static class BatchActionExecutor
                         var afterContext = pipeline.CreateContext(
                             httpContext, RestLibOperation.BatchUpdate,
                             resourceId: id, entity: updated);
-                        await pipeline.ExecuteAfterPersistAsync(afterContext);
+                        var shouldContinue = await pipeline.ExecuteAfterPersistAsync(afterContext);
+                        if (!shouldContinue)
+                        {
+                            results[index] = BuildHookResultItem(index, afterContext.EarlyResult, httpContext);
+                            continue;
+                        }
                     }
 
                     results[index] = new BatchItemResult
@@ -319,7 +339,12 @@ internal static class BatchActionExecutor
                             var afterContext = pipeline.CreateContext(
                                 httpContext, RestLibOperation.BatchPatch,
                                 resourceId: id, entity: patchedEntity);
-                            await pipeline.ExecuteAfterPersistAsync(afterContext);
+                            var shouldContinue = await pipeline.ExecuteAfterPersistAsync(afterContext);
+                            if (!shouldContinue)
+                            {
+                                results[index] = BuildHookResultItem(index, afterContext.EarlyResult, httpContext);
+                                continue;
+                            }
                         }
 
                         results[index] = new BatchItemResult
@@ -399,7 +424,12 @@ internal static class BatchActionExecutor
                         var afterContext = pipeline.CreateContext(
                             httpContext, RestLibOperation.BatchPatch,
                             resourceId: id, entity: patched);
-                        await pipeline.ExecuteAfterPersistAsync(afterContext);
+                        var shouldContinue = await pipeline.ExecuteAfterPersistAsync(afterContext);
+                        if (!shouldContinue)
+                        {
+                            results[index] = BuildHookResultItem(index, afterContext.EarlyResult, httpContext);
+                            continue;
+                        }
                     }
 
                     results[index] = new BatchItemResult
@@ -467,7 +497,12 @@ internal static class BatchActionExecutor
                     {
                         var afterContext = pipeline.CreateContext(
                             httpContext, RestLibOperation.BatchDelete, resourceId: key);
-                        await pipeline.ExecuteAfterPersistAsync(afterContext);
+                        var shouldContinue = await pipeline.ExecuteAfterPersistAsync(afterContext);
+                        if (!shouldContinue)
+                        {
+                            results[index] = BuildHookResultItem(index, afterContext.EarlyResult, httpContext);
+                            continue;
+                        }
                     }
 
                     results[index] = new BatchItemResult
@@ -509,7 +544,12 @@ internal static class BatchActionExecutor
                     {
                         var afterContext = pipeline.CreateContext(
                             httpContext, RestLibOperation.BatchDelete, resourceId: key);
-                        await pipeline.ExecuteAfterPersistAsync(afterContext);
+                        var shouldContinue = await pipeline.ExecuteAfterPersistAsync(afterContext);
+                        if (!shouldContinue)
+                        {
+                            results[index] = BuildHookResultItem(index, afterContext.EarlyResult, httpContext);
+                            continue;
+                        }
                     }
 
                     results[index] = new BatchItemResult
@@ -543,6 +583,38 @@ internal static class BatchActionExecutor
             Index = index,
             Status = StatusCodes.Status500InternalServerError,
             Error = ProblemDetailsFactory.InternalError(detail: detail, instance: instance)
+        };
+    }
+
+    /// <summary>
+    /// Builds a <see cref="BatchItemResult"/> from a hook's early result.
+    /// Extracts the status code and problem details body from the <see cref="IResult"/>
+    /// in the same way as <see cref="HandleItemErrorAsync{TEntity, TKey}"/>.
+    /// </summary>
+    /// <param name="index">The original index of the batch item.</param>
+    /// <param name="earlyResult">The early result set by the hook, or <c>null</c>.</param>
+    /// <param name="httpContext">The current HTTP context.</param>
+    /// <returns>A batch item result reflecting the hook's short-circuit response.</returns>
+    private static BatchItemResult BuildHookResultItem(
+        int index,
+        IResult? earlyResult,
+        HttpContext httpContext)
+    {
+        var statusCode = earlyResult is IStatusCodeHttpResult statusResult
+            ? statusResult.StatusCode ?? StatusCodes.Status500InternalServerError
+            : StatusCodes.Status500InternalServerError;
+
+        var error = earlyResult is IValueHttpResult { Value: RestLibProblemDetails problem }
+            ? problem
+            : ProblemDetailsFactory.InternalError(
+                detail: "Hook short-circuited after persist.",
+                instance: httpContext.Request.Path);
+
+        return new BatchItemResult
+        {
+            Index = index,
+            Status = statusCode,
+            Error = error
         };
     }
 
