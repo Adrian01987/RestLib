@@ -29,6 +29,7 @@ internal static class BatchActionExecutor
     /// <param name="repository">The entity repository.</param>
     /// <param name="batchRepository">The optional batch-optimized repository.</param>
     /// <param name="pipeline">The optional hook pipeline.</param>
+    /// <param name="options">The global RestLib options.</param>
     /// <param name="ct">Cancellation token.</param>
     internal static async Task ExecuteCreatesAsync<TEntity, TKey>(
         List<(int Index, TEntity Entity)> validItems,
@@ -37,6 +38,7 @@ internal static class BatchActionExecutor
         IRepository<TEntity, TKey> repository,
         IBatchRepository<TEntity, TKey>? batchRepository,
         HookPipeline<TEntity, TKey>? pipeline,
+        RestLibOptions options,
         CancellationToken ct)
         where TEntity : class
     {
@@ -82,7 +84,7 @@ internal static class BatchActionExecutor
                 foreach (var (index, entity) in validItems)
                 {
                     results[index] = await HandleItemErrorAsync(
-                        index, ex, httpContext, RestLibOperation.BatchCreate, pipeline, entity: entity);
+                        index, ex, httpContext, RestLibOperation.BatchCreate, pipeline, options, entity: entity);
                 }
             }
         }
@@ -116,7 +118,7 @@ internal static class BatchActionExecutor
                 catch (Exception ex)
                 {
                     results[index] = await HandleItemErrorAsync(
-                        index, ex, httpContext, RestLibOperation.BatchCreate, pipeline, entity: entity);
+                        index, ex, httpContext, RestLibOperation.BatchCreate, pipeline, options, entity: entity);
                 }
             }
         }
@@ -135,6 +137,7 @@ internal static class BatchActionExecutor
     /// <param name="repository">The entity repository.</param>
     /// <param name="batchRepository">The optional batch-optimized repository.</param>
     /// <param name="pipeline">The optional hook pipeline.</param>
+    /// <param name="options">The global RestLib options.</param>
     /// <param name="ct">Cancellation token.</param>
     internal static async Task ExecuteUpdatesAsync<TEntity, TKey>(
         List<(int Index, TKey Id, TEntity Entity)> validItems,
@@ -143,6 +146,7 @@ internal static class BatchActionExecutor
         IRepository<TEntity, TKey> repository,
         IBatchRepository<TEntity, TKey>? batchRepository,
         HookPipeline<TEntity, TKey>? pipeline,
+        RestLibOptions options,
         CancellationToken ct)
         where TEntity : class
     {
@@ -189,7 +193,7 @@ internal static class BatchActionExecutor
                 foreach (var (index, id, entity) in validItems)
                 {
                     results[index] = await HandleItemErrorAsync(
-                        index, ex, httpContext, RestLibOperation.BatchUpdate, pipeline, resourceId: id, entity: entity);
+                        index, ex, httpContext, RestLibOperation.BatchUpdate, pipeline, options, resourceId: id, entity: entity);
                 }
             }
         }
@@ -235,7 +239,7 @@ internal static class BatchActionExecutor
                 catch (Exception ex)
                 {
                     results[index] = await HandleItemErrorAsync(
-                        index, ex, httpContext, RestLibOperation.BatchUpdate, pipeline, resourceId: id, entity: entity);
+                        index, ex, httpContext, RestLibOperation.BatchUpdate, pipeline, options, resourceId: id, entity: entity);
                 }
             }
         }
@@ -361,7 +365,7 @@ internal static class BatchActionExecutor
                 foreach (var (index, id, _) in validItems)
                 {
                     results[index] = await HandleItemErrorAsync(
-                        index, ex, httpContext, RestLibOperation.BatchPatch, pipeline, resourceId: id);
+                        index, ex, httpContext, RestLibOperation.BatchPatch, pipeline, options, resourceId: id);
                 }
             }
         }
@@ -442,7 +446,7 @@ internal static class BatchActionExecutor
                 catch (Exception ex)
                 {
                     results[index] = await HandleItemErrorAsync(
-                        index, ex, httpContext, RestLibOperation.BatchPatch, pipeline, resourceId: id);
+                        index, ex, httpContext, RestLibOperation.BatchPatch, pipeline, options, resourceId: id);
                 }
             }
         }
@@ -461,6 +465,7 @@ internal static class BatchActionExecutor
     /// <param name="repository">The entity repository.</param>
     /// <param name="batchRepository">The optional batch-optimized repository.</param>
     /// <param name="pipeline">The optional hook pipeline.</param>
+    /// <param name="options">The global RestLib options.</param>
     /// <param name="ct">Cancellation token.</param>
     internal static async Task ExecuteDeletesAsync<TEntity, TKey>(
         List<(int Index, TKey Key)> validKeys,
@@ -469,6 +474,7 @@ internal static class BatchActionExecutor
         IRepository<TEntity, TKey> repository,
         IBatchRepository<TEntity, TKey>? batchRepository,
         HookPipeline<TEntity, TKey>? pipeline,
+        RestLibOptions options,
         CancellationToken ct)
         where TEntity : class
     {
@@ -517,7 +523,7 @@ internal static class BatchActionExecutor
                 foreach (var (index, key) in validKeys)
                 {
                     results[index] = await HandleItemErrorAsync(
-                        index, ex, httpContext, RestLibOperation.BatchDelete, pipeline, resourceId: key);
+                        index, ex, httpContext, RestLibOperation.BatchDelete, pipeline, options, resourceId: key);
                 }
             }
         }
@@ -561,7 +567,7 @@ internal static class BatchActionExecutor
                 catch (Exception ex)
                 {
                     results[index] = await HandleItemErrorAsync(
-                        index, ex, httpContext, RestLibOperation.BatchDelete, pipeline, resourceId: key);
+                        index, ex, httpContext, RestLibOperation.BatchDelete, pipeline, options, resourceId: key);
                 }
             }
         }
@@ -569,15 +575,18 @@ internal static class BatchActionExecutor
 
     /// <summary>
     /// Creates a batch item result from an exception.
-    /// Includes the exception type and message in the problem details to
-    /// aid debugging; callers should avoid exposing raw stack traces.
+    /// When <see cref="RestLibOptions.IncludeExceptionDetailsInErrors"/> is <c>true</c>,
+    /// the exception type and message are included; otherwise a generic message is used.
     /// </summary>
     private static BatchItemResult ExceptionResult(
         int index,
         Exception ex,
-        string? instance)
+        string? instance,
+        RestLibOptions options)
     {
-        var detail = $"{ex.GetType().Name}: {ex.Message}";
+        var detail = options.IncludeExceptionDetailsInErrors
+            ? $"{ex.GetType().Name}: {ex.Message}"
+            : "An internal error occurred while processing this item.";
         return new BatchItemResult
         {
             Index = index,
@@ -629,6 +638,7 @@ internal static class BatchActionExecutor
         HttpContext httpContext,
         RestLibOperation operation,
         HookPipeline<TEntity, TKey>? pipeline,
+        RestLibOptions options,
         TKey? resourceId = default,
         TEntity? entity = default)
         where TEntity : class
@@ -648,7 +658,9 @@ internal static class BatchActionExecutor
                 var error = errorResult is IValueHttpResult { Value: RestLibProblemDetails problem }
                     ? problem
                     : ProblemDetailsFactory.InternalError(
-                        detail: $"{ex.GetType().Name}: {ex.Message}",
+                        detail: options.IncludeExceptionDetailsInErrors
+                            ? $"{ex.GetType().Name}: {ex.Message}"
+                            : "An internal error occurred while processing this item.",
                         instance: httpContext.Request.Path);
 
                 return new BatchItemResult
@@ -660,6 +672,6 @@ internal static class BatchActionExecutor
             }
         }
 
-        return ExceptionResult(index, ex, httpContext.Request.Path);
+        return ExceptionResult(index, ex, httpContext.Request.Path, options);
     }
 }

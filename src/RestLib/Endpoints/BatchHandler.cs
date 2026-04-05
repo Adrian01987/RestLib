@@ -140,7 +140,7 @@ internal static class BatchHandler
                     pipeline, options, jsonOptions, ct),
                 BatchAction.Delete => await BatchProcessor.ProcessDeleteAsync(
                     envelope.Items, httpContext, repository, batchRepository,
-                    pipeline, jsonOptions, ct),
+                    pipeline, options, jsonOptions, ct),
                 _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
             };
 

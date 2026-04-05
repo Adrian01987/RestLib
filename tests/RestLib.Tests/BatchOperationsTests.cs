@@ -73,6 +73,48 @@ public class ThrowingBatchRepository : IRepository<BatchEntity, Guid>
 }
 
 /// <summary>
+/// Repository that returns an entity from GetByIdAsync but throws on UpdateAsync,
+/// used to test exception detail gating in batch update error paths.
+/// </summary>
+public class ThrowingUpdateRepository : IRepository<BatchEntity, Guid>
+{
+  private readonly Guid _knownId;
+
+  /// <summary>
+  /// Initializes a new instance of the <see cref="ThrowingUpdateRepository"/> class.
+  /// </summary>
+  /// <param name="knownId">The ID that GetByIdAsync will recognise.</param>
+  public ThrowingUpdateRepository(Guid knownId) => _knownId = knownId;
+
+  /// <inheritdoc />
+  public Task<BatchEntity?> GetByIdAsync(Guid id, CancellationToken ct = default)
+      => Task.FromResult<BatchEntity?>(
+          id == _knownId
+              ? new BatchEntity { Id = id, Name = "Original", Price = 5m }
+              : null);
+
+  /// <inheritdoc />
+  public Task<PagedResult<BatchEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default)
+      => Task.FromResult(new PagedResult<BatchEntity> { Items = [] });
+
+  /// <inheritdoc />
+  public Task<BatchEntity> CreateAsync(BatchEntity entity, CancellationToken ct = default)
+      => throw new InvalidOperationException("Simulated update failure");
+
+  /// <inheritdoc />
+  public Task<BatchEntity?> UpdateAsync(Guid id, BatchEntity entity, CancellationToken ct = default)
+      => throw new InvalidOperationException("Simulated update failure");
+
+  /// <inheritdoc />
+  public Task<BatchEntity?> PatchAsync(Guid id, JsonElement patchDocument, CancellationToken ct = default)
+      => throw new InvalidOperationException("Simulated update failure");
+
+  /// <inheritdoc />
+  public Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
+      => throw new InvalidOperationException("Simulated update failure");
+}
+
+/// <summary>
 /// Integration tests for batch operations (Stories 8.1–8.8).
 /// </summary>
 public class BatchOperationsTests : IDisposable
@@ -2042,6 +2084,263 @@ public class BatchOperationsTests : IDisposable
 
     // Second item failed validation
     items[1].GetProperty("status").GetInt32().Should().Be(400);
+  }
+
+  #endregion
+
+  #region Exception Detail Gating
+
+  [Fact]
+  [Trait("Category", "Story8.7")]
+  public async Task BatchCreate_RepositoryException_DefaultOptions_HidesExceptionDetails()
+  {
+    // Arrange — use a throwing repository with default options (IncludeExceptionDetailsInErrors = false)
+    var throwingRepo = new ThrowingBatchRepository();
+    var host = new HostBuilder()
+        .ConfigureWebHost(webBuilder =>
+        {
+          webBuilder
+              .UseTestServer()
+              .ConfigureServices(services =>
+              {
+                services.AddRestLib();
+                services.AddSingleton<IRepository<BatchEntity, Guid>>(throwingRepo);
+                services.AddRouting();
+              })
+              .Configure(app =>
+              {
+                app.UseRouting();
+                app.UseEndpoints(endpoints =>
+                {
+                  endpoints.MapRestLib<BatchEntity, Guid>("/api/items", config =>
+                  {
+                    config.AllowAnonymous();
+                    config.EnableBatch();
+                  });
+                });
+              });
+        })
+        .Build();
+
+    host.Start();
+    var client = host.GetTestClient();
+
+    var payload = new
+    {
+      action = "create",
+      items = new[]
+      {
+        new { name = "Item1", price = 1m }
+      }
+    };
+
+    // Act
+    var response = await client.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    var items = json.GetProperty("items");
+    items.GetArrayLength().Should().Be(1);
+
+    items[0].GetProperty("status").GetInt32().Should().Be(500);
+    var detail = items[0].GetProperty("error").GetProperty("detail").GetString();
+    detail.Should().Be("An internal error occurred while processing this item.");
+    detail.Should().NotContain("Simulated repository failure");
+    detail.Should().NotContain("InvalidOperationException");
+
+    client.Dispose();
+    host.Dispose();
+  }
+
+  [Fact]
+  [Trait("Category", "Story8.7")]
+  public async Task BatchCreate_RepositoryException_IncludeDetails_ShowsExceptionDetails()
+  {
+    // Arrange — use a throwing repository with IncludeExceptionDetailsInErrors = true
+    var throwingRepo = new ThrowingBatchRepository();
+    var host = new HostBuilder()
+        .ConfigureWebHost(webBuilder =>
+        {
+          webBuilder
+              .UseTestServer()
+              .ConfigureServices(services =>
+              {
+                services.AddRestLib(options =>
+                {
+                  options.IncludeExceptionDetailsInErrors = true;
+                });
+                services.AddSingleton<IRepository<BatchEntity, Guid>>(throwingRepo);
+                services.AddRouting();
+              })
+              .Configure(app =>
+              {
+                app.UseRouting();
+                app.UseEndpoints(endpoints =>
+                {
+                  endpoints.MapRestLib<BatchEntity, Guid>("/api/items", config =>
+                  {
+                    config.AllowAnonymous();
+                    config.EnableBatch();
+                  });
+                });
+              });
+        })
+        .Build();
+
+    host.Start();
+    var client = host.GetTestClient();
+
+    var payload = new
+    {
+      action = "create",
+      items = new[]
+      {
+        new { name = "Item1", price = 1m }
+      }
+    };
+
+    // Act
+    var response = await client.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    var items = json.GetProperty("items");
+    items.GetArrayLength().Should().Be(1);
+
+    items[0].GetProperty("status").GetInt32().Should().Be(500);
+    var detail = items[0].GetProperty("error").GetProperty("detail").GetString();
+    detail.Should().Contain("InvalidOperationException");
+    detail.Should().Contain("Simulated repository failure");
+
+    client.Dispose();
+    host.Dispose();
+  }
+
+  [Fact]
+  [Trait("Category", "Story8.7")]
+  public async Task BatchDelete_RepositoryException_DefaultOptions_HidesExceptionDetails()
+  {
+    // Arrange — use a throwing repository with default options
+    var throwingRepo = new ThrowingBatchRepository();
+    var host = new HostBuilder()
+        .ConfigureWebHost(webBuilder =>
+        {
+          webBuilder
+              .UseTestServer()
+              .ConfigureServices(services =>
+              {
+                services.AddRestLib();
+                services.AddSingleton<IRepository<BatchEntity, Guid>>(throwingRepo);
+                services.AddRouting();
+              })
+              .Configure(app =>
+              {
+                app.UseRouting();
+                app.UseEndpoints(endpoints =>
+                {
+                  endpoints.MapRestLib<BatchEntity, Guid>("/api/items", config =>
+                  {
+                    config.AllowAnonymous();
+                    config.EnableBatch();
+                  });
+                });
+              });
+        })
+        .Build();
+
+    host.Start();
+    var client = host.GetTestClient();
+
+    var payload = new
+    {
+      action = "delete",
+      items = new[] { Guid.NewGuid() }
+    };
+
+    // Act
+    var response = await client.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    var items = json.GetProperty("items");
+    items.GetArrayLength().Should().Be(1);
+
+    items[0].GetProperty("status").GetInt32().Should().Be(500);
+    var detail = items[0].GetProperty("error").GetProperty("detail").GetString();
+    detail.Should().Be("An internal error occurred while processing this item.");
+    detail.Should().NotContain("Simulated repository failure");
+
+    client.Dispose();
+    host.Dispose();
+  }
+
+  [Fact]
+  [Trait("Category", "Story8.7")]
+  public async Task BatchUpdate_RepositoryException_IncludeDetails_ShowsExceptionDetails()
+  {
+    // Arrange — use a repository that returns entities from GetByIdAsync but throws on UpdateAsync
+    var id = Guid.NewGuid();
+    var throwingUpdateRepo = new ThrowingUpdateRepository(id);
+    var host = new HostBuilder()
+        .ConfigureWebHost(webBuilder =>
+        {
+          webBuilder
+              .UseTestServer()
+              .ConfigureServices(services =>
+              {
+                services.AddRestLib(options =>
+                {
+                  options.IncludeExceptionDetailsInErrors = true;
+                });
+                services.AddSingleton<IRepository<BatchEntity, Guid>>(throwingUpdateRepo);
+                services.AddRouting();
+              })
+              .Configure(app =>
+              {
+                app.UseRouting();
+                app.UseEndpoints(endpoints =>
+                {
+                  endpoints.MapRestLib<BatchEntity, Guid>("/api/items", cfg =>
+                  {
+                    cfg.AllowAnonymous();
+                    cfg.EnableBatch();
+                  });
+                });
+              });
+        })
+        .Build();
+
+    host.Start();
+    var client = host.GetTestClient();
+
+    var payload = new
+    {
+      action = "update",
+      items = new[]
+      {
+        new { id, body = new { name = "Updated", price = 10m } }
+      }
+    };
+
+    // Act
+    var response = await client.PostAsync("/api/items/batch", BatchJson(payload));
+
+    // Assert
+    response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+    var items = json.GetProperty("items");
+    items.GetArrayLength().Should().Be(1);
+
+    items[0].GetProperty("status").GetInt32().Should().Be(500);
+    var detail = items[0].GetProperty("error").GetProperty("detail").GetString();
+    detail.Should().Contain("InvalidOperationException");
+    detail.Should().Contain("Simulated update failure");
+
+    client.Dispose();
+    host.Dispose();
   }
 
   #endregion

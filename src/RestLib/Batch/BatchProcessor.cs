@@ -68,7 +68,7 @@ internal static class BatchProcessor
         }
 
         await BatchActionExecutor.ExecuteCreatesAsync(
-            validItems, results, httpContext, repository, batchRepository, pipeline, ct);
+            validItems, results, httpContext, repository, batchRepository, pipeline, options, ct);
 
         return new BatchResponse { Items = results.ToList()! };
     }
@@ -125,7 +125,7 @@ internal static class BatchProcessor
         }
 
         await BatchActionExecutor.ExecuteUpdatesAsync(
-            validItems, results, httpContext, repository, batchRepository, pipeline, ct);
+            validItems, results, httpContext, repository, batchRepository, pipeline, options, ct);
 
         return new BatchResponse { Items = results.ToList()! };
     }
@@ -197,6 +197,7 @@ internal static class BatchProcessor
     /// <param name="repository">The entity repository.</param>
     /// <param name="batchRepository">The optional batch-optimized repository.</param>
     /// <param name="pipeline">The optional hook pipeline.</param>
+    /// <param name="options">The global RestLib options.</param>
     /// <param name="jsonOptions">The JSON serializer options.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The batch response with per-item results.</returns>
@@ -206,6 +207,7 @@ internal static class BatchProcessor
         IRepository<TEntity, TKey> repository,
         IBatchRepository<TEntity, TKey>? batchRepository,
         HookPipeline<TEntity, TKey>? pipeline,
+        RestLibOptions options,
         JsonSerializerOptions jsonOptions,
         CancellationToken ct)
         where TEntity : class
@@ -237,7 +239,7 @@ internal static class BatchProcessor
         }
 
         await BatchActionExecutor.ExecuteDeletesAsync(
-            validKeys, results, httpContext, repository, batchRepository, pipeline, ct);
+            validKeys, results, httpContext, repository, batchRepository, pipeline, options, ct);
 
         return new BatchResponse { Items = results.ToList()! };
     }
