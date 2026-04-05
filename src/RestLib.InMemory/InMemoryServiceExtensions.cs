@@ -27,6 +27,7 @@ public static class InMemoryServiceExtensions
   {
     var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, null);
     services.AddSingleton<IRepository<TEntity, TKey>>(repository);
+    services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
     services.AddSingleton(repository);
     return services;
   }
@@ -51,6 +52,7 @@ public static class InMemoryServiceExtensions
   {
     var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, jsonOptions);
     services.AddSingleton<IRepository<TEntity, TKey>>(repository);
+    services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
     services.AddSingleton(repository);
     return services;
   }
@@ -76,6 +78,7 @@ public static class InMemoryServiceExtensions
     var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator);
     repository.Seed(seedData);
     services.AddSingleton<IRepository<TEntity, TKey>>(repository);
+    services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
     services.AddSingleton(repository);
     return services;
   }
@@ -103,6 +106,7 @@ public static class InMemoryServiceExtensions
     var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, jsonOptions);
     repository.Seed(seedData);
     services.AddSingleton<IRepository<TEntity, TKey>>(repository);
+    services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
     services.AddSingleton(repository);
     return services;
   }

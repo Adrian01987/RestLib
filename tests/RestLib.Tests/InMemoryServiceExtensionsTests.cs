@@ -52,6 +52,40 @@ public class InMemoryServiceExtensionsTests
   }
 
   [Fact]
+  public void AddRestLibInMemory_RegistersIBatchRepository()
+  {
+    // Arrange
+    var services = new ServiceCollection();
+    services.AddRestLibInMemory<Product, Guid>(p => p.Id, Guid.NewGuid);
+    var provider = services.BuildServiceProvider();
+
+    // Act
+    var batchRepository = provider.GetService<IBatchRepository<Product, Guid>>();
+
+    // Assert
+    batchRepository.Should().NotBeNull();
+    batchRepository.Should().BeOfType<InMemoryRepository<Product, Guid>>();
+  }
+
+  [Fact]
+  public void AddRestLibInMemory_AllRegistrationsReturnSameInstance()
+  {
+    // Arrange
+    var services = new ServiceCollection();
+    services.AddRestLibInMemory<Product, Guid>(p => p.Id, Guid.NewGuid);
+    var provider = services.BuildServiceProvider();
+
+    // Act
+    var iRepository = provider.GetService<IRepository<Product, Guid>>();
+    var iBatchRepository = provider.GetService<IBatchRepository<Product, Guid>>();
+    var concrete = provider.GetService<InMemoryRepository<Product, Guid>>();
+
+    // Assert
+    iRepository.Should().BeSameAs(concrete);
+    iBatchRepository.Should().BeSameAs(concrete);
+  }
+
+  [Fact]
   public void AddRestLibInMemory_ReturnsSameServicesForChaining()
   {
     var services = new ServiceCollection();
@@ -130,6 +164,58 @@ public class InMemoryServiceExtensionsTests
     var repository = provider.GetRequiredService<InMemoryRepository<Product, Guid>>();
 
     repository.Count.Should().Be(0);
+  }
+
+  [Fact]
+  public void AddRestLibInMemoryWithData_RegistersIBatchRepository()
+  {
+    // Arrange
+    var services = new ServiceCollection();
+    var seedData = new[] { new Product(Guid.NewGuid(), "Product 1", 10m) };
+    services.AddRestLibInMemoryWithData<Product, Guid>(p => p.Id, Guid.NewGuid, seedData);
+    var provider = services.BuildServiceProvider();
+
+    // Act
+    var batchRepository = provider.GetService<IBatchRepository<Product, Guid>>();
+
+    // Assert
+    batchRepository.Should().NotBeNull();
+    batchRepository.Should().BeSameAs(provider.GetService<IRepository<Product, Guid>>());
+  }
+
+  [Fact]
+  public void AddRestLibInMemoryWithOptions_RegistersIBatchRepository()
+  {
+    // Arrange
+    var services = new ServiceCollection();
+    services.AddRestLibInMemoryWithOptions<Product, Guid>(
+        p => p.Id, Guid.NewGuid, new System.Text.Json.JsonSerializerOptions());
+    var provider = services.BuildServiceProvider();
+
+    // Act
+    var batchRepository = provider.GetService<IBatchRepository<Product, Guid>>();
+
+    // Assert
+    batchRepository.Should().NotBeNull();
+    batchRepository.Should().BeSameAs(provider.GetService<IRepository<Product, Guid>>());
+  }
+
+  [Fact]
+  public void AddRestLibInMemoryWithDataAndOptions_RegistersIBatchRepository()
+  {
+    // Arrange
+    var services = new ServiceCollection();
+    var seedData = new[] { new Product(Guid.NewGuid(), "Product 1", 10m) };
+    services.AddRestLibInMemoryWithDataAndOptions<Product, Guid>(
+        p => p.Id, Guid.NewGuid, seedData, new System.Text.Json.JsonSerializerOptions());
+    var provider = services.BuildServiceProvider();
+
+    // Act
+    var batchRepository = provider.GetService<IBatchRepository<Product, Guid>>();
+
+    // Assert
+    batchRepository.Should().NotBeNull();
+    batchRepository.Should().BeSameAs(provider.GetService<IRepository<Product, Guid>>());
   }
 
   #endregion
