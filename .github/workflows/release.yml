@@ -136,6 +136,29 @@ jobs:
       - name: Build
         run: dotnet build --configuration Release --no-restore -p:Version=${{ steps.version.outputs.VERSION }}
 
+      - name: Extract release notes from CHANGELOG
+        id: changelog
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          # Extract the section for this version from CHANGELOG.md
+          # Matches from "## [X.Y.Z]" up to (but not including) the next "## [" header
+          NOTES=$(awk -v ver="$VERSION" '
+            /^## \[/ {
+              if (found) exit
+              if ($0 ~ "\\[" ver "\\]") { found=1; next }
+            }
+            found { print }
+          ' CHANGELOG.md)
+
+          if [ -z "$NOTES" ]; then
+            echo "Warning: No CHANGELOG section found for version $VERSION"
+            echo "FOUND=false" >> $GITHUB_OUTPUT
+          else
+            echo "FOUND=true" >> $GITHUB_OUTPUT
+            # Write to a file to avoid delimiter issues with multiline output
+            echo "$NOTES" > release-notes.md
+          fi
+
       - name: Pack
         run: dotnet pack --configuration Release --no-build -p:PackageVersion=${{ steps.version.outputs.VERSION }} --output ./artifacts
 
@@ -167,7 +190,8 @@ jobs:
           files: |
             ./artifacts/*.nupkg
             ./artifacts/*.snupkg
-          generate_release_notes: true
+          body_path: ${{ steps.changelog.outputs.FOUND == 'true' && 'release-notes.md' || '' }}
+          generate_release_notes: ${{ steps.changelog.outputs.FOUND != 'true' }}
           draft: false
           prerelease: ${{ contains(steps.version.outputs.VERSION, '-') }}
         env:
