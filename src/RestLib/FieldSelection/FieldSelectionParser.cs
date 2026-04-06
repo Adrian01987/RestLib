@@ -25,8 +25,7 @@ public static class FieldSelectionParser
         var fields = new List<SelectedField>();
         var errors = new List<FieldSelectionValidationError>();
         var seenFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var allowedNames = string.Join(", ",
-            configuration.Properties.Select(p => p.QueryFieldName));
+        string? allowedNames = null;
 
         var segments = fieldsValue.Split(',');
 
@@ -52,6 +51,8 @@ public static class FieldSelectionParser
             var property = configuration.FindByQueryName(trimmed);
             if (property is null)
             {
+                allowedNames ??= string.Join(", ",
+                    configuration.Properties.Select(p => p.QueryFieldName));
                 errors.Add(new FieldSelectionValidationError
                 {
                     Field = trimmed,

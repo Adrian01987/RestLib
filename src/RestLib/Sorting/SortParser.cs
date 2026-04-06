@@ -25,7 +25,7 @@ public static class SortParser
         var fields = new List<SortField>();
         var errors = new List<SortValidationError>();
         var seenFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var allowedNames = string.Join(", ", configuration.Properties.Select(p => p.QueryParameterName));
+        string? allowedNames = null;
 
         var segments = sortValue.Split(',');
 
@@ -45,6 +45,8 @@ public static class SortParser
             var property = configuration.FindByQueryName(fieldName);
             if (property is null)
             {
+                allowedNames ??= string.Join(", ",
+                    configuration.Properties.Select(p => p.QueryParameterName));
                 errors.Add(new SortValidationError
                 {
                     Field = fieldName,
