@@ -20,131 +20,131 @@ namespace RestLib.Tests;
 /// </summary>
 public class PaginationLinksDisabledTests : IDisposable
 {
-  private readonly IHost _host;
-  private readonly HttpClient _client;
-  private readonly PaginationTestRepository _repository;
+    private readonly IHost _host;
+    private readonly HttpClient _client;
+    private readonly PaginationTestRepository _repository;
 
-  public PaginationLinksDisabledTests()
-  {
-    _repository = new PaginationTestRepository();
+    public PaginationLinksDisabledTests()
+    {
+        _repository = new PaginationTestRepository();
 
-    _host = new HostBuilder()
-        .ConfigureWebHost(webBuilder =>
-        {
-          webBuilder
-                  .UseTestServer()
-                  .ConfigureServices(services =>
-                  {
-                    services.AddRestLib(options =>
+        _host = new HostBuilder()
+            .ConfigureWebHost(webBuilder =>
+            {
+                webBuilder
+                    .UseTestServer()
+                    .ConfigureServices(services =>
                     {
-                      options.IncludePaginationLinks = false; // Disabled
+                        services.AddRestLib(options =>
+                    {
+                        options.IncludePaginationLinks = false; // Disabled
                     });
-                    services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
-                    services.AddRouting();
-                  })
-                  .Configure(app =>
-                  {
-                    app.UseRouting();
-                    app.UseEndpoints(endpoints =>
+                        services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
+                        services.AddRouting();
+                    })
+                    .Configure(app =>
                     {
-                      endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
+                        app.UseRouting();
+                        app.UseEndpoints(endpoints =>
+                    {
+                        endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
                       {
-                        config.AllowAnonymous();
+                          config.AllowAnonymous();
                       });
                     });
-                  });
-        })
-        .Build();
+                    });
+            })
+            .Build();
 
-    _host.Start();
-    _client = _host.GetTestClient();
-  }
+        _host.Start();
+        _client = _host.GetTestClient();
+    }
 
-  public void Dispose()
-  {
-    _client.Dispose();
-    _host.Dispose();
-  }
+    public void Dispose()
+    {
+        _client.Dispose();
+        _host.Dispose();
+    }
 
-  [Fact]
-  [Trait("Category", "Story4.2")]
-  public async Task GetAll_WhenLinksDisabled_SelfLinkIsOmitted()
-  {
-    // Arrange
-    _repository.SeedMany(5);
+    [Fact]
+    [Trait("Category", "Story4.2")]
+    public async Task GetAll_WhenLinksDisabled_SelfLinkIsOmitted()
+    {
+        // Arrange
+        _repository.SeedMany(5);
 
-    // Act
-    var response = await _client.GetAsync("/api/products");
+        // Act
+        var response = await _client.GetAsync("/api/products");
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-    json.TryGetProperty("self", out _).Should().BeFalse();
-  }
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        json.TryGetProperty("self", out _).Should().BeFalse();
+    }
 
-  [Fact]
-  [Trait("Category", "Story4.2")]
-  public async Task GetAll_WhenLinksDisabled_FirstLinkIsOmitted()
-  {
-    // Arrange
-    _repository.SeedMany(5);
+    [Fact]
+    [Trait("Category", "Story4.2")]
+    public async Task GetAll_WhenLinksDisabled_FirstLinkIsOmitted()
+    {
+        // Arrange
+        _repository.SeedMany(5);
 
-    // Act
-    var response = await _client.GetAsync("/api/products");
+        // Act
+        var response = await _client.GetAsync("/api/products");
 
-    // Assert
-    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-    json.TryGetProperty("first", out _).Should().BeFalse();
-  }
+        // Assert
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        json.TryGetProperty("first", out _).Should().BeFalse();
+    }
 
-  [Fact]
-  [Trait("Category", "Story4.2")]
-  public async Task GetAll_WhenLinksDisabled_NextLinkIsOmitted()
-  {
-    // Arrange
-    _repository.SeedMany(25);
+    [Fact]
+    [Trait("Category", "Story4.2")]
+    public async Task GetAll_WhenLinksDisabled_NextLinkIsOmitted()
+    {
+        // Arrange
+        _repository.SeedMany(25);
 
-    // Act
-    var response = await _client.GetAsync("/api/products?limit=10");
+        // Act
+        var response = await _client.GetAsync("/api/products?limit=10");
 
-    // Assert
-    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-    json.TryGetProperty("next", out _).Should().BeFalse();
-  }
+        // Assert
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        json.TryGetProperty("next", out _).Should().BeFalse();
+    }
 
-  [Fact]
-  [Trait("Category", "Story4.2")]
-  public async Task GetAll_WhenLinksDisabled_ItemsStillReturned()
-  {
-    // Arrange
-    _repository.SeedMany(5);
+    [Fact]
+    [Trait("Category", "Story4.2")]
+    public async Task GetAll_WhenLinksDisabled_ItemsStillReturned()
+    {
+        // Arrange
+        _repository.SeedMany(5);
 
-    // Act
-    var response = await _client.GetAsync("/api/products");
+        // Act
+        var response = await _client.GetAsync("/api/products");
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-    json.TryGetProperty("items", out var items).Should().BeTrue();
-    items.GetArrayLength().Should().Be(5);
-  }
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        json.TryGetProperty("items", out var items).Should().BeTrue();
+        items.GetArrayLength().Should().Be(5);
+    }
 
-  [Fact]
-  [Trait("Category", "Story4.2")]
-  public async Task GetAll_WhenLinksDisabled_PaginationStillWorks()
-  {
-    // Arrange
-    _repository.SeedMany(25);
+    [Fact]
+    [Trait("Category", "Story4.2")]
+    public async Task GetAll_WhenLinksDisabled_PaginationStillWorks()
+    {
+        // Arrange
+        _repository.SeedMany(25);
 
-    // Act
-    var response = await _client.GetAsync("/api/products?limit=10");
+        // Act
+        var response = await _client.GetAsync("/api/products?limit=10");
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.OK);
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-    var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-    json.GetProperty("items").GetArrayLength().Should().Be(10);
-  }
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        json.GetProperty("items").GetArrayLength().Should().Be(10);
+    }
 }

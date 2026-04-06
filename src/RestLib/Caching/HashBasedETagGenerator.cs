@@ -21,70 +21,70 @@ namespace RestLib.Caching;
 /// <param name="jsonOptions">The JSON serializer options to use.</param>
 public class HashBasedETagGenerator(JsonSerializerOptions jsonOptions) : IETagGenerator
 {
-  private readonly JsonSerializerOptions _jsonOptions = jsonOptions ?? throw new ArgumentNullException(nameof(jsonOptions));
+    private readonly JsonSerializerOptions _jsonOptions = jsonOptions ?? throw new ArgumentNullException(nameof(jsonOptions));
 
-  /// <summary>
-  /// Initializes a new instance with default JSON options.
-  /// </summary>
-  public HashBasedETagGenerator()
-      : this(new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower })
-  {
-  }
-
-  /// <inheritdoc />
-  public string Generate<TEntity>(TEntity entity) where TEntity : class
-  {
-    ArgumentNullException.ThrowIfNull(entity);
-
-    var utf8Bytes = JsonSerializer.SerializeToUtf8Bytes(entity, _jsonOptions);
-    var hash = SHA256.HashData(utf8Bytes);
-    var encoded = EncodeToBase64Url(hash);
-
-    // RFC 9110: ETags are quoted strings
-    return $"\"{encoded}\"";
-  }
-
-  /// <inheritdoc />
-  public bool Validate<TEntity>(TEntity entity, string etag) where TEntity : class
-  {
-    ArgumentNullException.ThrowIfNull(entity);
-
-    if (string.IsNullOrEmpty(etag))
+    /// <summary>
+    /// Initializes a new instance with default JSON options.
+    /// </summary>
+    public HashBasedETagGenerator()
+        : this(new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower })
     {
-      return false;
     }
 
-    // Handle wildcard
-    if (etag == "*")
+    /// <inheritdoc />
+    public string Generate<TEntity>(TEntity entity) where TEntity : class
     {
-      return true;
+        ArgumentNullException.ThrowIfNull(entity);
+
+        var utf8Bytes = JsonSerializer.SerializeToUtf8Bytes(entity, _jsonOptions);
+        var hash = SHA256.HashData(utf8Bytes);
+        var encoded = EncodeToBase64Url(hash);
+
+        // RFC 9110: ETags are quoted strings
+        return $"\"{encoded}\"";
     }
 
-    // Handle weak ETags (W/"...")
-    var normalizedEtag = etag;
-    if (etag.StartsWith("W/", StringComparison.OrdinalIgnoreCase))
+    /// <inheritdoc />
+    public bool Validate<TEntity>(TEntity entity, string etag) where TEntity : class
     {
-      normalizedEtag = etag[2..];
+        ArgumentNullException.ThrowIfNull(entity);
+
+        if (string.IsNullOrEmpty(etag))
+        {
+            return false;
+        }
+
+        // Handle wildcard
+        if (etag == "*")
+        {
+            return true;
+        }
+
+        // Handle weak ETags (W/"...")
+        var normalizedEtag = etag;
+        if (etag.StartsWith("W/", StringComparison.OrdinalIgnoreCase))
+        {
+            normalizedEtag = etag[2..];
+        }
+
+        var currentEtag = Generate(entity);
+        return string.Equals(currentEtag, normalizedEtag, StringComparison.Ordinal);
     }
 
-    var currentEtag = Generate(entity);
-    return string.Equals(currentEtag, normalizedEtag, StringComparison.Ordinal);
-  }
-
-  /// <summary>
-  /// Encodes bytes to base64url (URL-safe base64 without padding).
-  /// Uses first 16 bytes (128 bits) for a shorter but still unique ETag.
-  /// Uses span-based replacement to avoid intermediate string allocations.
-  /// </summary>
-  private static string EncodeToBase64Url(byte[] bytes)
-  {
-    var base64 = Convert.ToBase64String(bytes, 0, 16);
-    var len = base64.AsSpan().TrimEnd('=').Length;
-    return string.Create(len, (base64, len), static (span, state) =>
+    /// <summary>
+    /// Encodes bytes to base64url (URL-safe base64 without padding).
+    /// Uses first 16 bytes (128 bits) for a shorter but still unique ETag.
+    /// Uses span-based replacement to avoid intermediate string allocations.
+    /// </summary>
+    private static string EncodeToBase64Url(byte[] bytes)
     {
-      state.base64.AsSpan(0, state.len).CopyTo(span);
-      span.Replace('+', '-');
-      span.Replace('/', '_');
-    });
-  }
+        var base64 = Convert.ToBase64String(bytes, 0, 16);
+        var len = base64.AsSpan().TrimEnd('=').Length;
+        return string.Create(len, (base64, len), static (span, state) =>
+        {
+            state.base64.AsSpan(0, state.len).CopyTo(span);
+            span.Replace('+', '-');
+            span.Replace('/', '_');
+        });
+    }
 }

@@ -18,287 +18,287 @@ namespace RestLib.Tests;
 
 public partial class HookContextTests
 {
-  #region AC1: Can Inspect Request/Entity
+    #region AC1: Can Inspect Request/Entity
 
-  [Fact]
-  public async Task HookContext_CanInspect_HttpMethod()
-  {
-    // Arrange
-    string? capturedMethod = null;
-    var repository = new ContextTestRepository();
-    repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
-
-    using var host = await CreateHostWithHooks(repository, hooks =>
+    [Fact]
+    public async Task HookContext_CanInspect_HttpMethod()
     {
-      hooks.OnRequestReceived = async ctx =>
-      {
-        capturedMethod = ctx.HttpContext.Request.Method;
-        await Task.CompletedTask;
-      };
-    });
+        // Arrange
+        string? capturedMethod = null;
+        var repository = new ContextTestRepository();
+        repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
 
-    var client = host.GetTestClient();
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnRequestReceived = async ctx =>
+        {
+            capturedMethod = ctx.HttpContext.Request.Method;
+            await Task.CompletedTask;
+        };
+        });
 
-    // Act
-    await client.GetAsync("/api/items/1");
+        var client = host.GetTestClient();
 
-    // Assert
-    capturedMethod.Should().Be("GET");
-  }
+        // Act
+        await client.GetAsync("/api/items/1");
 
-  [Fact]
-  public async Task HookContext_CanInspect_RequestPath()
-  {
-    // Arrange
-    string? capturedPath = null;
-    var repository = new ContextTestRepository();
-    repository.AddTestData(new ContextTestEntity { Id = 42, Name = "Test" });
+        // Assert
+        capturedMethod.Should().Be("GET");
+    }
 
-    using var host = await CreateHostWithHooks(repository, hooks =>
+    [Fact]
+    public async Task HookContext_CanInspect_RequestPath()
     {
-      hooks.OnRequestReceived = async ctx =>
-      {
-        capturedPath = ctx.HttpContext.Request.Path.Value;
-        await Task.CompletedTask;
-      };
-    });
+        // Arrange
+        string? capturedPath = null;
+        var repository = new ContextTestRepository();
+        repository.AddTestData(new ContextTestEntity { Id = 42, Name = "Test" });
 
-    var client = host.GetTestClient();
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnRequestReceived = async ctx =>
+        {
+            capturedPath = ctx.HttpContext.Request.Path.Value;
+            await Task.CompletedTask;
+        };
+        });
 
-    // Act
-    await client.GetAsync("/api/items/42");
+        var client = host.GetTestClient();
 
-    // Assert
-    capturedPath.Should().Be("/api/items/42");
-  }
+        // Act
+        await client.GetAsync("/api/items/42");
 
-  [Fact]
-  public async Task HookContext_CanInspect_QueryString()
-  {
-    // Arrange
-    string? capturedQuery = null;
-    var repository = new ContextTestRepository();
+        // Assert
+        capturedPath.Should().Be("/api/items/42");
+    }
 
-    using var host = await CreateHostWithHooks(repository, hooks =>
+    [Fact]
+    public async Task HookContext_CanInspect_QueryString()
     {
-      hooks.OnRequestReceived = async ctx =>
-      {
-        capturedQuery = ctx.HttpContext.Request.QueryString.Value;
-        await Task.CompletedTask;
-      };
-    });
+        // Arrange
+        string? capturedQuery = null;
+        var repository = new ContextTestRepository();
 
-    var client = host.GetTestClient();
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnRequestReceived = async ctx =>
+        {
+            capturedQuery = ctx.HttpContext.Request.QueryString.Value;
+            await Task.CompletedTask;
+        };
+        });
 
-    // Act
-    await client.GetAsync("/api/items?limit=5");
+        var client = host.GetTestClient();
 
-    // Assert
-    capturedQuery.Should().Be("?limit=5");
-  }
+        // Act
+        await client.GetAsync("/api/items?limit=5");
 
-  [Fact]
-  public async Task HookContext_CanInspect_RequestHeaders()
-  {
-    // Arrange
-    string? capturedHeader = null;
-    var repository = new ContextTestRepository();
-    repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
+        // Assert
+        capturedQuery.Should().Be("?limit=5");
+    }
 
-    using var host = await CreateHostWithHooks(repository, hooks =>
+    [Fact]
+    public async Task HookContext_CanInspect_RequestHeaders()
     {
-      hooks.OnRequestReceived = async ctx =>
-      {
-        capturedHeader = ctx.HttpContext.Request.Headers["X-Custom-Header"].ToString();
-        await Task.CompletedTask;
-      };
-    });
+        // Arrange
+        string? capturedHeader = null;
+        var repository = new ContextTestRepository();
+        repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
 
-    var client = host.GetTestClient();
-    var request = new HttpRequestMessage(HttpMethod.Get, "/api/items/1");
-    request.Headers.Add("X-Custom-Header", "CustomValue");
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnRequestReceived = async ctx =>
+        {
+            capturedHeader = ctx.HttpContext.Request.Headers["X-Custom-Header"].ToString();
+            await Task.CompletedTask;
+        };
+        });
 
-    // Act
-    await client.SendAsync(request);
+        var client = host.GetTestClient();
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/items/1");
+        request.Headers.Add("X-Custom-Header", "CustomValue");
 
-    // Assert
-    capturedHeader.Should().Be("CustomValue");
-  }
+        // Act
+        await client.SendAsync(request);
 
-  [Fact]
-  public async Task HookContext_CanInspect_Operation()
-  {
-    // Arrange
-    var capturedOperations = new List<RestLibOperation>();
-    var repository = new ContextTestRepository();
-    repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
+        // Assert
+        capturedHeader.Should().Be("CustomValue");
+    }
 
-    using var host = await CreateHostWithHooks(repository, hooks =>
+    [Fact]
+    public async Task HookContext_CanInspect_Operation()
     {
-      hooks.OnRequestReceived = async ctx =>
-      {
-        capturedOperations.Add(ctx.Operation);
-        await Task.CompletedTask;
-      };
-    });
+        // Arrange
+        var capturedOperations = new List<RestLibOperation>();
+        var repository = new ContextTestRepository();
+        repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
 
-    var client = host.GetTestClient();
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnRequestReceived = async ctx =>
+        {
+            capturedOperations.Add(ctx.Operation);
+            await Task.CompletedTask;
+        };
+        });
 
-    // Act - Test all operations
-    await client.GetAsync("/api/items");
-    await client.GetAsync("/api/items/1");
-    await client.PostAsJsonAsync("/api/items", new ContextTestEntity { Name = "New" });
-    await client.PutAsJsonAsync("/api/items/1", new ContextTestEntity { Name = "Updated" });
-    var patch = new StringContent("{\"name\":\"Patched\"}", Encoding.UTF8, "application/json");
-    await client.PatchAsync("/api/items/1", patch);
-    await client.DeleteAsync("/api/items/1");
+        var client = host.GetTestClient();
 
-    // Assert
-    capturedOperations.Should().ContainInOrder(
-      RestLibOperation.GetAll,
-      RestLibOperation.GetById,
-      RestLibOperation.Create,
-      RestLibOperation.Update,
-      RestLibOperation.Patch,
-      RestLibOperation.Delete
-    );
-  }
+        // Act - Test all operations
+        await client.GetAsync("/api/items");
+        await client.GetAsync("/api/items/1");
+        await client.PostAsJsonAsync("/api/items", new ContextTestEntity { Name = "New" });
+        await client.PutAsJsonAsync("/api/items/1", new ContextTestEntity { Name = "Updated" });
+        var patch = new StringContent("{\"name\":\"Patched\"}", Encoding.UTF8, "application/json");
+        await client.PatchAsync("/api/items/1", patch);
+        await client.DeleteAsync("/api/items/1");
 
-  [Fact]
-  public async Task HookContext_CanInspect_ResourceId()
-  {
-    // Arrange
-    int? capturedId = null;
-    var repository = new ContextTestRepository();
-    repository.AddTestData(new ContextTestEntity { Id = 99, Name = "Test" });
+        // Assert
+        capturedOperations.Should().ContainInOrder(
+          RestLibOperation.GetAll,
+          RestLibOperation.GetById,
+          RestLibOperation.Create,
+          RestLibOperation.Update,
+          RestLibOperation.Patch,
+          RestLibOperation.Delete
+        );
+    }
 
-    using var host = await CreateHostWithHooks(repository, hooks =>
+    [Fact]
+    public async Task HookContext_CanInspect_ResourceId()
     {
-      hooks.OnRequestReceived = async ctx =>
-      {
-        capturedId = ctx.ResourceId;
-        await Task.CompletedTask;
-      };
-    });
+        // Arrange
+        int? capturedId = null;
+        var repository = new ContextTestRepository();
+        repository.AddTestData(new ContextTestEntity { Id = 99, Name = "Test" });
 
-    var client = host.GetTestClient();
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnRequestReceived = async ctx =>
+        {
+            capturedId = ctx.ResourceId;
+            await Task.CompletedTask;
+        };
+        });
 
-    // Act
-    await client.GetAsync("/api/items/99");
+        var client = host.GetTestClient();
 
-    // Assert
-    capturedId.Should().Be(99);
-  }
+        // Act
+        await client.GetAsync("/api/items/99");
 
-  [Fact]
-  public async Task HookContext_CanInspect_Entity_InOnRequestValidated()
-  {
-    // Arrange
-    ContextTestEntity? capturedEntity = null;
-    var repository = new ContextTestRepository();
+        // Assert
+        capturedId.Should().Be(99);
+    }
 
-    using var host = await CreateHostWithHooks(repository, hooks =>
+    [Fact]
+    public async Task HookContext_CanInspect_Entity_InOnRequestValidated()
     {
-      hooks.OnRequestValidated = async ctx =>
-      {
-        capturedEntity = ctx.Entity;
-        await Task.CompletedTask;
-      };
-    });
+        // Arrange
+        ContextTestEntity? capturedEntity = null;
+        var repository = new ContextTestRepository();
 
-    var client = host.GetTestClient();
-    var entity = new ContextTestEntity { Name = "InspectMe", Price = 19.99m };
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnRequestValidated = async ctx =>
+        {
+            capturedEntity = ctx.Entity;
+            await Task.CompletedTask;
+        };
+        });
 
-    // Act
-    await client.PostAsJsonAsync("/api/items", entity);
+        var client = host.GetTestClient();
+        var entity = new ContextTestEntity { Name = "InspectMe", Price = 19.99m };
 
-    // Assert
-    capturedEntity.Should().NotBeNull();
-    capturedEntity!.Name.Should().Be("InspectMe");
-    capturedEntity.Price.Should().Be(19.99m);
-  }
+        // Act
+        await client.PostAsJsonAsync("/api/items", entity);
 
-  [Fact]
-  public async Task HookContext_CanInspect_OriginalEntity_InBeforePersist()
-  {
-    // Arrange
-    ContextTestEntity? capturedOriginal = null;
-    var repository = new ContextTestRepository();
-    repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Original", Price = 10.00m });
+        // Assert
+        capturedEntity.Should().NotBeNull();
+        capturedEntity!.Name.Should().Be("InspectMe");
+        capturedEntity.Price.Should().Be(19.99m);
+    }
 
-    using var host = await CreateHostWithHooks(repository, hooks =>
+    [Fact]
+    public async Task HookContext_CanInspect_OriginalEntity_InBeforePersist()
     {
-      hooks.BeforePersist = async ctx =>
-      {
-        capturedOriginal = ctx.OriginalEntity;
-        await Task.CompletedTask;
-      };
-    });
+        // Arrange
+        ContextTestEntity? capturedOriginal = null;
+        var repository = new ContextTestRepository();
+        repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Original", Price = 10.00m });
 
-    var client = host.GetTestClient();
-    var updated = new ContextTestEntity { Name = "Updated", Price = 20.00m };
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.BeforePersist = async ctx =>
+        {
+            capturedOriginal = ctx.OriginalEntity;
+            await Task.CompletedTask;
+        };
+        });
 
-    // Act
-    await client.PutAsJsonAsync("/api/items/1", updated);
+        var client = host.GetTestClient();
+        var updated = new ContextTestEntity { Name = "Updated", Price = 20.00m };
 
-    // Assert
-    capturedOriginal.Should().NotBeNull();
-    capturedOriginal!.Name.Should().Be("Original");
-    capturedOriginal.Price.Should().Be(10.00m);
-  }
+        // Act
+        await client.PutAsJsonAsync("/api/items/1", updated);
 
-  [Fact]
-  public async Task HookContext_CanInspect_Services()
-  {
-    // Arrange
-    bool foundRepository = false;
-    var repository = new ContextTestRepository();
-    repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
+        // Assert
+        capturedOriginal.Should().NotBeNull();
+        capturedOriginal!.Name.Should().Be("Original");
+        capturedOriginal.Price.Should().Be(10.00m);
+    }
 
-    using var host = await CreateHostWithHooks(repository, hooks =>
+    [Fact]
+    public async Task HookContext_CanInspect_Services()
     {
-      hooks.OnRequestReceived = async ctx =>
-      {
-        foundRepository = ctx.Services.GetService<IRepository<ContextTestEntity, int>>() is not null;
-        await Task.CompletedTask;
-      };
-    });
+        // Arrange
+        bool foundRepository = false;
+        var repository = new ContextTestRepository();
+        repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
 
-    var client = host.GetTestClient();
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnRequestReceived = async ctx =>
+        {
+            foundRepository = ctx.Services.GetService<IRepository<ContextTestEntity, int>>() is not null;
+            await Task.CompletedTask;
+        };
+        });
 
-    // Act
-    await client.GetAsync("/api/items/1");
+        var client = host.GetTestClient();
 
-    // Assert
-    foundRepository.Should().BeTrue();
-  }
+        // Act
+        await client.GetAsync("/api/items/1");
 
-  [Fact]
-  public async Task HookContext_CanInspect_CancellationToken()
-  {
-    // Arrange
-    bool tokenValid = false;
-    var repository = new ContextTestRepository();
-    repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
+        // Assert
+        foundRepository.Should().BeTrue();
+    }
 
-    using var host = await CreateHostWithHooks(repository, hooks =>
+    [Fact]
+    public async Task HookContext_CanInspect_CancellationToken()
     {
-      hooks.OnRequestReceived = async ctx =>
-      {
-        // Token should be valid (not default and not cancelled)
-        tokenValid = ctx.CancellationToken != default && !ctx.CancellationToken.IsCancellationRequested;
-        await Task.CompletedTask;
-      };
-    });
+        // Arrange
+        bool tokenValid = false;
+        var repository = new ContextTestRepository();
+        repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
 
-    var client = host.GetTestClient();
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnRequestReceived = async ctx =>
+        {
+            // Token should be valid (not default and not cancelled)
+            tokenValid = ctx.CancellationToken != default && !ctx.CancellationToken.IsCancellationRequested;
+            await Task.CompletedTask;
+        };
+        });
 
-    // Act
-    await client.GetAsync("/api/items/1");
+        var client = host.GetTestClient();
 
-    // Assert
-    tokenValid.Should().BeTrue();
-  }
+        // Act
+        await client.GetAsync("/api/items/1");
 
-  #endregion
+        // Assert
+        tokenValid.Should().BeTrue();
+    }
+
+    #endregion
 }

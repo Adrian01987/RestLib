@@ -18,231 +18,231 @@ namespace RestLib.Tests;
 
 public partial class HookContextTests
 {
-  #region AC3: Can Short-Circuit Pipeline
+    #region AC3: Can Short-Circuit Pipeline
 
-  [Fact]
-  public async Task HookContext_ShortCircuit_StopsSubsequentHooks()
-  {
-    // Arrange
-    var hooksCalled = new List<string>();
-    var repository = new ContextTestRepository();
-    repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
-
-    using var host = await CreateHostWithHooks(repository, hooks =>
+    [Fact]
+    public async Task HookContext_ShortCircuit_StopsSubsequentHooks()
     {
-      hooks.OnRequestReceived = async ctx =>
-      {
-        hooksCalled.Add("OnRequestReceived");
-        ctx.ShouldContinue = false;
-        ctx.EarlyResult = Results.Ok(new { message = "Early exit" });
-        await Task.CompletedTask;
-      };
-      hooks.OnRequestValidated = async ctx =>
-      {
-        hooksCalled.Add("OnRequestValidated");
-        await Task.CompletedTask;
-      };
-      hooks.BeforeResponse = async ctx =>
-      {
-        hooksCalled.Add("BeforeResponse");
-        await Task.CompletedTask;
-      };
-    });
+        // Arrange
+        var hooksCalled = new List<string>();
+        var repository = new ContextTestRepository();
+        repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
 
-    var client = host.GetTestClient();
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnRequestReceived = async ctx =>
+        {
+            hooksCalled.Add("OnRequestReceived");
+            ctx.ShouldContinue = false;
+            ctx.EarlyResult = Results.Ok(new { message = "Early exit" });
+            await Task.CompletedTask;
+        };
+            hooks.OnRequestValidated = async ctx =>
+        {
+            hooksCalled.Add("OnRequestValidated");
+            await Task.CompletedTask;
+        };
+            hooks.BeforeResponse = async ctx =>
+        {
+            hooksCalled.Add("BeforeResponse");
+            await Task.CompletedTask;
+        };
+        });
 
-    // Act
-    await client.GetAsync("/api/items/1");
+        var client = host.GetTestClient();
 
-    // Assert - Only OnRequestReceived should have been called
-    hooksCalled.Should().HaveCount(1);
-    hooksCalled.Should().Contain("OnRequestReceived");
-  }
+        // Act
+        await client.GetAsync("/api/items/1");
 
-  [Fact]
-  public async Task HookContext_ShortCircuit_SkipsRepositoryOperation()
-  {
-    // Arrange
-    var repository = new ContextTestRepository();
+        // Assert - Only OnRequestReceived should have been called
+        hooksCalled.Should().HaveCount(1);
+        hooksCalled.Should().Contain("OnRequestReceived");
+    }
 
-    // We can detect if repository was called by checking if LastCreated is set
-    using var host = await CreateHostWithHooks(repository, hooks =>
+    [Fact]
+    public async Task HookContext_ShortCircuit_SkipsRepositoryOperation()
     {
-      hooks.OnRequestValidated = async ctx =>
-      {
-        ctx.ShouldContinue = false;
-        ctx.EarlyResult = Results.BadRequest(new { error = "Validation failed" });
-        await Task.CompletedTask;
-      };
-    });
+        // Arrange
+        var repository = new ContextTestRepository();
 
-    var client = host.GetTestClient();
-    var entity = new ContextTestEntity { Name = "Test" };
+        // We can detect if repository was called by checking if LastCreated is set
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnRequestValidated = async ctx =>
+        {
+            ctx.ShouldContinue = false;
+            ctx.EarlyResult = Results.BadRequest(new { error = "Validation failed" });
+            await Task.CompletedTask;
+        };
+        });
 
-    // Act
-    await client.PostAsJsonAsync("/api/items", entity);
+        var client = host.GetTestClient();
+        var entity = new ContextTestEntity { Name = "Test" };
 
-    // Assert - Repository should not have been called
-    repository.LastCreated.Should().BeNull();
-  }
+        // Act
+        await client.PostAsJsonAsync("/api/items", entity);
 
-  [Fact]
-  public async Task HookContext_ShortCircuit_ReturnsEarlyResult_StatusCode()
-  {
-    // Arrange
-    var repository = new ContextTestRepository();
-    repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
+        // Assert - Repository should not have been called
+        repository.LastCreated.Should().BeNull();
+    }
 
-    using var host = await CreateHostWithHooks(repository, hooks =>
+    [Fact]
+    public async Task HookContext_ShortCircuit_ReturnsEarlyResult_StatusCode()
     {
-      hooks.OnRequestReceived = async ctx =>
-      {
-        ctx.ShouldContinue = false;
-        ctx.EarlyResult = Results.StatusCode(StatusCodes.Status403Forbidden);
-        await Task.CompletedTask;
-      };
-    });
+        // Arrange
+        var repository = new ContextTestRepository();
+        repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
 
-    var client = host.GetTestClient();
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnRequestReceived = async ctx =>
+        {
+            ctx.ShouldContinue = false;
+            ctx.EarlyResult = Results.StatusCode(StatusCodes.Status403Forbidden);
+            await Task.CompletedTask;
+        };
+        });
 
-    // Act
-    var response = await client.GetAsync("/api/items/1");
+        var client = host.GetTestClient();
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-  }
+        // Act
+        var response = await client.GetAsync("/api/items/1");
 
-  [Fact]
-  public async Task HookContext_ShortCircuit_ReturnsEarlyResult_CustomJson()
-  {
-    // Arrange
-    var repository = new ContextTestRepository();
-    repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
 
-    using var host = await CreateHostWithHooks(repository, hooks =>
+    [Fact]
+    public async Task HookContext_ShortCircuit_ReturnsEarlyResult_CustomJson()
     {
-      hooks.OnRequestReceived = async ctx =>
-      {
-        ctx.ShouldContinue = false;
-        ctx.EarlyResult = Results.Json(new { custom = "response", code = 42 });
-        await Task.CompletedTask;
-      };
-    });
+        // Arrange
+        var repository = new ContextTestRepository();
+        repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
 
-    var client = host.GetTestClient();
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnRequestReceived = async ctx =>
+        {
+            ctx.ShouldContinue = false;
+            ctx.EarlyResult = Results.Json(new { custom = "response", code = 42 });
+            await Task.CompletedTask;
+        };
+        });
 
-    // Act
-    var response = await client.GetAsync("/api/items/1");
-    var content = await response.Content.ReadAsStringAsync();
+        var client = host.GetTestClient();
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.OK);
-    content.Should().Contain("custom");
-    content.Should().Contain("response");
-    content.Should().Contain("42");
-  }
+        // Act
+        var response = await client.GetAsync("/api/items/1");
+        var content = await response.Content.ReadAsStringAsync();
 
-  [Fact]
-  public async Task HookContext_ShortCircuit_CanReturnRedirect()
-  {
-    // Arrange
-    var repository = new ContextTestRepository();
-    repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        content.Should().Contain("custom");
+        content.Should().Contain("response");
+        content.Should().Contain("42");
+    }
 
-    using var host = await CreateHostWithHooks(repository, hooks =>
+    [Fact]
+    public async Task HookContext_ShortCircuit_CanReturnRedirect()
     {
-      hooks.OnRequestReceived = async ctx =>
-      {
-        ctx.ShouldContinue = false;
-        ctx.EarlyResult = Results.Redirect("/api/items/2", permanent: false);
-        await Task.CompletedTask;
-      };
-    });
+        // Arrange
+        var repository = new ContextTestRepository();
+        repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
 
-    var client = host.GetTestClient();
-    client.DefaultRequestHeaders.Add("X-Follow-Redirects", "false");
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnRequestReceived = async ctx =>
+        {
+            ctx.ShouldContinue = false;
+            ctx.EarlyResult = Results.Redirect("/api/items/2", permanent: false);
+            await Task.CompletedTask;
+        };
+        });
 
-    // Act
-    var response = await client.GetAsync("/api/items/1");
+        var client = host.GetTestClient();
+        client.DefaultRequestHeaders.Add("X-Follow-Redirects", "false");
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.Redirect);
-    response.Headers.Location.Should().NotBeNull();
-    response.Headers.Location!.ToString().Should().Be("/api/items/2");
-  }
+        // Act
+        var response = await client.GetAsync("/api/items/1");
 
-  [Fact]
-  public async Task HookContext_ShortCircuit_InBeforePersist_StopsRepositoryAndLaterHooks()
-  {
-    // Arrange
-    var hooksCalled = new List<string>();
-    var repository = new ContextTestRepository();
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect);
+        response.Headers.Location.Should().NotBeNull();
+        response.Headers.Location!.ToString().Should().Be("/api/items/2");
+    }
 
-    using var host = await CreateHostWithHooks(repository, hooks =>
+    [Fact]
+    public async Task HookContext_ShortCircuit_InBeforePersist_StopsRepositoryAndLaterHooks()
     {
-      hooks.OnRequestReceived = async ctx =>
-      {
-        hooksCalled.Add("OnRequestReceived");
-        await Task.CompletedTask;
-      };
-      hooks.BeforePersist = async ctx =>
-      {
-        hooksCalled.Add("BeforePersist");
-        ctx.ShouldContinue = false;
-        ctx.EarlyResult = Results.Conflict(new { error = "Cannot persist" });
-        await Task.CompletedTask;
-      };
-      hooks.AfterPersist = async ctx =>
-      {
-        hooksCalled.Add("AfterPersist");
-        await Task.CompletedTask;
-      };
-      hooks.BeforeResponse = async ctx =>
-      {
-        hooksCalled.Add("BeforeResponse");
-        await Task.CompletedTask;
-      };
-    });
+        // Arrange
+        var hooksCalled = new List<string>();
+        var repository = new ContextTestRepository();
 
-    var client = host.GetTestClient();
-    var entity = new ContextTestEntity { Name = "Test" };
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnRequestReceived = async ctx =>
+        {
+            hooksCalled.Add("OnRequestReceived");
+            await Task.CompletedTask;
+        };
+            hooks.BeforePersist = async ctx =>
+        {
+            hooksCalled.Add("BeforePersist");
+            ctx.ShouldContinue = false;
+            ctx.EarlyResult = Results.Conflict(new { error = "Cannot persist" });
+            await Task.CompletedTask;
+        };
+            hooks.AfterPersist = async ctx =>
+        {
+            hooksCalled.Add("AfterPersist");
+            await Task.CompletedTask;
+        };
+            hooks.BeforeResponse = async ctx =>
+        {
+            hooksCalled.Add("BeforeResponse");
+            await Task.CompletedTask;
+        };
+        });
 
-    // Act
-    var response = await client.PostAsJsonAsync("/api/items", entity);
+        var client = host.GetTestClient();
+        var entity = new ContextTestEntity { Name = "Test" };
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-    hooksCalled.Should().ContainInOrder("OnRequestReceived", "BeforePersist");
-    hooksCalled.Should().NotContain("AfterPersist");
-    hooksCalled.Should().NotContain("BeforeResponse");
-    repository.LastCreated.Should().BeNull();
-  }
+        // Act
+        var response = await client.PostAsJsonAsync("/api/items", entity);
 
-  [Fact]
-  public async Task HookContext_ShortCircuit_WithoutEarlyResult_Returns500()
-  {
-    // Arrange
-    var repository = new ContextTestRepository();
-    repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        hooksCalled.Should().ContainInOrder("OnRequestReceived", "BeforePersist");
+        hooksCalled.Should().NotContain("AfterPersist");
+        hooksCalled.Should().NotContain("BeforeResponse");
+        repository.LastCreated.Should().BeNull();
+    }
 
-    using var host = await CreateHostWithHooks(repository, hooks =>
+    [Fact]
+    public async Task HookContext_ShortCircuit_WithoutEarlyResult_Returns500()
     {
-      hooks.OnRequestReceived = async ctx =>
-      {
-        ctx.ShouldContinue = false;
-        // Not setting EarlyResult
-        await Task.CompletedTask;
-      };
-    });
+        // Arrange
+        var repository = new ContextTestRepository();
+        repository.AddTestData(new ContextTestEntity { Id = 1, Name = "Test" });
 
-    var client = host.GetTestClient();
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnRequestReceived = async ctx =>
+        {
+            ctx.ShouldContinue = false;
+            // Not setting EarlyResult
+            await Task.CompletedTask;
+        };
+        });
 
-    // Act
-    var response = await client.GetAsync("/api/items/1");
+        var client = host.GetTestClient();
 
-    // Assert - Should return 500 when no EarlyResult is set
-    response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-  }
+        // Act
+        var response = await client.GetAsync("/api/items/1");
 
-  #endregion
+        // Assert - Should return 500 when no EarlyResult is set
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
+
+    #endregion
 }

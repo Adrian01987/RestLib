@@ -19,56 +19,56 @@ namespace RestLib.Tests;
 /// </summary>
 public partial class OpenApiDocumentationTests
 {
-  #region Response Headers
+    #region Response Headers
 
-  [Fact]
-  public async Task OpenApi_GetById_200Response_Should_Document_ETagHeader()
-  {
-    // Arrange
-    using var host = await CreateHostWithOpenApi();
-    var client = host.GetTestClient();
+    [Fact]
+    public async Task OpenApi_GetById_200Response_Should_Document_ETagHeader()
+    {
+        // Arrange
+        using var host = await CreateHostWithOpenApi();
+        var client = host.GetTestClient();
 
-    // Act
-    var openApiDoc = await GetOpenApiDocument(client);
-    var getByIdOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!;
-    var response200 = getByIdOp.Responses["200"];
+        // Act
+        var openApiDoc = await GetOpenApiDocument(client);
+        var getByIdOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!;
+        var response200 = getByIdOp.Responses["200"];
 
-    // Assert
-    response200.Headers.Should().ContainKey("ETag");
-    response200.Headers["ETag"]!.Description.Should().Contain("cache");
-  }
+        // Assert
+        response200.Headers.Should().ContainKey("ETag");
+        response200.Headers["ETag"]!.Description.Should().Contain("cache");
+    }
 
-  [Fact]
-  public async Task OpenApi_Create_201Response_Should_Document_ETagHeader()
-  {
-    // Arrange
-    using var host = await CreateHostWithOpenApi();
-    var client = host.GetTestClient();
+    [Fact]
+    public async Task OpenApi_Create_201Response_Should_Document_ETagHeader()
+    {
+        // Arrange
+        using var host = await CreateHostWithOpenApi();
+        var client = host.GetTestClient();
 
-    // Act
-    var openApiDoc = await GetOpenApiDocument(client);
-    var createOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!;
-    var response201 = createOp.Responses["201"];
+        // Act
+        var openApiDoc = await GetOpenApiDocument(client);
+        var createOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!;
+        var response201 = createOp.Responses["201"];
 
-    // Assert
-    response201.Headers.Should().ContainKey("ETag");
-  }
+        // Assert
+        response201.Headers.Should().ContainKey("ETag");
+    }
 
-  [Fact]
-  public async Task OpenApi_Update_200Response_Should_Document_ETagHeader()
-  {
-    // Arrange
-    using var host = await CreateHostWithOpenApi();
-    var client = host.GetTestClient();
+    [Fact]
+    public async Task OpenApi_Update_200Response_Should_Document_ETagHeader()
+    {
+        // Arrange
+        using var host = await CreateHostWithOpenApi();
+        var client = host.GetTestClient();
 
-    // Act
-    var openApiDoc = await GetOpenApiDocument(client);
-    var updateOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!;
-    var response200 = updateOp.Responses["200"];
+        // Act
+        var openApiDoc = await GetOpenApiDocument(client);
+        var updateOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!;
+        var response200 = updateOp.Responses["200"];
 
-    // Assert
-    response200.Headers.Should().ContainKey("ETag");
-  }
+        // Assert
+        response200.Headers.Should().ContainKey("ETag");
+    }
 
-  #endregion
+    #endregion
 }

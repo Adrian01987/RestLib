@@ -10,31 +10,31 @@ namespace RestLib.Serialization;
 /// </summary>
 public static class RestLibJsonOptions
 {
-  /// <summary>
-  /// Creates JSON serializer options based on RestLib configuration.
-  /// </summary>
-  /// <param name="options">The RestLib options.</param>
-  /// <returns>Configured JsonSerializerOptions.</returns>
-  public static JsonSerializerOptions Create(RestLibOptions options)
-  {
-    ArgumentNullException.ThrowIfNull(options);
-
-    var jsonOptions = new JsonSerializerOptions
+    /// <summary>
+    /// Creates JSON serializer options based on RestLib configuration.
+    /// </summary>
+    /// <param name="options">The RestLib options.</param>
+    /// <returns>Configured JsonSerializerOptions.</returns>
+    public static JsonSerializerOptions Create(RestLibOptions options)
     {
-      PropertyNamingPolicy = options.JsonNamingPolicy,
-      PropertyNameCaseInsensitive = true,
-      DefaultIgnoreCondition = options.OmitNullValues
-            ? JsonIgnoreCondition.WhenWritingNull
-            : JsonIgnoreCondition.Never
-    };
+        ArgumentNullException.ThrowIfNull(options);
 
-    return jsonOptions;
-  }
+        var jsonOptions = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = options.JsonNamingPolicy,
+            PropertyNameCaseInsensitive = true,
+            DefaultIgnoreCondition = options.OmitNullValues
+                ? JsonIgnoreCondition.WhenWritingNull
+                : JsonIgnoreCondition.Never
+        };
 
-  /// <summary>
-  /// Creates default JSON serializer options with snake_case naming and null omission.
-  /// </summary>
-  /// <returns>Default JsonSerializerOptions for RestLib.</returns>
-  public static JsonSerializerOptions CreateDefault() =>
-    Create(new RestLibOptions());
+        return jsonOptions;
+    }
+
+    /// <summary>
+    /// Creates default JSON serializer options with snake_case naming and null omission.
+    /// </summary>
+    /// <returns>Default JsonSerializerOptions for RestLib.</returns>
+    public static JsonSerializerOptions CreateDefault() =>
+      Create(new RestLibOptions());
 }

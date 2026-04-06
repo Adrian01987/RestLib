@@ -5,13 +5,13 @@ namespace RestLib.Sample.Models;
 /// </summary>
 public class Order
 {
-  public Guid Id { get; set; }
-  public required string CustomerEmail { get; set; }
-  public List<OrderLine> Lines { get; set; } = [];
-  public decimal Total { get; set; }
-  public string Status { get; set; } = "Pending";
-  public DateTime CreatedAt { get; set; }
-  public DateTime? UpdatedAt { get; set; }
+    public Guid Id { get; set; }
+    public required string CustomerEmail { get; set; }
+    public List<OrderLine> Lines { get; set; } = [];
+    public decimal Total { get; set; }
+    public string Status { get; set; } = "Pending";
+    public DateTime CreatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
 }
 
 /// <summary>
@@ -19,7 +19,7 @@ public class Order
 /// </summary>
 public class OrderLine
 {
-  public Guid ProductId { get; set; }
-  public int Quantity { get; set; }
-  public decimal UnitPrice { get; set; }
+    public Guid ProductId { get; set; }
+    public int Quantity { get; set; }
+    public decimal UnitPrice { get; set; }
 }

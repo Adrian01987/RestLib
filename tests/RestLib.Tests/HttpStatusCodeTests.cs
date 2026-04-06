@@ -20,360 +20,360 @@ namespace RestLib.Tests;
 /// </summary>
 public class HttpStatusCodeTests : IDisposable
 {
-  private readonly IHost _host;
-  private readonly HttpClient _client;
-  private readonly ProductEntityRepository _repository;
+    private readonly IHost _host;
+    private readonly HttpClient _client;
+    private readonly ProductEntityRepository _repository;
 
-  public HttpStatusCodeTests()
-  {
-    _repository = new ProductEntityRepository();
+    public HttpStatusCodeTests()
+    {
+        _repository = new ProductEntityRepository();
 
-    _host = new HostBuilder()
-        .ConfigureWebHost(webBuilder =>
-        {
-          webBuilder
-                  .UseTestServer()
-                  .ConfigureServices(services =>
-                  {
-                    services.AddRestLib();
-                    services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
-                    services.AddRouting();
-                  })
-                  .Configure(app =>
-                  {
-                    app.UseRouting();
-                    app.UseEndpoints(endpoints =>
+        _host = new HostBuilder()
+            .ConfigureWebHost(webBuilder =>
+            {
+                webBuilder
+                    .UseTestServer()
+                    .ConfigureServices(services =>
+                    {
+                        services.AddRestLib();
+                        services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
+                        services.AddRouting();
+                    })
+                    .Configure(app =>
+                    {
+                        app.UseRouting();
+                        app.UseEndpoints(endpoints =>
                         {
-                          endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
+                            endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
                             {
-                              config.AllowAnonymous();
+                                config.AllowAnonymous();
                             });
                         });
-                  });
-        })
-        .Build();
+                    });
+            })
+            .Build();
 
-    _host.Start();
-    _client = _host.GetTestClient();
-  }
+        _host.Start();
+        _client = _host.GetTestClient();
+    }
 
-  #region GET /collection - List
+    #region GET /collection - List
 
-  [Fact]
-  public async Task GetAll_Returns_200_OK()
-  {
-    // Arrange
-    _repository.Seed(
-        new ProductEntity { Id = Guid.NewGuid(), ProductName = "Product 1", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
-    );
-
-    // Act
-    var response = await _client.GetAsync("/api/products");
-
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.OK);
-  }
-
-  [Fact]
-  public async Task GetAll_Empty_Returns_200_OK()
-  {
-    // Act
-    var response = await _client.GetAsync("/api/products");
-
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.OK);
-  }
-
-  #endregion
-
-  #region GET /collection/{id} - Read
-
-  [Fact]
-  public async Task GetById_ExistingResource_Returns_200_OK()
-  {
-    // Arrange
-    var id = Guid.NewGuid();
-    _repository.Seed(
-        new ProductEntity { Id = id, ProductName = "Product", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
-    );
-
-    // Act
-    var response = await _client.GetAsync($"/api/products/{id}");
-
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.OK);
-  }
-
-  [Fact]
-  public async Task GetById_NonExistingResource_Returns_404_NotFound()
-  {
-    // Arrange
-    var nonExistentId = Guid.NewGuid();
-
-    // Act
-    var response = await _client.GetAsync($"/api/products/{nonExistentId}");
-
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-  }
-
-  #endregion
-
-  #region POST /collection - Create
-
-  [Fact]
-  public async Task Create_Returns_201_Created()
-  {
-    // Arrange
-    var newProduct = new
+    [Fact]
+    public async Task GetAll_Returns_200_OK()
     {
-      product_name = "New Product",
-      unit_price = 25.00,
-      stock_quantity = 10,
-      is_active = true
-    };
+        // Arrange
+        _repository.Seed(
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Product 1", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
+        );
 
-    // Act
-    var response = await _client.PostAsJsonAsync("/api/products", newProduct);
+        // Act
+        var response = await _client.GetAsync("/api/products");
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.Created);
-  }
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
 
-  [Fact]
-  public async Task Create_Returns_Location_Header()
-  {
-    // Arrange
-    var newProduct = new
+    [Fact]
+    public async Task GetAll_Empty_Returns_200_OK()
     {
-      product_name = "New Product",
-      unit_price = 25.00,
-      stock_quantity = 10,
-      is_active = true
-    };
+        // Act
+        var response = await _client.GetAsync("/api/products");
 
-    // Act
-    var response = await _client.PostAsJsonAsync("/api/products", newProduct);
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
 
-    // Assert
-    response.Headers.Location.Should().NotBeNull();
-  }
+    #endregion
 
-  [Fact]
-  public async Task Create_Location_Header_Contains_Resource_Path()
-  {
-    // Arrange
-    var newProduct = new
+    #region GET /collection/{id} - Read
+
+    [Fact]
+    public async Task GetById_ExistingResource_Returns_200_OK()
     {
-      product_name = "New Product",
-      unit_price = 25.00,
-      stock_quantity = 10,
-      is_active = true
-    };
+        // Arrange
+        var id = Guid.NewGuid();
+        _repository.Seed(
+            new ProductEntity { Id = id, ProductName = "Product", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
+        );
 
-    // Act
-    var response = await _client.PostAsJsonAsync("/api/products", newProduct);
+        // Act
+        var response = await _client.GetAsync($"/api/products/{id}");
 
-    // Assert
-    response.Headers.Location.Should().NotBeNull();
-    response.Headers.Location!.ToString().Should().Contain("/api/products/");
-  }
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
 
-  [Fact]
-  public async Task Create_Location_Header_Contains_Created_Resource_Id()
-  {
-    // Arrange
-    var newProduct = new
+    [Fact]
+    public async Task GetById_NonExistingResource_Returns_404_NotFound()
     {
-      product_name = "New Product",
-      unit_price = 25.00,
-      stock_quantity = 10,
-      is_active = true
-    };
+        // Arrange
+        var nonExistentId = Guid.NewGuid();
 
-    // Act
-    var response = await _client.PostAsJsonAsync("/api/products", newProduct);
+        // Act
+        var response = await _client.GetAsync($"/api/products/{nonExistentId}");
 
-    // Assert
-    response.Headers.Location.Should().NotBeNull();
-    var locationPath = response.Headers.Location!.ToString();
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
 
-    // Extract the ID from the location and verify it's a valid GUID
-    var parts = locationPath.Split('/');
-    var idPart = parts[^1]; // Last segment should be the ID
-    Guid.TryParse(idPart, out var createdId).Should().BeTrue("Location header should contain a valid GUID");
-    createdId.Should().NotBe(Guid.Empty);
-  }
+    #endregion
 
-  [Fact]
-  public async Task Create_Location_Header_Points_To_GetById_Endpoint()
-  {
-    // Arrange
-    var newProduct = new
+    #region POST /collection - Create
+
+    [Fact]
+    public async Task Create_Returns_201_Created()
     {
-      product_name = "Verifiable Product",
-      unit_price = 99.99,
-      stock_quantity = 50,
-      is_active = true
-    };
+        // Arrange
+        var newProduct = new
+        {
+            product_name = "New Product",
+            unit_price = 25.00,
+            stock_quantity = 10,
+            is_active = true
+        };
 
-    // Act
-    var createResponse = await _client.PostAsJsonAsync("/api/products", newProduct);
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/products", newProduct);
 
-    // Assert - Location should point to a valid resource
-    createResponse.Headers.Location.Should().NotBeNull();
-    var locationPath = createResponse.Headers.Location!.ToString();
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
 
-    // Follow the Location header to verify it returns the created resource
-    var getResponse = await _client.GetAsync(locationPath);
-    getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-
-    var retrievedProduct = await getResponse.Content.ReadAsStringAsync();
-    retrievedProduct.Should().Contain("Verifiable Product");
-  }
-
-  #endregion
-
-  #region PUT /collection/{id} - Full Update
-
-  [Fact]
-  public async Task Update_ExistingResource_Returns_200_OK()
-  {
-    // Arrange
-    var id = Guid.NewGuid();
-    _repository.Seed(
-        new ProductEntity { Id = id, ProductName = "Original", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = false }
-    );
-
-    var updatedProduct = new
+    [Fact]
+    public async Task Create_Returns_Location_Header()
     {
-      product_name = "Updated Product",
-      unit_price = 50.00,
-      stock_quantity = 100,
-      is_active = true
-    };
+        // Arrange
+        var newProduct = new
+        {
+            product_name = "New Product",
+            unit_price = 25.00,
+            stock_quantity = 10,
+            is_active = true
+        };
 
-    // Act
-    var response = await _client.PutAsJsonAsync($"/api/products/{id}", updatedProduct);
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/products", newProduct);
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.OK);
-  }
+        // Assert
+        response.Headers.Location.Should().NotBeNull();
+    }
 
-  [Fact]
-  public async Task Update_NonExistingResource_Returns_404_NotFound()
-  {
-    // Arrange
-    var nonExistentId = Guid.NewGuid();
-    var updatedProduct = new
+    [Fact]
+    public async Task Create_Location_Header_Contains_Resource_Path()
     {
-      product_name = "Updated Product",
-      unit_price = 50.00,
-      stock_quantity = 100,
-      is_active = true
-    };
+        // Arrange
+        var newProduct = new
+        {
+            product_name = "New Product",
+            unit_price = 25.00,
+            stock_quantity = 10,
+            is_active = true
+        };
 
-    // Act
-    var response = await _client.PutAsJsonAsync($"/api/products/{nonExistentId}", updatedProduct);
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/products", newProduct);
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-  }
+        // Assert
+        response.Headers.Location.Should().NotBeNull();
+        response.Headers.Location!.ToString().Should().Contain("/api/products/");
+    }
 
-  #endregion
+    [Fact]
+    public async Task Create_Location_Header_Contains_Created_Resource_Id()
+    {
+        // Arrange
+        var newProduct = new
+        {
+            product_name = "New Product",
+            unit_price = 25.00,
+            stock_quantity = 10,
+            is_active = true
+        };
 
-  #region PATCH /collection/{id} - Partial Update
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/products", newProduct);
 
-  [Fact]
-  public async Task Patch_ExistingResource_Returns_200_OK()
-  {
-    // Arrange
-    var id = Guid.NewGuid();
-    _repository.Seed(
-        new ProductEntity { Id = id, ProductName = "Original", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = false }
-    );
+        // Assert
+        response.Headers.Location.Should().NotBeNull();
+        var locationPath = response.Headers.Location!.ToString();
 
-    var patch = new { product_name = "Patched Name" };
+        // Extract the ID from the location and verify it's a valid GUID
+        var parts = locationPath.Split('/');
+        var idPart = parts[^1]; // Last segment should be the ID
+        Guid.TryParse(idPart, out var createdId).Should().BeTrue("Location header should contain a valid GUID");
+        createdId.Should().NotBe(Guid.Empty);
+    }
 
-    // Act
-    var response = await _client.PatchAsJsonAsync($"/api/products/{id}", patch);
+    [Fact]
+    public async Task Create_Location_Header_Points_To_GetById_Endpoint()
+    {
+        // Arrange
+        var newProduct = new
+        {
+            product_name = "Verifiable Product",
+            unit_price = 99.99,
+            stock_quantity = 50,
+            is_active = true
+        };
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.OK);
-  }
+        // Act
+        var createResponse = await _client.PostAsJsonAsync("/api/products", newProduct);
 
-  [Fact]
-  public async Task Patch_NonExistingResource_Returns_404_NotFound()
-  {
-    // Arrange
-    var nonExistentId = Guid.NewGuid();
-    var patch = new { product_name = "Patched Name" };
+        // Assert - Location should point to a valid resource
+        createResponse.Headers.Location.Should().NotBeNull();
+        var locationPath = createResponse.Headers.Location!.ToString();
 
-    // Act
-    var response = await _client.PatchAsJsonAsync($"/api/products/{nonExistentId}", patch);
+        // Follow the Location header to verify it returns the created resource
+        var getResponse = await _client.GetAsync(locationPath);
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-  }
+        var retrievedProduct = await getResponse.Content.ReadAsStringAsync();
+        retrievedProduct.Should().Contain("Verifiable Product");
+    }
 
-  #endregion
+    #endregion
 
-  #region DELETE /collection/{id} - Delete
+    #region PUT /collection/{id} - Full Update
 
-  [Fact]
-  public async Task Delete_ExistingResource_Returns_204_NoContent()
-  {
-    // Arrange
-    var id = Guid.NewGuid();
-    _repository.Seed(
-        new ProductEntity { Id = id, ProductName = "To Delete", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
-    );
+    [Fact]
+    public async Task Update_ExistingResource_Returns_200_OK()
+    {
+        // Arrange
+        var id = Guid.NewGuid();
+        _repository.Seed(
+            new ProductEntity { Id = id, ProductName = "Original", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = false }
+        );
 
-    // Act
-    var response = await _client.DeleteAsync($"/api/products/{id}");
+        var updatedProduct = new
+        {
+            product_name = "Updated Product",
+            unit_price = 50.00,
+            stock_quantity = 100,
+            is_active = true
+        };
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-  }
+        // Act
+        var response = await _client.PutAsJsonAsync($"/api/products/{id}", updatedProduct);
 
-  [Fact]
-  public async Task Delete_NonExistingResource_Returns_404_NotFound()
-  {
-    // Arrange
-    var nonExistentId = Guid.NewGuid();
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
 
-    // Act
-    var response = await _client.DeleteAsync($"/api/products/{nonExistentId}");
+    [Fact]
+    public async Task Update_NonExistingResource_Returns_404_NotFound()
+    {
+        // Arrange
+        var nonExistentId = Guid.NewGuid();
+        var updatedProduct = new
+        {
+            product_name = "Updated Product",
+            unit_price = 50.00,
+            stock_quantity = 100,
+            is_active = true
+        };
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-  }
+        // Act
+        var response = await _client.PutAsJsonAsync($"/api/products/{nonExistentId}", updatedProduct);
 
-  [Fact]
-  public async Task Delete_Success_Has_No_Response_Body()
-  {
-    // Arrange
-    var id = Guid.NewGuid();
-    _repository.Seed(
-        new ProductEntity { Id = id, ProductName = "To Delete", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
-    );
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
 
-    // Act
-    var response = await _client.DeleteAsync($"/api/products/{id}");
-    var body = await response.Content.ReadAsStringAsync();
+    #endregion
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-    body.Should().BeEmpty();
-  }
+    #region PATCH /collection/{id} - Partial Update
 
-  #endregion
+    [Fact]
+    public async Task Patch_ExistingResource_Returns_200_OK()
+    {
+        // Arrange
+        var id = Guid.NewGuid();
+        _repository.Seed(
+            new ProductEntity { Id = id, ProductName = "Original", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = false }
+        );
 
-  public void Dispose()
-  {
-    _client.Dispose();
-    _host.Dispose();
-  }
+        var patch = new { product_name = "Patched Name" };
+
+        // Act
+        var response = await _client.PatchAsJsonAsync($"/api/products/{id}", patch);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Patch_NonExistingResource_Returns_404_NotFound()
+    {
+        // Arrange
+        var nonExistentId = Guid.NewGuid();
+        var patch = new { product_name = "Patched Name" };
+
+        // Act
+        var response = await _client.PatchAsJsonAsync($"/api/products/{nonExistentId}", patch);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    #endregion
+
+    #region DELETE /collection/{id} - Delete
+
+    [Fact]
+    public async Task Delete_ExistingResource_Returns_204_NoContent()
+    {
+        // Arrange
+        var id = Guid.NewGuid();
+        _repository.Seed(
+            new ProductEntity { Id = id, ProductName = "To Delete", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
+        );
+
+        // Act
+        var response = await _client.DeleteAsync($"/api/products/{id}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task Delete_NonExistingResource_Returns_404_NotFound()
+    {
+        // Arrange
+        var nonExistentId = Guid.NewGuid();
+
+        // Act
+        var response = await _client.DeleteAsync($"/api/products/{nonExistentId}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Delete_Success_Has_No_Response_Body()
+    {
+        // Arrange
+        var id = Guid.NewGuid();
+        _repository.Seed(
+            new ProductEntity { Id = id, ProductName = "To Delete", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
+        );
+
+        // Act
+        var response = await _client.DeleteAsync($"/api/products/{id}");
+        var body = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        body.Should().BeEmpty();
+    }
+
+    #endregion
+
+    public void Dispose()
+    {
+        _client.Dispose();
+        _host.Dispose();
+    }
 }
 
 /// <summary>
@@ -381,253 +381,253 @@ public class HttpStatusCodeTests : IDisposable
 /// </summary>
 public class ETagPreconditionTests : IDisposable
 {
-  private IHost? _host;
-  private HttpClient? _client;
-  private ProductEntityRepository? _repository;
+    private IHost? _host;
+    private HttpClient? _client;
+    private ProductEntityRepository? _repository;
 
-  private void SetupHost(bool enableETagSupport)
-  {
-    _repository = new ProductEntityRepository();
+    private void SetupHost(bool enableETagSupport)
+    {
+        _repository = new ProductEntityRepository();
 
-    _host = new HostBuilder()
-        .ConfigureWebHost(webBuilder =>
-        {
-          webBuilder
-                  .UseTestServer()
-                  .ConfigureServices(services =>
-                  {
-                    services.AddRestLib(options =>
+        _host = new HostBuilder()
+            .ConfigureWebHost(webBuilder =>
+            {
+                webBuilder
+                    .UseTestServer()
+                    .ConfigureServices(services =>
+                    {
+                        services.AddRestLib(options =>
                         {
-                          options.EnableETagSupport = enableETagSupport;
+                            options.EnableETagSupport = enableETagSupport;
                         });
-                    services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
-                    services.AddRouting();
-                  })
-                  .Configure(app =>
-                  {
-                    app.UseRouting();
-                    app.UseEndpoints(endpoints =>
+                        services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
+                        services.AddRouting();
+                    })
+                    .Configure(app =>
+                    {
+                        app.UseRouting();
+                        app.UseEndpoints(endpoints =>
                         {
-                          endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
+                            endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
                             {
-                              config.AllowAnonymous();
+                                config.AllowAnonymous();
                             });
                         });
-                  });
-        })
-        .Build();
+                    });
+            })
+            .Build();
 
-    _host.Start();
-    _client = _host.GetTestClient();
-  }
+        _host.Start();
+        _client = _host.GetTestClient();
+    }
 
-  [Fact]
-  public async Task Update_With_IfMatch_Mismatch_Returns_412_WhenETagEnabled()
-  {
-    // Arrange
-    SetupHost(enableETagSupport: true);
-
-    var id = Guid.NewGuid();
-    _repository!.Seed(
-        new ProductEntity { Id = id, ProductName = "Original", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
-    );
-
-    var updatedProduct = new
+    [Fact]
+    public async Task Update_With_IfMatch_Mismatch_Returns_412_WhenETagEnabled()
     {
-      product_name = "Updated",
-      unit_price = 50.00,
-      stock_quantity = 100,
-      is_active = true
-    };
+        // Arrange
+        SetupHost(enableETagSupport: true);
 
-    var request = new HttpRequestMessage(HttpMethod.Put, $"/api/products/{id}")
+        var id = Guid.NewGuid();
+        _repository!.Seed(
+            new ProductEntity { Id = id, ProductName = "Original", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
+        );
+
+        var updatedProduct = new
+        {
+            product_name = "Updated",
+            unit_price = 50.00,
+            stock_quantity = 100,
+            is_active = true
+        };
+
+        var request = new HttpRequestMessage(HttpMethod.Put, $"/api/products/{id}")
+        {
+            Content = JsonContent.Create(updatedProduct)
+        };
+        request.Headers.TryAddWithoutValidation("If-Match", "\"wrong-etag\"");
+
+        // Act
+        var response = await _client!.SendAsync(request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
+    }
+
+    [Fact]
+    public async Task Update_With_IfMatch_Mismatch_Returns_ProblemDetails()
     {
-      Content = JsonContent.Create(updatedProduct)
-    };
-    request.Headers.TryAddWithoutValidation("If-Match", "\"wrong-etag\"");
+        // Arrange
+        SetupHost(enableETagSupport: true);
 
-    // Act
-    var response = await _client!.SendAsync(request);
+        var id = Guid.NewGuid();
+        _repository!.Seed(
+            new ProductEntity { Id = id, ProductName = "Original", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
+        );
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
-  }
+        var updatedProduct = new { product_name = "Updated" };
 
-  [Fact]
-  public async Task Update_With_IfMatch_Mismatch_Returns_ProblemDetails()
-  {
-    // Arrange
-    SetupHost(enableETagSupport: true);
+        var request = new HttpRequestMessage(HttpMethod.Put, $"/api/products/{id}")
+        {
+            Content = JsonContent.Create(updatedProduct)
+        };
+        request.Headers.TryAddWithoutValidation("If-Match", "\"wrong-etag\"");
 
-    var id = Guid.NewGuid();
-    _repository!.Seed(
-        new ProductEntity { Id = id, ProductName = "Original", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
-    );
+        // Act
+        var response = await _client!.SendAsync(request);
 
-    var updatedProduct = new { product_name = "Updated" };
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
 
-    var request = new HttpRequestMessage(HttpMethod.Put, $"/api/products/{id}")
+        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
+        problem.Should().NotBeNull();
+        problem!.Type.Should().Be(ProblemTypes.PreconditionFailed);
+        problem.Status.Should().Be(412);
+    }
+
+    [Fact]
+    public async Task Patch_With_IfMatch_Mismatch_Returns_412_WhenETagEnabled()
     {
-      Content = JsonContent.Create(updatedProduct)
-    };
-    request.Headers.TryAddWithoutValidation("If-Match", "\"wrong-etag\"");
+        // Arrange
+        SetupHost(enableETagSupport: true);
 
-    // Act
-    var response = await _client!.SendAsync(request);
+        var id = Guid.NewGuid();
+        _repository!.Seed(
+            new ProductEntity { Id = id, ProductName = "Original", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
+        );
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
-    response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        var patch = new { product_name = "Patched" };
 
-    var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-    problem.Should().NotBeNull();
-    problem!.Type.Should().Be(ProblemTypes.PreconditionFailed);
-    problem.Status.Should().Be(412);
-  }
+        var request = new HttpRequestMessage(HttpMethod.Patch, $"/api/products/{id}")
+        {
+            Content = JsonContent.Create(patch)
+        };
+        request.Headers.TryAddWithoutValidation("If-Match", "\"wrong-etag\"");
 
-  [Fact]
-  public async Task Patch_With_IfMatch_Mismatch_Returns_412_WhenETagEnabled()
-  {
-    // Arrange
-    SetupHost(enableETagSupport: true);
+        // Act
+        var response = await _client!.SendAsync(request);
 
-    var id = Guid.NewGuid();
-    _repository!.Seed(
-        new ProductEntity { Id = id, ProductName = "Original", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
-    );
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
+    }
 
-    var patch = new { product_name = "Patched" };
-
-    var request = new HttpRequestMessage(HttpMethod.Patch, $"/api/products/{id}")
+    [Fact]
+    public async Task Update_With_IfMatch_Wildcard_Succeeds()
     {
-      Content = JsonContent.Create(patch)
-    };
-    request.Headers.TryAddWithoutValidation("If-Match", "\"wrong-etag\"");
+        // Arrange
+        SetupHost(enableETagSupport: true);
 
-    // Act
-    var response = await _client!.SendAsync(request);
+        var id = Guid.NewGuid();
+        _repository!.Seed(
+            new ProductEntity { Id = id, ProductName = "Original", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
+        );
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
-  }
+        var updatedProduct = new
+        {
+            product_name = "Updated",
+            unit_price = 50.00,
+            stock_quantity = 100,
+            is_active = true
+        };
 
-  [Fact]
-  public async Task Update_With_IfMatch_Wildcard_Succeeds()
-  {
-    // Arrange
-    SetupHost(enableETagSupport: true);
+        var request = new HttpRequestMessage(HttpMethod.Put, $"/api/products/{id}")
+        {
+            Content = JsonContent.Create(updatedProduct)
+        };
+        request.Headers.TryAddWithoutValidation("If-Match", "*");
 
-    var id = Guid.NewGuid();
-    _repository!.Seed(
-        new ProductEntity { Id = id, ProductName = "Original", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
-    );
+        // Act
+        var response = await _client!.SendAsync(request);
 
-    var updatedProduct = new
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Update_Without_IfMatch_Succeeds_WhenETagEnabled()
     {
-      product_name = "Updated",
-      unit_price = 50.00,
-      stock_quantity = 100,
-      is_active = true
-    };
+        // Arrange
+        SetupHost(enableETagSupport: true);
 
-    var request = new HttpRequestMessage(HttpMethod.Put, $"/api/products/{id}")
+        var id = Guid.NewGuid();
+        _repository!.Seed(
+            new ProductEntity { Id = id, ProductName = "Original", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
+        );
+
+        var updatedProduct = new
+        {
+            product_name = "Updated",
+            unit_price = 50.00,
+            stock_quantity = 100,
+            is_active = true
+        };
+
+        // Act
+        var response = await _client!.PutAsJsonAsync($"/api/products/{id}", updatedProduct);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Update_With_IfMatch_NoETagSupport_IgnoresHeader()
     {
-      Content = JsonContent.Create(updatedProduct)
-    };
-    request.Headers.TryAddWithoutValidation("If-Match", "*");
+        // Arrange
+        SetupHost(enableETagSupport: false);
 
-    // Act
-    var response = await _client!.SendAsync(request);
+        var id = Guid.NewGuid();
+        _repository!.Seed(
+            new ProductEntity { Id = id, ProductName = "Original", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
+        );
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.OK);
-  }
+        var updatedProduct = new
+        {
+            product_name = "Updated",
+            unit_price = 50.00,
+            stock_quantity = 100,
+            is_active = true
+        };
 
-  [Fact]
-  public async Task Update_Without_IfMatch_Succeeds_WhenETagEnabled()
-  {
-    // Arrange
-    SetupHost(enableETagSupport: true);
+        var request = new HttpRequestMessage(HttpMethod.Put, $"/api/products/{id}")
+        {
+            Content = JsonContent.Create(updatedProduct)
+        };
+        request.Headers.TryAddWithoutValidation("If-Match", "\"wrong-etag\"");
 
-    var id = Guid.NewGuid();
-    _repository!.Seed(
-        new ProductEntity { Id = id, ProductName = "Original", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
-    );
+        // Act
+        var response = await _client!.SendAsync(request);
 
-    var updatedProduct = new
+        // Assert - should succeed because ETag support is disabled
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Update_With_IfMatch_NonExistingResource_Returns_404()
     {
-      product_name = "Updated",
-      unit_price = 50.00,
-      stock_quantity = 100,
-      is_active = true
-    };
+        // Arrange
+        SetupHost(enableETagSupport: true);
 
-    // Act
-    var response = await _client!.PutAsJsonAsync($"/api/products/{id}", updatedProduct);
+        var nonExistentId = Guid.NewGuid();
+        var updatedProduct = new { product_name = "Updated" };
 
-    // Assert
-    response.StatusCode.Should().Be(HttpStatusCode.OK);
-  }
+        var request = new HttpRequestMessage(HttpMethod.Put, $"/api/products/{nonExistentId}")
+        {
+            Content = JsonContent.Create(updatedProduct)
+        };
+        request.Headers.TryAddWithoutValidation("If-Match", "\"some-etag\"");
 
-  [Fact]
-  public async Task Update_With_IfMatch_NoETagSupport_IgnoresHeader()
-  {
-    // Arrange
-    SetupHost(enableETagSupport: false);
+        // Act
+        var response = await _client!.SendAsync(request);
 
-    var id = Guid.NewGuid();
-    _repository!.Seed(
-        new ProductEntity { Id = id, ProductName = "Original", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
-    );
+        // Assert - 404 takes precedence over 412
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
 
-    var updatedProduct = new
+    public void Dispose()
     {
-      product_name = "Updated",
-      unit_price = 50.00,
-      stock_quantity = 100,
-      is_active = true
-    };
-
-    var request = new HttpRequestMessage(HttpMethod.Put, $"/api/products/{id}")
-    {
-      Content = JsonContent.Create(updatedProduct)
-    };
-    request.Headers.TryAddWithoutValidation("If-Match", "\"wrong-etag\"");
-
-    // Act
-    var response = await _client!.SendAsync(request);
-
-    // Assert - should succeed because ETag support is disabled
-    response.StatusCode.Should().Be(HttpStatusCode.OK);
-  }
-
-  [Fact]
-  public async Task Update_With_IfMatch_NonExistingResource_Returns_404()
-  {
-    // Arrange
-    SetupHost(enableETagSupport: true);
-
-    var nonExistentId = Guid.NewGuid();
-    var updatedProduct = new { product_name = "Updated" };
-
-    var request = new HttpRequestMessage(HttpMethod.Put, $"/api/products/{nonExistentId}")
-    {
-      Content = JsonContent.Create(updatedProduct)
-    };
-    request.Headers.TryAddWithoutValidation("If-Match", "\"some-etag\"");
-
-    // Act
-    var response = await _client!.SendAsync(request);
-
-    // Assert - 404 takes precedence over 412
-    response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-  }
-
-  public void Dispose()
-  {
-    _client?.Dispose();
-    _host?.Dispose();
-  }
+        _client?.Dispose();
+        _host?.Dispose();
+    }
 }
 
 /// <summary>
@@ -635,172 +635,172 @@ public class ETagPreconditionTests : IDisposable
 /// </summary>
 public class ZalandoStatusCodeComplianceTests : IDisposable
 {
-  private readonly IHost _host;
-  private readonly HttpClient _client;
-  private readonly ProductEntityRepository _repository;
+    private readonly IHost _host;
+    private readonly HttpClient _client;
+    private readonly ProductEntityRepository _repository;
 
-  public ZalandoStatusCodeComplianceTests()
-  {
-    _repository = new ProductEntityRepository();
+    public ZalandoStatusCodeComplianceTests()
+    {
+        _repository = new ProductEntityRepository();
 
-    _host = new HostBuilder()
-        .ConfigureWebHost(webBuilder =>
-        {
-          webBuilder
-                  .UseTestServer()
-                  .ConfigureServices(services =>
-                  {
-                    services.AddRestLib();
-                    services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
-                    services.AddRouting();
-                  })
-                  .Configure(app =>
-                  {
-                    app.UseRouting();
-                    app.UseEndpoints(endpoints =>
+        _host = new HostBuilder()
+            .ConfigureWebHost(webBuilder =>
+            {
+                webBuilder
+                    .UseTestServer()
+                    .ConfigureServices(services =>
+                    {
+                        services.AddRestLib();
+                        services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
+                        services.AddRouting();
+                    })
+                    .Configure(app =>
+                    {
+                        app.UseRouting();
+                        app.UseEndpoints(endpoints =>
                         {
-                          endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
+                            endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
                             {
-                              config.AllowAnonymous();
+                                config.AllowAnonymous();
                             });
                         });
-                  });
-        })
-        .Build();
+                    });
+            })
+            .Build();
 
-    _host.Start();
-    _client = _host.GetTestClient();
-  }
+        _host.Start();
+        _client = _host.GetTestClient();
+    }
 
-  /// <summary>
-  /// Zalando: List (GET /collection) → 200 OK
-  /// </summary>
-  [Fact]
-  public async Task Zalando_List_Returns_200()
-  {
-    var response = await _client.GetAsync("/api/products");
-    response.StatusCode.Should().Be(HttpStatusCode.OK);
-  }
+    /// <summary>
+    /// Zalando: List (GET /collection) → 200 OK
+    /// </summary>
+    [Fact]
+    public async Task Zalando_List_Returns_200()
+    {
+        var response = await _client.GetAsync("/api/products");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
 
-  /// <summary>
-  /// Zalando: Read (GET /collection/{id}) → 200 OK on success
-  /// </summary>
-  [Fact]
-  public async Task Zalando_Read_Success_Returns_200()
-  {
-    var id = Guid.NewGuid();
-    _repository.Seed(new ProductEntity { Id = id, ProductName = "Test", UnitPrice = 10, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true });
+    /// <summary>
+    /// Zalando: Read (GET /collection/{id}) → 200 OK on success
+    /// </summary>
+    [Fact]
+    public async Task Zalando_Read_Success_Returns_200()
+    {
+        var id = Guid.NewGuid();
+        _repository.Seed(new ProductEntity { Id = id, ProductName = "Test", UnitPrice = 10, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true });
 
-    var response = await _client.GetAsync($"/api/products/{id}");
-    response.StatusCode.Should().Be(HttpStatusCode.OK);
-  }
+        var response = await _client.GetAsync($"/api/products/{id}");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
 
-  /// <summary>
-  /// Zalando: Read (GET /collection/{id}) → 404 Not Found when resource doesn't exist
-  /// </summary>
-  [Fact]
-  public async Task Zalando_Read_NotFound_Returns_404()
-  {
-    var response = await _client.GetAsync($"/api/products/{Guid.NewGuid()}");
-    response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-  }
+    /// <summary>
+    /// Zalando: Read (GET /collection/{id}) → 404 Not Found when resource doesn't exist
+    /// </summary>
+    [Fact]
+    public async Task Zalando_Read_NotFound_Returns_404()
+    {
+        var response = await _client.GetAsync($"/api/products/{Guid.NewGuid()}");
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
 
-  /// <summary>
-  /// Zalando: Create (POST /collection) → 201 Created + Location header
-  /// </summary>
-  [Fact]
-  public async Task Zalando_Create_Returns_201_WithLocation()
-  {
-    var product = new { product_name = "Test", unit_price = 10.00, stock_quantity = 1, is_active = true };
+    /// <summary>
+    /// Zalando: Create (POST /collection) → 201 Created + Location header
+    /// </summary>
+    [Fact]
+    public async Task Zalando_Create_Returns_201_WithLocation()
+    {
+        var product = new { product_name = "Test", unit_price = 10.00, stock_quantity = 1, is_active = true };
 
-    var response = await _client.PostAsJsonAsync("/api/products", product);
+        var response = await _client.PostAsJsonAsync("/api/products", product);
 
-    response.StatusCode.Should().Be(HttpStatusCode.Created);
-    response.Headers.Location.Should().NotBeNull();
-  }
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        response.Headers.Location.Should().NotBeNull();
+    }
 
-  /// <summary>
-  /// Zalando: Full Update (PUT /collection/{id}) → 200 OK on success
-  /// </summary>
-  [Fact]
-  public async Task Zalando_FullUpdate_Success_Returns_200()
-  {
-    var id = Guid.NewGuid();
-    _repository.Seed(new ProductEntity { Id = id, ProductName = "Test", UnitPrice = 10, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true });
+    /// <summary>
+    /// Zalando: Full Update (PUT /collection/{id}) → 200 OK on success
+    /// </summary>
+    [Fact]
+    public async Task Zalando_FullUpdate_Success_Returns_200()
+    {
+        var id = Guid.NewGuid();
+        _repository.Seed(new ProductEntity { Id = id, ProductName = "Test", UnitPrice = 10, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true });
 
-    var updated = new { product_name = "Updated", unit_price = 20.00, stock_quantity = 2, is_active = false };
-    var response = await _client.PutAsJsonAsync($"/api/products/{id}", updated);
+        var updated = new { product_name = "Updated", unit_price = 20.00, stock_quantity = 2, is_active = false };
+        var response = await _client.PutAsJsonAsync($"/api/products/{id}", updated);
 
-    response.StatusCode.Should().Be(HttpStatusCode.OK);
-  }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
 
-  /// <summary>
-  /// Zalando: Full Update (PUT /collection/{id}) → 404 Not Found when resource doesn't exist
-  /// </summary>
-  [Fact]
-  public async Task Zalando_FullUpdate_NotFound_Returns_404()
-  {
-    var updated = new { product_name = "Updated", unit_price = 20.00, stock_quantity = 2, is_active = false };
-    var response = await _client.PutAsJsonAsync($"/api/products/{Guid.NewGuid()}", updated);
+    /// <summary>
+    /// Zalando: Full Update (PUT /collection/{id}) → 404 Not Found when resource doesn't exist
+    /// </summary>
+    [Fact]
+    public async Task Zalando_FullUpdate_NotFound_Returns_404()
+    {
+        var updated = new { product_name = "Updated", unit_price = 20.00, stock_quantity = 2, is_active = false };
+        var response = await _client.PutAsJsonAsync($"/api/products/{Guid.NewGuid()}", updated);
 
-    response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-  }
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
 
-  /// <summary>
-  /// Zalando: Partial Update (PATCH /collection/{id}) → 200 OK on success
-  /// </summary>
-  [Fact]
-  public async Task Zalando_PartialUpdate_Success_Returns_200()
-  {
-    var id = Guid.NewGuid();
-    _repository.Seed(new ProductEntity { Id = id, ProductName = "Test", UnitPrice = 10, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true });
+    /// <summary>
+    /// Zalando: Partial Update (PATCH /collection/{id}) → 200 OK on success
+    /// </summary>
+    [Fact]
+    public async Task Zalando_PartialUpdate_Success_Returns_200()
+    {
+        var id = Guid.NewGuid();
+        _repository.Seed(new ProductEntity { Id = id, ProductName = "Test", UnitPrice = 10, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true });
 
-    var patch = new { product_name = "Patched" };
-    var response = await _client.PatchAsJsonAsync($"/api/products/{id}", patch);
+        var patch = new { product_name = "Patched" };
+        var response = await _client.PatchAsJsonAsync($"/api/products/{id}", patch);
 
-    response.StatusCode.Should().Be(HttpStatusCode.OK);
-  }
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
 
-  /// <summary>
-  /// Zalando: Partial Update (PATCH /collection/{id}) → 404 Not Found when resource doesn't exist
-  /// </summary>
-  [Fact]
-  public async Task Zalando_PartialUpdate_NotFound_Returns_404()
-  {
-    var patch = new { product_name = "Patched" };
-    var response = await _client.PatchAsJsonAsync($"/api/products/{Guid.NewGuid()}", patch);
+    /// <summary>
+    /// Zalando: Partial Update (PATCH /collection/{id}) → 404 Not Found when resource doesn't exist
+    /// </summary>
+    [Fact]
+    public async Task Zalando_PartialUpdate_NotFound_Returns_404()
+    {
+        var patch = new { product_name = "Patched" };
+        var response = await _client.PatchAsJsonAsync($"/api/products/{Guid.NewGuid()}", patch);
 
-    response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-  }
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
 
-  /// <summary>
-  /// Zalando: Delete (DELETE /collection/{id}) → 204 No Content on success
-  /// </summary>
-  [Fact]
-  public async Task Zalando_Delete_Success_Returns_204()
-  {
-    var id = Guid.NewGuid();
-    _repository.Seed(new ProductEntity { Id = id, ProductName = "Test", UnitPrice = 10, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true });
+    /// <summary>
+    /// Zalando: Delete (DELETE /collection/{id}) → 204 No Content on success
+    /// </summary>
+    [Fact]
+    public async Task Zalando_Delete_Success_Returns_204()
+    {
+        var id = Guid.NewGuid();
+        _repository.Seed(new ProductEntity { Id = id, ProductName = "Test", UnitPrice = 10, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true });
 
-    var response = await _client.DeleteAsync($"/api/products/{id}");
+        var response = await _client.DeleteAsync($"/api/products/{id}");
 
-    response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-  }
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
 
-  /// <summary>
-  /// Zalando: Delete (DELETE /collection/{id}) → 404 Not Found when resource doesn't exist
-  /// </summary>
-  [Fact]
-  public async Task Zalando_Delete_NotFound_Returns_404()
-  {
-    var response = await _client.DeleteAsync($"/api/products/{Guid.NewGuid()}");
+    /// <summary>
+    /// Zalando: Delete (DELETE /collection/{id}) → 404 Not Found when resource doesn't exist
+    /// </summary>
+    [Fact]
+    public async Task Zalando_Delete_NotFound_Returns_404()
+    {
+        var response = await _client.DeleteAsync($"/api/products/{Guid.NewGuid()}");
 
-    response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-  }
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
 
-  public void Dispose()
-  {
-    _client.Dispose();
-    _host.Dispose();
-  }
+    public void Dispose()
+    {
+        _client.Dispose();
+        _host.Dispose();
+    }
 }

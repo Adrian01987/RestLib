@@ -9,9 +9,9 @@ namespace RestLib.Tests.Fakes;
 /// </summary>
 public class TestEntity
 {
-  public Guid Id { get; set; }
-  public string Name { get; set; } = string.Empty;
-  public decimal Price { get; set; }
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public decimal Price { get; set; }
 }
 
 /// <summary>
@@ -19,16 +19,16 @@ public class TestEntity
 /// </summary>
 public class ProductEntity
 {
-  public Guid Id { get; set; }
-  public string ProductName { get; set; } = string.Empty;
-  public decimal UnitPrice { get; set; }
-  public int StockQuantity { get; set; }
-  public DateTime CreatedAt { get; set; }
-  public DateTime? LastModifiedAt { get; set; }
-  public string? OptionalDescription { get; set; }
-  public bool IsActive { get; set; }
-  public Guid? CategoryId { get; set; }
-  public string? Status { get; set; }
+    public Guid Id { get; set; }
+    public string ProductName { get; set; } = string.Empty;
+    public decimal UnitPrice { get; set; }
+    public int StockQuantity { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime? LastModifiedAt { get; set; }
+    public string? OptionalDescription { get; set; }
+    public bool IsActive { get; set; }
+    public Guid? CategoryId { get; set; }
+    public string? Status { get; set; }
 }
 
 /// <summary>
@@ -36,8 +36,8 @@ public class ProductEntity
 /// </summary>
 public class FakeEntity
 {
-  public Guid Id { get; set; }
-  public string? Name { get; set; }
+    public Guid Id { get; set; }
+    public string? Name { get; set; }
 }
 
 /// <summary>
@@ -47,53 +47,53 @@ public abstract class FakeRepositoryBase<TEntity, TKey> : IRepository<TEntity, T
     where TEntity : class
     where TKey : notnull
 {
-  protected readonly Dictionary<TKey, TEntity> Store = new();
+    protected readonly Dictionary<TKey, TEntity> Store = new();
 
-  protected abstract TKey GetId(TEntity entity);
+    protected abstract TKey GetId(TEntity entity);
 
-  public virtual Task<TEntity?> GetByIdAsync(TKey id, CancellationToken ct = default)
-  {
-    Store.TryGetValue(id, out var entity);
-    return Task.FromResult(entity);
-  }
-
-  public virtual Task<PagedResult<TEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default)
-  {
-    var items = Store.Values.Take(pagination.Limit).ToList();
-    return Task.FromResult(new PagedResult<TEntity>
+    public virtual Task<TEntity?> GetByIdAsync(TKey id, CancellationToken ct = default)
     {
-      Items = items,
-      NextCursor = null
-    });
-  }
+        Store.TryGetValue(id, out var entity);
+        return Task.FromResult(entity);
+    }
 
-  public virtual Task<TEntity> CreateAsync(TEntity entity, CancellationToken ct = default)
-  {
-    Store[GetId(entity)] = entity;
-    return Task.FromResult(entity);
-  }
+    public virtual Task<PagedResult<TEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default)
+    {
+        var items = Store.Values.Take(pagination.Limit).ToList();
+        return Task.FromResult(new PagedResult<TEntity>
+        {
+            Items = items,
+            NextCursor = null
+        });
+    }
 
-  public virtual Task<TEntity?> UpdateAsync(TKey id, TEntity entity, CancellationToken ct = default)
-  {
-    if (!Store.ContainsKey(id))
-      return Task.FromResult<TEntity?>(null);
+    public virtual Task<TEntity> CreateAsync(TEntity entity, CancellationToken ct = default)
+    {
+        Store[GetId(entity)] = entity;
+        return Task.FromResult(entity);
+    }
 
-    Store[id] = entity;
-    return Task.FromResult<TEntity?>(entity);
-  }
+    public virtual Task<TEntity?> UpdateAsync(TKey id, TEntity entity, CancellationToken ct = default)
+    {
+        if (!Store.ContainsKey(id))
+            return Task.FromResult<TEntity?>(null);
 
-  public virtual Task<TEntity?> PatchAsync(TKey id, JsonElement patchDocument, CancellationToken ct = default)
-  {
-    if (!Store.TryGetValue(id, out var entity))
-      return Task.FromResult<TEntity?>(null);
+        Store[id] = entity;
+        return Task.FromResult<TEntity?>(entity);
+    }
 
-    return Task.FromResult<TEntity?>(entity);
-  }
+    public virtual Task<TEntity?> PatchAsync(TKey id, JsonElement patchDocument, CancellationToken ct = default)
+    {
+        if (!Store.TryGetValue(id, out var entity))
+            return Task.FromResult<TEntity?>(null);
 
-  public virtual Task<bool> DeleteAsync(TKey id, CancellationToken ct = default)
-  {
-    return Task.FromResult(Store.Remove(id));
-  }
+        return Task.FromResult<TEntity?>(entity);
+    }
+
+    public virtual Task<bool> DeleteAsync(TKey id, CancellationToken ct = default)
+    {
+        return Task.FromResult(Store.Remove(id));
+    }
 }
 
 /// <summary>
@@ -101,12 +101,12 @@ public abstract class FakeRepositoryBase<TEntity, TKey> : IRepository<TEntity, T
 /// </summary>
 public class FakeRepository : FakeRepositoryBase<FakeEntity, Guid>
 {
-  /// <summary>
-  /// Optional tag for testing factory registration with service provider.
-  /// </summary>
-  public string? Tag { get; set; }
+    /// <summary>
+    /// Optional tag for testing factory registration with service provider.
+    /// </summary>
+    public string? Tag { get; set; }
 
-  protected override Guid GetId(FakeEntity entity) => entity.Id;
+    protected override Guid GetId(FakeEntity entity) => entity.Id;
 }
 
 /// <summary>
@@ -114,8 +114,8 @@ public class FakeRepository : FakeRepositoryBase<FakeEntity, Guid>
 /// </summary>
 public class CustomKeyEntity
 {
-  public Guid Code { get; set; }
-  public string Label { get; set; } = string.Empty;
+    public Guid Code { get; set; }
+    public string Label { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -123,67 +123,67 @@ public class CustomKeyEntity
 /// </summary>
 public class CustomKeyEntityRepository : IRepository<CustomKeyEntity, Guid>
 {
-  private readonly Dictionary<Guid, CustomKeyEntity> _store = new();
+    private readonly Dictionary<Guid, CustomKeyEntity> _store = new();
 
-  public Task<CustomKeyEntity?> GetByIdAsync(Guid id, CancellationToken ct = default)
-  {
-    _store.TryGetValue(id, out var entity);
-    return Task.FromResult(entity);
-  }
-
-  public Task<PagedResult<CustomKeyEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default)
-  {
-    var items = _store.Values.Take(pagination.Limit).ToList();
-    return Task.FromResult(new PagedResult<CustomKeyEntity>
+    public Task<CustomKeyEntity?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
-      Items = items,
-      NextCursor = null
-    });
-  }
-
-  public Task<CustomKeyEntity> CreateAsync(CustomKeyEntity entity, CancellationToken ct = default)
-  {
-    if (entity.Code == Guid.Empty)
-      entity.Code = Guid.NewGuid();
-
-    _store[entity.Code] = entity;
-    return Task.FromResult(entity);
-  }
-
-  public Task<CustomKeyEntity?> UpdateAsync(Guid id, CustomKeyEntity entity, CancellationToken ct = default)
-  {
-    if (!_store.ContainsKey(id))
-      return Task.FromResult<CustomKeyEntity?>(null);
-
-    entity.Code = id;
-    _store[id] = entity;
-    return Task.FromResult<CustomKeyEntity?>(entity);
-  }
-
-  public Task<CustomKeyEntity?> PatchAsync(Guid id, JsonElement patchDocument, CancellationToken ct = default)
-  {
-    if (!_store.TryGetValue(id, out var existing))
-      return Task.FromResult<CustomKeyEntity?>(null);
-
-    if (patchDocument.TryGetProperty("label", out var labelElement))
-      existing.Label = labelElement.GetString() ?? existing.Label;
-
-    _store[id] = existing;
-    return Task.FromResult<CustomKeyEntity?>(existing);
-  }
-
-  public Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
-  {
-    return Task.FromResult(_store.Remove(id));
-  }
-
-  public void Seed(params CustomKeyEntity[] entities)
-  {
-    foreach (var entity in entities)
-    {
-      _store[entity.Code] = entity;
+        _store.TryGetValue(id, out var entity);
+        return Task.FromResult(entity);
     }
-  }
+
+    public Task<PagedResult<CustomKeyEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default)
+    {
+        var items = _store.Values.Take(pagination.Limit).ToList();
+        return Task.FromResult(new PagedResult<CustomKeyEntity>
+        {
+            Items = items,
+            NextCursor = null
+        });
+    }
+
+    public Task<CustomKeyEntity> CreateAsync(CustomKeyEntity entity, CancellationToken ct = default)
+    {
+        if (entity.Code == Guid.Empty)
+            entity.Code = Guid.NewGuid();
+
+        _store[entity.Code] = entity;
+        return Task.FromResult(entity);
+    }
+
+    public Task<CustomKeyEntity?> UpdateAsync(Guid id, CustomKeyEntity entity, CancellationToken ct = default)
+    {
+        if (!_store.ContainsKey(id))
+            return Task.FromResult<CustomKeyEntity?>(null);
+
+        entity.Code = id;
+        _store[id] = entity;
+        return Task.FromResult<CustomKeyEntity?>(entity);
+    }
+
+    public Task<CustomKeyEntity?> PatchAsync(Guid id, JsonElement patchDocument, CancellationToken ct = default)
+    {
+        if (!_store.TryGetValue(id, out var existing))
+            return Task.FromResult<CustomKeyEntity?>(null);
+
+        if (patchDocument.TryGetProperty("label", out var labelElement))
+            existing.Label = labelElement.GetString() ?? existing.Label;
+
+        _store[id] = existing;
+        return Task.FromResult<CustomKeyEntity?>(existing);
+    }
+
+    public Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
+    {
+        return Task.FromResult(_store.Remove(id));
+    }
+
+    public void Seed(params CustomKeyEntity[] entities)
+    {
+        foreach (var entity in entities)
+        {
+            _store[entity.Code] = entity;
+        }
+    }
 }
 
 /// <summary>
@@ -191,76 +191,76 @@ public class CustomKeyEntityRepository : IRepository<CustomKeyEntity, Guid>
 /// </summary>
 public class TestEntityRepository : IRepository<TestEntity, Guid>
 {
-  private readonly Dictionary<Guid, TestEntity> _store = new();
+    private readonly Dictionary<Guid, TestEntity> _store = new();
 
-  public Task<TestEntity?> GetByIdAsync(Guid id, CancellationToken ct = default)
-  {
-    _store.TryGetValue(id, out var entity);
-    return Task.FromResult(entity);
-  }
-
-  public Task<PagedResult<TestEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default)
-  {
-    var items = _store.Values.Take(pagination.Limit).ToList();
-    return Task.FromResult(new PagedResult<TestEntity>
+    public Task<TestEntity?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
-      Items = items,
-      NextCursor = null
-    });
-  }
-
-  public Task<TestEntity> CreateAsync(TestEntity entity, CancellationToken ct = default)
-  {
-    if (entity.Id == Guid.Empty)
-      entity.Id = Guid.NewGuid();
-
-    _store[entity.Id] = entity;
-    return Task.FromResult(entity);
-  }
-
-  public Task<TestEntity?> UpdateAsync(Guid id, TestEntity entity, CancellationToken ct = default)
-  {
-    if (!_store.ContainsKey(id))
-      return Task.FromResult<TestEntity?>(null);
-
-    entity.Id = id;
-    _store[id] = entity;
-    return Task.FromResult<TestEntity?>(entity);
-  }
-
-  public Task<TestEntity?> PatchAsync(Guid id, JsonElement patchDocument, CancellationToken ct = default)
-  {
-    if (!_store.TryGetValue(id, out var existing))
-      return Task.FromResult<TestEntity?>(null);
-
-    // Simple merge patch implementation
-    if (patchDocument.TryGetProperty("name", out var nameElement))
-      existing.Name = nameElement.GetString() ?? existing.Name;
-
-    if (patchDocument.TryGetProperty("price", out var priceElement))
-      existing.Price = priceElement.GetDecimal();
-
-    _store[id] = existing;
-    return Task.FromResult<TestEntity?>(existing);
-  }
-
-  public Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
-  {
-    return Task.FromResult(_store.Remove(id));
-  }
-
-  // Helper methods for test setup
-  public void Seed(params TestEntity[] entities)
-  {
-    foreach (var entity in entities)
-    {
-      _store[entity.Id] = entity;
+        _store.TryGetValue(id, out var entity);
+        return Task.FromResult(entity);
     }
-  }
 
-  public void Clear() => _store.Clear();
+    public Task<PagedResult<TestEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default)
+    {
+        var items = _store.Values.Take(pagination.Limit).ToList();
+        return Task.FromResult(new PagedResult<TestEntity>
+        {
+            Items = items,
+            NextCursor = null
+        });
+    }
 
-  public int Count => _store.Count;
+    public Task<TestEntity> CreateAsync(TestEntity entity, CancellationToken ct = default)
+    {
+        if (entity.Id == Guid.Empty)
+            entity.Id = Guid.NewGuid();
+
+        _store[entity.Id] = entity;
+        return Task.FromResult(entity);
+    }
+
+    public Task<TestEntity?> UpdateAsync(Guid id, TestEntity entity, CancellationToken ct = default)
+    {
+        if (!_store.ContainsKey(id))
+            return Task.FromResult<TestEntity?>(null);
+
+        entity.Id = id;
+        _store[id] = entity;
+        return Task.FromResult<TestEntity?>(entity);
+    }
+
+    public Task<TestEntity?> PatchAsync(Guid id, JsonElement patchDocument, CancellationToken ct = default)
+    {
+        if (!_store.TryGetValue(id, out var existing))
+            return Task.FromResult<TestEntity?>(null);
+
+        // Simple merge patch implementation
+        if (patchDocument.TryGetProperty("name", out var nameElement))
+            existing.Name = nameElement.GetString() ?? existing.Name;
+
+        if (patchDocument.TryGetProperty("price", out var priceElement))
+            existing.Price = priceElement.GetDecimal();
+
+        _store[id] = existing;
+        return Task.FromResult<TestEntity?>(existing);
+    }
+
+    public Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
+    {
+        return Task.FromResult(_store.Remove(id));
+    }
+
+    // Helper methods for test setup
+    public void Seed(params TestEntity[] entities)
+    {
+        foreach (var entity in entities)
+        {
+            _store[entity.Id] = entity;
+        }
+    }
+
+    public void Clear() => _store.Clear();
+
+    public int Count => _store.Count;
 }
 
 /// <summary>
@@ -268,82 +268,82 @@ public class TestEntityRepository : IRepository<TestEntity, Guid>
 /// </summary>
 public class ProductEntityRepository : IRepository<ProductEntity, Guid>
 {
-  private readonly Dictionary<Guid, ProductEntity> _store = new();
+    private readonly Dictionary<Guid, ProductEntity> _store = new();
 
-  public Task<ProductEntity?> GetByIdAsync(Guid id, CancellationToken ct = default)
-  {
-    _store.TryGetValue(id, out var entity);
-    return Task.FromResult(entity);
-  }
-
-  public Task<PagedResult<ProductEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default)
-  {
-    var items = _store.Values.Take(pagination.Limit).ToList();
-    return Task.FromResult(new PagedResult<ProductEntity>
+    public Task<ProductEntity?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
-      Items = items,
-      NextCursor = null
-    });
-  }
-
-  public Task<ProductEntity> CreateAsync(ProductEntity entity, CancellationToken ct = default)
-  {
-    if (entity.Id == Guid.Empty)
-      entity.Id = Guid.NewGuid();
-
-    _store[entity.Id] = entity;
-    return Task.FromResult(entity);
-  }
-
-  public Task<ProductEntity?> UpdateAsync(Guid id, ProductEntity entity, CancellationToken ct = default)
-  {
-    if (!_store.ContainsKey(id))
-      return Task.FromResult<ProductEntity?>(null);
-
-    entity.Id = id;
-    _store[id] = entity;
-    return Task.FromResult<ProductEntity?>(entity);
-  }
-
-  public Task<ProductEntity?> PatchAsync(Guid id, JsonElement patchDocument, CancellationToken ct = default)
-  {
-    if (!_store.TryGetValue(id, out var existing))
-      return Task.FromResult<ProductEntity?>(null);
-
-    // Simple merge patch implementation for ProductEntity
-    if (patchDocument.TryGetProperty("product_name", out var nameElement))
-      existing.ProductName = nameElement.GetString() ?? existing.ProductName;
-
-    if (patchDocument.TryGetProperty("unit_price", out var priceElement))
-      existing.UnitPrice = priceElement.GetDecimal();
-
-    if (patchDocument.TryGetProperty("stock_quantity", out var stockElement))
-      existing.StockQuantity = stockElement.GetInt32();
-
-    if (patchDocument.TryGetProperty("is_active", out var activeElement))
-      existing.IsActive = activeElement.GetBoolean();
-
-    _store[id] = existing;
-    return Task.FromResult<ProductEntity?>(existing);
-  }
-
-  public Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
-  {
-    return Task.FromResult(_store.Remove(id));
-  }
-
-  // Helper methods for test setup
-  public void Seed(params ProductEntity[] entities)
-  {
-    foreach (var entity in entities)
-    {
-      _store[entity.Id] = entity;
+        _store.TryGetValue(id, out var entity);
+        return Task.FromResult(entity);
     }
-  }
 
-  public void Clear() => _store.Clear();
+    public Task<PagedResult<ProductEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default)
+    {
+        var items = _store.Values.Take(pagination.Limit).ToList();
+        return Task.FromResult(new PagedResult<ProductEntity>
+        {
+            Items = items,
+            NextCursor = null
+        });
+    }
 
-  public int Count => _store.Count;
+    public Task<ProductEntity> CreateAsync(ProductEntity entity, CancellationToken ct = default)
+    {
+        if (entity.Id == Guid.Empty)
+            entity.Id = Guid.NewGuid();
+
+        _store[entity.Id] = entity;
+        return Task.FromResult(entity);
+    }
+
+    public Task<ProductEntity?> UpdateAsync(Guid id, ProductEntity entity, CancellationToken ct = default)
+    {
+        if (!_store.ContainsKey(id))
+            return Task.FromResult<ProductEntity?>(null);
+
+        entity.Id = id;
+        _store[id] = entity;
+        return Task.FromResult<ProductEntity?>(entity);
+    }
+
+    public Task<ProductEntity?> PatchAsync(Guid id, JsonElement patchDocument, CancellationToken ct = default)
+    {
+        if (!_store.TryGetValue(id, out var existing))
+            return Task.FromResult<ProductEntity?>(null);
+
+        // Simple merge patch implementation for ProductEntity
+        if (patchDocument.TryGetProperty("product_name", out var nameElement))
+            existing.ProductName = nameElement.GetString() ?? existing.ProductName;
+
+        if (patchDocument.TryGetProperty("unit_price", out var priceElement))
+            existing.UnitPrice = priceElement.GetDecimal();
+
+        if (patchDocument.TryGetProperty("stock_quantity", out var stockElement))
+            existing.StockQuantity = stockElement.GetInt32();
+
+        if (patchDocument.TryGetProperty("is_active", out var activeElement))
+            existing.IsActive = activeElement.GetBoolean();
+
+        _store[id] = existing;
+        return Task.FromResult<ProductEntity?>(existing);
+    }
+
+    public Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
+    {
+        return Task.FromResult(_store.Remove(id));
+    }
+
+    // Helper methods for test setup
+    public void Seed(params ProductEntity[] entities)
+    {
+        foreach (var entity in entities)
+        {
+            _store[entity.Id] = entity;
+        }
+    }
+
+    public void Clear() => _store.Clear();
+
+    public int Count => _store.Count;
 }
 
 /// <summary>
@@ -354,49 +354,49 @@ public class RepositorySpy<TEntity, TKey> : IRepository<TEntity, TKey>
     where TEntity : class
     where TKey : notnull
 {
-  private readonly IRepository<TEntity, TKey> _inner;
+    private readonly IRepository<TEntity, TKey> _inner;
 
-  /// <summary>
-  /// Initializes a new instance of the <see cref="RepositorySpy{TEntity, TKey}"/> class.
-  /// </summary>
-  /// <param name="inner">The inner repository to delegate to.</param>
-  public RepositorySpy(IRepository<TEntity, TKey> inner) => _inner = inner;
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RepositorySpy{TEntity, TKey}"/> class.
+    /// </summary>
+    /// <param name="inner">The inner repository to delegate to.</param>
+    public RepositorySpy(IRepository<TEntity, TKey> inner) => _inner = inner;
 
-  /// <summary>Gets the number of times <c>PatchAsync</c> was called.</summary>
-  public int PatchAsyncCallCount { get; private set; }
+    /// <summary>Gets the number of times <c>PatchAsync</c> was called.</summary>
+    public int PatchAsyncCallCount { get; private set; }
 
-  /// <summary>Gets the number of times <c>UpdateAsync</c> was called.</summary>
-  public int UpdateAsyncCallCount { get; private set; }
+    /// <summary>Gets the number of times <c>UpdateAsync</c> was called.</summary>
+    public int UpdateAsyncCallCount { get; private set; }
 
-  /// <inheritdoc />
-  public Task<TEntity?> GetByIdAsync(TKey id, CancellationToken ct = default) =>
-      _inner.GetByIdAsync(id, ct);
+    /// <inheritdoc />
+    public Task<TEntity?> GetByIdAsync(TKey id, CancellationToken ct = default) =>
+        _inner.GetByIdAsync(id, ct);
 
-  /// <inheritdoc />
-  public Task<PagedResult<TEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default) =>
-      _inner.GetAllAsync(pagination, ct);
+    /// <inheritdoc />
+    public Task<PagedResult<TEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default) =>
+        _inner.GetAllAsync(pagination, ct);
 
-  /// <inheritdoc />
-  public Task<TEntity> CreateAsync(TEntity entity, CancellationToken ct = default) =>
-      _inner.CreateAsync(entity, ct);
+    /// <inheritdoc />
+    public Task<TEntity> CreateAsync(TEntity entity, CancellationToken ct = default) =>
+        _inner.CreateAsync(entity, ct);
 
-  /// <inheritdoc />
-  public Task<TEntity?> UpdateAsync(TKey id, TEntity entity, CancellationToken ct = default)
-  {
-    UpdateAsyncCallCount++;
-    return _inner.UpdateAsync(id, entity, ct);
-  }
+    /// <inheritdoc />
+    public Task<TEntity?> UpdateAsync(TKey id, TEntity entity, CancellationToken ct = default)
+    {
+        UpdateAsyncCallCount++;
+        return _inner.UpdateAsync(id, entity, ct);
+    }
 
-  /// <inheritdoc />
-  public Task<TEntity?> PatchAsync(TKey id, JsonElement patchDocument, CancellationToken ct = default)
-  {
-    PatchAsyncCallCount++;
-    return _inner.PatchAsync(id, patchDocument, ct);
-  }
+    /// <inheritdoc />
+    public Task<TEntity?> PatchAsync(TKey id, JsonElement patchDocument, CancellationToken ct = default)
+    {
+        PatchAsyncCallCount++;
+        return _inner.PatchAsync(id, patchDocument, ct);
+    }
 
-  /// <inheritdoc />
-  public Task<bool> DeleteAsync(TKey id, CancellationToken ct = default) =>
-      _inner.DeleteAsync(id, ct);
+    /// <inheritdoc />
+    public Task<bool> DeleteAsync(TKey id, CancellationToken ct = default) =>
+        _inner.DeleteAsync(id, ct);
 }
 
 /// <summary>
@@ -407,53 +407,53 @@ public class BatchRepositorySpy<TEntity, TKey> : IBatchRepository<TEntity, TKey>
     where TEntity : class
     where TKey : notnull
 {
-  private readonly IBatchRepository<TEntity, TKey> _inner;
+    private readonly IBatchRepository<TEntity, TKey> _inner;
 
-  /// <summary>
-  /// Initializes a new instance of the <see cref="BatchRepositorySpy{TEntity, TKey}"/> class.
-  /// </summary>
-  /// <param name="inner">The inner batch repository to delegate to.</param>
-  public BatchRepositorySpy(IBatchRepository<TEntity, TKey> inner) => _inner = inner;
+    /// <summary>
+    /// Initializes a new instance of the <see cref="BatchRepositorySpy{TEntity, TKey}"/> class.
+    /// </summary>
+    /// <param name="inner">The inner batch repository to delegate to.</param>
+    public BatchRepositorySpy(IBatchRepository<TEntity, TKey> inner) => _inner = inner;
 
-  /// <summary>Gets the number of times <c>CreateManyAsync</c> was called.</summary>
-  public int CreateManyCallCount { get; private set; }
+    /// <summary>Gets the number of times <c>CreateManyAsync</c> was called.</summary>
+    public int CreateManyCallCount { get; private set; }
 
-  /// <summary>Gets the number of times <c>UpdateManyAsync</c> was called.</summary>
-  public int UpdateManyCallCount { get; private set; }
+    /// <summary>Gets the number of times <c>UpdateManyAsync</c> was called.</summary>
+    public int UpdateManyCallCount { get; private set; }
 
-  /// <summary>Gets the number of times <c>PatchManyAsync</c> was called.</summary>
-  public int PatchManyCallCount { get; private set; }
+    /// <summary>Gets the number of times <c>PatchManyAsync</c> was called.</summary>
+    public int PatchManyCallCount { get; private set; }
 
-  /// <summary>Gets the number of times <c>DeleteManyAsync</c> was called.</summary>
-  public int DeleteManyCallCount { get; private set; }
+    /// <summary>Gets the number of times <c>DeleteManyAsync</c> was called.</summary>
+    public int DeleteManyCallCount { get; private set; }
 
-  /// <inheritdoc />
-  public Task<IReadOnlyList<TEntity>> CreateManyAsync(IReadOnlyList<TEntity> entities, CancellationToken ct = default)
-  {
-    CreateManyCallCount++;
-    return _inner.CreateManyAsync(entities, ct);
-  }
+    /// <inheritdoc />
+    public Task<IReadOnlyList<TEntity>> CreateManyAsync(IReadOnlyList<TEntity> entities, CancellationToken ct = default)
+    {
+        CreateManyCallCount++;
+        return _inner.CreateManyAsync(entities, ct);
+    }
 
-  /// <inheritdoc />
-  public Task<IReadOnlyList<TEntity>> UpdateManyAsync(IReadOnlyList<TEntity> entities, CancellationToken ct = default)
-  {
-    UpdateManyCallCount++;
-    return _inner.UpdateManyAsync(entities, ct);
-  }
+    /// <inheritdoc />
+    public Task<IReadOnlyList<TEntity>> UpdateManyAsync(IReadOnlyList<TEntity> entities, CancellationToken ct = default)
+    {
+        UpdateManyCallCount++;
+        return _inner.UpdateManyAsync(entities, ct);
+    }
 
-  /// <inheritdoc />
-  public Task<IReadOnlyList<TEntity>> PatchManyAsync(
-      IReadOnlyList<(TKey Id, JsonElement PatchDocument)> patches,
-      CancellationToken ct = default)
-  {
-    PatchManyCallCount++;
-    return _inner.PatchManyAsync(patches, ct);
-  }
+    /// <inheritdoc />
+    public Task<IReadOnlyList<TEntity>> PatchManyAsync(
+        IReadOnlyList<(TKey Id, JsonElement PatchDocument)> patches,
+        CancellationToken ct = default)
+    {
+        PatchManyCallCount++;
+        return _inner.PatchManyAsync(patches, ct);
+    }
 
-  /// <inheritdoc />
-  public Task<int> DeleteManyAsync(IReadOnlyList<TKey> keys, CancellationToken ct = default)
-  {
-    DeleteManyCallCount++;
-    return _inner.DeleteManyAsync(keys, ct);
-  }
+    /// <inheritdoc />
+    public Task<int> DeleteManyAsync(IReadOnlyList<TKey> keys, CancellationToken ct = default)
+    {
+        DeleteManyCallCount++;
+        return _inner.DeleteManyAsync(keys, ct);
+    }
 }

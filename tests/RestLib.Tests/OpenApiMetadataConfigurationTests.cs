@@ -25,143 +25,143 @@ namespace RestLib.Tests;
 /// </summary>
 public partial class OpenApiMetadataConfigurationTests
 {
-  #region Test Entity and Repository
+    #region Test Entity and Repository
 
-  private class MetadataTestEntity
-  {
-    public int Id { get; set; }
-    public string Name { get; set; } = "";
-    public decimal Price { get; set; }
-  }
-
-  private class ItemTestEntity
-  {
-    public Guid Id { get; set; }
-    public string Name { get; set; } = "";
-    public int Quantity { get; set; }
-  }
-
-  private class MetadataTestRepository : IRepository<MetadataTestEntity, int>
-  {
-    private readonly Dictionary<int, MetadataTestEntity> _data = [];
-    private int _nextId = 1;
-
-    public Task<MetadataTestEntity> CreateAsync(MetadataTestEntity entity, CancellationToken ct = default)
+    private class MetadataTestEntity
     {
-      entity.Id = _nextId++;
-      _data[entity.Id] = entity;
-      return Task.FromResult(entity);
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        public decimal Price { get; set; }
     }
 
-    public Task<bool> DeleteAsync(int id, CancellationToken ct = default)
-      => Task.FromResult(_data.Remove(id));
-
-    public Task<PagedResult<MetadataTestEntity>> GetAllAsync(PaginationRequest request, CancellationToken ct = default)
-      => Task.FromResult(new PagedResult<MetadataTestEntity> { Items = _data.Values.ToList(), NextCursor = null });
-
-    public Task<MetadataTestEntity?> GetByIdAsync(int id, CancellationToken ct = default)
+    private class ItemTestEntity
     {
-      _data.TryGetValue(id, out var entity);
-      return Task.FromResult(entity);
+        public Guid Id { get; set; }
+        public string Name { get; set; } = "";
+        public int Quantity { get; set; }
     }
 
-    public Task<MetadataTestEntity?> PatchAsync(int id, JsonElement patchDocument, CancellationToken ct = default)
+    private class MetadataTestRepository : IRepository<MetadataTestEntity, int>
     {
-      if (!_data.TryGetValue(id, out var entity)) return Task.FromResult<MetadataTestEntity?>(null);
-      return Task.FromResult<MetadataTestEntity?>(entity);
-    }
+        private readonly Dictionary<int, MetadataTestEntity> _data = [];
+        private int _nextId = 1;
 
-    public Task<MetadataTestEntity?> UpdateAsync(int id, MetadataTestEntity entity, CancellationToken ct = default)
-    {
-      if (!_data.ContainsKey(id)) return Task.FromResult<MetadataTestEntity?>(null);
-      entity.Id = id;
-      _data[id] = entity;
-      return Task.FromResult<MetadataTestEntity?>(entity);
-    }
-  }
-
-  private class ItemTestRepository : IRepository<ItemTestEntity, Guid>
-  {
-    private readonly Dictionary<Guid, ItemTestEntity> _data = [];
-
-    public Task<ItemTestEntity> CreateAsync(ItemTestEntity entity, CancellationToken ct = default)
-    {
-      entity.Id = Guid.NewGuid();
-      _data[entity.Id] = entity;
-      return Task.FromResult(entity);
-    }
-
-    public Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
-      => Task.FromResult(_data.Remove(id));
-
-    public Task<PagedResult<ItemTestEntity>> GetAllAsync(PaginationRequest request, CancellationToken ct = default)
-      => Task.FromResult(new PagedResult<ItemTestEntity> { Items = _data.Values.ToList(), NextCursor = null });
-
-    public Task<ItemTestEntity?> GetByIdAsync(Guid id, CancellationToken ct = default)
-    {
-      _data.TryGetValue(id, out var entity);
-      return Task.FromResult(entity);
-    }
-
-    public Task<ItemTestEntity?> PatchAsync(Guid id, JsonElement patchDocument, CancellationToken ct = default)
-    {
-      if (!_data.TryGetValue(id, out var entity)) return Task.FromResult<ItemTestEntity?>(null);
-      return Task.FromResult<ItemTestEntity?>(entity);
-    }
-
-    public Task<ItemTestEntity?> UpdateAsync(Guid id, ItemTestEntity entity, CancellationToken ct = default)
-    {
-      if (!_data.ContainsKey(id)) return Task.FromResult<ItemTestEntity?>(null);
-      entity.Id = id;
-      _data[id] = entity;
-      return Task.FromResult<ItemTestEntity?>(entity);
-    }
-  }
-
-  #endregion
-
-  #region Helper Methods
-
-  private static async Task<IHost> CreateHostWithOpenApi(
-      Action<RestLibEndpointConfiguration<MetadataTestEntity, int>> configure)
-  {
-    var repository = new MetadataTestRepository();
-
-    var host = await new HostBuilder()
-        .ConfigureWebHost(webBuilder =>
+        public Task<MetadataTestEntity> CreateAsync(MetadataTestEntity entity, CancellationToken ct = default)
         {
-          webBuilder.UseTestServer();
-          webBuilder.ConfigureServices(services =>
-          {
-            services.AddRouting();
-            services.AddOpenApi();
-            services.AddSingleton<IRepository<MetadataTestEntity, int>>(repository);
-          });
-          webBuilder.Configure(app =>
-          {
-            app.UseRouting();
-            app.UseEndpoints(endpoints =>
+            entity.Id = _nextId++;
+            _data[entity.Id] = entity;
+            return Task.FromResult(entity);
+        }
+
+        public Task<bool> DeleteAsync(int id, CancellationToken ct = default)
+          => Task.FromResult(_data.Remove(id));
+
+        public Task<PagedResult<MetadataTestEntity>> GetAllAsync(PaginationRequest request, CancellationToken ct = default)
+          => Task.FromResult(new PagedResult<MetadataTestEntity> { Items = _data.Values.ToList(), NextCursor = null });
+
+        public Task<MetadataTestEntity?> GetByIdAsync(int id, CancellationToken ct = default)
+        {
+            _data.TryGetValue(id, out var entity);
+            return Task.FromResult(entity);
+        }
+
+        public Task<MetadataTestEntity?> PatchAsync(int id, JsonElement patchDocument, CancellationToken ct = default)
+        {
+            if (!_data.TryGetValue(id, out var entity)) return Task.FromResult<MetadataTestEntity?>(null);
+            return Task.FromResult<MetadataTestEntity?>(entity);
+        }
+
+        public Task<MetadataTestEntity?> UpdateAsync(int id, MetadataTestEntity entity, CancellationToken ct = default)
+        {
+            if (!_data.ContainsKey(id)) return Task.FromResult<MetadataTestEntity?>(null);
+            entity.Id = id;
+            _data[id] = entity;
+            return Task.FromResult<MetadataTestEntity?>(entity);
+        }
+    }
+
+    private class ItemTestRepository : IRepository<ItemTestEntity, Guid>
+    {
+        private readonly Dictionary<Guid, ItemTestEntity> _data = [];
+
+        public Task<ItemTestEntity> CreateAsync(ItemTestEntity entity, CancellationToken ct = default)
+        {
+            entity.Id = Guid.NewGuid();
+            _data[entity.Id] = entity;
+            return Task.FromResult(entity);
+        }
+
+        public Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
+          => Task.FromResult(_data.Remove(id));
+
+        public Task<PagedResult<ItemTestEntity>> GetAllAsync(PaginationRequest request, CancellationToken ct = default)
+          => Task.FromResult(new PagedResult<ItemTestEntity> { Items = _data.Values.ToList(), NextCursor = null });
+
+        public Task<ItemTestEntity?> GetByIdAsync(Guid id, CancellationToken ct = default)
+        {
+            _data.TryGetValue(id, out var entity);
+            return Task.FromResult(entity);
+        }
+
+        public Task<ItemTestEntity?> PatchAsync(Guid id, JsonElement patchDocument, CancellationToken ct = default)
+        {
+            if (!_data.TryGetValue(id, out var entity)) return Task.FromResult<ItemTestEntity?>(null);
+            return Task.FromResult<ItemTestEntity?>(entity);
+        }
+
+        public Task<ItemTestEntity?> UpdateAsync(Guid id, ItemTestEntity entity, CancellationToken ct = default)
+        {
+            if (!_data.ContainsKey(id)) return Task.FromResult<ItemTestEntity?>(null);
+            entity.Id = id;
+            _data[id] = entity;
+            return Task.FromResult<ItemTestEntity?>(entity);
+        }
+    }
+
+    #endregion
+
+    #region Helper Methods
+
+    private static async Task<IHost> CreateHostWithOpenApi(
+        Action<RestLibEndpointConfiguration<MetadataTestEntity, int>> configure)
+    {
+        var repository = new MetadataTestRepository();
+
+        var host = await new HostBuilder()
+            .ConfigureWebHost(webBuilder =>
             {
-              endpoints.MapOpenApi();
-              endpoints.MapRestLib<MetadataTestEntity, int>("/api/items", configure);
+                webBuilder.UseTestServer();
+                webBuilder.ConfigureServices(services =>
+            {
+                services.AddRouting();
+                services.AddOpenApi();
+                services.AddSingleton<IRepository<MetadataTestEntity, int>>(repository);
             });
-          });
-        })
-        .StartAsync();
+                webBuilder.Configure(app =>
+            {
+                app.UseRouting();
+                app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapOpenApi();
+                endpoints.MapRestLib<MetadataTestEntity, int>("/api/items", configure);
+            });
+            });
+            })
+            .StartAsync();
 
-    return host;
-  }
+        return host;
+    }
 
-  private static async Task<OpenApiDocument> GetOpenApiDocument(HttpClient client)
-  {
-    var response = await client.GetAsync("/openapi/v1.json");
-    response.EnsureSuccessStatusCode();
+    private static async Task<OpenApiDocument> GetOpenApiDocument(HttpClient client)
+    {
+        var response = await client.GetAsync("/openapi/v1.json");
+        response.EnsureSuccessStatusCode();
 
-    var content = await response.Content.ReadAsStreamAsync();
-    var result = await OpenApiDocument.LoadAsync(content, "json");
+        var content = await response.Content.ReadAsStreamAsync();
+        var result = await OpenApiDocument.LoadAsync(content, "json");
 
-    return result.Document!;
-  }
+        return result.Document!;
+    }
 
-  #endregion
+    #endregion
 }

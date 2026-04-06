@@ -5,5 +5,5 @@ namespace RestLib.Sample;
 /// </summary>
 public static class HookNames
 {
-  public const string SetUpdatedAt = nameof(SetUpdatedAt);
+    public const string SetUpdatedAt = nameof(SetUpdatedAt);
 }

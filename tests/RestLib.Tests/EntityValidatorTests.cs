@@ -11,360 +11,360 @@ namespace RestLib.Tests;
 /// </summary>
 public class EntityValidatorTests
 {
-  #region Success scenarios
+    #region Success scenarios
 
-  [Fact]
-  public void Validate_ValidEntity_ReturnsSuccess()
-  {
-    // Arrange
-    var entity = new TestValidatedEntity
+    [Fact]
+    public void Validate_ValidEntity_ReturnsSuccess()
     {
-      Name = "Valid Name",
-      Email = "test@example.com",
-      Age = 25
-    };
+        // Arrange
+        var entity = new TestValidatedEntity
+        {
+            Name = "Valid Name",
+            Email = "test@example.com",
+            Age = 25
+        };
 
-    // Act
-    var result = EntityValidator.Validate(entity);
+        // Act
+        var result = EntityValidator.Validate(entity);
 
-    // Assert
-    result.IsValid.Should().BeTrue();
-    result.Errors.Should().BeEmpty();
-  }
+        // Assert
+        result.IsValid.Should().BeTrue();
+        result.Errors.Should().BeEmpty();
+    }
 
-  [Fact]
-  public void Validate_EntityWithOptionalFieldsNull_ReturnsSuccess()
-  {
-    // Arrange
-    var entity = new TestValidatedEntity
+    [Fact]
+    public void Validate_EntityWithOptionalFieldsNull_ReturnsSuccess()
     {
-      Name = "Valid Name",
-      Email = null, // Optional field
-      Age = 18
-    };
+        // Arrange
+        var entity = new TestValidatedEntity
+        {
+            Name = "Valid Name",
+            Email = null, // Optional field
+            Age = 18
+        };
 
-    // Act
-    var result = EntityValidator.Validate(entity);
+        // Act
+        var result = EntityValidator.Validate(entity);
 
-    // Assert
-    result.IsValid.Should().BeTrue();
-  }
+        // Assert
+        result.IsValid.Should().BeTrue();
+    }
 
-  #endregion
+    #endregion
 
-  #region Required validation
+    #region Required validation
 
-  [Fact]
-  public void Validate_MissingRequiredField_ReturnsFailed()
-  {
-    // Arrange
-    var entity = new TestValidatedEntity
+    [Fact]
+    public void Validate_MissingRequiredField_ReturnsFailed()
     {
-      Name = null!, // Required field is null
-      Age = 25
-    };
+        // Arrange
+        var entity = new TestValidatedEntity
+        {
+            Name = null!, // Required field is null
+            Age = 25
+        };
 
-    // Act
-    var result = EntityValidator.Validate(entity);
+        // Act
+        var result = EntityValidator.Validate(entity);
 
-    // Assert
-    result.IsValid.Should().BeFalse();
-    result.Errors.Should().ContainKey("Name");
-  }
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainKey("Name");
+    }
 
-  [Fact]
-  public void Validate_EmptyRequiredString_ReturnsFailed()
-  {
-    // Arrange
-    var entity = new TestValidatedEntity
+    [Fact]
+    public void Validate_EmptyRequiredString_ReturnsFailed()
     {
-      Name = "", // Empty string
-      Age = 25
-    };
+        // Arrange
+        var entity = new TestValidatedEntity
+        {
+            Name = "", // Empty string
+            Age = 25
+        };
 
-    // Act
-    var result = EntityValidator.Validate(entity);
+        // Act
+        var result = EntityValidator.Validate(entity);
 
-    // Assert
-    result.IsValid.Should().BeFalse();
-    result.Errors.Should().ContainKey("Name");
-  }
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainKey("Name");
+    }
 
-  #endregion
+    #endregion
 
-  #region Range validation
+    #region Range validation
 
-  [Fact]
-  public void Validate_ValueBelowRange_ReturnsFailed()
-  {
-    // Arrange
-    var entity = new TestValidatedEntity
+    [Fact]
+    public void Validate_ValueBelowRange_ReturnsFailed()
     {
-      Name = "Test",
-      Age = 0 // Below minimum of 1
-    };
+        // Arrange
+        var entity = new TestValidatedEntity
+        {
+            Name = "Test",
+            Age = 0 // Below minimum of 1
+        };
 
-    // Act
-    var result = EntityValidator.Validate(entity);
+        // Act
+        var result = EntityValidator.Validate(entity);
 
-    // Assert
-    result.IsValid.Should().BeFalse();
-    result.Errors.Should().ContainKey("Age");
-  }
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainKey("Age");
+    }
 
-  [Fact]
-  public void Validate_ValueAboveRange_ReturnsFailed()
-  {
-    // Arrange
-    var entity = new TestValidatedEntity
+    [Fact]
+    public void Validate_ValueAboveRange_ReturnsFailed()
     {
-      Name = "Test",
-      Age = 200 // Above maximum of 150
-    };
+        // Arrange
+        var entity = new TestValidatedEntity
+        {
+            Name = "Test",
+            Age = 200 // Above maximum of 150
+        };
 
-    // Act
-    var result = EntityValidator.Validate(entity);
+        // Act
+        var result = EntityValidator.Validate(entity);
 
-    // Assert
-    result.IsValid.Should().BeFalse();
-    result.Errors.Should().ContainKey("Age");
-  }
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainKey("Age");
+    }
 
-  #endregion
+    #endregion
 
-  #region MaxLength validation
+    #region MaxLength validation
 
-  [Fact]
-  public void Validate_StringExceedsMaxLength_ReturnsFailed()
-  {
-    // Arrange
-    var entity = new TestValidatedEntity
+    [Fact]
+    public void Validate_StringExceedsMaxLength_ReturnsFailed()
     {
-      Name = new string('a', 51), // Exceeds max length of 50
-      Age = 25
-    };
+        // Arrange
+        var entity = new TestValidatedEntity
+        {
+            Name = new string('a', 51), // Exceeds max length of 50
+            Age = 25
+        };
 
-    // Act
-    var result = EntityValidator.Validate(entity);
+        // Act
+        var result = EntityValidator.Validate(entity);
 
-    // Assert
-    result.IsValid.Should().BeFalse();
-    result.Errors.Should().ContainKey("Name");
-  }
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainKey("Name");
+    }
 
-  #endregion
+    #endregion
 
-  #region Email validation
+    #region Email validation
 
-  [Fact]
-  public void Validate_InvalidEmail_ReturnsFailed()
-  {
-    // Arrange
-    var entity = new TestValidatedEntity
+    [Fact]
+    public void Validate_InvalidEmail_ReturnsFailed()
     {
-      Name = "Test",
-      Email = "not-an-email",
-      Age = 25
-    };
+        // Arrange
+        var entity = new TestValidatedEntity
+        {
+            Name = "Test",
+            Email = "not-an-email",
+            Age = 25
+        };
 
-    // Act
-    var result = EntityValidator.Validate(entity);
+        // Act
+        var result = EntityValidator.Validate(entity);
 
-    // Assert
-    result.IsValid.Should().BeFalse();
-    result.Errors.Should().ContainKey("Email");
-  }
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainKey("Email");
+    }
 
-  [Fact]
-  public void Validate_ValidEmail_ReturnsSuccess()
-  {
-    // Arrange
-    var entity = new TestValidatedEntity
+    [Fact]
+    public void Validate_ValidEmail_ReturnsSuccess()
     {
-      Name = "Test",
-      Email = "valid@example.com",
-      Age = 25
-    };
+        // Arrange
+        var entity = new TestValidatedEntity
+        {
+            Name = "Test",
+            Email = "valid@example.com",
+            Age = 25
+        };
 
-    // Act
-    var result = EntityValidator.Validate(entity);
+        // Act
+        var result = EntityValidator.Validate(entity);
 
-    // Assert
-    result.IsValid.Should().BeTrue();
-  }
+        // Assert
+        result.IsValid.Should().BeTrue();
+    }
 
-  #endregion
+    #endregion
 
-  #region Multiple errors
+    #region Multiple errors
 
-  [Fact]
-  public void Validate_MultipleErrors_ReturnsAllErrors()
-  {
-    // Arrange
-    var entity = new TestValidatedEntity
+    [Fact]
+    public void Validate_MultipleErrors_ReturnsAllErrors()
     {
-      Name = null!, // Required
-      Email = "invalid", // Invalid email
-      Age = -5 // Below range
-    };
+        // Arrange
+        var entity = new TestValidatedEntity
+        {
+            Name = null!, // Required
+            Email = "invalid", // Invalid email
+            Age = -5 // Below range
+        };
 
-    // Act
-    var result = EntityValidator.Validate(entity);
+        // Act
+        var result = EntityValidator.Validate(entity);
 
-    // Assert
-    result.IsValid.Should().BeFalse();
-    result.Errors.Should().HaveCount(3);
-    result.Errors.Should().ContainKey("Name");
-    result.Errors.Should().ContainKey("Email");
-    result.Errors.Should().ContainKey("Age");
-  }
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().HaveCount(3);
+        result.Errors.Should().ContainKey("Name");
+        result.Errors.Should().ContainKey("Email");
+        result.Errors.Should().ContainKey("Age");
+    }
 
-  #endregion
+    #endregion
 
-  #region Naming policy conversion
+    #region Naming policy conversion
 
-  [Fact]
-  public void Validate_WithSnakeCasePolicy_ReturnsSnakeCaseFieldNames()
-  {
-    // Arrange
-    var entity = new TestMultiWordEntity
+    [Fact]
+    public void Validate_WithSnakeCasePolicy_ReturnsSnakeCaseFieldNames()
     {
-      ProductName = null!, // Required
-      UnitPrice = -5 // Below range
-    };
+        // Arrange
+        var entity = new TestMultiWordEntity
+        {
+            ProductName = null!, // Required
+            UnitPrice = -5 // Below range
+        };
 
-    // Act
-    var result = EntityValidator.Validate(entity, JsonNamingPolicy.SnakeCaseLower);
+        // Act
+        var result = EntityValidator.Validate(entity, JsonNamingPolicy.SnakeCaseLower);
 
-    // Assert
-    result.IsValid.Should().BeFalse();
-    result.Errors.Should().ContainKey("product_name"); // ProductName -> product_name
-    result.Errors.Should().ContainKey("unit_price"); // UnitPrice -> unit_price
-  }
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainKey("product_name"); // ProductName -> product_name
+        result.Errors.Should().ContainKey("unit_price"); // UnitPrice -> unit_price
+    }
 
-  [Fact]
-  public void Validate_WithCamelCasePolicy_ReturnsCamelCaseFieldNames()
-  {
-    // Arrange
-    var entity = new TestMultiWordEntity
+    [Fact]
+    public void Validate_WithCamelCasePolicy_ReturnsCamelCaseFieldNames()
     {
-      ProductName = null!, // Required
-      UnitPrice = -5 // Below range
-    };
+        // Arrange
+        var entity = new TestMultiWordEntity
+        {
+            ProductName = null!, // Required
+            UnitPrice = -5 // Below range
+        };
 
-    // Act
-    var result = EntityValidator.Validate(entity, JsonNamingPolicy.CamelCase);
+        // Act
+        var result = EntityValidator.Validate(entity, JsonNamingPolicy.CamelCase);
 
-    // Assert
-    result.IsValid.Should().BeFalse();
-    result.Errors.Should().ContainKey("productName"); // ProductName -> productName
-    result.Errors.Should().ContainKey("unitPrice"); // UnitPrice -> unitPrice
-  }
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainKey("productName"); // ProductName -> productName
+        result.Errors.Should().ContainKey("unitPrice"); // UnitPrice -> unitPrice
+    }
 
-  [Fact]
-  public void Validate_WithNullPolicy_ReturnsPascalCaseFieldNames()
-  {
-    // Arrange
-    var entity = new TestMultiWordEntity
+    [Fact]
+    public void Validate_WithNullPolicy_ReturnsPascalCaseFieldNames()
     {
-      ProductName = null!, // Required
-      UnitPrice = -5 // Below range
-    };
+        // Arrange
+        var entity = new TestMultiWordEntity
+        {
+            ProductName = null!, // Required
+            UnitPrice = -5 // Below range
+        };
 
-    // Act
-    var result = EntityValidator.Validate(entity, namingPolicy: null);
+        // Act
+        var result = EntityValidator.Validate(entity, namingPolicy: null);
 
-    // Assert
-    result.IsValid.Should().BeFalse();
-    result.Errors.Should().ContainKey("ProductName"); // Unchanged
-    result.Errors.Should().ContainKey("UnitPrice"); // Unchanged
-  }
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainKey("ProductName"); // Unchanged
+        result.Errors.Should().ContainKey("UnitPrice"); // Unchanged
+    }
 
-  #endregion
+    #endregion
 
-  #region Error messages
+    #region Error messages
 
-  [Fact]
-  public void Validate_ErrorContainsProperMessage()
-  {
-    // Arrange
-    var entity = new TestValidatedEntity
+    [Fact]
+    public void Validate_ErrorContainsProperMessage()
     {
-      Name = null!,
-      Age = 25
-    };
+        // Arrange
+        var entity = new TestValidatedEntity
+        {
+            Name = null!,
+            Age = 25
+        };
 
-    // Act
-    var result = EntityValidator.Validate(entity);
+        // Act
+        var result = EntityValidator.Validate(entity);
 
-    // Assert
-    result.IsValid.Should().BeFalse();
-    result.Errors["Name"].Should().Contain(m => m.Contains("required", StringComparison.OrdinalIgnoreCase));
-  }
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.Errors["Name"].Should().Contain(m => m.Contains("required", StringComparison.OrdinalIgnoreCase));
+    }
 
-  [Fact]
-  public void Validate_MultipleErrorsOnSameField_AggregatesMessages()
-  {
-    // Arrange - Entity with both Required and MinLength on same field
-    var entity = new TestWithMultipleConstraintsEntity
+    [Fact]
+    public void Validate_MultipleErrorsOnSameField_AggregatesMessages()
     {
-      Name = "ab" // Too short (MinLength = 3)
-    };
+        // Arrange - Entity with both Required and MinLength on same field
+        var entity = new TestWithMultipleConstraintsEntity
+        {
+            Name = "ab" // Too short (MinLength = 3)
+        };
 
-    // Act
-    var result = EntityValidator.Validate(entity);
+        // Act
+        var result = EntityValidator.Validate(entity);
 
-    // Assert - Should have the validation error
-    result.IsValid.Should().BeFalse();
-    result.Errors.Should().ContainKey("Name");
-  }
+        // Assert - Should have the validation error
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainKey("Name");
+    }
 
-  #endregion
+    #endregion
 
-  #region Null entity
+    #region Null entity
 
-  [Fact]
-  public void Validate_NullEntity_ThrowsArgumentNullException()
-  {
-    // Act
-    Action act = () => EntityValidator.Validate<TestValidatedEntity>(null!);
+    [Fact]
+    public void Validate_NullEntity_ThrowsArgumentNullException()
+    {
+        // Act
+        Action act = () => EntityValidator.Validate<TestValidatedEntity>(null!);
 
-    // Assert
-    act.Should().Throw<ArgumentNullException>();
-  }
+        // Assert
+        act.Should().Throw<ArgumentNullException>();
+    }
 
-  #endregion
+    #endregion
 }
 
 #region Test entity classes
 
 public class TestValidatedEntity
 {
-  [Required]
-  [MaxLength(50)]
-  public string Name { get; set; } = string.Empty;
+    [Required]
+    [MaxLength(50)]
+    public string Name { get; set; } = string.Empty;
 
-  [EmailAddress]
-  public string? Email { get; set; }
+    [EmailAddress]
+    public string? Email { get; set; }
 
-  [Range(1, 150)]
-  public int Age { get; set; }
+    [Range(1, 150)]
+    public int Age { get; set; }
 }
 
 public class TestMultiWordEntity
 {
-  [Required]
-  public string ProductName { get; set; } = string.Empty;
+    [Required]
+    public string ProductName { get; set; } = string.Empty;
 
-  [Range(0, double.MaxValue)]
-  public decimal UnitPrice { get; set; }
+    [Range(0, double.MaxValue)]
+    public decimal UnitPrice { get; set; }
 }
 
 public class TestWithMultipleConstraintsEntity
 {
-  [Required]
-  [MinLength(3)]
-  public string Name { get; set; } = string.Empty;
+    [Required]
+    [MinLength(3)]
+    public string Name { get; set; } = string.Empty;
 }
 
 #endregion

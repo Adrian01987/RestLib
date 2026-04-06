@@ -26,150 +26,150 @@ namespace RestLib.Tests;
 /// </summary>
 public partial class OpenApiDocumentationTests
 {
-  #region Test Entity and Repository
+    #region Test Entity and Repository
 
-  private class OpenApiTestEntity
-  {
-    public int Id { get; set; }
-    public string Name { get; set; } = "";
-    public string? Description { get; set; }
-    public decimal Price { get; set; }
-    public bool IsActive { get; set; }
-    public Guid CategoryId { get; set; }
-    public DateTime CreatedAt { get; set; }
-  }
-
-  private class OpenApiTestRepository : IRepository<OpenApiTestEntity, int>
-  {
-    private readonly Dictionary<int, OpenApiTestEntity> _data = [];
-    private int _nextId = 1;
-
-    public void AddTestData(params OpenApiTestEntity[] entities)
+    private class OpenApiTestEntity
     {
-      foreach (var entity in entities)
-      {
-        _data[entity.Id] = entity;
-        if (entity.Id >= _nextId) _nextId = entity.Id + 1;
-      }
+        public int Id { get; set; }
+        public string Name { get; set; } = "";
+        public string? Description { get; set; }
+        public decimal Price { get; set; }
+        public bool IsActive { get; set; }
+        public Guid CategoryId { get; set; }
+        public DateTime CreatedAt { get; set; }
     }
 
-    public Task<OpenApiTestEntity> CreateAsync(OpenApiTestEntity entity, CancellationToken ct = default)
+    private class OpenApiTestRepository : IRepository<OpenApiTestEntity, int>
     {
-      entity.Id = _nextId++;
-      _data[entity.Id] = entity;
-      return Task.FromResult(entity);
-    }
+        private readonly Dictionary<int, OpenApiTestEntity> _data = [];
+        private int _nextId = 1;
 
-    public Task<bool> DeleteAsync(int id, CancellationToken ct = default)
-      => Task.FromResult(_data.Remove(id));
-
-    public Task<PagedResult<OpenApiTestEntity>> GetAllAsync(PaginationRequest request, CancellationToken ct = default)
-      => Task.FromResult(new PagedResult<OpenApiTestEntity> { Items = _data.Values.ToList(), NextCursor = null });
-
-    public Task<OpenApiTestEntity?> GetByIdAsync(int id, CancellationToken ct = default)
-    {
-      _data.TryGetValue(id, out var entity);
-      return Task.FromResult(entity);
-    }
-
-    public Task<OpenApiTestEntity?> PatchAsync(int id, JsonElement patchDocument, CancellationToken ct = default)
-    {
-      if (!_data.TryGetValue(id, out var entity)) return Task.FromResult<OpenApiTestEntity?>(null);
-      return Task.FromResult<OpenApiTestEntity?>(entity);
-    }
-
-    public Task<OpenApiTestEntity?> UpdateAsync(int id, OpenApiTestEntity entity, CancellationToken ct = default)
-    {
-      if (!_data.ContainsKey(id)) return Task.FromResult<OpenApiTestEntity?>(null);
-      entity.Id = id;
-      _data[id] = entity;
-      return Task.FromResult<OpenApiTestEntity?>(entity);
-    }
-  }
-
-  #endregion
-
-  #region Helper Methods
-
-  private static async Task<IHost> CreateHostWithOpenApi()
-  {
-    var repository = new OpenApiTestRepository();
-
-    var host = await new HostBuilder()
-        .ConfigureWebHost(webBuilder =>
+        public void AddTestData(params OpenApiTestEntity[] entities)
         {
-          webBuilder.UseTestServer();
-          webBuilder.ConfigureServices(services =>
-          {
-            services.AddRestLib();
-            services.AddRouting();
-            services.AddOpenApi();
-            services.AddSingleton<IRepository<OpenApiTestEntity, int>>(repository);
-          });
-          webBuilder.Configure(app =>
-          {
-            app.UseRouting();
-            app.UseEndpoints(endpoints =>
+            foreach (var entity in entities)
             {
-              endpoints.MapOpenApi();
-              endpoints.MapRestLib<OpenApiTestEntity, int>("/api/items", config =>
+                _data[entity.Id] = entity;
+                if (entity.Id >= _nextId) _nextId = entity.Id + 1;
+            }
+        }
+
+        public Task<OpenApiTestEntity> CreateAsync(OpenApiTestEntity entity, CancellationToken ct = default)
+        {
+            entity.Id = _nextId++;
+            _data[entity.Id] = entity;
+            return Task.FromResult(entity);
+        }
+
+        public Task<bool> DeleteAsync(int id, CancellationToken ct = default)
+          => Task.FromResult(_data.Remove(id));
+
+        public Task<PagedResult<OpenApiTestEntity>> GetAllAsync(PaginationRequest request, CancellationToken ct = default)
+          => Task.FromResult(new PagedResult<OpenApiTestEntity> { Items = _data.Values.ToList(), NextCursor = null });
+
+        public Task<OpenApiTestEntity?> GetByIdAsync(int id, CancellationToken ct = default)
+        {
+            _data.TryGetValue(id, out var entity);
+            return Task.FromResult(entity);
+        }
+
+        public Task<OpenApiTestEntity?> PatchAsync(int id, JsonElement patchDocument, CancellationToken ct = default)
+        {
+            if (!_data.TryGetValue(id, out var entity)) return Task.FromResult<OpenApiTestEntity?>(null);
+            return Task.FromResult<OpenApiTestEntity?>(entity);
+        }
+
+        public Task<OpenApiTestEntity?> UpdateAsync(int id, OpenApiTestEntity entity, CancellationToken ct = default)
+        {
+            if (!_data.ContainsKey(id)) return Task.FromResult<OpenApiTestEntity?>(null);
+            entity.Id = id;
+            _data[id] = entity;
+            return Task.FromResult<OpenApiTestEntity?>(entity);
+        }
+    }
+
+    #endregion
+
+    #region Helper Methods
+
+    private static async Task<IHost> CreateHostWithOpenApi()
+    {
+        var repository = new OpenApiTestRepository();
+
+        var host = await new HostBuilder()
+            .ConfigureWebHost(webBuilder =>
+            {
+                webBuilder.UseTestServer();
+                webBuilder.ConfigureServices(services =>
+            {
+                services.AddRestLib();
+                services.AddRouting();
+                services.AddOpenApi();
+                services.AddSingleton<IRepository<OpenApiTestEntity, int>>(repository);
+            });
+                webBuilder.Configure(app =>
+            {
+                app.UseRouting();
+                app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapOpenApi();
+                endpoints.MapRestLib<OpenApiTestEntity, int>("/api/items", config =>
               {
-                config.AllowAnonymous();
-                config.KeySelector = e => e.Id;
+                  config.AllowAnonymous();
+                  config.KeySelector = e => e.Id;
               });
             });
-          });
-        })
-        .StartAsync();
+            });
+            })
+            .StartAsync();
 
-    return host;
-  }
+        return host;
+    }
 
-  private static async Task<IHost> CreateHostWithFilters()
-  {
-    var repository = new OpenApiTestRepository();
+    private static async Task<IHost> CreateHostWithFilters()
+    {
+        var repository = new OpenApiTestRepository();
 
-    var host = await new HostBuilder()
-        .ConfigureWebHost(webBuilder =>
-        {
-          webBuilder.UseTestServer();
-          webBuilder.ConfigureServices(services =>
-          {
-            services.AddRestLib();
-            services.AddRouting();
-            services.AddOpenApi();
-            services.AddSingleton<IRepository<OpenApiTestEntity, int>>(repository);
-          });
-          webBuilder.Configure(app =>
-          {
-            app.UseRouting();
-            app.UseEndpoints(endpoints =>
+        var host = await new HostBuilder()
+            .ConfigureWebHost(webBuilder =>
             {
-              endpoints.MapOpenApi();
-              endpoints.MapRestLib<OpenApiTestEntity, int>("/api/items", config =>
+                webBuilder.UseTestServer();
+                webBuilder.ConfigureServices(services =>
+            {
+                services.AddRestLib();
+                services.AddRouting();
+                services.AddOpenApi();
+                services.AddSingleton<IRepository<OpenApiTestEntity, int>>(repository);
+            });
+                webBuilder.Configure(app =>
+            {
+                app.UseRouting();
+                app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapOpenApi();
+                endpoints.MapRestLib<OpenApiTestEntity, int>("/api/items", config =>
               {
-                config.AllowAnonymous();
-                config.KeySelector = e => e.Id;
-                config.AllowFiltering(e => e.IsActive, e => e.CategoryId);
+                  config.AllowAnonymous();
+                  config.KeySelector = e => e.Id;
+                  config.AllowFiltering(e => e.IsActive, e => e.CategoryId);
               });
             });
-          });
-        })
-        .StartAsync();
+            });
+            })
+            .StartAsync();
 
-    return host;
-  }
+        return host;
+    }
 
-  private static async Task<OpenApiDocument> GetOpenApiDocument(HttpClient client)
-  {
-    var response = await client.GetAsync("/openapi/v1.json");
-    response.EnsureSuccessStatusCode();
+    private static async Task<OpenApiDocument> GetOpenApiDocument(HttpClient client)
+    {
+        var response = await client.GetAsync("/openapi/v1.json");
+        response.EnsureSuccessStatusCode();
 
-    var content = await response.Content.ReadAsStreamAsync();
-    var result = await OpenApiDocument.LoadAsync(content, "json");
+        var content = await response.Content.ReadAsStreamAsync();
+        var result = await OpenApiDocument.LoadAsync(content, "json");
 
-    return result.Document!;
-  }
+        return result.Document!;
+    }
 
-  #endregion
+    #endregion
 }
