@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
@@ -152,6 +156,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y curl jq bc
 
       - name: Run E2E tests
+        timeout-minutes: 10
         run: bash tests/e2eTests/run-all.sh
 
       - name: Upload E2E test results
