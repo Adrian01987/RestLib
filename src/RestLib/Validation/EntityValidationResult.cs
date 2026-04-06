@@ -5,10 +5,13 @@ namespace RestLib.Validation;
 /// </summary>
 public class EntityValidationResult
 {
+    private static readonly IReadOnlyDictionary<string, string[]> EmptyErrors =
+        new Dictionary<string, string[]>();
+
     private EntityValidationResult(bool isValid, IReadOnlyDictionary<string, string[]>? errors = null)
     {
         IsValid = isValid;
-        Errors = errors ?? new Dictionary<string, string[]>();
+        Errors = errors ?? EmptyErrors;
     }
 
     /// <summary>
