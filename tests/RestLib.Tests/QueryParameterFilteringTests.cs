@@ -362,6 +362,8 @@ public class QueryParameterFilteringTests : IDisposable
     {
         // Arrange
         var config = new FilterConfiguration<FilterableEntity>();
+
+        // Act
         config.AddProperty(p => p.IsActive);
         config.AddProperty(p => p.CategoryId);
         config.AddProperty(p => p.CreatedAt);
@@ -1481,7 +1483,7 @@ public class FilterParserOperatorTests
     [Trait("Category", "Story4.3.Operators")]
     public void GetFriendlyTypeName_ReturnsHumanReadableNames()
     {
-        // Assert
+        // Act & Assert
         FilterParser.GetFriendlyTypeName(typeof(int)).Should().Be("integer");
         FilterParser.GetFriendlyTypeName(typeof(long)).Should().Be("long integer");
         FilterParser.GetFriendlyTypeName(typeof(decimal)).Should().Be("decimal number");
@@ -1497,7 +1499,7 @@ public class FilterParserOperatorTests
     [Trait("Category", "Story4.3.Operators")]
     public void GetFriendlyTypeName_NullableType_ReturnsUnderlyingName()
     {
-        // Assert
+        // Act & Assert
         FilterParser.GetFriendlyTypeName(typeof(int?)).Should().Be("integer");
         FilterParser.GetFriendlyTypeName(typeof(Guid?)).Should().Be("GUID");
     }
@@ -1580,7 +1582,7 @@ public class FilterConfigurationOperatorTests
     [Trait("Category", "Story4.3.Operators")]
     public void FilterOperatorsPreset_All_ContainsAllValues()
     {
-        // Assert
+        // Act & Assert
         FilterOperators.All.Should().HaveCount(Enum.GetValues<FilterOperator>().Length);
         foreach (var op in Enum.GetValues<FilterOperator>())
         {
@@ -1592,7 +1594,7 @@ public class FilterConfigurationOperatorTests
     [Trait("Category", "Story4.3.Operators")]
     public void FilterOperatorsPreset_Equality_ContainsEqAndNeq()
     {
-        // Assert
+        // Act & Assert
         FilterOperators.Equality.Should().HaveCount(2);
         FilterOperators.Equality.Should().Contain(FilterOperator.Eq);
         FilterOperators.Equality.Should().Contain(FilterOperator.Neq);

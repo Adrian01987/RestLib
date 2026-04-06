@@ -17,8 +17,10 @@ public class RepositoryInterfaceTests
     [Fact]
     public void IRepository_IsGenericInterface()
     {
-        // Assert
+        // Act
         var type = typeof(IRepository<,>);
+
+        // Assert
         type.IsInterface.Should().BeTrue();
         type.IsGenericType.Should().BeTrue();
         type.GetGenericArguments().Should().HaveCount(2);
@@ -27,11 +29,14 @@ public class RepositoryInterfaceTests
     [Fact]
     public void IRepository_HasEntityConstraint()
     {
-        // Assert - TEntity must be a class
+        // Arrange
         var type = typeof(IRepository<,>);
         var entityParam = type.GetGenericArguments()[0];
+
+        // Act
         var constraints = entityParam.GetGenericParameterConstraints();
 
+        // Assert - TEntity must be a class
         // class constraint is represented as having ReferenceTypeConstraint
         entityParam.GenericParameterAttributes
             .HasFlag(System.Reflection.GenericParameterAttributes.ReferenceTypeConstraint)
@@ -43,6 +48,8 @@ public class RepositoryInterfaceTests
     {
         // Arrange
         var type = typeof(IRepository<TestEntity, Guid>);
+
+        // Act
         var methods = type.GetMethods();
 
         // Assert
@@ -61,7 +68,7 @@ public class RepositoryInterfaceTests
     [Fact]
     public void GetByIdAsync_ReturnsNullableEntity()
     {
-        // Arrange
+        // Act
         var method = typeof(IRepository<TestEntity, Guid>).GetMethod("GetByIdAsync");
 
         // Assert
@@ -74,6 +81,8 @@ public class RepositoryInterfaceTests
     {
         // Arrange
         var method = typeof(IRepository<TestEntity, Guid>).GetMethod("GetByIdAsync");
+
+        // Act
         var parameters = method!.GetParameters();
 
         // Assert
@@ -86,7 +95,7 @@ public class RepositoryInterfaceTests
     [Fact]
     public void GetAllAsync_ReturnsPagedResult()
     {
-        // Arrange
+        // Act
         var method = typeof(IRepository<TestEntity, Guid>).GetMethod("GetAllAsync");
 
         // Assert
@@ -99,6 +108,8 @@ public class RepositoryInterfaceTests
     {
         // Arrange
         var method = typeof(IRepository<TestEntity, Guid>).GetMethod("GetAllAsync");
+
+        // Act
         var parameters = method!.GetParameters();
 
         // Assert
@@ -110,7 +121,7 @@ public class RepositoryInterfaceTests
     [Fact]
     public void CreateAsync_ReturnsEntity()
     {
-        // Arrange
+        // Act
         var method = typeof(IRepository<TestEntity, Guid>).GetMethod("CreateAsync");
 
         // Assert
@@ -121,7 +132,7 @@ public class RepositoryInterfaceTests
     [Fact]
     public void UpdateAsync_ReturnsNullableEntity()
     {
-        // Arrange
+        // Act
         var method = typeof(IRepository<TestEntity, Guid>).GetMethod("UpdateAsync");
 
         // Assert
@@ -134,6 +145,8 @@ public class RepositoryInterfaceTests
     {
         // Arrange
         var method = typeof(IRepository<TestEntity, Guid>).GetMethod("PatchAsync");
+
+        // Act
         var parameters = method!.GetParameters();
 
         // Assert
@@ -146,7 +159,7 @@ public class RepositoryInterfaceTests
     [Fact]
     public void DeleteAsync_ReturnsBool()
     {
-        // Arrange
+        // Act
         var method = typeof(IRepository<TestEntity, Guid>).GetMethod("DeleteAsync");
 
         // Assert
@@ -161,8 +174,10 @@ public class RepositoryInterfaceTests
     [Fact]
     public void PaginationRequest_HasCursorProperty()
     {
-        // Assert
+        // Act
         var property = typeof(PaginationRequest).GetProperty("Cursor");
+
+        // Assert
         property.Should().NotBeNull();
         property!.PropertyType.Should().Be(typeof(string));
     }
@@ -170,7 +185,7 @@ public class RepositoryInterfaceTests
     [Fact]
     public void PaginationRequest_HasLimitWithDefault20()
     {
-        // Arrange
+        // Act
         var request = new PaginationRequest();
 
         // Assert
@@ -180,8 +195,10 @@ public class RepositoryInterfaceTests
     [Fact]
     public void PagedResult_HasRequiredProperties()
     {
-        // Assert
+        // Act
         var type = typeof(PagedResult<TestEntity>);
+
+        // Assert
         type.GetProperty("Items").Should().NotBeNull();
         type.GetProperty("NextCursor").Should().NotBeNull();
         type.GetProperty("HasMore").Should().NotBeNull();
@@ -197,7 +214,7 @@ public class RepositoryInterfaceTests
             NextCursor = "abc123"
         };
 
-        // Assert
+        // Act & Assert
         result.HasMore.Should().BeTrue();
     }
 
@@ -211,7 +228,7 @@ public class RepositoryInterfaceTests
             NextCursor = null
         };
 
-        // Assert
+        // Act & Assert
         result.HasMore.Should().BeFalse();
     }
 

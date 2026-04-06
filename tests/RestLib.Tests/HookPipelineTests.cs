@@ -1039,12 +1039,14 @@ public class HookPipelineTests
         hooksExecuted.Should().Contain("BeforePersist");
         hooksExecuted.Should().Contain("OnError");
 
-        // Clear and test successful path
+        // Arrange - test successful path
         hooksExecuted.Clear();
         repository.ShouldThrowOnCreate = false;
 
+        // Act
         await client.PostAsJsonAsync("/api/items", entity);
 
+        // Assert
         hooksExecuted.Should().Contain("OnRequestReceived");
         hooksExecuted.Should().Contain("OnRequestValidated");
         hooksExecuted.Should().Contain("BeforePersist");

@@ -31,21 +31,30 @@ public partial class InMemoryRepositoryTests
     [Fact]
     public void Constructor_WithNullKeySelector_ThrowsArgumentNullException()
     {
+        // Act
         var act = () => new InMemoryRepository<TestEntity, Guid>(null!, Guid.NewGuid);
+
+        // Assert
         act.Should().Throw<ArgumentNullException>().WithParameterName("keySelector");
     }
 
     [Fact]
     public void Constructor_WithNullKeyGenerator_ThrowsArgumentNullException()
     {
+        // Act
         var act = () => new InMemoryRepository<TestEntity, Guid>(e => e.Id, null!);
+
+        // Assert
         act.Should().Throw<ArgumentNullException>().WithParameterName("keyGenerator");
     }
 
     [Fact]
     public void Constructor_WithValidParameters_CreatesEmptyRepository()
     {
+        // Act
         var repository = CreateRepository();
+
+        // Assert
         repository.Count.Should().Be(0);
     }
 
@@ -56,12 +65,15 @@ public partial class InMemoryRepositoryTests
     [Fact]
     public async Task GetByIdAsync_WithExistingEntity_ReturnsEntity()
     {
+        // Arrange
         var repository = CreateRepository();
         var entity = CreateEntity();
         await repository.CreateAsync(entity);
 
+        // Act
         var result = await repository.GetByIdAsync(entity.Id);
 
+        // Assert
         result.Should().NotBeNull();
         result.Should().Be(entity);
     }
@@ -69,16 +81,26 @@ public partial class InMemoryRepositoryTests
     [Fact]
     public async Task GetByIdAsync_WithNonExistingId_ReturnsNull()
     {
+        // Arrange
         var repository = CreateRepository();
+
+        // Act
         var result = await repository.GetByIdAsync(Guid.NewGuid());
+
+        // Assert
         result.Should().BeNull();
     }
 
     [Fact]
     public async Task GetByIdAsync_WithEmptyRepository_ReturnsNull()
     {
+        // Arrange
         var repository = CreateRepository();
+
+        // Act
         var result = await repository.GetByIdAsync(Guid.NewGuid());
+
+        // Assert
         result.Should().BeNull();
     }
 

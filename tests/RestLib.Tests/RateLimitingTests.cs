@@ -303,7 +303,7 @@ public class RateLimitingTests : IDisposable
     [Trait("Category", "Story6.1")]
     public void JsonConfig_ByOperation_InvalidName_ThrowsInvalidOperationException()
     {
-        // Arrange — JSON config with an invalid operation name in ByOperation
+        // Act
         var act = async () =>
         {
             using var host = new HostBuilder()

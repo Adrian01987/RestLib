@@ -127,7 +127,7 @@ public partial class OpenApiMetadataConfigurationTests
     [Fact]
     public void OpenApiSummaries_Should_ReturnNullForUnconfiguredOperations()
     {
-        // Arrange
+        // Arrange & Act
         var summaries = new RestLibOpenApiSummaries();
 
         // Assert

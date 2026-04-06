@@ -37,12 +37,15 @@ public class ZalandoPaginationLinksComplianceTests : IDisposable
     [Trait("Compliance", "Zalando-Rule-161")]
     public async Task GetAll_Response_IncludesSelfLink()
     {
+        // Arrange
         // Zalando Rule 161: pagination links should include self
         _repository.SeedMany(5);
 
+        // Act
         var response = await _client.GetAsync("/api/products");
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
 
+        // Assert
         json.TryGetProperty("self", out var selfLink).Should().BeTrue();
         selfLink.GetString().Should().NotBeNullOrEmpty();
     }
@@ -52,12 +55,15 @@ public class ZalandoPaginationLinksComplianceTests : IDisposable
     [Trait("Compliance", "Zalando-Rule-161")]
     public async Task GetAll_Response_IncludesFirstLink()
     {
+        // Arrange
         // Zalando Rule 161: pagination links should include first
         _repository.SeedMany(5);
 
+        // Act
         var response = await _client.GetAsync("/api/products");
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
 
+        // Assert
         json.TryGetProperty("first", out var firstLink).Should().BeTrue();
         firstLink.GetString().Should().NotBeNullOrEmpty();
     }
@@ -67,12 +73,15 @@ public class ZalandoPaginationLinksComplianceTests : IDisposable
     [Trait("Compliance", "Zalando-Rule-161")]
     public async Task GetAll_WhenMoreItemsExist_IncludesNextLink()
     {
+        // Arrange
         // Zalando Rule 161: next link when more items exist
         _repository.SeedMany(25);
 
+        // Act
         var response = await _client.GetAsync("/api/products?limit=10");
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
 
+        // Assert
         json.TryGetProperty("next", out var nextLink).Should().BeTrue();
         nextLink.GetString().Should().NotBeNullOrEmpty();
     }
@@ -82,13 +91,16 @@ public class ZalandoPaginationLinksComplianceTests : IDisposable
     [Trait("Compliance", "Zalando-Rule-160")]
     public async Task GetAll_Links_UseCursorNotOffset()
     {
+        // Arrange
         // Zalando Rule 160: cursor-based pagination, not offset
         _repository.SeedMany(25);
 
+        // Act
         var response = await _client.GetAsync("/api/products?limit=10");
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
         var nextLink = json.GetProperty("next").GetString()!;
 
+        // Assert
         // Should use cursor parameter, not offset/page
         nextLink.Should().Contain("cursor=");
         nextLink.Should().NotContain("offset=");
@@ -100,12 +112,15 @@ public class ZalandoPaginationLinksComplianceTests : IDisposable
     [Trait("Compliance", "Zalando-Rule-118")]
     public async Task GetAll_ResponseProperties_UseSnakeCase()
     {
+        // Arrange
         // Zalando Rule 118: snake_case properties
         _repository.SeedMany(5);
 
+        // Act
         var response = await _client.GetAsync("/api/products");
         var content = await response.Content.ReadAsStringAsync();
 
+        // Assert
         // Link properties should be snake_case
         content.Should().Contain("\"items\"");
         content.Should().Contain("\"self\"");

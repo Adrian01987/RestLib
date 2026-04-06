@@ -208,6 +208,7 @@ public class SortingTests : IDisposable
         // Act — sort by name asc, limit to 3
         var response1 = await _client.GetAsync("/api/sortable?sort=name:asc&limit=3");
 
+        // Assert
         response1.StatusCode.Should().Be(HttpStatusCode.OK);
         var json1 = await response1.Content.ReadFromJsonAsync<JsonElement>();
         var items1 = json1.GetProperty("items");
@@ -221,12 +222,13 @@ public class SortingTests : IDisposable
         names1[1].Should().Be("Banana");
         names1[2].Should().Be("Carrot");
 
-        // Get next page
+        // Act — Get next page
         var nextUrl = json1.GetProperty("next").GetString()!;
         // The URL is absolute, extract path+query for test client
         var uri = new Uri(nextUrl);
         var response2 = await _client.GetAsync(uri.PathAndQuery);
 
+        // Assert
         response2.StatusCode.Should().Be(HttpStatusCode.OK);
         var json2 = await response2.Content.ReadFromJsonAsync<JsonElement>();
         var items2 = json2.GetProperty("items");

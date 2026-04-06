@@ -105,12 +105,14 @@ public class PaginationLinksEdgeCaseTests : IDisposable
     [Trait("Category", "Story4.2")]
     public async Task GetAll_WithSpecialCharactersInPath_LinksAreProperlyFormed()
     {
-        // This tests that the base URL construction handles various scenarios
+        // Arrange
         _repository.SeedMany(5);
 
+        // Act
         var response = await _client.GetAsync("/api/products");
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
 
+        // Assert
         var selfLink = json.GetProperty("self").GetString()!;
         Uri.TryCreate(selfLink, UriKind.Absolute, out var uri).Should().BeTrue();
         uri!.AbsolutePath.Should().Be("/api/products");
@@ -143,7 +145,7 @@ public class PaginationLinksEdgeCaseTests : IDisposable
         // Arrange
         _repository.SeedMany(5);
 
-        // Note: ASP.NET query params are case-insensitive
+        // Act — ASP.NET query params are case-insensitive
         var response = await _client.GetAsync("/api/products?LIMIT=10");
 
         // Assert

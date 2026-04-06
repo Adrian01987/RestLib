@@ -14,13 +14,16 @@ public partial class InMemoryRepositoryTests
     [Fact]
     public async Task PatchAsync_WithExistingEntity_PatchesFields()
     {
+        // Arrange
         var repository = CreateRepository();
         var entity = CreateEntity("Original", 100);
         await repository.CreateAsync(entity);
         var patch = JsonDocument.Parse("""{"name": "Patched"}""").RootElement;
 
+        // Act
         var result = await repository.PatchAsync(entity.Id, patch);
 
+        // Assert
         result.Should().NotBeNull();
         result!.Name.Should().Be("Patched");
         result.Value.Should().Be(100);
@@ -29,22 +32,30 @@ public partial class InMemoryRepositoryTests
     [Fact]
     public async Task PatchAsync_WithNonExistingId_ReturnsNull()
     {
+        // Arrange
         var repository = CreateRepository();
         var patch = JsonDocument.Parse("""{"name": "Patched"}""").RootElement;
+
+        // Act
         var result = await repository.PatchAsync(Guid.NewGuid(), patch);
+
+        // Assert
         result.Should().BeNull();
     }
 
     [Fact]
     public async Task PatchAsync_WithMultipleFields_PatchesAll()
     {
+        // Arrange
         var repository = CreateRepository();
         var entity = CreateEntity("Original", 100);
         await repository.CreateAsync(entity);
         var patch = JsonDocument.Parse("""{"name": "Patched", "value": 999}""").RootElement;
 
+        // Act
         var result = await repository.PatchAsync(entity.Id, patch);
 
+        // Assert
         result.Should().NotBeNull();
         result!.Name.Should().Be("Patched");
         result.Value.Should().Be(999);
@@ -53,14 +64,17 @@ public partial class InMemoryRepositoryTests
     [Fact]
     public async Task PatchAsync_PreservesUnspecifiedFields()
     {
+        // Arrange
         var repository = CreateRepository();
         var createdAt = DateTime.UtcNow.AddDays(-1);
         var entity = new TestEntity(Guid.NewGuid(), "Original", 100, createdAt);
         await repository.CreateAsync(entity);
         var patch = JsonDocument.Parse("""{"name": "Patched"}""").RootElement;
 
+        // Act
         var result = await repository.PatchAsync(entity.Id, patch);
 
+        // Assert
         result.Should().NotBeNull();
         result!.CreatedAt.Should().BeCloseTo(createdAt, TimeSpan.FromSeconds(1));
     }

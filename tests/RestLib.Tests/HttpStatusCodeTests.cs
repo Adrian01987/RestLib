@@ -598,7 +598,10 @@ public class ZalandoStatusCodeComplianceTests : IDisposable
     [Fact]
     public async Task Zalando_List_Returns_200()
     {
+        // Act
         var response = await _client.GetAsync("/api/products");
+
+        // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -608,10 +611,14 @@ public class ZalandoStatusCodeComplianceTests : IDisposable
     [Fact]
     public async Task Zalando_Read_Success_Returns_200()
     {
+        // Arrange
         var id = Guid.NewGuid();
         _repository.Seed(new ProductEntity { Id = id, ProductName = "Test", UnitPrice = 10, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true });
 
+        // Act
         var response = await _client.GetAsync($"/api/products/{id}");
+
+        // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -621,7 +628,10 @@ public class ZalandoStatusCodeComplianceTests : IDisposable
     [Fact]
     public async Task Zalando_Read_NotFound_Returns_404()
     {
+        // Act
         var response = await _client.GetAsync($"/api/products/{Guid.NewGuid()}");
+
+        // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
@@ -631,10 +641,13 @@ public class ZalandoStatusCodeComplianceTests : IDisposable
     [Fact]
     public async Task Zalando_Create_Returns_201_WithLocation()
     {
+        // Arrange
         var product = new { product_name = "Test", unit_price = 10.00, stock_quantity = 1, is_active = true };
 
+        // Act
         var response = await _client.PostAsJsonAsync("/api/products", product);
 
+        // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         response.Headers.Location.Should().NotBeNull();
     }
@@ -645,12 +658,16 @@ public class ZalandoStatusCodeComplianceTests : IDisposable
     [Fact]
     public async Task Zalando_FullUpdate_Success_Returns_200()
     {
+        // Arrange
         var id = Guid.NewGuid();
         _repository.Seed(new ProductEntity { Id = id, ProductName = "Test", UnitPrice = 10, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true });
 
         var updated = new { product_name = "Updated", unit_price = 20.00, stock_quantity = 2, is_active = false };
+
+        // Act
         var response = await _client.PutAsJsonAsync($"/api/products/{id}", updated);
 
+        // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -660,9 +677,13 @@ public class ZalandoStatusCodeComplianceTests : IDisposable
     [Fact]
     public async Task Zalando_FullUpdate_NotFound_Returns_404()
     {
+        // Arrange
         var updated = new { product_name = "Updated", unit_price = 20.00, stock_quantity = 2, is_active = false };
+
+        // Act
         var response = await _client.PutAsJsonAsync($"/api/products/{Guid.NewGuid()}", updated);
 
+        // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
@@ -672,12 +693,16 @@ public class ZalandoStatusCodeComplianceTests : IDisposable
     [Fact]
     public async Task Zalando_PartialUpdate_Success_Returns_200()
     {
+        // Arrange
         var id = Guid.NewGuid();
         _repository.Seed(new ProductEntity { Id = id, ProductName = "Test", UnitPrice = 10, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true });
 
         var patch = new { product_name = "Patched" };
+
+        // Act
         var response = await _client.PatchAsJsonAsync($"/api/products/{id}", patch);
 
+        // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
@@ -687,9 +712,13 @@ public class ZalandoStatusCodeComplianceTests : IDisposable
     [Fact]
     public async Task Zalando_PartialUpdate_NotFound_Returns_404()
     {
+        // Arrange
         var patch = new { product_name = "Patched" };
+
+        // Act
         var response = await _client.PatchAsJsonAsync($"/api/products/{Guid.NewGuid()}", patch);
 
+        // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
@@ -699,11 +728,14 @@ public class ZalandoStatusCodeComplianceTests : IDisposable
     [Fact]
     public async Task Zalando_Delete_Success_Returns_204()
     {
+        // Arrange
         var id = Guid.NewGuid();
         _repository.Seed(new ProductEntity { Id = id, ProductName = "Test", UnitPrice = 10, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true });
 
+        // Act
         var response = await _client.DeleteAsync($"/api/products/{id}");
 
+        // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 
@@ -713,8 +745,10 @@ public class ZalandoStatusCodeComplianceTests : IDisposable
     [Fact]
     public async Task Zalando_Delete_NotFound_Returns_404()
     {
+        // Act
         var response = await _client.DeleteAsync($"/api/products/{Guid.NewGuid()}");
 
+        // Assert
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 

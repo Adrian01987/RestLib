@@ -233,6 +233,8 @@ public class SortConfigurationTests
     {
         // Arrange
         var config = new SortConfiguration<FilterableEntity>();
+
+        // Act
         config.AddProperty(p => p.Price);
         config.AddProperty(p => p.CreatedAt);
         config.AddProperty(p => p.IsActive);

@@ -14,9 +14,11 @@ public partial class InMemoryRepositoryTests
     [Fact]
     public async Task ConcurrentCreates_AllSucceed()
     {
+        // Arrange
         var repository = CreateRepository();
         var tasks = new List<Task>();
 
+        // Act
         for (int i = 0; i < 100; i++)
         {
             tasks.Add(Task.Run(async () =>
@@ -27,17 +29,20 @@ public partial class InMemoryRepositoryTests
         }
         await Task.WhenAll(tasks);
 
+        // Assert
         repository.Count.Should().Be(100);
     }
 
     [Fact]
     public async Task ConcurrentReadsAndWrites_NoExceptions()
     {
+        // Arrange
         var repository = CreateRepository();
         var entities = Enumerable.Range(1, 50).Select(i => CreateEntity($"Entity{i}", i)).ToList();
         foreach (var entity in entities) await repository.CreateAsync(entity);
         var tasks = new List<Task>();
 
+        // Act
         for (int i = 0; i < 100; i++)
         {
             var index = i;
@@ -59,6 +64,7 @@ public partial class InMemoryRepositoryTests
             }
         }
 
+        // Assert
         var act = () => Task.WhenAll(tasks);
         await act.Should().NotThrowAsync();
     }
@@ -66,11 +72,13 @@ public partial class InMemoryRepositoryTests
     [Fact]
     public async Task ConcurrentUpdates_LastWriteWins()
     {
+        // Arrange
         var repository = CreateRepository();
         var entity = CreateEntity("Original", 100);
         await repository.CreateAsync(entity);
         var tasks = new List<Task>();
 
+        // Act
         for (int i = 0; i < 100; i++)
         {
             var value = i;
@@ -82,6 +90,7 @@ public partial class InMemoryRepositoryTests
         }
         await Task.WhenAll(tasks);
 
+        // Assert
         var result = await repository.GetByIdAsync(entity.Id);
         result.Should().NotBeNull();
         result!.Value.Should().BeInRange(0, 99);
@@ -90,12 +99,14 @@ public partial class InMemoryRepositoryTests
     [Fact]
     public async Task ConcurrentDeletes_OnlyOneSucceeds()
     {
+        // Arrange
         var repository = CreateRepository();
         var entity = CreateEntity();
         await repository.CreateAsync(entity);
         var results = new List<bool>();
         var lockObj = new object();
 
+        // Act
         var tasks = Enumerable.Range(0, 10).Select(_ => Task.Run(async () =>
         {
             var deleteResult = await repository.DeleteAsync(entity.Id);
@@ -103,6 +114,7 @@ public partial class InMemoryRepositoryTests
         }));
         await Task.WhenAll(tasks);
 
+        // Assert
         results.Count(r => r).Should().Be(1);
         repository.Count.Should().Be(0);
     }

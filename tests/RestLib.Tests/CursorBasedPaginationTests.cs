@@ -435,7 +435,7 @@ public class CursorBasedPaginationTests : IDisposable
     [Trait("Category", "Story4.1")]
     public void CursorEncoder_IsValid_ReturnsTrueForNullOrEmpty()
     {
-        // Assert
+        // Act & Assert
         CursorEncoder.IsValid(null).Should().BeTrue();
         CursorEncoder.IsValid("").Should().BeTrue();
     }

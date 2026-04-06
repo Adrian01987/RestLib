@@ -1008,12 +1008,12 @@ public class BatchOperationsTests : IDisposable
             config.EnableBatch(BatchAction.Create, BatchAction.Delete);
         });
 
-        // Create should work
+        // Act & Assert — Create should work
         var createPayload = new { action = "create", items = new[] { new { name = "New", price = 5m } } };
         var createResponse = await _client!.PostAsync("/api/items/batch", BatchJson(createPayload));
         createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        // Update should be rejected
+        // Act & Assert — Update should be rejected
         var updatePayload = new
         {
             action = "update",
@@ -1024,7 +1024,7 @@ public class BatchOperationsTests : IDisposable
         var updateProblem = await updateResponse.Content.ReadFromJsonAsync<RestLibProblemDetails>();
         updateProblem!.Type.Should().Be(ProblemTypes.BatchActionNotEnabled);
 
-        // Patch should be rejected
+        // Act & Assert — Patch should be rejected
         var patchPayload = new
         {
             action = "patch",
@@ -1682,12 +1682,12 @@ public class BatchOperationsTests : IDisposable
             config.EnableBatch(BatchAction.Create, BatchAction.Delete);
         });
 
-        // Create should work
+        // Act & Assert — Create should work
         var createPayload = new { action = "create", items = new[] { new { name = "Item", price = 5m } } };
         var createResponse = await _client!.PostAsync("/api/items/batch", BatchJson(createPayload));
         createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        // Update should fail (not enabled)
+        // Act & Assert — Update should fail (not enabled)
         var updatePayload = new
         {
             action = "update",

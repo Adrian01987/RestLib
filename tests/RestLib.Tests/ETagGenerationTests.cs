@@ -199,11 +199,10 @@ public class ETagGenerationTests : IDisposable
             new ProductEntity { Id = id, ProductName = "Product", UnitPrice = 10.00m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true }
         );
 
-        // Get original ETag
+        // Act
         var getResponse = await _client.GetAsync($"/api/products/{id}");
         var originalETag = getResponse.Headers.ETag!.Tag;
 
-        // Update
         var updatedProduct = new
         {
             product_name = "Updated Product",

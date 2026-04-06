@@ -14,6 +14,7 @@ public partial class InMemoryRepositoryTests
     [Fact]
     public async Task GetAllAsync_WithEqualFilter_FiltersCorrectly()
     {
+        // Arrange
         var repository = CreateRepository();
         await repository.CreateAsync(CreateEntity("Alice", 100));
         await repository.CreateAsync(CreateEntity("Bob", 200));
@@ -22,8 +23,10 @@ public partial class InMemoryRepositoryTests
         var filters = new List<FilterValue> { CreateFilter("Value", 100) };
         var request = new PaginationRequest { Limit = 10, Filters = filters };
 
+        // Act
         var result = await repository.GetAllAsync(request);
 
+        // Assert
         result.Items.Should().HaveCount(2);
         result.Items.Should().OnlyContain(e => e.Value == 100);
     }
@@ -31,6 +34,7 @@ public partial class InMemoryRepositoryTests
     [Fact]
     public async Task GetAllAsync_WithNameFilter_FiltersCorrectly()
     {
+        // Arrange
         var repository = CreateRepository();
         await repository.CreateAsync(CreateEntity("Alice", 100));
         await repository.CreateAsync(CreateEntity("Bob", 200));
@@ -39,8 +43,10 @@ public partial class InMemoryRepositoryTests
         var filters = new List<FilterValue> { CreateFilter("Name", "Alice") };
         var request = new PaginationRequest { Limit = 10, Filters = filters };
 
+        // Act
         var result = await repository.GetAllAsync(request);
 
+        // Assert
         result.Items.Should().HaveCount(2);
         result.Items.Should().OnlyContain(e => e.Name == "Alice");
     }
@@ -48,6 +54,7 @@ public partial class InMemoryRepositoryTests
     [Fact]
     public async Task GetAllAsync_WithMultipleFilters_AppliesAll()
     {
+        // Arrange
         var repository = CreateRepository();
         await repository.CreateAsync(CreateEntity("Alice", 100));
         await repository.CreateAsync(CreateEntity("Alice", 200));
@@ -56,8 +63,10 @@ public partial class InMemoryRepositoryTests
         var filters = new List<FilterValue> { CreateFilter("Name", "Alice"), CreateFilter("Value", 100) };
         var request = new PaginationRequest { Limit = 10, Filters = filters };
 
+        // Act
         var result = await repository.GetAllAsync(request);
 
+        // Assert
         result.Items.Should().HaveCount(1);
         result.Items.Single().Name.Should().Be("Alice");
         result.Items.Single().Value.Should().Be(100);
@@ -66,6 +75,7 @@ public partial class InMemoryRepositoryTests
     [Fact]
     public async Task GetAllAsync_WithUnknownProperty_IgnoresFilter()
     {
+        // Arrange
         var repository = CreateRepository();
         await repository.CreateAsync(CreateEntity("Alice", 100));
         await repository.CreateAsync(CreateEntity("Bob", 200));
@@ -73,8 +83,10 @@ public partial class InMemoryRepositoryTests
         var filters = new List<FilterValue> { CreateFilter("NonExistent", "Something") };
         var request = new PaginationRequest { Limit = 10, Filters = filters };
 
+        // Act
         var result = await repository.GetAllAsync(request);
 
+        // Assert
         result.Items.Should().HaveCount(2);
     }
 
