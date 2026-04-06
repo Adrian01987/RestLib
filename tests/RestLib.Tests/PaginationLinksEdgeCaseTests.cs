@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Hosting;
+using RestLib.InMemory;
 using RestLib.Tests.Fakes;
 using Xunit;
 
@@ -15,11 +16,11 @@ public class PaginationLinksEdgeCaseTests : IDisposable
 {
     private readonly IHost _host;
     private readonly HttpClient _client;
-    private readonly PaginationTestRepository _repository;
+    private readonly InMemoryRepository<ProductEntity, Guid> _repository;
 
     public PaginationLinksEdgeCaseTests()
     {
-        _repository = new PaginationTestRepository();
+        _repository = new InMemoryRepository<ProductEntity, Guid>(e => e.Id, Guid.NewGuid);
 
         (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithEndpoint(config => config.AllowAnonymous())
@@ -55,7 +56,7 @@ public class PaginationLinksEdgeCaseTests : IDisposable
     public async Task GetAll_ExactlyOnePage_NoNextLink()
     {
         // Arrange
-        _repository.SeedMany(10);
+        _repository.SeedProducts(10);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=10");
@@ -72,7 +73,7 @@ public class PaginationLinksEdgeCaseTests : IDisposable
     public async Task GetAll_OneMoreThanPageSize_HasNextLink()
     {
         // Arrange
-        _repository.SeedMany(11);
+        _repository.SeedProducts(11);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=10");
@@ -89,7 +90,7 @@ public class PaginationLinksEdgeCaseTests : IDisposable
     public async Task GetAll_SingleItem_NoNextLink()
     {
         // Arrange
-        _repository.SeedMany(1);
+        _repository.SeedProducts(1);
 
         // Act
         var response = await _client.GetAsync("/api/products");
@@ -106,7 +107,7 @@ public class PaginationLinksEdgeCaseTests : IDisposable
     public async Task GetAll_WithSpecialCharactersInPath_LinksAreProperlyFormed()
     {
         // Arrange
-        _repository.SeedMany(5);
+        _repository.SeedProducts(5);
 
         // Act
         var response = await _client.GetAsync("/api/products");
@@ -123,7 +124,7 @@ public class PaginationLinksEdgeCaseTests : IDisposable
     public async Task GetAll_LastPage_FirstLinkStillPresent()
     {
         // Arrange - Seed exactly one page worth of items so there's no next link
-        _repository.SeedMany(10);
+        _repository.SeedProducts(10);
 
         // Act - Request items with limit matching the count
         var response = await _client.GetAsync("/api/products?limit=10");
@@ -143,7 +144,7 @@ public class PaginationLinksEdgeCaseTests : IDisposable
     public async Task GetAll_WithMixedCaseLimitParam_LinksUseConsistentCase()
     {
         // Arrange
-        _repository.SeedMany(5);
+        _repository.SeedProducts(5);
 
         // Act — ASP.NET query params are case-insensitive
         var response = await _client.GetAsync("/api/products?LIMIT=10");

@@ -4,6 +4,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Hosting;
 using RestLib.Abstractions;
+using RestLib.InMemory;
 using RestLib.Pagination;
 using RestLib.Responses;
 using RestLib.Tests.Fakes;
@@ -19,11 +20,11 @@ public class CursorBasedPaginationTests : IDisposable
 {
     private readonly IHost _host;
     private readonly HttpClient _client;
-    private readonly PaginationTestRepository _repository;
+    private readonly InMemoryRepository<ProductEntity, Guid> _repository;
 
     public CursorBasedPaginationTests()
     {
-        _repository = new PaginationTestRepository();
+        _repository = new InMemoryRepository<ProductEntity, Guid>(e => e.Id, Guid.NewGuid);
 
         (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithOptions(options =>
@@ -48,7 +49,7 @@ public class CursorBasedPaginationTests : IDisposable
     public async Task GetAll_WithNullCursor_ReturnsFirstPage()
     {
         // Arrange
-        _repository.SeedMany(25);
+        _repository.SeedProducts(25);
 
         // Act
         var response = await _client.GetAsync("/api/products");
@@ -65,7 +66,7 @@ public class CursorBasedPaginationTests : IDisposable
     public async Task GetAll_WithEmptyStringCursor_ReturnsFirstPage()
     {
         // Arrange
-        _repository.SeedMany(25);
+        _repository.SeedProducts(25);
 
         // Act
         var response = await _client.GetAsync("/api/products?cursor=");
@@ -79,7 +80,7 @@ public class CursorBasedPaginationTests : IDisposable
     public async Task GetAll_WithValidBase64UrlCursor_ReturnsSuccess()
     {
         // Arrange
-        _repository.SeedMany(50);
+        _repository.SeedProducts(50);
         var cursor = CursorEncoder.Encode(Guid.NewGuid());
 
         // Act
@@ -150,7 +151,7 @@ public class CursorBasedPaginationTests : IDisposable
     public async Task GetAll_WithDefaultLimit_Returns20Items()
     {
         // Arrange
-        _repository.SeedMany(50);
+        _repository.SeedProducts(50);
 
         // Act
         var response = await _client.GetAsync("/api/products");
@@ -167,7 +168,7 @@ public class CursorBasedPaginationTests : IDisposable
     public async Task GetAll_WithLimit10_Returns10Items()
     {
         // Arrange
-        _repository.SeedMany(50);
+        _repository.SeedProducts(50);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=10");
@@ -184,7 +185,7 @@ public class CursorBasedPaginationTests : IDisposable
     public async Task GetAll_WithLimit1_Returns1Item()
     {
         // Arrange
-        _repository.SeedMany(50);
+        _repository.SeedProducts(50);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=1");
@@ -201,7 +202,7 @@ public class CursorBasedPaginationTests : IDisposable
     public async Task GetAll_WithLimit100_Returns100Items()
     {
         // Arrange
-        _repository.SeedMany(150);
+        _repository.SeedProducts(150);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=100");
@@ -500,7 +501,7 @@ public class CursorBasedPaginationTests : IDisposable
     public async Task GetAll_WithValidCursorAndLimit_ReturnsSuccess()
     {
         // Arrange
-        _repository.SeedMany(50);
+        _repository.SeedProducts(50);
         var cursor = CursorEncoder.Encode(Guid.NewGuid());
 
         // Act
@@ -551,7 +552,7 @@ public class CursorBasedPaginationTests : IDisposable
     public async Task GetAll_ResponseContainsPaginationLinks()
     {
         // Arrange
-        _repository.SeedMany(50);
+        _repository.SeedProducts(50);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=10");
@@ -568,7 +569,7 @@ public class CursorBasedPaginationTests : IDisposable
     public async Task GetAll_ResponseHasNextLinkWhenMoreItemsExist()
     {
         // Arrange - seed items that will produce a next cursor
-        _repository.SeedManyWithNextCursor(10);
+        _repository.SeedProducts(10);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=5");
@@ -585,7 +586,7 @@ public class CursorBasedPaginationTests : IDisposable
     public async Task GetAll_ResponseOmitsNextLinkWhenNoMoreItems()
     {
         // Arrange - seed fewer items than limit
-        _repository.SeedMany(5);
+        _repository.SeedProducts(5);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=10");
@@ -619,7 +620,7 @@ public class CursorBasedPaginationTests : IDisposable
     public async Task GetAll_WithFewerItemsThanLimit_ReturnsAllItems()
     {
         // Arrange
-        _repository.SeedMany(3);
+        _repository.SeedProducts(3);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=10");
@@ -635,7 +636,7 @@ public class CursorBasedPaginationTests : IDisposable
     public async Task GetAll_WithExactlyLimitItems_ReturnsAllItems()
     {
         // Arrange
-        _repository.SeedMany(10);
+        _repository.SeedProducts(10);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=10");
@@ -651,7 +652,7 @@ public class CursorBasedPaginationTests : IDisposable
     public async Task GetAll_LimitIsEnforcedByMaxPageSize()
     {
         // Arrange - limit exceeds max (should fail validation)
-        _repository.SeedMany(200);
+        _repository.SeedProducts(200);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=150");
@@ -686,11 +687,11 @@ public class CursorPaginationCustomConfigTests : IDisposable
 {
     private readonly IHost _host;
     private readonly HttpClient _client;
-    private readonly PaginationTestRepository _repository;
+    private readonly InMemoryRepository<ProductEntity, Guid> _repository;
 
     public CursorPaginationCustomConfigTests()
     {
-        _repository = new PaginationTestRepository();
+        _repository = new InMemoryRepository<ProductEntity, Guid>(e => e.Id, Guid.NewGuid);
 
         (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithOptions(options =>
@@ -713,7 +714,7 @@ public class CursorPaginationCustomConfigTests : IDisposable
     public async Task GetAll_UsesCustomDefaultPageSize()
     {
         // Arrange
-        _repository.SeedMany(20);
+        _repository.SeedProducts(20);
 
         // Act
         var response = await _client.GetAsync("/api/products");
@@ -729,7 +730,7 @@ public class CursorPaginationCustomConfigTests : IDisposable
     public async Task GetAll_EnforcesCustomMaxPageSize()
     {
         // Arrange
-        _repository.SeedMany(100);
+        _repository.SeedProducts(100);
 
         // Act - limit exceeds custom max of 50
         var response = await _client.GetAsync("/api/products?limit=51");
@@ -746,7 +747,7 @@ public class CursorPaginationCustomConfigTests : IDisposable
     public async Task GetAll_AllowsUpToCustomMaxPageSize()
     {
         // Arrange
-        _repository.SeedMany(100);
+        _repository.SeedProducts(100);
 
         // Act - limit at custom max of 50
         var response = await _client.GetAsync("/api/products?limit=50");
@@ -765,11 +766,11 @@ public class ZalandoPaginationComplianceTests : IDisposable
 {
     private readonly IHost _host;
     private readonly HttpClient _client;
-    private readonly PaginationTestRepository _repository;
+    private readonly InMemoryRepository<ProductEntity, Guid> _repository;
 
     public ZalandoPaginationComplianceTests()
     {
-        _repository = new PaginationTestRepository();
+        _repository = new InMemoryRepository<ProductEntity, Guid>(e => e.Id, Guid.NewGuid);
 
         (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithEndpoint(config => config.AllowAnonymous())
@@ -806,7 +807,7 @@ public class ZalandoPaginationComplianceTests : IDisposable
     public async Task GetAll_SupportsLimitQueryParameter()
     {
         // Arrange
-        _repository.SeedMany(50);
+        _repository.SeedProducts(50);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=15");
@@ -823,7 +824,7 @@ public class ZalandoPaginationComplianceTests : IDisposable
     public async Task GetAll_SupportsCursorQueryParameter()
     {
         // Arrange
-        _repository.SeedMany(50);
+        _repository.SeedProducts(50);
         var cursor = CursorEncoder.Encode(Guid.NewGuid());
 
         // Act
@@ -853,80 +854,25 @@ public class ZalandoPaginationComplianceTests : IDisposable
 }
 
 /// <summary>
-/// Test repository with pagination support for Story 4.1 tests.
+/// Helper for seeding product entities into an InMemoryRepository for pagination tests.
 /// </summary>
-public class PaginationTestRepository : IRepository<ProductEntity, Guid>
+internal static class PaginationTestHelper
 {
-    private readonly Dictionary<Guid, ProductEntity> _store = new();
-    private string? _nextCursor;
-
-    public Task<ProductEntity?> GetByIdAsync(Guid id, CancellationToken ct = default)
+    /// <summary>
+    /// Seeds the repository with <paramref name="count"/> product entities.
+    /// </summary>
+    /// <param name="repository">The repository to seed.</param>
+    /// <param name="count">Number of entities to seed.</param>
+    internal static void SeedProducts(this InMemoryRepository<ProductEntity, Guid> repository, int count)
     {
-        _store.TryGetValue(id, out var entity);
-        return Task.FromResult(entity);
-    }
-
-    public Task<PagedResult<ProductEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default)
-    {
-        var items = _store.Values.Take(pagination.Limit).ToList();
-        return Task.FromResult(new PagedResult<ProductEntity>
+        var entities = Enumerable.Range(0, count).Select(i => new ProductEntity
         {
-            Items = items,
-            NextCursor = items.Count < _store.Count ? (_nextCursor ?? CursorEncoder.Encode(Guid.NewGuid())) : null
+            Id = Guid.NewGuid(),
+            ProductName = $"Product {i + 1}",
+            UnitPrice = 10.00m + i,
+            StockQuantity = 100 + i,
+            IsActive = true,
         });
+        repository.Seed(entities);
     }
-
-    public Task<ProductEntity> CreateAsync(ProductEntity entity, CancellationToken ct = default)
-    {
-        if (entity.Id == Guid.Empty)
-            entity.Id = Guid.NewGuid();
-        _store[entity.Id] = entity;
-        return Task.FromResult(entity);
-    }
-
-    public Task<ProductEntity?> UpdateAsync(Guid id, ProductEntity entity, CancellationToken ct = default)
-    {
-        if (!_store.ContainsKey(id))
-            return Task.FromResult<ProductEntity?>(null);
-        entity.Id = id;
-        _store[id] = entity;
-        return Task.FromResult<ProductEntity?>(entity);
-    }
-
-    public Task<ProductEntity?> PatchAsync(Guid id, JsonElement patchDocument, CancellationToken ct = default)
-    {
-        if (!_store.TryGetValue(id, out var existing))
-            return Task.FromResult<ProductEntity?>(null);
-        return Task.FromResult<ProductEntity?>(existing);
-    }
-
-    public Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
-    {
-        return Task.FromResult(_store.Remove(id));
-    }
-
-    public void SeedMany(int count)
-    {
-        _store.Clear();
-        for (var i = 0; i < count; i++)
-        {
-            var entity = new ProductEntity
-            {
-                Id = Guid.NewGuid(),
-                ProductName = $"Product {i + 1}",
-                UnitPrice = 10.00m + i,
-                StockQuantity = 100 + i,
-                IsActive = true
-            };
-            _store[entity.Id] = entity;
-        }
-    }
-
-    public void SeedManyWithNextCursor(int count)
-    {
-        SeedMany(count);
-        _nextCursor = CursorEncoder.Encode(Guid.NewGuid());
-    }
-
-    public void Clear() => _store.Clear();
 }

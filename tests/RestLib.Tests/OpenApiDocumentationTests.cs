@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi;
 using RestLib.Abstractions;
-using RestLib.Pagination;
+using RestLib.InMemory;
 using Xunit;
 
 namespace RestLib.Tests;
@@ -26,7 +26,7 @@ namespace RestLib.Tests;
 /// </summary>
 public partial class OpenApiDocumentationTests
 {
-    #region Test Entity and Repository
+    #region Test Entity
 
     private class OpenApiTestEntity
     {
@@ -39,61 +39,14 @@ public partial class OpenApiDocumentationTests
         public DateTime CreatedAt { get; set; }
     }
 
-    private class OpenApiTestRepository : IRepository<OpenApiTestEntity, int>
-    {
-        private readonly Dictionary<int, OpenApiTestEntity> _data = [];
-        private int _nextId = 1;
-
-        public void AddTestData(params OpenApiTestEntity[] entities)
-        {
-            foreach (var entity in entities)
-            {
-                _data[entity.Id] = entity;
-                if (entity.Id >= _nextId) _nextId = entity.Id + 1;
-            }
-        }
-
-        public Task<OpenApiTestEntity> CreateAsync(OpenApiTestEntity entity, CancellationToken ct = default)
-        {
-            entity.Id = _nextId++;
-            _data[entity.Id] = entity;
-            return Task.FromResult(entity);
-        }
-
-        public Task<bool> DeleteAsync(int id, CancellationToken ct = default)
-          => Task.FromResult(_data.Remove(id));
-
-        public Task<PagedResult<OpenApiTestEntity>> GetAllAsync(PaginationRequest request, CancellationToken ct = default)
-          => Task.FromResult(new PagedResult<OpenApiTestEntity> { Items = _data.Values.ToList(), NextCursor = null });
-
-        public Task<OpenApiTestEntity?> GetByIdAsync(int id, CancellationToken ct = default)
-        {
-            _data.TryGetValue(id, out var entity);
-            return Task.FromResult(entity);
-        }
-
-        public Task<OpenApiTestEntity?> PatchAsync(int id, JsonElement patchDocument, CancellationToken ct = default)
-        {
-            if (!_data.TryGetValue(id, out var entity)) return Task.FromResult<OpenApiTestEntity?>(null);
-            return Task.FromResult<OpenApiTestEntity?>(entity);
-        }
-
-        public Task<OpenApiTestEntity?> UpdateAsync(int id, OpenApiTestEntity entity, CancellationToken ct = default)
-        {
-            if (!_data.ContainsKey(id)) return Task.FromResult<OpenApiTestEntity?>(null);
-            entity.Id = id;
-            _data[id] = entity;
-            return Task.FromResult<OpenApiTestEntity?>(entity);
-        }
-    }
-
     #endregion
 
     #region Helper Methods
 
     private static async Task<IHost> CreateHostWithOpenApi()
     {
-        var repository = new OpenApiTestRepository();
+        var nextId = 1;
+        var repository = new InMemoryRepository<OpenApiTestEntity, int>(e => e.Id, () => nextId++);
 
         var host = await new HostBuilder()
             .ConfigureWebHost(webBuilder =>
@@ -127,7 +80,8 @@ public partial class OpenApiDocumentationTests
 
     private static async Task<IHost> CreateHostWithFilters()
     {
-        var repository = new OpenApiTestRepository();
+        var nextId = 1;
+        var repository = new InMemoryRepository<OpenApiTestEntity, int>(e => e.Id, () => nextId++);
 
         var host = await new HostBuilder()
             .ConfigureWebHost(webBuilder =>

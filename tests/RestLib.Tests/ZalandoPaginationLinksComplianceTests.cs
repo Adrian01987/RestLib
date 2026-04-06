@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Hosting;
+using RestLib.InMemory;
 using RestLib.Tests.Fakes;
 using Xunit;
 
@@ -15,11 +16,11 @@ public class ZalandoPaginationLinksComplianceTests : IDisposable
 {
     private readonly IHost _host;
     private readonly HttpClient _client;
-    private readonly PaginationTestRepository _repository;
+    private readonly InMemoryRepository<ProductEntity, Guid> _repository;
 
     public ZalandoPaginationLinksComplianceTests()
     {
-        _repository = new PaginationTestRepository();
+        _repository = new InMemoryRepository<ProductEntity, Guid>(e => e.Id, Guid.NewGuid);
 
         (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithEndpoint(config => config.AllowAnonymous())
@@ -39,7 +40,7 @@ public class ZalandoPaginationLinksComplianceTests : IDisposable
     {
         // Arrange
         // Zalando Rule 161: pagination links should include self
-        _repository.SeedMany(5);
+        _repository.SeedProducts(5);
 
         // Act
         var response = await _client.GetAsync("/api/products");
@@ -57,7 +58,7 @@ public class ZalandoPaginationLinksComplianceTests : IDisposable
     {
         // Arrange
         // Zalando Rule 161: pagination links should include first
-        _repository.SeedMany(5);
+        _repository.SeedProducts(5);
 
         // Act
         var response = await _client.GetAsync("/api/products");
@@ -75,7 +76,7 @@ public class ZalandoPaginationLinksComplianceTests : IDisposable
     {
         // Arrange
         // Zalando Rule 161: next link when more items exist
-        _repository.SeedMany(25);
+        _repository.SeedProducts(25);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=10");
@@ -93,7 +94,7 @@ public class ZalandoPaginationLinksComplianceTests : IDisposable
     {
         // Arrange
         // Zalando Rule 160: cursor-based pagination, not offset
-        _repository.SeedMany(25);
+        _repository.SeedProducts(25);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=10");
@@ -114,7 +115,7 @@ public class ZalandoPaginationLinksComplianceTests : IDisposable
     {
         // Arrange
         // Zalando Rule 118: snake_case properties
-        _repository.SeedMany(5);
+        _repository.SeedProducts(5);
 
         // Act
         var response = await _client.GetAsync("/api/products");
@@ -137,7 +138,7 @@ public class ZalandoPaginationLinksComplianceTests : IDisposable
     public async Task GetAll_FirstLink_AllowsNavigationToBeginning()
     {
         // Arrange
-        _repository.SeedMany(50);
+        _repository.SeedProducts(50);
 
         // Act - Navigate to second page
         var firstPageResponse = await _client.GetAsync("/api/products?limit=10");
@@ -171,7 +172,7 @@ public class ZalandoPaginationLinksComplianceTests : IDisposable
         // This test verifies that links are functional and can be followed
         // Note: The test repository returns items based on limit but always from start
         // So we verify the link structure and format rather than actual traversal
-        _repository.SeedMany(25);
+        _repository.SeedProducts(25);
 
         // Act - Get first page
         var response = await _client.GetAsync("/api/products?limit=10");

@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Hosting;
+using RestLib.InMemory;
 using RestLib.Pagination;
 using RestLib.Tests.Fakes;
 using Xunit;
@@ -17,11 +18,11 @@ public class PaginationLinksTests : IDisposable
 {
     private readonly IHost _host;
     private readonly HttpClient _client;
-    private readonly PaginationTestRepository _repository;
+    private readonly InMemoryRepository<ProductEntity, Guid> _repository;
 
     public PaginationLinksTests()
     {
-        _repository = new PaginationTestRepository();
+        _repository = new InMemoryRepository<ProductEntity, Guid>(e => e.Id, Guid.NewGuid);
 
         (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithOptions(options =>
@@ -47,7 +48,7 @@ public class PaginationLinksTests : IDisposable
     public async Task GetAll_SelfLink_IsAbsoluteUrl()
     {
         // Arrange
-        _repository.SeedMany(5);
+        _repository.SeedProducts(5);
 
         // Act
         var response = await _client.GetAsync("/api/products");
@@ -72,7 +73,7 @@ public class PaginationLinksTests : IDisposable
     public async Task GetAll_FirstLink_IsAbsoluteUrl()
     {
         // Arrange
-        _repository.SeedMany(5);
+        _repository.SeedProducts(5);
 
         // Act
         var response = await _client.GetAsync("/api/products");
@@ -95,7 +96,7 @@ public class PaginationLinksTests : IDisposable
     public async Task GetAll_NextLink_IsAbsoluteUrl()
     {
         // Arrange
-        _repository.SeedMany(25);
+        _repository.SeedProducts(25);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=10");
@@ -118,7 +119,7 @@ public class PaginationLinksTests : IDisposable
     public async Task GetAll_LinksContainSchemeHostAndPath()
     {
         // Arrange
-        _repository.SeedMany(5);
+        _repository.SeedProducts(5);
 
         // Act
         var response = await _client.GetAsync("/api/products");
@@ -142,7 +143,7 @@ public class PaginationLinksTests : IDisposable
     public async Task GetAll_SelfLink_IncludesLimitParameter()
     {
         // Arrange
-        _repository.SeedMany(5);
+        _repository.SeedProducts(5);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=15");
@@ -159,7 +160,7 @@ public class PaginationLinksTests : IDisposable
     public async Task GetAll_SelfLink_IncludesCursorWhenProvided()
     {
         // Arrange
-        _repository.SeedMany(30);
+        _repository.SeedProducts(30);
         var cursor = CursorEncoder.Encode(Guid.NewGuid());
 
         // Act
@@ -178,7 +179,7 @@ public class PaginationLinksTests : IDisposable
     public async Task GetAll_FirstLink_DoesNotIncludeCursor()
     {
         // Arrange
-        _repository.SeedMany(30);
+        _repository.SeedProducts(30);
         var cursor = CursorEncoder.Encode(Guid.NewGuid());
 
         // Act
@@ -197,7 +198,7 @@ public class PaginationLinksTests : IDisposable
     public async Task GetAll_NextLink_IncludesNextCursor()
     {
         // Arrange
-        _repository.SeedMany(25);
+        _repository.SeedProducts(25);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=10");
@@ -221,7 +222,7 @@ public class PaginationLinksTests : IDisposable
     public async Task GetAll_WhenNoMoreItems_NextLinkIsOmitted()
     {
         // Arrange
-        _repository.SeedMany(5);
+        _repository.SeedProducts(5);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=10");
@@ -237,7 +238,7 @@ public class PaginationLinksTests : IDisposable
     public async Task GetAll_FollowingNextLink_ReturnsNextPage()
     {
         // Arrange
-        _repository.SeedMany(25);
+        _repository.SeedProducts(25);
 
         // Act - Get first page
         var firstResponse = await _client.GetAsync("/api/products?limit=10");
@@ -266,7 +267,7 @@ public class PaginationLinksTests : IDisposable
     public async Task GetAll_SelfLink_PreservesQueryFilters()
     {
         // Arrange
-        _repository.SeedMany(5);
+        _repository.SeedProducts(5);
 
         // Act - Request with custom query param (simulating a filter)
         var response = await _client.GetAsync("/api/products?custom_filter=value&limit=10");
@@ -284,7 +285,7 @@ public class PaginationLinksTests : IDisposable
     public async Task GetAll_FirstLink_PreservesQueryFilters()
     {
         // Arrange
-        _repository.SeedMany(5);
+        _repository.SeedProducts(5);
 
         // Act
         var response = await _client.GetAsync("/api/products?category=electronics&is_active=true");
@@ -302,7 +303,7 @@ public class PaginationLinksTests : IDisposable
     public async Task GetAll_NextLink_PreservesQueryFilters()
     {
         // Arrange
-        _repository.SeedMany(25);
+        _repository.SeedProducts(25);
 
         // Act
         var response = await _client.GetAsync("/api/products?status=active&limit=10");
@@ -320,7 +321,7 @@ public class PaginationLinksTests : IDisposable
     public async Task GetAll_AllLinks_PreserveMultipleFilters()
     {
         // Arrange
-        _repository.SeedMany(25);
+        _repository.SeedProducts(25);
 
         // Act
         var response = await _client.GetAsync("/api/products?category=books&price_min=10&price_max=50&limit=10");
@@ -347,7 +348,7 @@ public class PaginationLinksTests : IDisposable
     public async Task GetAll_Links_ExcludeCursorAndLimitFromFilters()
     {
         // Arrange
-        _repository.SeedMany(25);
+        _repository.SeedProducts(25);
         var cursor = CursorEncoder.Encode(Guid.NewGuid());
 
         // Act - Cursor and limit are pagination params, not filters
@@ -368,7 +369,7 @@ public class PaginationLinksTests : IDisposable
     public async Task GetAll_Links_PreserveUrlEncodedFilterValues()
     {
         // Arrange
-        _repository.SeedMany(5);
+        _repository.SeedProducts(5);
 
         // Act - Filter value with special characters
         var response = await _client.GetAsync("/api/products?search=hello%20world&tag=c%23");
@@ -387,7 +388,7 @@ public class PaginationLinksTests : IDisposable
     public async Task GetAll_Links_PreserveMultiValueFilters()
     {
         // Arrange
-        _repository.SeedMany(5);
+        _repository.SeedProducts(5);
 
         // Act - Same parameter with multiple values
         var response = await _client.GetAsync("/api/products?tag=red&tag=blue&tag=green");
@@ -410,7 +411,7 @@ public class PaginationLinksTests : IDisposable
     public async Task GetAll_Links_HaveConsistentParameterOrder()
     {
         // Arrange
-        _repository.SeedMany(25);
+        _repository.SeedProducts(25);
 
         // Act
         var response = await _client.GetAsync("/api/products?filter=test&limit=10");

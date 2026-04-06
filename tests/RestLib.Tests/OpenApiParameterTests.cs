@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi;
 using RestLib.Abstractions;
-using RestLib.Pagination;
+using RestLib.InMemory;
 using Xunit;
 
 namespace RestLib.Tests;
@@ -74,7 +74,8 @@ public partial class OpenApiDocumentationTests
     public async Task OpenApi_GetAll_Should_Document_LimitParameter_WithCustomPaginationLimits()
     {
         // Arrange — configure custom pagination limits
-        var repository = new OpenApiTestRepository();
+        var nextId = 1;
+        var repository = new InMemoryRepository<OpenApiTestEntity, int>(e => e.Id, () => nextId++);
 
         using var host = await new HostBuilder()
             .ConfigureWebHost(webBuilder =>

@@ -80,81 +80,6 @@ public class NullConverterEntity
 }
 
 /// <summary>
-/// Repository that supports filtering for testing.
-/// </summary>
-public class FilterableRepository : IRepository<FilterableEntity, Guid>
-{
-    private readonly Dictionary<Guid, FilterableEntity> _store = new();
-
-    public void Seed(FilterableEntity entity) => _store[entity.Id] = entity;
-    public void SeedMany(IEnumerable<FilterableEntity> entities)
-    {
-        foreach (var entity in entities)
-            _store[entity.Id] = entity;
-    }
-    public void Clear() => _store.Clear();
-
-    public Task<FilterableEntity?> GetByIdAsync(Guid id, CancellationToken ct = default)
-    {
-        _store.TryGetValue(id, out var entity);
-        return Task.FromResult(entity);
-    }
-
-    public Task<PagedResult<FilterableEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default)
-    {
-        IEnumerable<FilterableEntity> query = _store.Values;
-
-        // Apply filters
-        foreach (var filter in pagination.Filters)
-        {
-            query = filter.PropertyName switch
-            {
-                "IsActive" => query.Where(e => e.IsActive == (bool)filter.TypedValue!),
-                "CategoryId" => query.Where(e => e.CategoryId == (Guid?)filter.TypedValue),
-                "Quantity" => query.Where(e => e.Quantity == (int)filter.TypedValue!),
-                "Status" => query.Where(e => e.Status == (ProductStatus)filter.TypedValue!),
-                "Name" => query.Where(e => e.Name == (string)filter.TypedValue!),
-                "Price" => query.Where(e => e.Price == (decimal)filter.TypedValue!),
-                _ => query
-            };
-        }
-
-        var items = query.Take(pagination.Limit).ToList();
-        var hasMore = query.Count() > pagination.Limit;
-
-        return Task.FromResult(new PagedResult<FilterableEntity>
-        {
-            Items = items,
-            NextCursor = hasMore ? CursorEncoder.Encode(items.Last().Id) : null
-        });
-    }
-
-    public Task<FilterableEntity> CreateAsync(FilterableEntity entity, CancellationToken ct = default)
-    {
-        _store[entity.Id] = entity;
-        return Task.FromResult(entity);
-    }
-
-    public Task<FilterableEntity?> UpdateAsync(Guid id, FilterableEntity entity, CancellationToken ct = default)
-    {
-        if (!_store.ContainsKey(id)) return Task.FromResult<FilterableEntity?>(null);
-        _store[id] = entity;
-        return Task.FromResult<FilterableEntity?>(entity);
-    }
-
-    public Task<FilterableEntity?> PatchAsync(Guid id, JsonElement patchDocument, CancellationToken ct = default)
-    {
-        if (!_store.TryGetValue(id, out var entity)) return Task.FromResult<FilterableEntity?>(null);
-        return Task.FromResult<FilterableEntity?>(entity);
-    }
-
-    public Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
-    {
-        return Task.FromResult(_store.Remove(id));
-    }
-}
-
-/// <summary>
 /// Tests for Story 4.3: Query Parameter Filtering.
 /// Verifies filter configuration, snake_case param names, validation, and pagination integration.
 /// </summary>
@@ -162,11 +87,11 @@ public class QueryParameterFilteringTests : IDisposable
 {
     private readonly IHost _host;
     private readonly HttpClient _client;
-    private readonly FilterableRepository _repository;
+    private readonly InMemoryRepository<FilterableEntity, Guid> _repository;
 
     public QueryParameterFilteringTests()
     {
-        _repository = new FilterableRepository();
+        _repository = new InMemoryRepository<FilterableEntity, Guid>(e => e.Id, Guid.NewGuid);
 
         (_host, _client) = new TestHostBuilder<FilterableEntity, Guid>(_repository, "/api/items")
             .WithEndpoint(config =>
@@ -196,7 +121,7 @@ public class QueryParameterFilteringTests : IDisposable
     public async Task GetAll_WithBooleanFilter_FiltersResults()
     {
         // Arrange
-        _repository.SeedMany([
+        _repository.Seed([
             new FilterableEntity { Id = Guid.NewGuid(), Name = "Active 1", IsActive = true },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Active 2", IsActive = true },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Inactive 1", IsActive = false },
@@ -218,7 +143,7 @@ public class QueryParameterFilteringTests : IDisposable
     {
         // Arrange
         var categoryId = Guid.NewGuid();
-        _repository.SeedMany([
+        _repository.Seed([
             new FilterableEntity { Id = Guid.NewGuid(), Name = "Cat1", CategoryId = categoryId },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Cat1-2", CategoryId = categoryId },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Cat2", CategoryId = Guid.NewGuid() },
@@ -239,7 +164,7 @@ public class QueryParameterFilteringTests : IDisposable
     public async Task GetAll_WithIntFilter_FiltersResults()
     {
         // Arrange
-        _repository.SeedMany([
+        _repository.Seed([
             new FilterableEntity { Id = Guid.NewGuid(), Name = "Qty10", Quantity = 10 },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Qty20", Quantity = 20 },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Qty10-2", Quantity = 10 },
@@ -260,7 +185,7 @@ public class QueryParameterFilteringTests : IDisposable
     public async Task GetAll_WithEnumFilter_FiltersResults()
     {
         // Arrange
-        _repository.SeedMany([
+        _repository.Seed([
             new FilterableEntity { Id = Guid.NewGuid(), Name = "Active", Status = ProductStatus.Active },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Draft", Status = ProductStatus.Draft },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Active2", Status = ProductStatus.Active },
@@ -281,7 +206,7 @@ public class QueryParameterFilteringTests : IDisposable
     public async Task GetAll_WithStringFilter_FiltersResults()
     {
         // Arrange
-        _repository.SeedMany([
+        _repository.Seed([
             new FilterableEntity { Id = Guid.NewGuid(), Name = "Widget" },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Gadget" },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Widget" },
@@ -302,7 +227,7 @@ public class QueryParameterFilteringTests : IDisposable
     public async Task GetAll_WithDecimalFilter_FiltersResults()
     {
         // Arrange
-        _repository.SeedMany([
+        _repository.Seed([
             new FilterableEntity { Id = Guid.NewGuid(), Name = "Cheap", Price = 9.99m },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Expensive", Price = 99.99m },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Cheap2", Price = 9.99m },
@@ -327,7 +252,7 @@ public class QueryParameterFilteringTests : IDisposable
     public async Task GetAll_FilterParams_UseSnakeCase()
     {
         // Arrange
-        _repository.Seed(new FilterableEntity { Id = Guid.NewGuid(), Name = "Test", IsActive = true });
+        _repository.Seed([new FilterableEntity { Id = Guid.NewGuid(), Name = "Test", IsActive = true }]);
 
         // Act - using snake_case parameter
         var response = await _client.GetAsync("/api/items?is_active=true");
@@ -341,7 +266,7 @@ public class QueryParameterFilteringTests : IDisposable
     public async Task GetAll_CamelCaseParams_NotRecognized()
     {
         // Arrange
-        _repository.SeedMany([
+        _repository.Seed([
             new FilterableEntity { Id = Guid.NewGuid(), Name = "Active", IsActive = true },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Inactive", IsActive = false },
     ]);
@@ -384,7 +309,7 @@ public class QueryParameterFilteringTests : IDisposable
     public async Task GetAll_InvalidBooleanValue_Returns400()
     {
         // Arrange
-        _repository.Seed(new FilterableEntity { Id = Guid.NewGuid(), Name = "Test" });
+        _repository.Seed([new FilterableEntity { Id = Guid.NewGuid(), Name = "Test" }]);
 
         // Act
         var response = await _client.GetAsync("/api/items?is_active=notabool");
@@ -401,7 +326,7 @@ public class QueryParameterFilteringTests : IDisposable
     public async Task GetAll_InvalidGuidValue_Returns400()
     {
         // Arrange
-        _repository.Seed(new FilterableEntity { Id = Guid.NewGuid(), Name = "Test" });
+        _repository.Seed([new FilterableEntity { Id = Guid.NewGuid(), Name = "Test" }]);
 
         // Act
         var response = await _client.GetAsync("/api/items?category_id=not-a-guid");
@@ -417,7 +342,7 @@ public class QueryParameterFilteringTests : IDisposable
     public async Task GetAll_InvalidIntValue_Returns400()
     {
         // Arrange
-        _repository.Seed(new FilterableEntity { Id = Guid.NewGuid(), Name = "Test" });
+        _repository.Seed([new FilterableEntity { Id = Guid.NewGuid(), Name = "Test" }]);
 
         // Act
         var response = await _client.GetAsync("/api/items?quantity=abc");
@@ -433,7 +358,7 @@ public class QueryParameterFilteringTests : IDisposable
     public async Task GetAll_InvalidEnumValue_Returns400()
     {
         // Arrange
-        _repository.Seed(new FilterableEntity { Id = Guid.NewGuid(), Name = "Test" });
+        _repository.Seed([new FilterableEntity { Id = Guid.NewGuid(), Name = "Test" }]);
 
         // Act
         var response = await _client.GetAsync("/api/items?status=InvalidStatus");
@@ -450,7 +375,7 @@ public class QueryParameterFilteringTests : IDisposable
     public async Task GetAll_InvalidFilterValue_ReturnsProblemDetails()
     {
         // Arrange
-        _repository.Seed(new FilterableEntity { Id = Guid.NewGuid(), Name = "Test" });
+        _repository.Seed([new FilterableEntity { Id = Guid.NewGuid(), Name = "Test" }]);
 
         // Act
         var response = await _client.GetAsync("/api/items?is_active=invalid");
@@ -477,14 +402,14 @@ public class QueryParameterFilteringTests : IDisposable
         // Arrange
         for (int i = 0; i < 20; i++)
         {
-            _repository.Seed(new FilterableEntity
+            _repository.Seed([new FilterableEntity
             {
                 Id = Guid.NewGuid(),
                 Name = $"Active {i}",
                 IsActive = true
-            });
+            }]);
         }
-        _repository.Seed(new FilterableEntity { Id = Guid.NewGuid(), Name = "Inactive", IsActive = false });
+        _repository.Seed([new FilterableEntity { Id = Guid.NewGuid(), Name = "Inactive", IsActive = false }]);
 
         // Act
         var response = await _client.GetAsync("/api/items?is_active=true&limit=5");
@@ -508,13 +433,13 @@ public class QueryParameterFilteringTests : IDisposable
         // Arrange
         for (int i = 0; i < 15; i++)
         {
-            _repository.Seed(new FilterableEntity
+            _repository.Seed([new FilterableEntity
             {
                 Id = Guid.NewGuid(),
                 Name = $"Active {i}",
                 IsActive = true,
                 Quantity = 10
-            });
+            }]);
         }
 
         // Act
@@ -543,7 +468,7 @@ public class QueryParameterFilteringTests : IDisposable
     {
         // Arrange
         var categoryId = Guid.NewGuid();
-        _repository.SeedMany([
+        _repository.Seed([
             new FilterableEntity { Id = Guid.NewGuid(), Name = "Match1", IsActive = true, CategoryId = categoryId },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Match2", IsActive = true, CategoryId = categoryId },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "ActiveOther", IsActive = true, CategoryId = Guid.NewGuid() },
@@ -569,7 +494,7 @@ public class QueryParameterFilteringTests : IDisposable
     public async Task GetAll_NoMatchingFilters_ReturnsEmptyCollection()
     {
         // Arrange
-        _repository.SeedMany([
+        _repository.Seed([
             new FilterableEntity { Id = Guid.NewGuid(), Name = "Active", IsActive = true },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Active2", IsActive = true },
     ]);
@@ -589,7 +514,7 @@ public class QueryParameterFilteringTests : IDisposable
     public async Task GetAll_BooleanFilter_Accepts1And0()
     {
         // Arrange
-        _repository.SeedMany([
+        _repository.Seed([
             new FilterableEntity { Id = Guid.NewGuid(), Name = "Active", IsActive = true },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Inactive", IsActive = false },
     ]);
@@ -615,7 +540,7 @@ public class QueryParameterFilteringTests : IDisposable
     public async Task GetAll_EnumFilter_CaseInsensitive()
     {
         // Arrange
-        _repository.SeedMany([
+        _repository.Seed([
             new FilterableEntity { Id = Guid.NewGuid(), Name = "Active", Status = ProductStatus.Active },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Draft", Status = ProductStatus.Draft },
     ]);
@@ -634,7 +559,7 @@ public class QueryParameterFilteringTests : IDisposable
     public async Task GetAll_UnconfiguredFilter_Ignored()
     {
         // Arrange
-        _repository.SeedMany([
+        _repository.Seed([
             new FilterableEntity { Id = Guid.NewGuid(), Name = "Test1" },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Test2" },
     ]);
@@ -653,7 +578,7 @@ public class QueryParameterFilteringTests : IDisposable
     public async Task GetAll_EmptyFilterValue_Ignored()
     {
         // Arrange
-        _repository.SeedMany([
+        _repository.Seed([
             new FilterableEntity { Id = Guid.NewGuid(), Name = "Test1", IsActive = true },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Test2", IsActive = false },
     ]);
@@ -677,11 +602,11 @@ public class NoFilterConfigurationTests : IDisposable
 {
     private readonly IHost _host;
     private readonly HttpClient _client;
-    private readonly FilterableRepository _repository;
+    private readonly InMemoryRepository<FilterableEntity, Guid> _repository;
 
     public NoFilterConfigurationTests()
     {
-        _repository = new FilterableRepository();
+        _repository = new InMemoryRepository<FilterableEntity, Guid>(e => e.Id, Guid.NewGuid);
 
         (_host, _client) = new TestHostBuilder<FilterableEntity, Guid>(_repository, "/api/items")
             .WithEndpoint(config =>
@@ -703,7 +628,7 @@ public class NoFilterConfigurationTests : IDisposable
     public async Task GetAll_WithoutFilterConfig_IgnoresFilterParams()
     {
         // Arrange
-        _repository.SeedMany([
+        _repository.Seed([
             new FilterableEntity { Id = Guid.NewGuid(), Name = "Active", IsActive = true },
         new FilterableEntity { Id = Guid.NewGuid(), Name = "Inactive", IsActive = false },
     ]);
@@ -722,7 +647,7 @@ public class NoFilterConfigurationTests : IDisposable
     public async Task GetAll_WithoutFilterConfig_InvalidValueDoesNotError()
     {
         // Arrange
-        _repository.Seed(new FilterableEntity { Id = Guid.NewGuid(), Name = "Test" });
+        _repository.Seed([new FilterableEntity { Id = Guid.NewGuid(), Name = "Test" }]);
 
         // Act - invalid value, but filters not configured so it's just ignored
         var response = await _client.GetAsync("/api/items?is_active=invalid");
@@ -937,7 +862,7 @@ public class FilterOpenApiTests : IDisposable
 
     public FilterOpenApiTests()
     {
-        (_host, _client) = new TestHostBuilder<FilterableEntity, Guid>(new FilterableRepository(), "/api/items")
+        (_host, _client) = new TestHostBuilder<FilterableEntity, Guid>(new InMemoryRepository<FilterableEntity, Guid>(e => e.Id, Guid.NewGuid), "/api/items")
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();

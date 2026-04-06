@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Hosting;
+using RestLib.InMemory;
 using RestLib.Tests.Fakes;
 using Xunit;
 
@@ -15,11 +16,11 @@ public class PaginationLinksDisabledTests : IDisposable
 {
     private readonly IHost _host;
     private readonly HttpClient _client;
-    private readonly PaginationTestRepository _repository;
+    private readonly InMemoryRepository<ProductEntity, Guid> _repository;
 
     public PaginationLinksDisabledTests()
     {
-        _repository = new PaginationTestRepository();
+        _repository = new InMemoryRepository<ProductEntity, Guid>(e => e.Id, Guid.NewGuid);
 
         (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithOptions(options => options.IncludePaginationLinks = false)
@@ -38,7 +39,7 @@ public class PaginationLinksDisabledTests : IDisposable
     public async Task GetAll_WhenLinksDisabled_SelfLinkIsOmitted()
     {
         // Arrange
-        _repository.SeedMany(5);
+        _repository.SeedProducts(5);
 
         // Act
         var response = await _client.GetAsync("/api/products");
@@ -55,7 +56,7 @@ public class PaginationLinksDisabledTests : IDisposable
     public async Task GetAll_WhenLinksDisabled_FirstLinkIsOmitted()
     {
         // Arrange
-        _repository.SeedMany(5);
+        _repository.SeedProducts(5);
 
         // Act
         var response = await _client.GetAsync("/api/products");
@@ -70,7 +71,7 @@ public class PaginationLinksDisabledTests : IDisposable
     public async Task GetAll_WhenLinksDisabled_NextLinkIsOmitted()
     {
         // Arrange
-        _repository.SeedMany(25);
+        _repository.SeedProducts(25);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=10");
@@ -85,7 +86,7 @@ public class PaginationLinksDisabledTests : IDisposable
     public async Task GetAll_WhenLinksDisabled_ItemsStillReturned()
     {
         // Arrange
-        _repository.SeedMany(5);
+        _repository.SeedProducts(5);
 
         // Act
         var response = await _client.GetAsync("/api/products");
@@ -103,7 +104,7 @@ public class PaginationLinksDisabledTests : IDisposable
     public async Task GetAll_WhenLinksDisabled_PaginationStillWorks()
     {
         // Arrange
-        _repository.SeedMany(25);
+        _repository.SeedProducts(25);
 
         // Act
         var response = await _client.GetAsync("/api/products?limit=10");
