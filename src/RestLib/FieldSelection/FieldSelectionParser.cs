@@ -39,7 +39,7 @@ public static class FieldSelectionParser
             }
 
             // Reject duplicates
-            if (!seenFields.Add(trimmed.ToLowerInvariant()))
+            if (!seenFields.Add(trimmed))
             {
                 errors.Add(new FieldSelectionValidationError
                 {
