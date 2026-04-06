@@ -23,6 +23,8 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     private readonly Func<TEntity, TKey> _keySelector;
     private readonly Func<TKey> _keyGenerator;
     private readonly JsonSerializerOptions _jsonOptions;
+    private string? _cachedKeyPropertyName;
+    private bool _keyPropertyNameResolved;
 
     /// <summary>
     /// Initializes a new instance of <see cref="InMemoryRepository{TEntity, TKey}"/>.
@@ -545,16 +547,70 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
 
     private string? FindKeyPropertyName()
     {
-        // Try to find a property that looks like a key
-        var properties = typeof(TEntity).GetProperties();
+        if (_keyPropertyNameResolved)
+        {
+            return _cachedKeyPropertyName;
+        }
 
-        // First, try to find the property that the keySelector uses
-        // by creating a dummy instance and checking which property returns the key
-        var idProperty = properties.FirstOrDefault(p =>
+        _cachedKeyPropertyName = DetectKeyPropertyName();
+        _keyPropertyNameResolved = true;
+        return _cachedKeyPropertyName;
+    }
+
+    /// <summary>
+    /// Detects the key property name by probing each <typeparamref name="TKey"/>-typed
+    /// property with the <c>_keySelector</c>. Falls back to the <c>Id</c> / <c>{Entity}Id</c>
+    /// naming convention when probing does not yield a result.
+    /// </summary>
+    private string? DetectKeyPropertyName()
+    {
+        var properties = typeof(TEntity).GetProperties(
+            BindingFlags.Public | BindingFlags.Instance);
+
+        var candidates = properties
+            .Where(p => p.PropertyType == typeof(TKey) && p.CanRead && p.CanWrite)
+            .ToList();
+
+        // Exactly one writable property of the key type — no ambiguity
+        if (candidates.Count == 1)
+        {
+            return candidates[0].Name;
+        }
+
+        // Multiple candidates — probe each one using a JSON round-trip:
+        // build a JSON object with only that property set to a generated key,
+        // deserialize it to TEntity, and see if _keySelector returns the same value.
+        if (candidates.Count > 1)
+        {
+            var probeKey = _keyGenerator();
+            var probeKeyJson = JsonSerializer.Serialize(probeKey, _jsonOptions);
+
+            foreach (var candidate in candidates)
+            {
+                try
+                {
+                    var jsonPropertyName = _jsonOptions.PropertyNamingPolicy?.ConvertName(candidate.Name)
+                        ?? candidate.Name;
+                    var json = $"{{\"{jsonPropertyName}\":{probeKeyJson}}}";
+                    var testEntity = JsonSerializer.Deserialize<TEntity>(json, _jsonOptions);
+                    if (testEntity != null && EqualityComparer<TKey>.Default.Equals(_keySelector(testEntity), probeKey))
+                    {
+                        return candidate.Name;
+                    }
+                }
+                catch
+                {
+                    // Deserialization may fail for entities with required members — skip candidate
+                }
+            }
+        }
+
+        // Fall back to naming convention
+        var conventionMatch = properties.FirstOrDefault(p =>
             p.Name.Equals("Id", StringComparison.OrdinalIgnoreCase) ||
             p.Name.Equals($"{typeof(TEntity).Name}Id", StringComparison.OrdinalIgnoreCase));
 
-        return idProperty?.Name;
+        return conventionMatch?.Name;
     }
 
     private string MergeJsonObjects(JsonElement original, JsonElement patch)

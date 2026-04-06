@@ -57,6 +57,29 @@ public partial class InMemoryRepositoryTests
     }
 
     [Fact]
+    public async Task CreateAsync_WithNonStandardKeyName_GeneratesNewKey()
+    {
+        // Arrange — entity whose key property is named "Sku", not "Id"
+        var generatedSku = Guid.NewGuid();
+        var repository = new InMemoryRepository<SkuEntity, Guid>(e => e.Sku, () => generatedSku);
+        var entity = new SkuEntity(Guid.Empty, "Widget");
+
+        // Act
+        var result = await repository.CreateAsync(entity);
+
+        // Assert — key should have been detected and set despite non-standard name
+        result.Should().NotBeNull();
+        result.Sku.Should().Be(generatedSku);
+        repository.Count.Should().Be(1);
+
+        var retrieved = await repository.GetByIdAsync(generatedSku);
+        retrieved.Should().NotBeNull();
+        retrieved!.Name.Should().Be("Widget");
+    }
+
+    private record SkuEntity(Guid Sku, string Name);
+
+    [Fact]
     public async Task CreateAsync_MultipleEntities_AllAdded()
     {
         var repository = CreateRepository();
