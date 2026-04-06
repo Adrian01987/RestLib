@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-04-06
+
+### Fixed
+
+- Patched entities are now validated **before** persisting, preventing invalid data from being saved during PATCH operations
+- `InMemoryRepository.CreateManyAsync` now throws on duplicate keys, consistent with `CreateAsync`
+- User-facing error messages now use the clean entity type name instead of the internal suffixed name
+- Delete endpoint now implements `If-Match` optimistic concurrency (was documented but not enforced)
+- Batch operations now check `AfterPersist` hook return values instead of silently ignoring them
+- Exception details in batch error responses are now gated behind `RestLibOptions.IncludeExceptionDetailsInErrors`
+- `InMemoryRepository` filter value parsing now uses `InvariantCulture` to avoid culture-dependent behavior
+- `IBatchRepository<TEntity, TKey>` is now registered in all `InMemoryServiceExtensions` overloads
+- `MaxFilterInListSize` is now validated at startup — zero or negative values are rejected immediately
+- JSON configuration filter operator presets (`Equality`, `Comparison`, etc.) now work correctly (ADR-013 documented them but the code did not resolve them)
+- `FindKeyPropertyName` now detects key properties by type and `keySelector` probe, not just `Id`/`{Entity}Id` naming patterns
+
+### Changed
+
+- `FilterOperators` preset arrays are now `IReadOnlyList<string>` instead of mutable `string[]`
+- Duplicated ETag `If-Match` logic across Update, Patch, and Delete handlers extracted into shared `CheckIfMatchPreconditionAsync` helper
+- `ETagGenerator` registered as singleton instead of being allocated per request
+- Reflection-based key property lookup is now cached after first resolution
+- `HashBasedETagGenerator` eliminates intermediate `string` allocation by serializing directly to UTF-8 bytes
+- `EntityValidator` uses `List<T>` instead of O(n^2) array concatenation
+- `FieldSelectionParser` duplicate check no longer calls redundant `ToLowerInvariant` (values are already lowered)
+- `SortParser` and `FieldSelectionParser` defer allowed-names string building to the error path
+- `EntityValidationResult.Success()` reuses a static empty dictionary instead of allocating a new one per call
+- `ETagComparer.ParseETags` removes redundant `Trim` already handled by `TrimEntries`
+- OpenAPI pagination limit metadata now reads from `RestLibOptions` instead of hardcoded values
+- `IRepository<TEntity, TKey>` and `IBatchRepository<TEntity, TKey>` now have a `notnull` constraint on `TKey`
+- All C# source files normalized to 4-space indentation per `.editorconfig`
+- Integration tests migrated to shared `TestHostBuilder` to eliminate duplicated host setup across 28 test files
+- Custom inline test repositories (`OpenApiTestRepository`, `FilterableRepository`, `PaginationTestRepository`) replaced with `InMemoryRepository`
+
+### Documentation
+
+- Updated .NET 8 references to .NET 10 in ADR-003 and CONTRIBUTING.md
+- Updated README ADR-007 description to match amended hybrid strategy
+- Added test conventions, E2E instructions, and StyleCop details to CONTRIBUTING.md
+- Added ADRs for ETag support (ADR-014), validation (ADR-015), JSON configuration (ADR-016), and rate limiting (ADR-017)
+- Added Data Annotation validation attributes to sample app models
+- Added `// Arrange`, `// Act`, `// Assert` comments to older test files for consistency
+
+### CI
+
+- Added concurrency control and E2E test timeout to CI workflow
+- Release pipeline now requires E2E tests to pass before publishing
+- GitHub Release body is now auto-populated from CHANGELOG.md
+- Added issue templates, PR template, and issue configuration
+
 ## [1.3.0] - 2026-04-04
 
 ### Added
@@ -165,7 +215,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Architecture Decision Records (ADRs) for key design choices
 - XML documentation for public APIs
 
-[Unreleased]: https://github.com/Adrian01987/RestLib/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/Adrian01987/RestLib/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/Adrian01987/RestLib/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/Adrian01987/RestLib/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Adrian01987/RestLib/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Adrian01987/RestLib/compare/v1.0.0...v1.1.0
