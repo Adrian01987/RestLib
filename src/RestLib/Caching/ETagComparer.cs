@@ -98,10 +98,9 @@ public static class ETagComparer
 
             foreach (var part in parts)
             {
-                var trimmed = part.Trim();
-                if (!string.IsNullOrEmpty(trimmed))
+                if (!string.IsNullOrEmpty(part))
                 {
-                    etags.Add(trimmed);
+                    etags.Add(part);
                 }
             }
         }
