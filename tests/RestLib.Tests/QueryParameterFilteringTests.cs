@@ -5,9 +5,6 @@ using System.Net.Http.Json;
 using System.Reflection;
 using System.Text.Json;
 using FluentAssertions;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using RestLib.Abstractions;
@@ -171,41 +168,19 @@ public class QueryParameterFilteringTests : IDisposable
     {
         _repository = new FilterableRepository();
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<FilterableEntity, Guid>(_repository, "/api/items")
+            .WithEndpoint(config =>
             {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib();
-                        services.AddSingleton<IRepository<FilterableEntity, Guid>>(_repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                    {
-                        endpoints.MapRestLib<FilterableEntity, Guid>("/api/items", config =>
-                      {
-                          config.AllowAnonymous();
-                          config.AllowFiltering(
-                            p => p.IsActive,
-                            p => p.CategoryId,
-                            p => p.Quantity,
-                            p => p.Status,
-                            p => p.Name,
-                            p => p.Price
-                        );
-                      });
-                    });
-                    });
+                config.AllowAnonymous();
+                config.AllowFiltering(
+                    p => p.IsActive,
+                    p => p.CategoryId,
+                    p => p.Quantity,
+                    p => p.Status,
+                    p => p.Name,
+                    p => p.Price);
             })
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
     }
 
     public void Dispose()
@@ -706,35 +681,13 @@ public class NoFilterConfigurationTests : IDisposable
     {
         _repository = new FilterableRepository();
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<FilterableEntity, Guid>(_repository, "/api/items")
+            .WithEndpoint(config =>
             {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib();
-                        services.AddSingleton<IRepository<FilterableEntity, Guid>>(_repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                    {
-                        // No filter configuration
-                        endpoints.MapRestLib<FilterableEntity, Guid>("/api/items", config =>
-                      {
-                          config.AllowAnonymous();
-                          // No AllowFiltering call
-                      });
-                    });
-                    });
+                config.AllowAnonymous();
+                // No AllowFiltering call
             })
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
     }
 
     public void Dispose()
@@ -982,39 +935,20 @@ public class FilterOpenApiTests : IDisposable
 
     public FilterOpenApiTests()
     {
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<FilterableEntity, Guid>(new FilterableRepository(), "/api/items")
+            .WithEndpoint(config =>
             {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib();
-                        services.AddSingleton<IRepository<FilterableEntity, Guid>>(new FilterableRepository());
-                        services.AddRouting();
-                        services.AddEndpointsApiExplorer();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                    {
-                        endpoints.MapRestLib<FilterableEntity, Guid>("/api/items", config =>
-                      {
-                          config.AllowAnonymous();
-                          config.AllowFiltering(
-                            p => p.IsActive,
-                            p => p.Quantity,
-                            p => p.Status
-                        );
-                      });
-                    });
-                    });
+                config.AllowAnonymous();
+                config.AllowFiltering(
+                    p => p.IsActive,
+                    p => p.Quantity,
+                    p => p.Status);
+            })
+            .WithServices(services =>
+            {
+                services.AddEndpointsApiExplorer();
             })
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
     }
 
     public void Dispose()
@@ -1679,38 +1613,17 @@ public class FilterOperatorIntegrationTests : IDisposable
     {
         _repository = new InMemoryRepository<FilterableEntity, Guid>(e => e.Id, Guid.NewGuid);
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<FilterableEntity, Guid>(_repository, "/api/items")
+            .WithEndpoint(config =>
             {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib();
-                        services.AddSingleton<IRepository<FilterableEntity, Guid>>(_repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                    {
-                        endpoints.MapRestLib<FilterableEntity, Guid>("/api/items", config =>
-                      {
-                          config.AllowAnonymous();
-                          config.AllowFiltering(p => p.Quantity, FilterOperators.Comparison);
-                          config.AllowFiltering(p => p.Price, FilterOperators.Comparison);
-                          config.AllowFiltering(p => p.Name, FilterOperators.String);
-                          config.AllowFiltering(p => p.IsActive, FilterOperator.Neq);
-                          config.AllowFiltering(p => p.Status, FilterOperator.In, FilterOperator.Neq);
-                      });
-                    });
-                    });
+                config.AllowAnonymous();
+                config.AllowFiltering(p => p.Quantity, FilterOperators.Comparison);
+                config.AllowFiltering(p => p.Price, FilterOperators.Comparison);
+                config.AllowFiltering(p => p.Name, FilterOperators.String);
+                config.AllowFiltering(p => p.IsActive, FilterOperator.Neq);
+                config.AllowFiltering(p => p.Status, FilterOperator.In, FilterOperator.Neq);
             })
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
 
         // Seed test data
         SeedTestData().GetAwaiter().GetResult();
@@ -2078,37 +1991,17 @@ public class MaxFilterInListSizeTests : IDisposable
     {
         _repository = new InMemoryRepository<FilterableEntity, Guid>(e => e.Id, Guid.NewGuid);
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<FilterableEntity, Guid>(_repository, "/api/items")
+            .WithOptions(options =>
             {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib(options =>
-                    {
-                        options.MaxFilterInListSize = 3;
-                    });
-                        services.AddSingleton<IRepository<FilterableEntity, Guid>>(_repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                    {
-                        endpoints.MapRestLib<FilterableEntity, Guid>("/api/items", config =>
-                      {
-                          config.AllowAnonymous();
-                          config.AllowFiltering(p => p.Quantity, FilterOperator.In);
-                      });
-                    });
-                    });
+                options.MaxFilterInListSize = 3;
+            })
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.AllowFiltering(p => p.Quantity, FilterOperator.In);
             })
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
     }
 
     public void Dispose()

@@ -4,13 +4,10 @@ using System.Security.Claims;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.Tests.Fakes;
 using Xunit;
@@ -31,50 +28,34 @@ public class AuthorizationTests : IDisposable
     {
         _repository = new TestEntityRepository();
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
-            {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib();
-                        services.AddSingleton<IRepository<TestEntity, Guid>>(_repository);
-                        services.AddRouting();
+        var builder = new TestHostBuilder<TestEntity, Guid>(_repository, "/api/test-entities")
+            .WithEndpoint(configure);
 
-                        if (addAuthentication)
-                        {
-                            services.AddAuthentication("Test")
-                                .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", _ => { });
-                            services.AddAuthorization(options =>
-                            {
-                                options.AddPolicy("AdminOnly", policy =>
-                                    policy.RequireClaim("role", "admin"));
-                                options.AddPolicy("ManagerOnly", policy =>
-                                    policy.RequireClaim("role", "manager"));
-                                options.AddPolicy("EditorOnly", policy =>
-                                    policy.RequireClaim("role", "editor"));
-                            });
-                        }
-                    })
-                    .Configure(app =>
+        if (addAuthentication)
+        {
+            builder
+                .WithServices(services =>
+                {
+                    services.AddAuthentication("Test")
+                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", _ => { });
+                    services.AddAuthorization(options =>
                     {
-                        app.UseRouting();
-                        if (addAuthentication)
-                        {
-                            app.UseAuthentication();
-                            app.UseAuthorization();
-                        }
-                        app.UseEndpoints(endpoints =>
-                        {
-                            endpoints.MapRestLib<TestEntity, Guid>("/api/test-entities", configure);
-                        });
+                        options.AddPolicy("AdminOnly", policy =>
+                            policy.RequireClaim("role", "admin"));
+                        options.AddPolicy("ManagerOnly", policy =>
+                            policy.RequireClaim("role", "manager"));
+                        options.AddPolicy("EditorOnly", policy =>
+                            policy.RequireClaim("role", "editor"));
                     });
-            })
-            .Build();
+                })
+                .WithMiddleware(app =>
+                {
+                    app.UseAuthentication();
+                    app.UseAuthorization();
+                });
+        }
 
-        _host.Start();
-        _client = _host.GetTestClient();
+        (_host, _client) = builder.Build();
     }
 
     public void Dispose()

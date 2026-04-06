@@ -11,6 +11,7 @@ using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.FieldSelection;
 using RestLib.InMemory;
+using RestLib.Tests.Fakes;
 using Xunit;
 
 namespace RestLib.Tests;
@@ -45,41 +46,20 @@ public class FieldSelectionTests : IDisposable
             e => e.Id,
             Guid.NewGuid);
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<FieldSelectableEntity, Guid>(_repository, "/api/items")
+            .WithEndpoint(config =>
             {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib();
-                        services.AddSingleton<IRepository<FieldSelectableEntity, Guid>>(_repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                    {
-                        endpoints.MapRestLib<FieldSelectableEntity, Guid>("/api/items", config =>
-                      {
-                          config.AllowAnonymous();
-                          config.AllowFieldSelection(
-                            p => p.Id,
-                            p => p.Name,
-                            p => p.Price,
-                            p => p.Category,
-                            p => p.CreatedAt);
-                          config.AllowFiltering(p => p.Category);
-                          config.AllowSorting(p => p.Price, p => p.Name);
-                      });
-                    });
-                    });
+                config.AllowAnonymous();
+                config.AllowFieldSelection(
+                    p => p.Id,
+                    p => p.Name,
+                    p => p.Price,
+                    p => p.Category,
+                    p => p.CreatedAt);
+                config.AllowFiltering(p => p.Category);
+                config.AllowSorting(p => p.Price, p => p.Name);
             })
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
 
         SeedData();
     }
@@ -433,34 +413,13 @@ public class FieldSelectionNoConfigTests : IDisposable
             e => e.Id,
             Guid.NewGuid);
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<FieldSelectableEntity, Guid>(_repository, "/api/items")
+            .WithEndpoint(config =>
             {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib();
-                        services.AddSingleton<IRepository<FieldSelectableEntity, Guid>>(_repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                    {
-                        endpoints.MapRestLib<FieldSelectableEntity, Guid>("/api/items", config =>
-                      {
-                          config.AllowAnonymous();
-                          // No AllowFieldSelection configured
-                      });
-                    });
-                    });
+                config.AllowAnonymous();
+                // No AllowFieldSelection configured
             })
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
 
         _repository.Seed([
             new FieldSelectableEntity

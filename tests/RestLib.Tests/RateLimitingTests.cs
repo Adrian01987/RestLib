@@ -29,49 +29,31 @@ public class RateLimitingTests : IDisposable
     {
         _repository = new TestEntityRepository();
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<TestEntity, Guid>(_repository, "/api/limited")
+            .WithServices(services =>
             {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
+                services.AddRateLimiter(options =>
+                {
+                    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+                    options.AddFixedWindowLimiter("strict", limiter =>
                     {
-                        services.AddRestLib();
-                        services.AddSingleton<IRepository<TestEntity, Guid>>(_repository);
-                        services.AddRouting();
-                        services.AddRateLimiter(options =>
-                    {
-                        options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-                        options.AddFixedWindowLimiter("strict", limiter =>
-                      {
-                          limiter.PermitLimit = 1;
-                          limiter.Window = TimeSpan.FromMinutes(1);
-                      });
-                        options.AddFixedWindowLimiter("relaxed", limiter =>
-                      {
-                          limiter.PermitLimit = 10;
-                          limiter.Window = TimeSpan.FromMinutes(1);
-                      });
+                        limiter.PermitLimit = 1;
+                        limiter.Window = TimeSpan.FromMinutes(1);
                     });
-                    })
-                    .Configure(app =>
+                    options.AddFixedWindowLimiter("relaxed", limiter =>
                     {
-                        app.UseRouting();
-                        app.UseRateLimiter();
-                        app.UseEndpoints(endpoints =>
-                    {
-                        endpoints.MapRestLib<TestEntity, Guid>("/api/limited", cfg =>
-                      {
-                          cfg.AllowAnonymous();
-                          configure(cfg);
-                      });
+                        limiter.PermitLimit = 10;
+                        limiter.Window = TimeSpan.FromMinutes(1);
                     });
-                    });
+                });
+            })
+            .WithMiddleware(app => app.UseRateLimiter())
+            .WithEndpoint(cfg =>
+            {
+                cfg.AllowAnonymous();
+                configure(cfg);
             })
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
     }
 
     public void Dispose()

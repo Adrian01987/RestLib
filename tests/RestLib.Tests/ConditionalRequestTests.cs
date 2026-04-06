@@ -1,14 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using RestLib.Abstractions;
 using RestLib.Caching;
-using RestLib.Configuration;
 using RestLib.Tests.Fakes;
 using Xunit;
 
@@ -28,33 +22,10 @@ public class ConditionalRequestTests : IDisposable
     {
         _repository = new ProductEntityRepository();
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
-            {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib(options => options.EnableETagSupport = true);
-                        services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                        {
-                            endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
-                            {
-                                config.AllowAnonymous();
-                            });
-                        });
-                    });
-            })
+        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+            .WithOptions(options => options.EnableETagSupport = true)
+            .WithEndpoint(config => config.AllowAnonymous())
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
     }
 
     #region If-None-Match - 304 Not Modified
@@ -589,33 +560,11 @@ public class ConditionalRequestTests : IDisposable
     public async Task GetById_WithIfNoneMatch_WhenETagDisabled_IgnoresHeader()
     {
         // Arrange
-        using var disabledHost = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
-            {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib(options => options.EnableETagSupport = false);
-                        services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                        {
-                            endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
-                            {
-                                config.AllowAnonymous();
-                            });
-                        });
-                    });
-            })
+        var (disabledHost, disabledClient) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+            .WithOptions(options => options.EnableETagSupport = false)
+            .WithEndpoint(config => config.AllowAnonymous())
             .Build();
-
-        await disabledHost.StartAsync();
-        var disabledClient = disabledHost.GetTestClient();
+        using var _ = disabledHost;
 
         var id = Guid.NewGuid();
         _repository.Seed(
@@ -636,33 +585,11 @@ public class ConditionalRequestTests : IDisposable
     public async Task Delete_WithIfMatch_WhenETagDisabled_IgnoresHeader()
     {
         // Arrange
-        using var disabledHost = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
-            {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib(options => options.EnableETagSupport = false);
-                        services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                        {
-                            endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
-                            {
-                                config.AllowAnonymous();
-                            });
-                        });
-                    });
-            })
+        var (disabledHost, disabledClient) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+            .WithOptions(options => options.EnableETagSupport = false)
+            .WithEndpoint(config => config.AllowAnonymous())
             .Build();
-
-        await disabledHost.StartAsync();
-        var disabledClient = disabledHost.GetTestClient();
+        using var _ = disabledHost;
 
         var id = Guid.NewGuid();
         _repository.Seed(

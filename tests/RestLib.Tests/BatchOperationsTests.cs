@@ -4,10 +4,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using RestLib.Abstractions;
@@ -137,33 +134,15 @@ public class BatchOperationsTests : IDisposable
         Action<RestLibEndpointConfiguration<BatchEntity, Guid>> configure,
         Action<RestLibOptions>? configureOptions = null)
     {
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
-            {
-                webBuilder
-                .UseTestServer()
-                .ConfigureServices(services =>
-                {
-                    services.AddRestLib(options =>
-                {
-                    configureOptions?.Invoke(options);
-                });
-                    services.AddSingleton<IRepository<BatchEntity, Guid>>(_repository);
-                    services.AddRouting();
-                })
-                .Configure(app =>
-                {
-                    app.UseRouting();
-                    app.UseEndpoints(endpoints =>
-                {
-                    endpoints.MapRestLib<BatchEntity, Guid>("/api/items", configure);
-                });
-                });
-            })
-            .Build();
+        var builder = new TestHostBuilder<BatchEntity, Guid>(_repository, "/api/items")
+            .WithEndpoint(configure);
 
-        _host.Start();
-        _client = _host.GetTestClient();
+        if (configureOptions != null)
+        {
+            builder.WithOptions(configureOptions);
+        }
+
+        (_host, _client) = builder.Build();
     }
 
     /// <inheritdoc />
@@ -732,34 +711,13 @@ public class BatchOperationsTests : IDisposable
 
         var spy = new RepositorySpy<BatchEntity, Guid>(_repository);
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<BatchEntity, Guid>(spy, "/api/items")
+            .WithEndpoint(cfg =>
             {
-                webBuilder
-                .UseTestServer()
-                .ConfigureServices(services =>
-                {
-                    services.AddRestLib();
-                    services.AddSingleton<IRepository<BatchEntity, Guid>>(spy);
-                    services.AddRouting();
-                })
-                .Configure(app =>
-                {
-                    app.UseRouting();
-                    app.UseEndpoints(endpoints =>
-                {
-                    endpoints.MapRestLib<BatchEntity, Guid>("/api/items", cfg =>
-                  {
-                      cfg.AllowAnonymous();
-                      cfg.EnableBatch();
-                  });
-                });
-                });
+                cfg.AllowAnonymous();
+                cfg.EnableBatch();
             })
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
 
         var payload = new
         {
@@ -768,7 +726,7 @@ public class BatchOperationsTests : IDisposable
         };
 
         // Act
-        var response = await _client.PostAsync("/api/items/batch", BatchJson(payload));
+        var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -1509,52 +1467,31 @@ public class BatchOperationsTests : IDisposable
         var errorHandledCount = 0;
 
         var throwingRepo = new ThrowingBatchRepository();
-        var host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<BatchEntity, Guid>(throwingRepo, "/api/items")
+            .WithEndpoint(config =>
             {
-                webBuilder
-                .UseTestServer()
-                .ConfigureServices(services =>
+                config.AllowAnonymous();
+                config.EnableBatch();
+                config.UseHooks(hooks =>
                 {
-                    services.AddRestLib();
-                    services.AddSingleton<IRepository<BatchEntity, Guid>>(throwingRepo);
-                    services.AddRouting();
-                })
-                .Configure(app =>
-                {
-                    app.UseRouting();
-                    app.UseEndpoints(endpoints =>
-                {
-                    endpoints.MapRestLib<BatchEntity, Guid>("/api/items", config =>
-                  {
-                      config.AllowAnonymous();
-                      config.EnableBatch();
-                      config.UseHooks(hooks =>
+                    hooks.OnError = async ctx =>
                     {
-                        hooks.OnError = async ctx =>
-                      {
-                          Interlocked.Increment(ref errorHandledCount);
-                          ctx.Handled = true;
-                          ctx.ErrorResult = Results.Json(
-                          new RestLibProblemDetails
-                          {
-                              Type = "/problems/custom-error",
-                              Title = "Custom Error",
-                              Status = StatusCodes.Status503ServiceUnavailable,
-                              Detail = "Handled by hook"
-                          },
-                          statusCode: StatusCodes.Status503ServiceUnavailable);
-                          await Task.CompletedTask;
-                      };
-                    });
-                  });
-                });
+                        Interlocked.Increment(ref errorHandledCount);
+                        ctx.Handled = true;
+                        ctx.ErrorResult = Results.Json(
+                            new RestLibProblemDetails
+                            {
+                                Type = "/problems/custom-error",
+                                Title = "Custom Error",
+                                Status = StatusCodes.Status503ServiceUnavailable,
+                                Detail = "Handled by hook"
+                            },
+                            statusCode: StatusCodes.Status503ServiceUnavailable);
+                        await Task.CompletedTask;
+                    };
                 });
             })
             .Build();
-
-        host.Start();
-        var client = host.GetTestClient();
 
         var payload = new
         {
@@ -1567,7 +1504,7 @@ public class BatchOperationsTests : IDisposable
         };
 
         // Act
-        var response = await client.PostAsync("/api/items/batch", BatchJson(payload));
+        var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
@@ -1580,9 +1517,6 @@ public class BatchOperationsTests : IDisposable
         items[0].GetProperty("status").GetInt32().Should().Be(503);
         items[0].GetProperty("error").GetProperty("detail").GetString().Should().Be("Handled by hook");
         items[1].GetProperty("status").GetInt32().Should().Be(503);
-
-        client.Dispose();
-        host.Dispose();
     }
 
     [Fact]
@@ -1783,34 +1717,19 @@ public class BatchOperationsTests : IDisposable
         _batchSpy = new BatchRepositorySpy<BatchEntity, Guid>(_repository);
         _repositorySpy = new RepositorySpy<BatchEntity, Guid>(_repository);
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        var builder = new TestHostBuilder<BatchEntity, Guid>(_repositorySpy, "/api/items")
+            .WithEndpoint(configure)
+            .WithServices(services =>
             {
-                webBuilder
-                .UseTestServer()
-                .ConfigureServices(services =>
-                {
-                    services.AddRestLib(options =>
-                {
-                    configureOptions?.Invoke(options);
-                });
-                    services.AddSingleton<IRepository<BatchEntity, Guid>>(_repositorySpy);
-                    services.AddSingleton<IBatchRepository<BatchEntity, Guid>>(_batchSpy);
-                    services.AddRouting();
-                })
-                .Configure(app =>
-                {
-                    app.UseRouting();
-                    app.UseEndpoints(endpoints =>
-                {
-                    endpoints.MapRestLib<BatchEntity, Guid>("/api/items", configure);
-                });
-                });
-            })
-            .Build();
+                services.AddSingleton<IBatchRepository<BatchEntity, Guid>>(_batchSpy);
+            });
 
-        _host.Start();
-        _client = _host.GetTestClient();
+        if (configureOptions != null)
+        {
+            builder.WithOptions(configureOptions);
+        }
+
+        (_host, _client) = builder.Build();
     }
 
     [Fact]
@@ -1957,34 +1876,13 @@ public class BatchOperationsTests : IDisposable
         // Arrange — use CreateHost which does NOT register IBatchRepository
         var spy = new RepositorySpy<BatchEntity, Guid>(_repository);
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<BatchEntity, Guid>(spy, "/api/items")
+            .WithEndpoint(config =>
             {
-                webBuilder
-                .UseTestServer()
-                .ConfigureServices(services =>
-                {
-                    services.AddRestLib();
-                    services.AddSingleton<IRepository<BatchEntity, Guid>>(spy);
-                    services.AddRouting();
-                })
-                .Configure(app =>
-                {
-                    app.UseRouting();
-                    app.UseEndpoints(endpoints =>
-                {
-                    endpoints.MapRestLib<BatchEntity, Guid>("/api/items", config =>
-                  {
-                      config.AllowAnonymous();
-                      config.EnableBatch();
-                  });
-                });
-                });
+                config.AllowAnonymous();
+                config.EnableBatch();
             })
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
 
         var payload = new
         {
@@ -2096,34 +1994,13 @@ public class BatchOperationsTests : IDisposable
     {
         // Arrange — use a throwing repository with default options (IncludeExceptionDetailsInErrors = false)
         var throwingRepo = new ThrowingBatchRepository();
-        var host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<BatchEntity, Guid>(throwingRepo, "/api/items")
+            .WithEndpoint(config =>
             {
-                webBuilder
-                .UseTestServer()
-                .ConfigureServices(services =>
-                {
-                    services.AddRestLib();
-                    services.AddSingleton<IRepository<BatchEntity, Guid>>(throwingRepo);
-                    services.AddRouting();
-                })
-                .Configure(app =>
-                {
-                    app.UseRouting();
-                    app.UseEndpoints(endpoints =>
-                {
-                    endpoints.MapRestLib<BatchEntity, Guid>("/api/items", config =>
-                  {
-                      config.AllowAnonymous();
-                      config.EnableBatch();
-                  });
-                });
-                });
+                config.AllowAnonymous();
+                config.EnableBatch();
             })
             .Build();
-
-        host.Start();
-        var client = host.GetTestClient();
 
         var payload = new
         {
@@ -2135,7 +2012,7 @@ public class BatchOperationsTests : IDisposable
         };
 
         // Act
-        var response = await client.PostAsync("/api/items/batch", BatchJson(payload));
+        var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
@@ -2148,9 +2025,6 @@ public class BatchOperationsTests : IDisposable
         detail.Should().Be("An internal error occurred while processing this item.");
         detail.Should().NotContain("Simulated repository failure");
         detail.Should().NotContain("InvalidOperationException");
-
-        client.Dispose();
-        host.Dispose();
     }
 
     [Fact]
@@ -2159,37 +2033,17 @@ public class BatchOperationsTests : IDisposable
     {
         // Arrange — use a throwing repository with IncludeExceptionDetailsInErrors = true
         var throwingRepo = new ThrowingBatchRepository();
-        var host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<BatchEntity, Guid>(throwingRepo, "/api/items")
+            .WithEndpoint(config =>
             {
-                webBuilder
-                .UseTestServer()
-                .ConfigureServices(services =>
-                {
-                    services.AddRestLib(options =>
-                {
-                    options.IncludeExceptionDetailsInErrors = true;
-                });
-                    services.AddSingleton<IRepository<BatchEntity, Guid>>(throwingRepo);
-                    services.AddRouting();
-                })
-                .Configure(app =>
-                {
-                    app.UseRouting();
-                    app.UseEndpoints(endpoints =>
-                {
-                    endpoints.MapRestLib<BatchEntity, Guid>("/api/items", config =>
-                  {
-                      config.AllowAnonymous();
-                      config.EnableBatch();
-                  });
-                });
-                });
+                config.AllowAnonymous();
+                config.EnableBatch();
+            })
+            .WithOptions(options =>
+            {
+                options.IncludeExceptionDetailsInErrors = true;
             })
             .Build();
-
-        host.Start();
-        var client = host.GetTestClient();
 
         var payload = new
         {
@@ -2201,7 +2055,7 @@ public class BatchOperationsTests : IDisposable
         };
 
         // Act
-        var response = await client.PostAsync("/api/items/batch", BatchJson(payload));
+        var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
@@ -2213,9 +2067,6 @@ public class BatchOperationsTests : IDisposable
         var detail = items[0].GetProperty("error").GetProperty("detail").GetString();
         detail.Should().Contain("InvalidOperationException");
         detail.Should().Contain("Simulated repository failure");
-
-        client.Dispose();
-        host.Dispose();
     }
 
     [Fact]
@@ -2224,34 +2075,13 @@ public class BatchOperationsTests : IDisposable
     {
         // Arrange — use a throwing repository with default options
         var throwingRepo = new ThrowingBatchRepository();
-        var host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<BatchEntity, Guid>(throwingRepo, "/api/items")
+            .WithEndpoint(config =>
             {
-                webBuilder
-                .UseTestServer()
-                .ConfigureServices(services =>
-                {
-                    services.AddRestLib();
-                    services.AddSingleton<IRepository<BatchEntity, Guid>>(throwingRepo);
-                    services.AddRouting();
-                })
-                .Configure(app =>
-                {
-                    app.UseRouting();
-                    app.UseEndpoints(endpoints =>
-                {
-                    endpoints.MapRestLib<BatchEntity, Guid>("/api/items", config =>
-                  {
-                      config.AllowAnonymous();
-                      config.EnableBatch();
-                  });
-                });
-                });
+                config.AllowAnonymous();
+                config.EnableBatch();
             })
             .Build();
-
-        host.Start();
-        var client = host.GetTestClient();
 
         var payload = new
         {
@@ -2260,7 +2090,7 @@ public class BatchOperationsTests : IDisposable
         };
 
         // Act
-        var response = await client.PostAsync("/api/items/batch", BatchJson(payload));
+        var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
@@ -2272,9 +2102,6 @@ public class BatchOperationsTests : IDisposable
         var detail = items[0].GetProperty("error").GetProperty("detail").GetString();
         detail.Should().Be("An internal error occurred while processing this item.");
         detail.Should().NotContain("Simulated repository failure");
-
-        client.Dispose();
-        host.Dispose();
     }
 
     [Fact]
@@ -2284,37 +2111,17 @@ public class BatchOperationsTests : IDisposable
         // Arrange — use a repository that returns entities from GetByIdAsync but throws on UpdateAsync
         var id = Guid.NewGuid();
         var throwingUpdateRepo = new ThrowingUpdateRepository(id);
-        var host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<BatchEntity, Guid>(throwingUpdateRepo, "/api/items")
+            .WithEndpoint(cfg =>
             {
-                webBuilder
-                .UseTestServer()
-                .ConfigureServices(services =>
-                {
-                    services.AddRestLib(options =>
-                {
-                    options.IncludeExceptionDetailsInErrors = true;
-                });
-                    services.AddSingleton<IRepository<BatchEntity, Guid>>(throwingUpdateRepo);
-                    services.AddRouting();
-                })
-                .Configure(app =>
-                {
-                    app.UseRouting();
-                    app.UseEndpoints(endpoints =>
-                {
-                    endpoints.MapRestLib<BatchEntity, Guid>("/api/items", cfg =>
-                  {
-                      cfg.AllowAnonymous();
-                      cfg.EnableBatch();
-                  });
-                });
-                });
+                cfg.AllowAnonymous();
+                cfg.EnableBatch();
+            })
+            .WithOptions(options =>
+            {
+                options.IncludeExceptionDetailsInErrors = true;
             })
             .Build();
-
-        host.Start();
-        var client = host.GetTestClient();
 
         var payload = new
         {
@@ -2326,7 +2133,7 @@ public class BatchOperationsTests : IDisposable
         };
 
         // Act
-        var response = await client.PostAsync("/api/items/batch", BatchJson(payload));
+        var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
@@ -2338,9 +2145,6 @@ public class BatchOperationsTests : IDisposable
         var detail = items[0].GetProperty("error").GetProperty("detail").GetString();
         detail.Should().Contain("InvalidOperationException");
         detail.Should().Contain("Simulated update failure");
-
-        client.Dispose();
-        host.Dispose();
     }
 
     #endregion

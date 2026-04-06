@@ -2,13 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using RestLib.Abstractions;
-using RestLib.Configuration;
 using RestLib.Pagination;
 using RestLib.Responses;
 using RestLib.Tests.Fakes;
@@ -30,37 +25,14 @@ public class CursorBasedPaginationTests : IDisposable
     {
         _repository = new PaginationTestRepository();
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+            .WithOptions(options =>
             {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib(options =>
-                    {
-                        options.DefaultPageSize = 20;
-                        options.MaxPageSize = 100;
-                    });
-                        services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                    {
-                        endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
-                      {
-                          config.AllowAnonymous();
-                      });
-                    });
-                    });
+                options.DefaultPageSize = 20;
+                options.MaxPageSize = 100;
             })
+            .WithEndpoint(config => config.AllowAnonymous())
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
     }
 
     public void Dispose()
@@ -720,37 +692,14 @@ public class CursorPaginationCustomConfigTests : IDisposable
     {
         _repository = new PaginationTestRepository();
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+            .WithOptions(options =>
             {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib(options =>
-                    {
-                        options.DefaultPageSize = 5;   // Custom default
-                        options.MaxPageSize = 50;      // Custom max
-                    });
-                        services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                    {
-                        endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
-                      {
-                          config.AllowAnonymous();
-                      });
-                    });
-                    });
+                options.DefaultPageSize = 5;   // Custom default
+                options.MaxPageSize = 50;      // Custom max
             })
+            .WithEndpoint(config => config.AllowAnonymous())
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
     }
 
     public void Dispose()
@@ -822,33 +771,9 @@ public class ZalandoPaginationComplianceTests : IDisposable
     {
         _repository = new PaginationTestRepository();
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
-            {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib();
-                        services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                    {
-                        endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
-                      {
-                          config.AllowAnonymous();
-                      });
-                    });
-                    });
-            })
+        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+            .WithEndpoint(config => config.AllowAnonymous())
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
     }
 
     public void Dispose()

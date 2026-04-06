@@ -2,12 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using RestLib.Abstractions;
 using RestLib.Tests.Fakes;
 using Xunit;
 
@@ -24,30 +20,11 @@ public class OperationSelectionTests
     {
         var repository = new TestEntityRepository();
 
-        var host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
-            {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib();
-                        services.AddSingleton<IRepository<TestEntity, Guid>>(repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                    {
-                        endpoints.MapRestLib<TestEntity, Guid>("/api/items", configure);
-                    });
-                    });
-            })
+        var (host, client) = new TestHostBuilder<TestEntity, Guid>(repository, "/api/items")
+            .WithEndpoint(configure)
             .Build();
 
-        host.Start();
-        return (host, host.GetTestClient(), repository);
+        return (host, client, repository);
     }
 
     #region Default behavior (all endpoints enabled)
@@ -430,45 +407,30 @@ public class OperationSelectionTests
     {
         var repository = new TestEntityRepository();
 
-        var host = new HostBuilder()
-          .ConfigureWebHost(webBuilder =>
+        var (host, client) = new TestHostBuilder<TestEntity, Guid>(repository, "/api/items")
+            .WithEndpoint(config =>
             {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
+                config.AllowAnonymous();
+                config.ExcludeOperations(RestLibOperation.Create);
+            })
+            .WithMiddleware(app =>
+            {
+                // Register a custom Create endpoint
+                app.UseEndpoints(endpoints =>
+                {
+                    endpoints.MapPost("/api/items", (TestEntity entity) =>
                     {
-                        services.AddRestLib();
-                        services.AddSingleton<IRepository<TestEntity, Guid>>(repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                    {
-                        // Register RestLib without Create
-                        endpoints.MapRestLib<TestEntity, Guid>("/api/items", config =>
-                      {
-                          config.AllowAnonymous();
-                          config.ExcludeOperations(RestLibOperation.Create);
-                      });
-
-                        // Register a custom Create endpoint
-                        endpoints.MapPost("/api/items", (TestEntity entity) =>
-                      {
-                          entity.Id = Guid.NewGuid();
-                          entity.Name = $"CUSTOM: {entity.Name}";
-                          repository.CreateAsync(entity);
-                          return Results.Created($"/api/items/{entity.Id}", entity);
-                      }).AllowAnonymous();
-                    });
-                    });
+                        entity.Id = Guid.NewGuid();
+                        entity.Name = $"CUSTOM: {entity.Name}";
+                        repository.CreateAsync(entity);
+                        return Results.Created($"/api/items/{entity.Id}", entity);
+                    }).AllowAnonymous();
+                });
             })
             .Build();
 
         using var _ = host;
-        host.Start();
-        using var client = host.GetTestClient();
+        using var __ = client;
 
         // Custom Create endpoint should work with custom logic
         var create = await client.PostAsJsonAsync("/api/items", new TestEntity { Name = "Product", Price = 10m });

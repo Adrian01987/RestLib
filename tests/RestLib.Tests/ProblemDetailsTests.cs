@@ -2,12 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using RestLib.Abstractions;
 using RestLib.FieldSelection;
 using RestLib.Filtering;
 using RestLib.Responses;
@@ -31,33 +26,9 @@ public class ProblemDetailsTests : IDisposable
     {
         _repository = new ProductEntityRepository();
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
-            {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib();
-                        services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                        {
-                            endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
-                            {
-                                config.AllowAnonymous();
-                            });
-                        });
-                    });
-            })
+        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+            .WithEndpoint(config => config.AllowAnonymous())
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
     }
 
     #region Acceptance Criteria: All 4xx/5xx use Problem Details

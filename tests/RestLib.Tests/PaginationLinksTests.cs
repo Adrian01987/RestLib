@@ -2,13 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using RestLib.Abstractions;
-using RestLib.Configuration;
 using RestLib.Pagination;
 using RestLib.Tests.Fakes;
 using Xunit;
@@ -29,38 +23,15 @@ public class PaginationLinksTests : IDisposable
     {
         _repository = new PaginationTestRepository();
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+            .WithOptions(options =>
             {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib(options =>
-                    {
-                        options.DefaultPageSize = 10;
-                        options.MaxPageSize = 100;
-                        options.IncludePaginationLinks = true;
-                    });
-                        services.AddSingleton<IRepository<ProductEntity, Guid>>(_repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                    {
-                        endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
-                      {
-                          config.AllowAnonymous();
-                      });
-                    });
-                    });
+                options.DefaultPageSize = 10;
+                options.MaxPageSize = 100;
+                options.IncludePaginationLinks = true;
             })
+            .WithEndpoint(config => config.AllowAnonymous())
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
     }
 
     public void Dispose()

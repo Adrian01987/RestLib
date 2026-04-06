@@ -2,15 +2,9 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using RestLib.Abstractions;
-using RestLib.Configuration;
 using RestLib.InMemory;
-using RestLib.Sorting;
+using RestLib.Tests.Fakes;
 using Xunit;
 
 namespace RestLib.Tests;
@@ -43,40 +37,18 @@ public class SortingTests : IDisposable
             e => e.Id,
             Guid.NewGuid);
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<SortableEntity, Guid>(_repository, "/api/sortable")
+            .WithEndpoint(config =>
             {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib();
-                        services.AddSingleton<IRepository<SortableEntity, Guid>>(_repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                    {
-                        endpoints.MapRestLib<SortableEntity, Guid>("/api/sortable", config =>
-                      {
-                          config.AllowAnonymous();
-                          config.AllowSorting(
-                            p => p.Price,
-                            p => p.Name,
-                            p => p.Category,
-                            p => p.Quantity
-                        );
-                          config.AllowFiltering(p => p.Category);
-                      });
-                    });
-                    });
+                config.AllowAnonymous();
+                config.AllowSorting(
+                    p => p.Price,
+                    p => p.Name,
+                    p => p.Category,
+                    p => p.Quantity);
+                config.AllowFiltering(p => p.Category);
             })
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
 
         SeedData();
     }
@@ -304,35 +276,14 @@ public class SortingDefaultSortTests : IDisposable
             e => e.Id,
             Guid.NewGuid);
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<SortableEntity, Guid>(_repository, "/api/sorted")
+            .WithEndpoint(config =>
             {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib();
-                        services.AddSingleton<IRepository<SortableEntity, Guid>>(_repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                    {
-                        endpoints.MapRestLib<SortableEntity, Guid>("/api/sorted", config =>
-                      {
-                          config.AllowAnonymous();
-                          config.AllowSorting(p => p.Price, p => p.Name);
-                          config.DefaultSort("name:asc");
-                      });
-                    });
-                    });
+                config.AllowAnonymous();
+                config.AllowSorting(p => p.Price, p => p.Name);
+                config.DefaultSort("name:asc");
             })
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
 
         _repository.Seed([
             new SortableEntity { Id = Guid.NewGuid(), Name = "Cherry", Price = 4.00m, Category = "Fruit", Quantity = 60 },
@@ -399,34 +350,14 @@ public class SortingNoConfigTests : IDisposable
             e => e.Id,
             Guid.NewGuid);
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        (_host, _client) = new TestHostBuilder<SortableEntity, Guid>(_repository, "/api/unsorted")
+            .WithEndpoint(config =>
             {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib();
-                        services.AddSingleton<IRepository<SortableEntity, Guid>>(_repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                    {
-                        endpoints.MapRestLib<SortableEntity, Guid>("/api/unsorted", config =>
-                      {
-                          config.AllowAnonymous();
-                          // No AllowSorting call
-                      });
-                    });
-                    });
+                config.AllowAnonymous();
+
+                // No AllowSorting call
             })
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
 
         _repository.Seed([
             new SortableEntity { Id = Guid.NewGuid(), Name = "Banana", Price = 1.50m, Category = "Fruit", Quantity = 100 },

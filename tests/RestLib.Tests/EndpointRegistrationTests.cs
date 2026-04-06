@@ -1,12 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using RestLib.Abstractions;
 using RestLib.Tests.Fakes;
 using Xunit;
 
@@ -26,33 +21,9 @@ public class EndpointRegistrationTests : IDisposable
     {
         _repository = new TestEntityRepository();
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
-            {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
-                    {
-                        services.AddRestLib();
-                        services.AddSingleton<IRepository<TestEntity, Guid>>(_repository);
-                        services.AddRouting();
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                        {
-                            endpoints.MapRestLib<TestEntity, Guid>("/api/test-entities", config =>
-                            {
-                                config.AllowAnonymous();
-                            });
-                        });
-                    });
-            })
+        (_host, _client) = new TestHostBuilder<TestEntity, Guid>(_repository, "/api/test-entities")
+            .WithEndpoint(config => config.AllowAnonymous())
             .Build();
-
-        _host.Start();
-        _client = _host.GetTestClient();
     }
 
     #region GET /api/test-entities (GetAll)
