@@ -49,7 +49,7 @@ public static class EntityValidator
         List<ValidationResult> validationResults,
         JsonNamingPolicy? namingPolicy)
     {
-        var errors = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        var errors = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var result in validationResults)
         {
@@ -65,18 +65,17 @@ public static class EntityValidator
                     ? "_entity"
                     : ConvertFieldName(memberName, namingPolicy);
 
-                if (errors.TryGetValue(fieldName, out var existingErrors))
+                if (!errors.TryGetValue(fieldName, out var errorList))
                 {
-                    errors[fieldName] = existingErrors.Concat(new[] { message }).ToArray();
+                    errorList = new List<string>();
+                    errors[fieldName] = errorList;
                 }
-                else
-                {
-                    errors[fieldName] = new[] { message };
-                }
+
+                errorList.Add(message);
             }
         }
 
-        return errors;
+        return errors.ToDictionary(e => e.Key, e => e.Value.ToArray(), StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>
