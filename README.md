@@ -526,6 +526,10 @@ Key decisions are documented as Architecture Decision Records:
 | [ADR-011](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/011-filtering.md) | Query parameter filtering |
 | [ADR-012](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/012-hook-pipeline.md) | Hook pipeline for extensibility |
 | [ADR-013](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/013-filter-operators.md) | Filter operators beyond equality |
+| [ADR-014](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/014-etag-support.md) | ETag support for caching and concurrency |
+| [ADR-015](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/015-data-annotation-validation.md) | Data Annotation validation |
+| [ADR-016](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/016-json-resource-configuration.md) | JSON resource configuration |
+| [ADR-017](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/017-rate-limiting.md) | Rate limiting integration |
 
 ## Packages
 
