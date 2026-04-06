@@ -198,7 +198,6 @@ internal static class BatchProcessor
     /// <param name="itemsElement">The raw JSON items array.</param>
     /// <param name="httpContext">The current HTTP context.</param>
     /// <param name="repository">The entity repository.</param>
-    /// <param name="batchRepository">The optional batch-optimized repository.</param>
     /// <param name="pipeline">The optional hook pipeline.</param>
     /// <param name="options">The global RestLib options.</param>
     /// <param name="jsonOptions">The JSON serializer options.</param>
@@ -208,7 +207,6 @@ internal static class BatchProcessor
         JsonElement itemsElement,
         HttpContext httpContext,
         IRepository<TEntity, TKey> repository,
-        IBatchRepository<TEntity, TKey>? batchRepository,
         HookPipeline<TEntity, TKey>? pipeline,
         RestLibOptions options,
         JsonSerializerOptions jsonOptions,
@@ -243,7 +241,7 @@ internal static class BatchProcessor
         }
 
         await BatchActionExecutor.ExecuteDeletesAsync(
-            validKeys, results, httpContext, repository, batchRepository, pipeline, options, ct);
+            validKeys, results, httpContext, repository, pipeline, options, ct);
 
         return new BatchResponse { Items = results.ToList()! };
     }

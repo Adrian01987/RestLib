@@ -1919,7 +1919,7 @@ public class BatchOperationsTests : IDisposable
 
   [Fact]
   [Trait("Category", "Story8.9")]
-  public async Task BatchDelete_UsesBatchRepository_WhenAvailable()
+  public async Task BatchDelete_UsesIndividualDeletes_EvenWhenBatchRepositoryAvailable()
   {
     // Arrange
     var id1 = Guid.NewGuid();
@@ -1945,9 +1945,9 @@ public class BatchOperationsTests : IDisposable
     // Act
     var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
 
-    // Assert
+    // Assert — batch delete always uses individual DeleteAsync for per-item 404 detection
     response.StatusCode.Should().Be(HttpStatusCode.OK);
-    _batchSpy!.DeleteManyCallCount.Should().Be(1);
+    _batchSpy!.DeleteManyCallCount.Should().Be(0);
   }
 
   [Fact]

@@ -457,8 +457,8 @@ internal static class BatchActionExecutor
 
     /// <summary>
     /// Persists deletes and runs AfterPersist hooks.
-    /// Uses the batch repository bulk path when available; otherwise falls back
-    /// to individual <see cref="IRepository{TEntity, TKey}.DeleteAsync"/> calls.
+    /// Always uses individual <see cref="IRepository{TEntity, TKey}.DeleteAsync"/> calls
+    /// to ensure per-item 404 detection when a key does not exist.
     /// </summary>
     /// <typeparam name="TEntity">The entity type.</typeparam>
     /// <typeparam name="TKey">The key type.</typeparam>
@@ -466,7 +466,6 @@ internal static class BatchActionExecutor
     /// <param name="results">The results array to populate.</param>
     /// <param name="httpContext">The current HTTP context.</param>
     /// <param name="repository">The entity repository.</param>
-    /// <param name="batchRepository">The optional batch-optimized repository.</param>
     /// <param name="pipeline">The optional hook pipeline.</param>
     /// <param name="options">The global RestLib options.</param>
     /// <param name="ct">Cancellation token.</param>
@@ -475,7 +474,6 @@ internal static class BatchActionExecutor
         BatchItemResult?[] results,
         HttpContext httpContext,
         IRepository<TEntity, TKey> repository,
-        IBatchRepository<TEntity, TKey>? batchRepository,
         HookPipeline<TEntity, TKey>? pipeline,
         RestLibOptions options,
         CancellationToken ct)
@@ -487,92 +485,45 @@ internal static class BatchActionExecutor
             return;
         }
 
-        if (batchRepository is not null)
+        foreach (var (index, key) in validKeys)
         {
             try
             {
-                var keysToDelete = validKeys.Select(v => v.Key).ToList();
-                await batchRepository.DeleteManyAsync(keysToDelete, ct);
-
-                // DeleteManyAsync returns total count — we don't know which individual
-                // keys were not found. Mark all as succeeded (204) since the bulk
-                // operation was accepted. For fine-grained 404 detection, callers
-                // should fall back to the single-op path (i.e., don't register
-                // IBatchRepository if per-item 404s are required).
-                for (var j = 0; j < validKeys.Count; j++)
+                var deleted = await repository.DeleteAsync(key, ct);
+                if (!deleted)
                 {
-                    var (index, key) = validKeys[j];
-
-                    if (pipeline is not null)
-                    {
-                        var afterContext = pipeline.CreateContext(
-                            httpContext, RestLibOperation.BatchDelete, resourceId: key);
-                        var shouldContinue = await pipeline.ExecuteAfterPersistAsync(afterContext);
-                        if (!shouldContinue)
-                        {
-                            results[index] = BuildHookResultItem(index, afterContext.EarlyResult, httpContext);
-                            continue;
-                        }
-                    }
-
+                    var entityName = typeof(TEntity).Name;
                     results[index] = new BatchItemResult
                     {
                         Index = index,
-                        Status = StatusCodes.Status204NoContent
+                        Status = StatusCodes.Status404NotFound,
+                        Error = ProblemDetailsFactory.NotFound(entityName, key!, httpContext.Request.Path)
                     };
+                    continue;
                 }
+
+                if (pipeline is not null)
+                {
+                    var afterContext = pipeline.CreateContext(
+                        httpContext, RestLibOperation.BatchDelete, resourceId: key);
+                    var shouldContinue = await pipeline.ExecuteAfterPersistAsync(afterContext);
+                    if (!shouldContinue)
+                    {
+                        results[index] = BuildHookResultItem(index, afterContext.EarlyResult, httpContext);
+                        continue;
+                    }
+                }
+
+                results[index] = new BatchItemResult
+                {
+                    Index = index,
+                    Status = StatusCodes.Status204NoContent
+                };
             }
             catch (Exception ex)
             {
-                foreach (var (index, key) in validKeys)
-                {
-                    results[index] = await HandleItemErrorAsync(
-                        index, ex, httpContext, RestLibOperation.BatchDelete, pipeline, options, resourceId: key);
-                }
-            }
-        }
-        else
-        {
-            foreach (var (index, key) in validKeys)
-            {
-                try
-                {
-                    var deleted = await repository.DeleteAsync(key, ct);
-                    if (!deleted)
-                    {
-                        var entityName = typeof(TEntity).Name;
-                        results[index] = new BatchItemResult
-                        {
-                            Index = index,
-                            Status = StatusCodes.Status404NotFound,
-                            Error = ProblemDetailsFactory.NotFound(entityName, key!, httpContext.Request.Path)
-                        };
-                        continue;
-                    }
-
-                    if (pipeline is not null)
-                    {
-                        var afterContext = pipeline.CreateContext(
-                            httpContext, RestLibOperation.BatchDelete, resourceId: key);
-                        var shouldContinue = await pipeline.ExecuteAfterPersistAsync(afterContext);
-                        if (!shouldContinue)
-                        {
-                            results[index] = BuildHookResultItem(index, afterContext.EarlyResult, httpContext);
-                            continue;
-                        }
-                    }
-
-                    results[index] = new BatchItemResult
-                    {
-                        Index = index,
-                        Status = StatusCodes.Status204NoContent
-                    };
-                }
-                catch (Exception ex)
-                {
-                    results[index] = await HandleItemErrorAsync(
-                        index, ex, httpContext, RestLibOperation.BatchDelete, pipeline, options, resourceId: key);
-                }
+                results[index] = await HandleItemErrorAsync(
+                    index, ex, httpContext, RestLibOperation.BatchDelete, pipeline, options, resourceId: key);
             }
         }
     }
