@@ -14,6 +14,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add RestLib services with in-memory repositories (pre-seeded)
 // EnableETagSupport is a global option — applies to all resources (Categories, Products, and Orders)
+// Validation is enabled by default (EnableValidation = true). The sample models use Data Annotation
+// attributes ([Required], [Range], [StringLength], [EmailAddress]) so invalid payloads return a
+// 400 Problem Details response with per-field errors. Try it:
+//   curl -X POST http://localhost:5000/api/products -H 'Content-Type: application/json' -d '{}'
 builder.Services.AddRestLib(opts => { opts.EnableETagSupport = true; });
 builder.Services.AddRestLibInMemoryWithData(c => c.Id, Guid.NewGuid, SeedData.GetCategories());
 builder.Services.AddRestLibInMemoryWithData(p => p.Id, Guid.NewGuid, SeedData.GetProducts());
