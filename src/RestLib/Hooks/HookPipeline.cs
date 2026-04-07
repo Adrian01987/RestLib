@@ -152,6 +152,13 @@ internal sealed class HookPipeline<TEntity, TKey>(RestLibHooks<TEntity, TKey> ho
             _sharedItems[item.Key] = item.Value;
         }
 
+        // If the pipeline continues, clear EarlyResult so a stale value from this
+        // stage does not leak into subsequent stages (see improvement #16).
+        if (context.ShouldContinue)
+        {
+            context.EarlyResult = null;
+        }
+
         return context.ShouldContinue;
     }
 }

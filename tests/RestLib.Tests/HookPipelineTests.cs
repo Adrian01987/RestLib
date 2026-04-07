@@ -617,6 +617,42 @@ public class HookPipelineTests
         content.Should().Contain("Custom response");
     }
 
+    [Fact]
+    public async Task StaleEarlyResult_FromPreviousStage_DoesNotLeakIntoNextStage()
+    {
+        // Arrange — OnRequestReceived sets EarlyResult but leaves ShouldContinue = true
+        // (user mistake). BeforePersist then short-circuits without setting EarlyResult.
+        // Without the fix, the stale 403 from OnRequestReceived would be returned.
+        // With the fix, the stale EarlyResult is cleared, so the 500 fallback is returned.
+        var repository = new HookTestRepository();
+
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnRequestReceived = async ctx =>
+        {
+            // Set EarlyResult but forget to set ShouldContinue = false
+            ctx.EarlyResult = Results.StatusCode(StatusCodes.Status403Forbidden);
+            await Task.CompletedTask;
+        };
+            hooks.BeforePersist = async ctx =>
+        {
+            // Short-circuit without setting a new EarlyResult
+            ctx.ShouldContinue = false;
+            await Task.CompletedTask;
+        };
+        });
+
+        var client = host.GetTestClient();
+        var entity = new HookTestEntity { Name = "Test" };
+
+        // Act
+        var response = await client.PostAsJsonAsync("/api/items", entity);
+
+        // Assert — should NOT be 403 (that was the stale EarlyResult from OnRequestReceived).
+        // Should be 500 (the fallback when ShouldContinue=false but EarlyResult is null).
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
+
     #endregion
 
     #region Item Sharing Tests
