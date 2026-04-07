@@ -1865,7 +1865,7 @@ public class BatchOperationsTests : IDisposable
 
     [Fact]
     [Trait("Category", "Story8.9")]
-    public async Task BatchDelete_UsesIndividualDeletes_EvenWhenBatchRepositoryAvailable()
+    public async Task BatchDelete_UsesBatchRepository_WhenAvailable()
     {
         // Arrange
         var id1 = Guid.NewGuid();
@@ -1891,9 +1891,9 @@ public class BatchOperationsTests : IDisposable
         // Act
         var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
 
-        // Assert — batch delete always uses individual DeleteAsync for per-item 404 detection
+        // Assert — batch delete uses DeleteManyAsync when IBatchRepository is available
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        _batchSpy!.DeleteManyCallCount.Should().Be(0);
+        _batchSpy!.DeleteManyCallCount.Should().Be(1);
     }
 
     [Fact]
@@ -2438,6 +2438,94 @@ public class BatchOperationsTests : IDisposable
         // Second item: failed pre-persist validation (result populated before bulk throw)
         items[1].GetProperty("index").GetInt32().Should().Be(1);
         items[1].GetProperty("status").GetInt32().Should().Be(400);
+    }
+
+    [Fact]
+    [Trait("Category", "Story8.10")]
+    public async Task BatchDelete_BulkThrows_FallsBackToIndividual_AllItemsSucceed()
+    {
+        // Arrange — seed entities, bulk DeleteManyAsync will throw; individual DeleteAsync works
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+        _repository.Seed(new[]
+        {
+            new BatchEntity { Id = id1, Name = "Del1", Price = 1m },
+            new BatchEntity { Id = id2, Name = "Del2", Price = 2m }
+        });
+
+        CreateHostWithThrowingBulkRepository(config =>
+        {
+            config.AllowAnonymous();
+            config.EnableBatch();
+        });
+
+        var payload = new
+        {
+            action = "delete",
+            items = new[] { id1, id2 }
+        };
+
+        // Act
+        var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+        // Assert — both items deleted successfully via individual fallback
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items");
+        items.GetArrayLength().Should().Be(2);
+
+        items[0].GetProperty("index").GetInt32().Should().Be(0);
+        items[0].GetProperty("status").GetInt32().Should().Be(204);
+
+        items[1].GetProperty("index").GetInt32().Should().Be(1);
+        items[1].GetProperty("status").GetInt32().Should().Be(204);
+    }
+
+    [Fact]
+    [Trait("Category", "Story8.10")]
+    public async Task BatchDelete_BulkPath_MixedExistence_Returns207With404ForMissing()
+    {
+        // Arrange — one key exists, one does not; bulk path pre-checks existence
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+        _repository.Seed(new[]
+        {
+            new BatchEntity { Id = id1, Name = "Exists", Price = 1m }
+        });
+
+        // id2 does NOT exist in the repository
+
+        CreateHostWithBatchRepository(config =>
+        {
+            config.AllowAnonymous();
+            config.EnableBatch();
+        });
+
+        var payload = new
+        {
+            action = "delete",
+            items = new[] { id1, id2 }
+        };
+
+        // Act
+        var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+        // Assert — mixed results: existing item deleted (204), missing item gets 404
+        response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items");
+        items.GetArrayLength().Should().Be(2);
+
+        items[0].GetProperty("index").GetInt32().Should().Be(0);
+        items[0].GetProperty("status").GetInt32().Should().Be(204);
+
+        items[1].GetProperty("index").GetInt32().Should().Be(1);
+        items[1].GetProperty("status").GetInt32().Should().Be(404);
+
+        // DeleteManyAsync should have been called once (for the existing key only)
+        _batchSpy!.DeleteManyCallCount.Should().Be(1);
     }
 
     #endregion
