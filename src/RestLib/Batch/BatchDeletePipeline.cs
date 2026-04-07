@@ -68,13 +68,16 @@ internal sealed class BatchDeletePipeline<TEntity, TKey>
         BatchContext<TEntity, TKey> context)
     {
         // Pre-check existence so we can produce per-item 404s before calling DeleteManyAsync.
+        // Use GetByIdsAsync for a single bulk fetch instead of N individual GetByIdAsync calls.
+        var keys = validItems.Select(v => v.Key).ToList();
+        var existingEntities = await context.BatchRepository!.GetByIdsAsync(keys, context.CancellationToken);
+
         var itemsToDelete = new List<(int Index, TKey Key)>();
         var entityName = typeof(TEntity).Name;
 
         foreach (var (index, key) in validItems)
         {
-            var existing = await context.Repository.GetByIdAsync(key, context.CancellationToken);
-            if (existing is null)
+            if (!existingEntities.ContainsKey(key))
             {
                 results[index] = new BatchItemResult
                 {
@@ -93,8 +96,8 @@ internal sealed class BatchDeletePipeline<TEntity, TKey>
             return;
         }
 
-        var keys = itemsToDelete.Select(v => v.Key).ToList();
-        await context.BatchRepository!.DeleteManyAsync(keys, context.CancellationToken);
+        var keysToDelete = itemsToDelete.Select(v => v.Key).ToList();
+        await context.BatchRepository!.DeleteManyAsync(keysToDelete, context.CancellationToken);
 
         // Run AfterPersist hooks and build 204 results for each deleted item.
         foreach (var (index, key) in itemsToDelete)

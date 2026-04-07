@@ -238,6 +238,25 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     }
 
     /// <inheritdoc />
+    public Task<IReadOnlyDictionary<TKey, TEntity>> GetByIdsAsync(
+        IReadOnlyList<TKey> ids,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(ids);
+
+        var result = new Dictionary<TKey, TEntity>(ids.Count);
+        foreach (var id in ids)
+        {
+            if (_store.TryGetValue(id, out var entity))
+            {
+                result[id] = entity;
+            }
+        }
+
+        return Task.FromResult<IReadOnlyDictionary<TKey, TEntity>>(result);
+    }
+
+    /// <inheritdoc />
     public Task<IReadOnlyList<TEntity>> PatchManyAsync(
         IReadOnlyList<(TKey Id, JsonElement PatchDocument)> patches,
         CancellationToken ct = default)

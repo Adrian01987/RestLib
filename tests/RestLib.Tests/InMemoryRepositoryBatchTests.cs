@@ -263,4 +263,88 @@ public partial class InMemoryRepositoryTests
     }
 
     #endregion
+
+    #region GetByIdsAsync Tests
+
+    [Fact]
+    public async Task GetByIdsAsync_WithExistingIds_ReturnsAllEntities()
+    {
+        // Arrange
+        var repository = CreateRepository();
+        var entity1 = CreateEntity("Entity1", 1);
+        var entity2 = CreateEntity("Entity2", 2);
+        var entity3 = CreateEntity("Entity3", 3);
+        await repository.CreateManyAsync(new List<TestEntity> { entity1, entity2, entity3 });
+
+        // Act
+        var result = await repository.GetByIdsAsync(new List<Guid> { entity1.Id, entity2.Id, entity3.Id });
+
+        // Assert
+        result.Should().HaveCount(3);
+        result[entity1.Id].Should().Be(entity1);
+        result[entity2.Id].Should().Be(entity2);
+        result[entity3.Id].Should().Be(entity3);
+    }
+
+    [Fact]
+    public async Task GetByIdsAsync_WithMixOfExistingAndMissing_ReturnsOnlyExisting()
+    {
+        // Arrange
+        var repository = CreateRepository();
+        var entity1 = CreateEntity("Entity1", 1);
+        var entity2 = CreateEntity("Entity2", 2);
+        await repository.CreateManyAsync(new List<TestEntity> { entity1, entity2 });
+        var missingId = Guid.NewGuid();
+
+        // Act
+        var result = await repository.GetByIdsAsync(new List<Guid> { entity1.Id, missingId, entity2.Id });
+
+        // Assert
+        result.Should().HaveCount(2);
+        result[entity1.Id].Should().Be(entity1);
+        result[entity2.Id].Should().Be(entity2);
+        result.Should().NotContainKey(missingId);
+    }
+
+    [Fact]
+    public async Task GetByIdsAsync_WithAllMissing_ReturnsEmptyDictionary()
+    {
+        // Arrange
+        var repository = CreateRepository();
+
+        // Act
+        var result = await repository.GetByIdsAsync(new List<Guid> { Guid.NewGuid(), Guid.NewGuid() });
+
+        // Assert
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetByIdsAsync_WithEmptyList_ReturnsEmptyDictionary()
+    {
+        // Arrange
+        var repository = CreateRepository();
+        await repository.CreateAsync(CreateEntity("Entity", 1));
+
+        // Act
+        var result = await repository.GetByIdsAsync(new List<Guid>());
+
+        // Assert
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetByIdsAsync_WithNullIds_ThrowsArgumentNullException()
+    {
+        // Arrange
+        var repository = CreateRepository();
+
+        // Act
+        var act = () => repository.GetByIdsAsync(null!);
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
+    #endregion
 }

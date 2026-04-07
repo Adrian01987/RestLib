@@ -136,6 +136,11 @@ public class ThrowingBulkBatchRepository : IBatchRepository<BatchEntity, Guid>
     /// <inheritdoc />
     public Task<int> DeleteManyAsync(IReadOnlyList<Guid> keys, CancellationToken ct = default)
         => throw new InvalidOperationException("Simulated bulk delete failure");
+
+    /// <inheritdoc />
+    public Task<IReadOnlyDictionary<Guid, BatchEntity>> GetByIdsAsync(
+        IReadOnlyList<Guid> ids, CancellationToken ct = default)
+        => throw new InvalidOperationException("Simulated bulk get-by-ids failure");
 }
 
 /// <summary>

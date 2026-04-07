@@ -53,4 +53,19 @@ public interface IBatchRepository<TEntity, TKey>
     Task<int> DeleteManyAsync(
         IReadOnlyList<TKey> keys,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Retrieves multiple entities by their keys in a single operation.
+    /// Used by batch pipelines to avoid N+1 <c>GetByIdAsync</c> calls
+    /// when checking existence or fetching originals before persistence.
+    /// </summary>
+    /// <param name="ids">The keys of the entities to retrieve.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>
+    /// A dictionary mapping each found key to its entity.
+    /// Keys that do not exist in the store are omitted from the result.
+    /// </returns>
+    Task<IReadOnlyDictionary<TKey, TEntity>> GetByIdsAsync(
+        IReadOnlyList<TKey> ids,
+        CancellationToken ct = default);
 }

@@ -74,15 +74,18 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
         BatchItemResult?[] results,
         BatchContext<TEntity, TKey> context)
     {
-        // Pre-persist validation: fetch originals, preview merges, validate before persisting
+        // Pre-persist validation: bulk-fetch originals, preview merges, validate before persisting.
+        // Uses GetByIdsAsync for a single bulk fetch instead of N individual GetByIdAsync calls.
         var itemsToPersist = validItems;
         if (context.Options.EnableValidation)
         {
+            var ids = validItems.Select(v => v.Id).ToList();
+            var originals = await context.BatchRepository!.GetByIdsAsync(ids, context.CancellationToken);
+
             itemsToPersist = new List<(int Index, TKey Id, JsonElement Body)>();
             foreach (var (index, id, body) in validItems)
             {
-                var original = await context.Repository.GetByIdAsync(id, context.CancellationToken);
-                if (original is null)
+                if (!originals.TryGetValue(id, out var original))
                 {
                     var entityName = typeof(TEntity).Name;
                     results[index] = new BatchItemResult

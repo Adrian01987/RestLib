@@ -427,6 +427,9 @@ public class BatchRepositorySpy<TEntity, TKey> : IBatchRepository<TEntity, TKey>
     /// <summary>Gets the number of times <c>DeleteManyAsync</c> was called.</summary>
     public int DeleteManyCallCount { get; private set; }
 
+    /// <summary>Gets the number of times <c>GetByIdsAsync</c> was called.</summary>
+    public int GetByIdsCallCount { get; private set; }
+
     /// <inheritdoc />
     public Task<IReadOnlyList<TEntity>> CreateManyAsync(IReadOnlyList<TEntity> entities, CancellationToken ct = default)
     {
@@ -455,5 +458,14 @@ public class BatchRepositorySpy<TEntity, TKey> : IBatchRepository<TEntity, TKey>
     {
         DeleteManyCallCount++;
         return _inner.DeleteManyAsync(keys, ct);
+    }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyDictionary<TKey, TEntity>> GetByIdsAsync(
+        IReadOnlyList<TKey> ids,
+        CancellationToken ct = default)
+    {
+        GetByIdsCallCount++;
+        return _inner.GetByIdsAsync(ids, ct);
     }
 }
