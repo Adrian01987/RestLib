@@ -1,0 +1,53 @@
+using System.Text.Json;
+using Microsoft.AspNetCore.Http;
+using RestLib.Abstractions;
+using RestLib.Configuration;
+using RestLib.Hooks;
+
+namespace RestLib.Batch;
+
+/// <summary>
+/// Holds all shared services and state needed during batch processing,
+/// avoiding repetitive parameter passing across pipeline methods.
+/// </summary>
+/// <typeparam name="TEntity">The entity type.</typeparam>
+/// <typeparam name="TKey">The key type.</typeparam>
+internal sealed class BatchContext<TEntity, TKey>
+    where TEntity : class
+    where TKey : notnull
+{
+    /// <summary>
+    /// Gets the current HTTP context.
+    /// </summary>
+    internal required HttpContext HttpContext { get; init; }
+
+    /// <summary>
+    /// Gets the entity repository.
+    /// </summary>
+    internal required IRepository<TEntity, TKey> Repository { get; init; }
+
+    /// <summary>
+    /// Gets the optional batch-optimized repository.
+    /// </summary>
+    internal IBatchRepository<TEntity, TKey>? BatchRepository { get; init; }
+
+    /// <summary>
+    /// Gets the optional hook pipeline.
+    /// </summary>
+    internal HookPipeline<TEntity, TKey>? Pipeline { get; init; }
+
+    /// <summary>
+    /// Gets the global RestLib options.
+    /// </summary>
+    internal required RestLibOptions Options { get; init; }
+
+    /// <summary>
+    /// Gets the JSON serializer options.
+    /// </summary>
+    internal required JsonSerializerOptions JsonOptions { get; init; }
+
+    /// <summary>
+    /// Gets the cancellation token.
+    /// </summary>
+    internal required CancellationToken CancellationToken { get; init; }
+}

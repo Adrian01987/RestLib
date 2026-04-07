@@ -181,10 +181,8 @@ internal static class EndpointHelpers
     /// </summary>
     /// <param name="httpContext">The current HTTP context.</param>
     /// <returns>The resolved ETag generator.</returns>
-    internal static IETagGenerator ResolveETagGenerator(HttpContext httpContext)
-    {
-        return httpContext.RequestServices.GetRequiredService<IETagGenerator>();
-    }
+    internal static IETagGenerator ResolveETagGenerator(HttpContext httpContext) =>
+        httpContext.RequestServices.GetRequiredService<IETagGenerator>();
 
     /// <summary>
     /// Gets the JSON serializer options from the service provider,

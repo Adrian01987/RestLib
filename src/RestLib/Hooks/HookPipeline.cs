@@ -7,21 +7,15 @@ namespace RestLib.Hooks;
 /// </summary>
 /// <typeparam name="TEntity">The entity type being processed.</typeparam>
 /// <typeparam name="TKey">The key type of the entity.</typeparam>
-internal sealed class HookPipeline<TEntity, TKey> where TEntity : class where TKey : notnull
+/// <remarks>
+/// Initializes a new instance of the <see cref="HookPipeline{TEntity, TKey}"/> class
+/// with the specified hook definitions.
+/// </remarks>
+/// <param name="hooks">The hook definitions to execute during request processing.</param>
+internal sealed class HookPipeline<TEntity, TKey>(RestLibHooks<TEntity, TKey> hooks) where TEntity : class where TKey : notnull
 {
-    private readonly RestLibHooks<TEntity, TKey> _hooks;
-    private readonly IDictionary<string, object?> _sharedItems;
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="HookPipeline{TEntity, TKey}"/> class
-    /// with the specified hook definitions.
-    /// </summary>
-    /// <param name="hooks">The hook definitions to execute during request processing.</param>
-    public HookPipeline(RestLibHooks<TEntity, TKey> hooks)
-    {
-        _hooks = hooks;
-        _sharedItems = new Dictionary<string, object?>();
-    }
+    private readonly RestLibHooks<TEntity, TKey> _hooks = hooks;
+    private readonly IDictionary<string, object?> _sharedItems = new Dictionary<string, object?>();
 
     /// <summary>
     /// Creates a new hook context for the current request.

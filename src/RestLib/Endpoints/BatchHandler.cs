@@ -127,21 +127,29 @@ internal static class BatchHandler
             var batchRepository = httpContext.RequestServices
                 .GetService<IBatchRepository<TEntity, TKey>>();
 
-            // Dispatch to the appropriate processor
+            // Build the shared batch context
+            var batchContext = new BatchContext<TEntity, TKey>
+            {
+                HttpContext = httpContext,
+                Repository = repository,
+                BatchRepository = batchRepository,
+                Pipeline = pipeline,
+                Options = options,
+                JsonOptions = jsonOptions,
+                CancellationToken = ct
+            };
+
+            // Dispatch to the appropriate pipeline
             var response = action switch
             {
-                BatchAction.Create => await BatchProcessor.ProcessCreateAsync(
-                    envelope.Items, httpContext, repository, batchRepository,
-                    pipeline, options, jsonOptions, ct),
-                BatchAction.Update => await BatchProcessor.ProcessUpdateAsync(
-                    envelope.Items, httpContext, repository, batchRepository,
-                    pipeline, options, jsonOptions, ct),
-                BatchAction.Patch => await BatchProcessor.ProcessPatchAsync(
-                    envelope.Items, httpContext, repository, batchRepository,
-                    pipeline, options, jsonOptions, ct),
-                BatchAction.Delete => await BatchProcessor.ProcessDeleteAsync(
-                    envelope.Items, httpContext, repository,
-                    pipeline, options, jsonOptions, ct),
+                BatchAction.Create => await new BatchCreatePipeline<TEntity, TKey>()
+                    .ProcessAsync(envelope.Items, batchContext),
+                BatchAction.Update => await new BatchUpdatePipeline<TEntity, TKey>()
+                    .ProcessAsync(envelope.Items, batchContext),
+                BatchAction.Patch => await new BatchPatchPipeline<TEntity, TKey>()
+                    .ProcessAsync(envelope.Items, batchContext),
+                BatchAction.Delete => await new BatchDeletePipeline<TEntity, TKey>()
+                    .ProcessAsync(envelope.Items, batchContext),
                 _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
             };
 
