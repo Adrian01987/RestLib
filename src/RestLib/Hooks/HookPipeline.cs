@@ -153,7 +153,7 @@ internal sealed class HookPipeline<TEntity, TKey>(RestLibHooks<TEntity, TKey> ho
         }
 
         // If the pipeline continues, clear EarlyResult so a stale value from this
-        // stage does not leak into subsequent stages (see improvement #16).
+        // stage does not leak into subsequent stages.
         if (context.ShouldContinue)
         {
             context.EarlyResult = null;

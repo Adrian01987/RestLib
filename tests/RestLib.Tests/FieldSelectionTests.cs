@@ -721,3 +721,70 @@ public class FieldSelectionJsonConfigTests : IDisposable
         errors.TryGetProperty("category", out _).Should().BeTrue();
     }
 }
+
+/// <summary>
+/// Unit tests for <see cref="FieldProjector"/> cache key correctness.
+/// </summary>
+public class FieldProjectorCacheTests
+{
+    /// <summary>
+    /// Custom naming policy used to verify that different instances of the same
+    /// policy type produce cache hits in the <see cref="FieldProjector"/> accessor cache.
+    /// </summary>
+    private sealed class TestSnakeCasePolicy : JsonNamingPolicy
+    {
+        /// <inheritdoc />
+        public override string ConvertName(string name) =>
+            SnakeCaseLower.ConvertName(name);
+    }
+
+    [Fact]
+    [Trait("Category", "Story7.1")]
+    public void Project_WithDifferentPolicyInstances_OfSameType_ProducesCorrectResults()
+    {
+        // Arrange — two distinct instances of the same custom naming policy
+        var policyA = new TestSnakeCasePolicy();
+        var policyB = new TestSnakeCasePolicy();
+        ReferenceEquals(policyA, policyB).Should().BeFalse("test requires distinct instances");
+
+        var optionsA = new JsonSerializerOptions { PropertyNamingPolicy = policyA };
+        var optionsB = new JsonSerializerOptions { PropertyNamingPolicy = policyB };
+
+        var entity = new FieldSelectableEntity
+        {
+            Id = Guid.NewGuid(),
+            Name = "Widget",
+            Price = 9.99m,
+            Category = "Tools",
+            InternalNotes = "secret",
+            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+        };
+
+        var selectedFields = new List<SelectedField>
+        {
+            new() { PropertyName = "Name", QueryFieldName = "name" },
+            new() { PropertyName = "Price", QueryFieldName = "price" },
+        };
+
+        // Act — first call populates the cache; second call should hit the cache
+        var resultA = FieldProjector.Project(entity, selectedFields, optionsA);
+        var resultB = FieldProjector.Project(entity, selectedFields, optionsB);
+
+        // Assert — both projections return the same correct values
+        resultA.Should().NotBeNull();
+        resultB.Should().NotBeNull();
+
+        resultA!.Should().ContainKey("name");
+        resultA.Should().ContainKey("price");
+        resultA.Should().HaveCount(2);
+
+        resultB!.Should().ContainKey("name");
+        resultB.Should().ContainKey("price");
+        resultB.Should().HaveCount(2);
+
+        resultA["name"].GetString().Should().Be("Widget");
+        resultB["name"].GetString().Should().Be("Widget");
+        resultA["price"].GetDecimal().Should().Be(9.99m);
+        resultB["price"].GetDecimal().Should().Be(9.99m);
+    }
+}
