@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.OpenApi;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.OpenApi;
 using RestLib.Configuration;
+using RestLib.FieldSelection;
 
 namespace RestLib.Endpoints;
 
@@ -560,6 +561,35 @@ internal static class OpenApiEndpointConfiguration
                 ["401"] = CreateProblemDetailsResponse("Unauthorized - Authentication required"),
                 ["403"] = CreateProblemDetailsResponse("Forbidden - Insufficient permissions")
             };
+
+            return Task.CompletedTask;
+        });
+    }
+
+    /// <summary>
+    /// Adds an OpenAPI operation transformer that documents the <c>fields</c> query parameter
+    /// for field selection. Used by both GetAll and GetById endpoints.
+    /// </summary>
+    /// <param name="endpoint">The endpoint builder to attach the transformer to.</param>
+    /// <param name="properties">The configured field selection properties.</param>
+    internal static void AddFieldSelectionTransformer(
+        RouteHandlerBuilder endpoint,
+        IReadOnlyList<FieldPropertyConfiguration> properties)
+    {
+        var allowedFields = string.Join(", ", properties.Select(p => p.QueryFieldName));
+
+        endpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
+        {
+            operation.Parameters ??= [];
+            operation.Parameters.Add(new OpenApiParameter
+            {
+                Name = "fields",
+                In = ParameterLocation.Query,
+                Required = false,
+                Description = $"Comma-separated list of fields to include in the response. " +
+                    $"Allowed fields: {allowedFields}.",
+                Schema = new OpenApiSchema { Type = JsonSchemaType.String }
+            });
 
             return Task.CompletedTask;
         });

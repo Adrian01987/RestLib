@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.OpenApi;
@@ -178,24 +177,8 @@ public static class RestLibEndpointExtensions
             // Add OpenAPI documentation for fields parameter
             if (config.HasFieldSelection)
             {
-                getAllEndpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
-                {
-                    var allowedFields = string.Join(", ",
-                config.FieldSelectionConfiguration.Properties.Select(p => p.QueryFieldName));
-
-                    operation.Parameters ??= [];
-                    operation.Parameters.Add(new OpenApiParameter
-                    {
-                        Name = "fields",
-                        In = ParameterLocation.Query,
-                        Required = false,
-                        Description = $"Comma-separated list of fields to include in the response. " +
-                            $"Allowed fields: {allowedFields}.",
-                        Schema = new OpenApiSchema { Type = JsonSchemaType.String }
-                    });
-
-                    return Task.CompletedTask;
-                });
+                OpenApiEndpointConfiguration.AddFieldSelectionTransformer(
+                    getAllEndpoint, config.FieldSelectionConfiguration.Properties);
             }
         } // end GetAll
 
@@ -208,24 +191,8 @@ public static class RestLibEndpointExtensions
             // Add OpenAPI documentation for fields parameter
             if (config.HasFieldSelection)
             {
-                getByIdEndpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
-                {
-                    var allowedFields = string.Join(", ",
-                config.FieldSelectionConfiguration.Properties.Select(p => p.QueryFieldName));
-
-                    operation.Parameters ??= [];
-                    operation.Parameters.Add(new OpenApiParameter
-                    {
-                        Name = "fields",
-                        In = ParameterLocation.Query,
-                        Required = false,
-                        Description = $"Comma-separated list of fields to include in the response. " +
-                            $"Allowed fields: {allowedFields}.",
-                        Schema = new OpenApiSchema { Type = JsonSchemaType.String }
-                    });
-
-                    return Task.CompletedTask;
-                });
+                OpenApiEndpointConfiguration.AddFieldSelectionTransformer(
+                    getByIdEndpoint, config.FieldSelectionConfiguration.Properties);
             }
         } // end GetById
 
