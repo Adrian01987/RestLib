@@ -53,7 +53,8 @@ public static class CursorEncoder
             value = payload.Value;
             return true;
         }
-        catch
+        catch (Exception ex) when (ex is FormatException or JsonException or ArgumentException
+            or InvalidOperationException or NotSupportedException)
         {
             return false;
         }
@@ -79,7 +80,8 @@ public static class CursorEncoder
             using var doc = JsonDocument.Parse(json);
             return doc.RootElement.TryGetProperty("v", out _);
         }
-        catch
+        catch (Exception ex) when (ex is FormatException or JsonException or ArgumentException
+            or InvalidOperationException or NotSupportedException)
         {
             return false;
         }
