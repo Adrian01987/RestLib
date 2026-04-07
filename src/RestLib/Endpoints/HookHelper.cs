@@ -136,9 +136,18 @@ internal static class HookHelper
     {
         if (pipeline is null) return null;
 
-        var errorContext = pipeline.CreateErrorContext(httpContext, operation, exception, resourceId, entity);
-        var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
+        try
+        {
+            var errorContext = pipeline.CreateErrorContext(httpContext, operation, exception, resourceId, entity);
+            var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
 
-        return handled && errorResult is not null ? errorResult : null;
+            return handled && errorResult is not null ? errorResult : null;
+        }
+        catch (Exception)
+        {
+            // If the error hook itself throws, swallow the hook exception so the
+            // original exception (which the caller is about to rethrow) is preserved.
+            return null;
+        }
     }
 }

@@ -521,30 +521,38 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
     {
         if (context.Pipeline is not null)
         {
-            var errorContext = context.Pipeline.CreateErrorContext(
-                context.HttpContext, Operation, ex, resourceId, entity);
-            var (handled, errorResult) = await context.Pipeline.ExecuteOnErrorAsync(errorContext);
-
-            if (handled && errorResult is not null)
+            try
             {
-                var statusCode = errorResult is IStatusCodeHttpResult statusResult
-                    ? statusResult.StatusCode ?? StatusCodes.Status500InternalServerError
-                    : StatusCodes.Status500InternalServerError;
+                var errorContext = context.Pipeline.CreateErrorContext(
+                    context.HttpContext, Operation, ex, resourceId, entity);
+                var (handled, errorResult) = await context.Pipeline.ExecuteOnErrorAsync(errorContext);
 
-                var error = errorResult is IValueHttpResult { Value: RestLibProblemDetails problem }
-                    ? problem
-                    : ProblemDetailsFactory.InternalError(
-                        detail: context.Options.IncludeExceptionDetailsInErrors
-                            ? $"{ex.GetType().Name}: {ex.Message}"
-                            : "An internal error occurred while processing this item.",
-                        instance: context.HttpContext.Request.Path);
-
-                return new BatchItemResult
+                if (handled && errorResult is not null)
                 {
-                    Index = index,
-                    Status = statusCode,
-                    Error = error
-                };
+                    var statusCode = errorResult is IStatusCodeHttpResult statusResult
+                        ? statusResult.StatusCode ?? StatusCodes.Status500InternalServerError
+                        : StatusCodes.Status500InternalServerError;
+
+                    var error = errorResult is IValueHttpResult { Value: RestLibProblemDetails problem }
+                        ? problem
+                        : ProblemDetailsFactory.InternalError(
+                            detail: context.Options.IncludeExceptionDetailsInErrors
+                                ? $"{ex.GetType().Name}: {ex.Message}"
+                                : "An internal error occurred while processing this item.",
+                            instance: context.HttpContext.Request.Path);
+
+                    return new BatchItemResult
+                    {
+                        Index = index,
+                        Status = statusCode,
+                        Error = error
+                    };
+                }
+            }
+            catch (Exception)
+            {
+                // If the error hook itself throws, swallow the hook exception and fall
+                // through to the default ExceptionResult so the original error is reported.
             }
         }
 

@@ -1553,6 +1553,51 @@ public class BatchOperationsTests : IDisposable
 
     [Fact]
     [Trait("Category", "Story8.7")]
+    public async Task BatchCreate_OnErrorHookThrows_OriginalErrorStillReported()
+    {
+        // Arrange — error hook itself throws; each item should still get a 500 error
+        // based on the original repository exception, not crash the batch.
+        var throwingRepo = new ThrowingBatchRepository();
+        (_host, _client) = new TestHostBuilder<BatchEntity, Guid>(throwingRepo, "/api/items")
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.EnableBatch();
+                config.UseHooks(hooks =>
+                {
+                    hooks.OnError = ctx =>
+                        throw new InvalidOperationException("Hook explosion");
+                });
+            })
+            .Build();
+
+        var payload = new
+        {
+            action = "create",
+            items = new[]
+            {
+                new { name = "Item1", price = 1m },
+                new { name = "Item2", price = 2m }
+            }
+        };
+
+        // Act
+        var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+        // Assert — 207 Multi-Status with per-item 500 errors (not a crash)
+        response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items");
+        items.GetArrayLength().Should().Be(2);
+
+        items[0].GetProperty("status").GetInt32().Should().Be(500);
+        items[0].GetProperty("error").GetProperty("title").GetString().Should().Be("Internal Server Error");
+        items[1].GetProperty("status").GetInt32().Should().Be(500);
+        items[1].GetProperty("error").GetProperty("title").GetString().Should().Be("Internal Server Error");
+    }
+
+    [Fact]
+    [Trait("Category", "Story8.7")]
     public async Task BatchCreate_AfterPersistHook_ShortCircuit_RespectsEarlyResult()
     {
         // Arrange — AfterPersist hook short-circuits with a 409 Conflict for specific items

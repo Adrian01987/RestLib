@@ -837,6 +837,28 @@ public class HookPipelineTests
         capturedResourceId.Should().Be(99);
     }
 
+    [Fact]
+    public async Task OnError_HookThrows_OriginalExceptionPropagates()
+    {
+        // Arrange — error hook itself throws; the original repository exception should propagate
+        var repository = new HookTestRepository();
+        repository.ShouldThrowOnCreate = true;
+
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnError = ctx =>
+                throw new InvalidOperationException("Hook explosion");
+        });
+
+        var client = host.GetTestClient();
+        var entity = new HookTestEntity { Name = "Will Fail" };
+
+        // Act & Assert — the original "Create error" exception must surface, not "Hook explosion"
+        var act = async () => await client.PostAsJsonAsync("/api/items", entity);
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Create error");
+    }
+
     #endregion
 
     #region Operation-Specific Hook Behavior
