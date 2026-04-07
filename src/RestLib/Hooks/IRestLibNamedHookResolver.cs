@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace RestLib.Hooks;
 
 /// <summary>
@@ -26,6 +28,8 @@ public interface IRestLibNamedHookResolver<TEntity, TKey>
 
 /// <summary>
 /// Default in-memory implementation for resolving named hooks.
+/// Uses <see cref="ConcurrentDictionary{TKey, TValue}"/> to ensure thread safety
+/// in case registrations and resolutions overlap during host startup.
 /// </summary>
 /// <typeparam name="TEntity">The entity type.</typeparam>
 /// <typeparam name="TKey">The key type.</typeparam>
@@ -33,9 +37,9 @@ public sealed class RestLibNamedHookResolver<TEntity, TKey> : IRestLibNamedHookR
     where TEntity : class
     where TKey : notnull
 {
-    private readonly Dictionary<string, RestLibHookDelegate<TEntity, TKey>> _hooks =
+    private readonly ConcurrentDictionary<string, RestLibHookDelegate<TEntity, TKey>> _hooks =
         new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, RestLibErrorHookDelegate<TEntity, TKey>> _errorHooks =
+    private readonly ConcurrentDictionary<string, RestLibErrorHookDelegate<TEntity, TKey>> _errorHooks =
         new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
