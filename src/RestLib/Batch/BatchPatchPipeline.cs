@@ -94,7 +94,7 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
                     continue;
                 }
 
-                var preview = EndpointHelpers.PreviewPatch(original, body, context.JsonOptions);
+                var preview = PatchHelper.PreviewPatch(original, body, context.JsonOptions);
                 if (preview is not null)
                 {
                     var validationResult = EntityValidator.Validate(preview, context.JsonOptions.PropertyNamingPolicy);
@@ -151,7 +151,7 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
                 return;
             }
 
-            var preview = EndpointHelpers.PreviewPatch(original, body, context.JsonOptions);
+            var preview = PatchHelper.PreviewPatch(original, body, context.JsonOptions);
             if (preview is not null)
             {
                 var validationResult = EntityValidator.Validate(preview, context.JsonOptions.PropertyNamingPolicy);

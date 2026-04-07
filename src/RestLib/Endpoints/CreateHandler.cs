@@ -27,10 +27,10 @@ internal static class CreateHandler
             HttpContext httpContext,
             CancellationToken ct) =>
         {
-            var (jsonOptions, options) = EndpointHelpers.ResolveOptions(httpContext);
+            var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
 
             // Initialize hook pipeline and run OnRequestReceived
-            var (pipeline, hookContext, pipelineEarlyResult) = await EndpointHelpers.InitializePipelineAsync<TEntity, TKey>(
+            var (pipeline, hookContext, pipelineEarlyResult) = await HookHelper.InitializePipelineAsync<TEntity, TKey>(
                 config.Hooks, httpContext, RestLibOperation.Create, entity: entity);
             if (pipelineEarlyResult is not null) return pipelineEarlyResult;
             // Entity might have been modified by hook
@@ -53,13 +53,13 @@ internal static class CreateHandler
 
                 // OnRequestValidated hook
                 if (hookContext is not null) hookContext.Entity = entity;
-                var onValidatedResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
+                var onValidatedResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
                 if (onValidatedResult is not null) return onValidatedResult;
                 if (hookContext is not null) entity = hookContext.Entity ?? entity;
 
                 // BeforePersist hook
                 if (hookContext is not null) hookContext.Entity = entity;
-                var beforePersistResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
+                var beforePersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
                 if (beforePersistResult is not null) return beforePersistResult;
                 if (hookContext is not null) entity = hookContext.Entity ?? entity;
 
@@ -67,30 +67,30 @@ internal static class CreateHandler
 
                 // AfterPersist hook
                 if (hookContext is not null) hookContext.Entity = created;
-                var afterPersistResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
+                var afterPersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
                 if (afterPersistResult is not null) return afterPersistResult;
 
                 // Extract ID from created entity and set Location header
-                var createdId = EndpointHelpers.GetEntityKey(created, config.KeySelector);
+                var createdId = EntityKeyHelper.GetEntityKey(created, config.KeySelector);
                 var location = $"{httpContext.Request.Path}/{createdId}";
                 httpContext.Response.Headers.Location = location;
 
                 // Add ETag header when enabled
                 if (options.EnableETagSupport)
                 {
-                    var etagGenerator = EndpointHelpers.ResolveETagGenerator(httpContext);
+                    var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
                     httpContext.Response.Headers.ETag = etagGenerator.Generate(created);
                 }
 
                 // BeforeResponse hook
-                var beforeResponseResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
+                var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
                 if (beforeResponseResult is not null) return beforeResponseResult;
 
                 return Results.Json(created, jsonOptions, statusCode: StatusCodes.Status201Created);
             }
             catch (Exception ex)
             {
-                var errorResult = await EndpointHelpers.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Create, ex, entity: entity);
+                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Create, ex, entity: entity);
                 if (errorResult is not null) return errorResult;
                 throw;
             }

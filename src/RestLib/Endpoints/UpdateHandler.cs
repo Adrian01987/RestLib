@@ -33,10 +33,10 @@ internal static class UpdateHandler
             HttpContext httpContext,
             CancellationToken ct) =>
         {
-            var (jsonOptions, options) = EndpointHelpers.ResolveOptions(httpContext);
+            var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
 
             // Initialize hook pipeline and run OnRequestReceived
-            var (pipeline, hookContext, pipelineEarlyResult) = await EndpointHelpers.InitializePipelineAsync<TEntity, TKey>(
+            var (pipeline, hookContext, pipelineEarlyResult) = await HookHelper.InitializePipelineAsync<TEntity, TKey>(
                 config.Hooks, httpContext, RestLibOperation.Update, id, entity);
             if (pipelineEarlyResult is not null) return pipelineEarlyResult;
             // Entity might have been modified by hook
@@ -60,12 +60,12 @@ internal static class UpdateHandler
 
                 // OnRequestValidated hook
                 if (hookContext is not null) hookContext.Entity = entity;
-                var onValidatedResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
+                var onValidatedResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
                 if (onValidatedResult is not null) return onValidatedResult;
                 if (hookContext is not null) entity = hookContext.Entity ?? entity;
 
                 // Check for ETag precondition (If-Match header)
-                var (etagEntity, etagError) = await EndpointHelpers.CheckIfMatchPreconditionAsync(
+                var (etagEntity, etagError) = await ETagHelper.CheckIfMatchPreconditionAsync(
                     httpContext, repository, id, entityName, options, jsonOptions, ct);
                 if (etagError is not null) return etagError;
                 if (etagEntity is not null) originalEntity = etagEntity;
@@ -83,7 +83,7 @@ internal static class UpdateHandler
                     hookContext.SetOriginalEntity(originalEntity);
                 }
 
-                var beforePersistResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
+                var beforePersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
                 if (beforePersistResult is not null) return beforePersistResult;
                 if (hookContext is not null) entity = hookContext.Entity ?? entity;
 
@@ -100,25 +100,25 @@ internal static class UpdateHandler
 
                 // AfterPersist hook
                 if (hookContext is not null) hookContext.Entity = updated;
-                var afterPersistResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
+                var afterPersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
                 if (afterPersistResult is not null) return afterPersistResult;
 
                 // Add ETag header when enabled
                 if (options.EnableETagSupport)
                 {
-                    var etagGenerator = EndpointHelpers.ResolveETagGenerator(httpContext);
+                    var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
                     httpContext.Response.Headers.ETag = etagGenerator.Generate(updated);
                 }
 
                 // BeforeResponse hook
-                var beforeResponseResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
+                var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
                 if (beforeResponseResult is not null) return beforeResponseResult;
 
                 return Results.Json(updated, jsonOptions);
             }
             catch (Exception ex)
             {
-                var errorResult = await EndpointHelpers.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Update, ex, id, entity);
+                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Update, ex, id, entity);
                 if (errorResult is not null) return errorResult;
                 throw;
             }

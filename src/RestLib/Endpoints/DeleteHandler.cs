@@ -31,10 +31,10 @@ internal static class DeleteHandler
             HttpContext httpContext,
             CancellationToken ct) =>
         {
-            var (jsonOptions, options) = EndpointHelpers.ResolveOptions(httpContext);
+            var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
 
             // Initialize hook pipeline and run OnRequestReceived
-            var (pipeline, hookContext, pipelineEarlyResult) = await EndpointHelpers.InitializePipelineAsync<TEntity, TKey>(
+            var (pipeline, hookContext, pipelineEarlyResult) = await HookHelper.InitializePipelineAsync<TEntity, TKey>(
                 config.Hooks, httpContext, RestLibOperation.Delete, id);
             if (pipelineEarlyResult is not null) return pipelineEarlyResult;
             TEntity? entityToDelete = null;
@@ -42,11 +42,11 @@ internal static class DeleteHandler
             try
             {
                 // OnRequestValidated hook
-                var onValidatedResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
+                var onValidatedResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
                 if (onValidatedResult is not null) return onValidatedResult;
 
                 // Check for ETag precondition (If-Match header)
-                var (etagEntity, etagError) = await EndpointHelpers.CheckIfMatchPreconditionAsync(
+                var (etagEntity, etagError) = await ETagHelper.CheckIfMatchPreconditionAsync(
                     httpContext, repository, id, entityName, options, jsonOptions, ct);
                 if (etagError is not null) return etagError;
                 if (etagEntity is not null) entityToDelete = etagEntity;
@@ -59,7 +59,7 @@ internal static class DeleteHandler
 
                 // BeforePersist hook
                 if (hookContext is not null) hookContext.Entity = entityToDelete;
-                var beforePersistResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
+                var beforePersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
                 if (beforePersistResult is not null) return beforePersistResult;
 
                 var deleted = await repository.DeleteAsync(id, ct);
@@ -74,18 +74,18 @@ internal static class DeleteHandler
                 }
 
                 // AfterPersist hook
-                var afterPersistResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
+                var afterPersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
                 if (afterPersistResult is not null) return afterPersistResult;
 
                 // BeforeResponse hook
-                var beforeResponseResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
+                var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
                 if (beforeResponseResult is not null) return beforeResponseResult;
 
                 return Results.NoContent();
             }
             catch (Exception ex)
             {
-                var errorResult = await EndpointHelpers.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Delete, ex, id, entityToDelete);
+                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Delete, ex, id, entityToDelete);
                 if (errorResult is not null) return errorResult;
                 throw;
             }

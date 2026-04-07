@@ -34,10 +34,10 @@ internal static class GetByIdHandler
             HttpContext httpContext,
             CancellationToken ct) =>
         {
-            var (jsonOptions, options) = EndpointHelpers.ResolveOptions(httpContext);
+            var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
 
             // Initialize hook pipeline and run OnRequestReceived
-            var (pipeline, hookContext, pipelineEarlyResult) = await EndpointHelpers.InitializePipelineAsync<TEntity, TKey>(
+            var (pipeline, hookContext, pipelineEarlyResult) = await HookHelper.InitializePipelineAsync<TEntity, TKey>(
                 config.Hooks, httpContext, RestLibOperation.GetById, id);
             if (pipelineEarlyResult is not null) return pipelineEarlyResult;
 
@@ -81,13 +81,13 @@ internal static class GetByIdHandler
                 }
 
                 // OnRequestValidated hook
-                var onValidatedResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
+                var onValidatedResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
                 if (onValidatedResult is not null) return onValidatedResult;
 
                 // Handle conditional requests when ETag support is enabled
                 if (options.EnableETagSupport)
                 {
-                    var etagGenerator = EndpointHelpers.ResolveETagGenerator(httpContext);
+                    var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
                     var etag = etagGenerator.Generate(entity);
 
                     // Check If-None-Match header for conditional GET
@@ -103,7 +103,7 @@ internal static class GetByIdHandler
                 }
 
                 // BeforeResponse hook
-                var beforeResponseResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
+                var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
                 if (beforeResponseResult is not null) return beforeResponseResult;
 
                 // Apply field selection projection if requested
@@ -120,7 +120,7 @@ internal static class GetByIdHandler
             }
             catch (Exception ex)
             {
-                var errorResult = await EndpointHelpers.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.GetById, ex, id);
+                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.GetById, ex, id);
                 if (errorResult is not null) return errorResult;
                 throw;
             }

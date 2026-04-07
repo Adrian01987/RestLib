@@ -27,7 +27,7 @@ internal static class BatchHandler
     {
         return async httpContext =>
         {
-            var (jsonOptions, options) = EndpointHelpers.ResolveOptions(httpContext);
+            var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
             var repository = httpContext.RequestServices.GetRequiredService<IRepository<TEntity, TKey>>();
             var ct = httpContext.RequestAborted;
             var instance = httpContext.Request.Path.ToString();
@@ -165,7 +165,7 @@ internal static class BatchHandler
                     _ => RestLibOperation.BatchCreate
                 };
                 var hookContext = pipeline.CreateContext(httpContext, batchOperation);
-                var beforeResponseResult = await EndpointHelpers.ExecuteHookAsync(
+                var beforeResponseResult = await HookHelper.ExecuteHookAsync(
                     pipeline.ExecuteBeforeResponseAsync, hookContext);
                 if (beforeResponseResult is not null) return beforeResponseResult;
             }

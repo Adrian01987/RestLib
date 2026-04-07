@@ -34,10 +34,10 @@ internal static class GetAllHandler
             limit,
             ct) =>
         {
-            var (jsonOptions, options) = EndpointHelpers.ResolveOptions(httpContext);
+            var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
 
             // Initialize hook pipeline and run OnRequestReceived
-            var (pipeline, hookContext, pipelineEarlyResult) = await EndpointHelpers.InitializePipelineAsync<TEntity, TKey>(
+            var (pipeline, hookContext, pipelineEarlyResult) = await HookHelper.InitializePipelineAsync<TEntity, TKey>(
                 config.Hooks, httpContext, RestLibOperation.GetAll);
             if (pipelineEarlyResult is not null) return pipelineEarlyResult;
 
@@ -124,7 +124,7 @@ internal static class GetAllHandler
                 }
 
                 // OnRequestValidated hook
-                var onValidatedResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
+                var onValidatedResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
                 if (onValidatedResult is not null) return onValidatedResult;
 
                 var effectiveLimit = Math.Clamp(limit ?? options.DefaultPageSize, 1, options.MaxPageSize);
@@ -138,10 +138,10 @@ internal static class GetAllHandler
 
                 var result = await repository.GetAllAsync(paginationRequest, ct);
 
-                var response = EndpointHelpers.BuildCollectionResponse(result, httpContext.Request, cursor, effectiveLimit, options);
+                var response = PaginationHelper.BuildCollectionResponse(result, httpContext.Request, cursor, effectiveLimit, options);
 
                 // BeforeResponse hook
-                var beforeResponseResult = await EndpointHelpers.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
+                var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
                 if (beforeResponseResult is not null) return beforeResponseResult;
 
                 // Apply field selection projection if requested
@@ -163,7 +163,7 @@ internal static class GetAllHandler
             }
             catch (Exception ex)
             {
-                var errorResult = await EndpointHelpers.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.GetAll, ex);
+                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.GetAll, ex);
                 if (errorResult is not null) return errorResult;
                 throw;
             }
