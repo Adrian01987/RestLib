@@ -199,6 +199,10 @@ public static class RestLibEndpointExtensions
         // POST /prefix - Create
         if (config.IsOperationEnabled(RestLibOperation.Create))
         {
+            // Fail fast if we can't extract a key from the entity — prevents
+            // broken Location headers (e.g. "/api/entities/" or "/api/entities/null").
+            EntityKeyHelper.ValidateKeyExtraction<TEntity, TKey>(config.KeySelector);
+
             var createEndpoint = group.MapPost("", CreateHandler.CreateDelegate<TEntity, TKey>(config));
             OpenApiEndpointConfiguration.ConfigureCreateEndpoint(createEndpoint, config, baseEntityName, entityName);
         } // end Create

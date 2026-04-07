@@ -512,4 +512,89 @@ public class OperationSelectionTests
     }
 
     #endregion
+
+    #region Key extraction validation at registration time
+
+    [Fact]
+    public void MapRestLib_NoKeySelectorAndNoIdProperty_ThrowsInvalidOperationException()
+    {
+        // Arrange — CustomKeyEntity has 'Code' instead of 'Id'
+        var repository = new CustomKeyEntityRepository();
+
+        // Act — Build() calls host.Start() which triggers MapRestLib and the validation
+        var act = () => new TestHostBuilder<CustomKeyEntity, Guid>(repository, "/api/custom")
+            .WithEndpoint(cfg => cfg.AllowAnonymous())
+            .Build();
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*CustomKeyEntity*")
+            .WithMessage("*Id*")
+            .WithMessage("*KeySelector*");
+    }
+
+    [Fact]
+    public void MapRestLib_WithKeySelectorAndNoIdProperty_Succeeds()
+    {
+        // Arrange — CustomKeyEntity has no 'Id' but we provide a KeySelector
+        var repository = new CustomKeyEntityRepository();
+
+        // Act
+        var (host, client) = new TestHostBuilder<CustomKeyEntity, Guid>(repository, "/api/custom")
+            .WithEndpoint(cfg =>
+            {
+                cfg.AllowAnonymous();
+                cfg.KeySelector = e => e.Code;
+            })
+            .Build();
+
+        using var _ = host;
+        using var __ = client;
+
+        // Assert — no exception means success
+        host.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void MapRestLib_WithIdPropertyAndNoKeySelector_Succeeds()
+    {
+        // Arrange — TestEntity has a Guid 'Id' property
+        var repository = new TestEntityRepository();
+
+        // Act
+        var (host, client) = new TestHostBuilder<TestEntity, Guid>(repository, "/api/items")
+            .WithEndpoint(cfg => cfg.AllowAnonymous())
+            .Build();
+
+        using var _ = host;
+        using var __ = client;
+
+        // Assert — no exception means success
+        host.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void MapRestLib_CreateExcluded_NoKeySelectorAndNoIdProperty_Succeeds()
+    {
+        // Arrange — CustomKeyEntity has no 'Id' and no KeySelector,
+        // but Create is excluded so key extraction validation is skipped
+        var repository = new CustomKeyEntityRepository();
+
+        // Act
+        var (host, client) = new TestHostBuilder<CustomKeyEntity, Guid>(repository, "/api/custom")
+            .WithEndpoint(cfg =>
+            {
+                cfg.AllowAnonymous();
+                cfg.ExcludeOperations(RestLibOperation.Create);
+            })
+            .Build();
+
+        using var _ = host;
+        using var __ = client;
+
+        // Assert — no exception means success
+        host.Should().NotBeNull();
+    }
+
+    #endregion
 }

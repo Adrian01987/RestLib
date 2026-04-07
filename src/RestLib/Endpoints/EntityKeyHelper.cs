@@ -15,6 +15,36 @@ internal static class EntityKeyHelper
     private static readonly ConcurrentDictionary<Type, PropertyInfo?> IdPropertyCache = new();
 
     /// <summary>
+    /// Validates at registration time that a key can be extracted from <typeparamref name="TEntity"/>.
+    /// Throws <see cref="InvalidOperationException"/> when neither a key selector is configured
+    /// nor a public <c>Id</c> property of type <typeparamref name="TKey"/> exists.
+    /// </summary>
+    /// <typeparam name="TEntity">The entity type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="keySelector">An optional key selector function.</param>
+    internal static void ValidateKeyExtraction<TEntity, TKey>(Func<TEntity, TKey>? keySelector)
+        where TEntity : class
+        where TKey : notnull
+    {
+        if (keySelector is not null)
+        {
+            return;
+        }
+
+        var idProperty = IdPropertyCache.GetOrAdd(typeof(TEntity), t => t.GetProperty("Id"));
+        if (idProperty is not null && idProperty.PropertyType == typeof(TKey))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"RestLib cannot extract a key from entity type '{typeof(TEntity).Name}'. " +
+            $"No 'Id' property of type '{typeof(TKey).Name}' was found and no KeySelector was configured. " +
+            $"Either add a public 'Id' property of type '{typeof(TKey).Name}' to '{typeof(TEntity).Name}', " +
+            $"or set KeySelector in the endpoint configuration (e.g., cfg.KeySelector = e => e.YourKeyProperty).");
+    }
+
+    /// <summary>
     /// Extracts the key from an entity using the configured key selector or reflection.
     /// </summary>
     /// <typeparam name="TEntity">The entity type.</typeparam>
