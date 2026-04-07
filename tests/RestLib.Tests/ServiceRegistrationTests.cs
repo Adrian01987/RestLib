@@ -487,6 +487,36 @@ public class ServiceRegistrationTests
 
     [Fact]
     [Trait("Category", "Story1.3")]
+    public void AddRestLib_ZeroMaxCursorLength_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        var act = () => services.AddRestLib(o => o.MaxCursorLength = 0);
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*MaxCursorLength*greater than 0*0*");
+    }
+
+    [Fact]
+    [Trait("Category", "Story1.3")]
+    public void AddRestLib_NegativeMaxCursorLength_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        var act = () => services.AddRestLib(o => o.MaxCursorLength = -1);
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*MaxCursorLength*greater than 0*-1*");
+    }
+
+    [Fact]
+    [Trait("Category", "Story1.3")]
     public void AddRestLib_ValidCustomOptions_DoesNotThrow()
     {
         // Arrange

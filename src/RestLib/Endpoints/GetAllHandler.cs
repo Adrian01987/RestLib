@@ -44,12 +44,24 @@ internal static class GetAllHandler
             try
             {
                 // Validate cursor if provided
-                if (!string.IsNullOrEmpty(cursor) && !CursorEncoder.IsValid(cursor))
+                if (!string.IsNullOrEmpty(cursor))
                 {
-                    return Responses.ProblemDetailsResult.InvalidCursor(
-                        cursor,
-                        httpContext.Request.Path,
-                        jsonOptions);
+                    if (cursor.Length > options.MaxCursorLength)
+                    {
+                        return Responses.ProblemDetailsResult.InvalidCursor(
+                            cursor,
+                            httpContext.Request.Path,
+                            jsonOptions,
+                            $"The cursor exceeds the maximum allowed length of {options.MaxCursorLength} characters.");
+                    }
+
+                    if (!CursorEncoder.IsValid(cursor))
+                    {
+                        return Responses.ProblemDetailsResult.InvalidCursor(
+                            cursor,
+                            httpContext.Request.Path,
+                            jsonOptions);
+                    }
                 }
 
                 // Validate limit if provided

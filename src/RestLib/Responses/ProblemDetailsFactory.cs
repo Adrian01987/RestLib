@@ -70,14 +70,15 @@ public static class ProblemDetailsFactory
     /// </summary>
     /// <param name="cursor">The invalid cursor value.</param>
     /// <param name="instance">The request path.</param>
-    public static RestLibProblemDetails InvalidCursor(string cursor, string? instance = null)
+    /// <param name="detail">Optional detail message; when <c>null</c> a default message is used.</param>
+    public static RestLibProblemDetails InvalidCursor(string cursor, string? instance = null, string? detail = null)
     {
         return new RestLibProblemDetails
         {
             Type = ProblemTypes.InvalidCursor,
             Title = "Invalid Cursor",
             Status = StatusCodes.Status400BadRequest,
-            Detail = "The provided cursor is not a valid pagination cursor.",
+            Detail = detail ?? "The provided cursor is not a valid pagination cursor.",
             Instance = instance
         };
     }

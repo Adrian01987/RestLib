@@ -321,5 +321,11 @@ public static class RestLibServiceExtensions
             throw new InvalidOperationException(
                 $"RestLibOptions.MaxFilterInListSize must be greater than 0. Current value: {options.MaxFilterInListSize}.");
         }
+
+        if (options.MaxCursorLength <= 0)
+        {
+            throw new InvalidOperationException(
+                $"RestLibOptions.MaxCursorLength must be greater than 0. Current value: {options.MaxCursorLength}.");
+        }
     }
 }

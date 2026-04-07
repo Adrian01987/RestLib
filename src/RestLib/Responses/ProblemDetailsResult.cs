@@ -67,12 +67,17 @@ public static class ProblemDetailsResult
     /// <summary>
     /// Creates a 400 Invalid Cursor result.
     /// </summary>
+    /// <param name="cursor">The invalid cursor value.</param>
+    /// <param name="instance">The request path.</param>
+    /// <param name="jsonOptions">Optional JSON serializer options.</param>
+    /// <param name="detail">Optional detail message; when <c>null</c> a default message is used.</param>
     public static IResult InvalidCursor(
         string cursor,
         string? instance = null,
-        JsonSerializerOptions? jsonOptions = null)
+        JsonSerializerOptions? jsonOptions = null,
+        string? detail = null)
     {
-        var problem = ProblemDetailsFactory.InvalidCursor(cursor, instance);
+        var problem = ProblemDetailsFactory.InvalidCursor(cursor, instance, detail);
         return Create(problem, jsonOptions);
     }
 

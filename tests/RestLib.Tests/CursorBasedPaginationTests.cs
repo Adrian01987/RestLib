@@ -142,6 +142,78 @@ public class CursorBasedPaginationTests : IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [Fact]
+    [Trait("Category", "Story4.1")]
+    public async Task GetAll_WithCursorExceedingMaxLength_Returns400WithProblemDetails()
+    {
+        // Arrange — default MaxCursorLength is 4096; create a cursor string that exceeds it
+        var oversizedCursor = new string('A', 4097);
+
+        // Act
+        var response = await _client.GetAsync($"/api/products?cursor={oversizedCursor}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
+        problem.Should().NotBeNull();
+        problem!.Type.Should().Be("/problems/invalid-cursor");
+        problem.Title.Should().Be("Invalid Cursor");
+        problem.Status.Should().Be(400);
+        problem.Detail.Should().Contain("4096");
+    }
+
+    [Fact]
+    [Trait("Category", "Story4.1")]
+    public async Task GetAll_WithCursorAtCustomMaxLength_IsAccepted()
+    {
+        // Arrange — a valid cursor well within the default 4096 limit should be accepted
+        _repository.SeedProducts(5);
+        var validCursor = CursorEncoder.Encode(0);
+
+        // Sanity check: the encoded cursor is well within the default max length
+        validCursor.Length.Should().BeLessThan(4096);
+
+        // Act — use the valid cursor
+        var response = await _client.GetAsync($"/api/products?cursor={validCursor}&limit=2");
+
+        // Assert — should succeed
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    [Trait("Category", "Story4.1")]
+    public async Task GetAll_WithCursorExceedingCustomMaxLength_Returns400()
+    {
+        // Arrange — build a host with a very small MaxCursorLength
+        var repository = new InMemoryRepository<ProductEntity, Guid>(e => e.Id, Guid.NewGuid);
+        var (host, client) = new TestHostBuilder<ProductEntity, Guid>(repository, "/api/products")
+            .WithOptions(options =>
+            {
+                options.MaxCursorLength = 10;
+            })
+            .WithEndpoint(config => config.AllowAnonymous())
+            .Build();
+
+        using (host)
+        using (client)
+        {
+            // A cursor longer than 10 characters
+            var longCursor = new string('A', 11);
+
+            // Act
+            var response = await client.GetAsync($"/api/products?cursor={longCursor}");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
+            problem.Should().NotBeNull();
+            problem!.Type.Should().Be("/problems/invalid-cursor");
+            problem.Detail.Should().Contain("10");
+        }
+    }
+
     #endregion
 
     #region Limit Validation Tests

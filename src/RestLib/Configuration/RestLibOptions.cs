@@ -79,4 +79,11 @@ public class RestLibOptions
     /// Defaults to 50.
     /// </summary>
     public int MaxFilterInListSize { get; set; } = 50;
+
+    /// <summary>
+    /// Gets or sets the maximum allowed length (in characters) of a cursor query-string value.
+    /// Cursors exceeding this length are rejected with a 400 Problem Details response before
+    /// any base64 decoding or JSON parsing occurs. Defaults to 4096.
+    /// </summary>
+    public int MaxCursorLength { get; set; } = 4096;
 }
