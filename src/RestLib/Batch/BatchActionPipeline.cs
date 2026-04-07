@@ -447,6 +447,8 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
 
     /// <summary>
     /// Chooses the bulk or individual persistence path based on availability and configuration.
+    /// When the bulk path throws, falls back to individual persistence so that each item
+    /// receives its own per-item error result instead of all items being blamed for one failure.
     /// </summary>
     private async Task ExecuteAsync(
         List<TValidItem> validItems,
@@ -464,14 +466,17 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
             {
                 await PersistBulkAsync(validItems, results, context);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                foreach (var item in validItems)
-                {
-                    var index = GetIndex(item);
-                    results[index] = await HandleItemErrorAsync(
-                        index, ex, context, GetResourceId(item), GetEntity(item));
-                }
+                // Bulk path failed — fall back to individual persistence for items that
+                // don't already have a result. Some subclasses (e.g. BatchPatchPipeline)
+                // may populate results during pre-validation inside PersistBulkAsync,
+                // so we only retry items whose result slot is still empty.
+                var remainingItems = validItems
+                    .Where(item => results[GetIndex(item)] is null)
+                    .ToList();
+
+                await PersistIndividuallyAsync(remainingItems, results, context);
             }
         }
         else

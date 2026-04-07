@@ -112,6 +112,33 @@ public class ThrowingUpdateRepository : IRepository<BatchEntity, Guid>
 }
 
 /// <summary>
+/// Batch repository whose bulk methods always throw, used to test the
+/// bulk-to-individual fallback path. The <see cref="IRepository{TEntity, TKey}"/>
+/// for individual operations is registered separately.
+/// </summary>
+public class ThrowingBulkBatchRepository : IBatchRepository<BatchEntity, Guid>
+{
+    /// <inheritdoc />
+    public Task<IReadOnlyList<BatchEntity>> CreateManyAsync(
+        IReadOnlyList<BatchEntity> entities, CancellationToken ct = default)
+        => throw new InvalidOperationException("Simulated bulk create failure");
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<BatchEntity>> UpdateManyAsync(
+        IReadOnlyList<BatchEntity> entities, CancellationToken ct = default)
+        => throw new InvalidOperationException("Simulated bulk update failure");
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<BatchEntity>> PatchManyAsync(
+        IReadOnlyList<(Guid Id, JsonElement PatchDocument)> patches, CancellationToken ct = default)
+        => throw new InvalidOperationException("Simulated bulk patch failure");
+
+    /// <inheritdoc />
+    public Task<int> DeleteManyAsync(IReadOnlyList<Guid> keys, CancellationToken ct = default)
+        => throw new InvalidOperationException("Simulated bulk delete failure");
+}
+
+/// <summary>
 /// Integration tests for batch operations (Stories 8.1–8.8).
 /// </summary>
 public class BatchOperationsTests : IDisposable
@@ -2145,6 +2172,272 @@ public class BatchOperationsTests : IDisposable
         var detail = items[0].GetProperty("error").GetProperty("detail").GetString();
         detail.Should().Contain("InvalidOperationException");
         detail.Should().Contain("Simulated update failure");
+    }
+
+    #endregion
+
+    #region Bulk Failure Fallback (Improvement #2)
+
+    /// <summary>
+    /// Creates a test host whose <see cref="IBatchRepository{TEntity, TKey}"/> always throws,
+    /// while individual <see cref="IRepository{TEntity, TKey}"/> operations still work.
+    /// This verifies that the bulk-failure fallback produces per-item results.
+    /// </summary>
+    private void CreateHostWithThrowingBulkRepository(
+        Action<RestLibEndpointConfiguration<BatchEntity, Guid>> configure,
+        Action<RestLibOptions>? configureOptions = null)
+    {
+        var builder = new TestHostBuilder<BatchEntity, Guid>(_repository, "/api/items")
+            .WithEndpoint(configure)
+            .WithServices(services =>
+            {
+                services.AddSingleton<IBatchRepository<BatchEntity, Guid>>(new ThrowingBulkBatchRepository());
+            });
+
+        if (configureOptions != null)
+        {
+            builder.WithOptions(configureOptions);
+        }
+
+        (_host, _client) = builder.Build();
+    }
+
+    [Fact]
+    [Trait("Category", "Story8.10")]
+    public async Task BatchCreate_BulkThrows_FallsBackToIndividual_AllItemsSucceed()
+    {
+        // Arrange — bulk CreateManyAsync will throw; individual CreateAsync works
+        CreateHostWithThrowingBulkRepository(config =>
+        {
+            config.AllowAnonymous();
+            config.EnableBatch();
+        });
+
+        var payload = new
+        {
+            action = "create",
+            items = new[]
+            {
+                new { name = "FallbackA", price = 10m },
+                new { name = "FallbackB", price = 20m },
+                new { name = "FallbackC", price = 30m }
+            }
+        };
+
+        // Act
+        var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+        // Assert — all items created successfully via individual fallback
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items");
+        items.GetArrayLength().Should().Be(3);
+
+        for (int i = 0; i < 3; i++)
+        {
+            items[i].GetProperty("index").GetInt32().Should().Be(i);
+            items[i].GetProperty("status").GetInt32().Should().Be(201);
+            items[i].TryGetProperty("error", out _).Should().BeFalse($"item {i} should not have an error");
+        }
+
+        // Verify entities actually exist in the repository
+        items[0].GetProperty("entity").GetProperty("name").GetString().Should().Be("FallbackA");
+        items[1].GetProperty("entity").GetProperty("name").GetString().Should().Be("FallbackB");
+        items[2].GetProperty("entity").GetProperty("name").GetString().Should().Be("FallbackC");
+    }
+
+    [Fact]
+    [Trait("Category", "Story8.10")]
+    public async Task BatchUpdate_BulkThrows_FallsBackToIndividual_AllItemsSucceed()
+    {
+        // Arrange — seed entities, bulk UpdateManyAsync will throw; individual UpdateAsync works
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+        _repository.Seed(new[]
+        {
+            new BatchEntity { Id = id1, Name = "Old1", Price = 1m },
+            new BatchEntity { Id = id2, Name = "Old2", Price = 2m }
+        });
+
+        CreateHostWithThrowingBulkRepository(config =>
+        {
+            config.AllowAnonymous();
+            config.EnableBatch();
+        });
+
+        var payload = new
+        {
+            action = "update",
+            items = new[]
+            {
+                new { id = id1, body = new { name = "New1", price = 11m, is_active = true } },
+                new { id = id2, body = new { name = "New2", price = 22m, is_active = true } }
+            }
+        };
+
+        // Act
+        var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+        // Assert — both items updated successfully via individual fallback
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items");
+        items.GetArrayLength().Should().Be(2);
+
+        items[0].GetProperty("index").GetInt32().Should().Be(0);
+        items[0].GetProperty("status").GetInt32().Should().Be(200);
+        items[0].GetProperty("entity").GetProperty("name").GetString().Should().Be("New1");
+
+        items[1].GetProperty("index").GetInt32().Should().Be(1);
+        items[1].GetProperty("status").GetInt32().Should().Be(200);
+        items[1].GetProperty("entity").GetProperty("name").GetString().Should().Be("New2");
+    }
+
+    [Fact]
+    [Trait("Category", "Story8.10")]
+    public async Task BatchPatch_BulkThrows_FallsBackToIndividual_AllItemsSucceed()
+    {
+        // Arrange — seed entities, bulk PatchManyAsync will throw; individual PatchAsync works
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+        _repository.Seed(new[]
+        {
+            new BatchEntity { Id = id1, Name = "PatchMe1", Price = 1m },
+            new BatchEntity { Id = id2, Name = "PatchMe2", Price = 2m }
+        });
+
+        CreateHostWithThrowingBulkRepository(config =>
+        {
+            config.AllowAnonymous();
+            config.EnableBatch();
+        });
+
+        var payload = new
+        {
+            action = "patch",
+            items = new[]
+            {
+                new { id = id1, body = new { price = 99m } },
+                new { id = id2, body = new { price = 88m } }
+            }
+        };
+
+        // Act
+        var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+        // Assert — both items patched successfully via individual fallback
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items");
+        items.GetArrayLength().Should().Be(2);
+
+        items[0].GetProperty("index").GetInt32().Should().Be(0);
+        items[0].GetProperty("status").GetInt32().Should().Be(200);
+        items[0].GetProperty("entity").GetProperty("price").GetDecimal().Should().Be(99m);
+
+        items[1].GetProperty("index").GetInt32().Should().Be(1);
+        items[1].GetProperty("status").GetInt32().Should().Be(200);
+        items[1].GetProperty("entity").GetProperty("price").GetDecimal().Should().Be(88m);
+    }
+
+    [Fact]
+    [Trait("Category", "Story8.10")]
+    public async Task BatchCreate_BulkThrows_MixedValidation_FallbackProducesPerItemResults()
+    {
+        // Arrange — one valid item, one invalid item (empty name fails [Required])
+        // Bulk CreateManyAsync throws, fallback should produce 201 for valid, 400 for invalid
+        CreateHostWithThrowingBulkRepository(config =>
+        {
+            config.AllowAnonymous();
+            config.EnableBatch();
+        });
+
+        var payload = new
+        {
+            action = "create",
+            items = new[]
+            {
+                new { name = "ValidItem", price = 10m },
+                new { name = string.Empty, price = 20m } // [Required] fails
+            }
+        };
+
+        // Act
+        var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+        // Assert — mixed results: valid item succeeds, invalid item fails validation
+        // Note: the invalid item is caught in validation *before* persistence,
+        // so only the valid item reaches the bulk path and triggers fallback.
+        response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items");
+        items.GetArrayLength().Should().Be(2);
+
+        // First item: created via individual fallback
+        items[0].GetProperty("index").GetInt32().Should().Be(0);
+        items[0].GetProperty("status").GetInt32().Should().Be(201);
+        items[0].GetProperty("entity").GetProperty("name").GetString().Should().Be("ValidItem");
+
+        // Second item: failed validation (never reached persistence)
+        items[1].GetProperty("index").GetInt32().Should().Be(1);
+        items[1].GetProperty("status").GetInt32().Should().Be(400);
+    }
+
+    [Fact]
+    [Trait("Category", "Story8.10")]
+    public async Task BatchPatch_BulkThrows_PreValidatedItemsKept_RemainingFallBackToIndividual()
+    {
+        // Arrange — seed two valid and one entity that will fail patch pre-validation.
+        // BatchPatchPipeline.PersistBulkAsync runs pre-persist validation that may populate
+        // results for items whose merge-preview fails validation. When the bulk call then
+        // throws, only items whose result slot is still null should be retried individually.
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+        _repository.Seed(new[]
+        {
+            new BatchEntity { Id = id1, Name = "Keep1", Price = 10m },
+            new BatchEntity { Id = id2, Name = "Keep2", Price = 20m }
+        });
+
+        CreateHostWithThrowingBulkRepository(config =>
+        {
+            config.AllowAnonymous();
+            config.EnableBatch();
+        });
+
+        var payload = new
+        {
+            action = "patch",
+            items = new object[]
+            {
+                new { id = id1, body = new { price = 55m } },
+                new { id = id2, body = new { name = string.Empty } } // Will fail validation (Name is [Required])
+            }
+        };
+
+        // Act
+        var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
+
+        // Assert — id2's patch fails validation inside PersistBulkAsync (pre-validation),
+        // then PatchManyAsync throws for the remaining items, and id1 falls back to individual PatchAsync.
+        response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items");
+        items.GetArrayLength().Should().Be(2);
+
+        // First item: patched successfully via individual fallback
+        items[0].GetProperty("index").GetInt32().Should().Be(0);
+        items[0].GetProperty("status").GetInt32().Should().Be(200);
+        items[0].GetProperty("entity").GetProperty("price").GetDecimal().Should().Be(55m);
+
+        // Second item: failed pre-persist validation (result populated before bulk throw)
+        items[1].GetProperty("index").GetInt32().Should().Be(1);
+        items[1].GetProperty("status").GetInt32().Should().Be(400);
     }
 
     #endregion
