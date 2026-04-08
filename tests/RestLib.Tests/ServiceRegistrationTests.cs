@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.Hooks;
+using RestLib.Responses;
 using RestLib.Tests.Fakes;
 using Xunit;
 
@@ -579,6 +580,9 @@ public class ServiceRegistrationTests
 
         // Assert
         act.Should().NotThrow();
+
+        // Cleanup: reset global static to prevent leaking into parallel tests
+        ProblemTypes.Configure(null);
     }
 
     [Fact]
@@ -594,6 +598,9 @@ public class ServiceRegistrationTests
 
         // Assert
         act.Should().NotThrow();
+
+        // Cleanup: reset global static to prevent leaking into parallel tests
+        ProblemTypes.Configure(null);
     }
 
     [Fact]
