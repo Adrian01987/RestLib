@@ -4,7 +4,6 @@ using Microsoft.Extensions.DependencyInjection;
 using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.Hooks;
-using RestLib.Responses;
 using RestLib.Tests.Fakes;
 using Xunit;
 
@@ -567,41 +566,9 @@ public class ServiceRegistrationTests
             .WithMessage("*ProblemTypeBaseUri*http*https*");
     }
 
-    [Fact]
-    [Trait("Category", "Story1.3")]
-    public void AddRestLib_ValidHttpsProblemTypeBaseUri_DoesNotThrow()
-    {
-        // Arrange
-        var services = new ServiceCollection();
-
-        // Act
-        var act = () => services.AddRestLib(o =>
-            o.ProblemTypeBaseUri = new Uri("https://api.example.com"));
-
-        // Assert
-        act.Should().NotThrow();
-
-        // Cleanup: reset global static to prevent leaking into parallel tests
-        ProblemTypes.Configure(null);
-    }
-
-    [Fact]
-    [Trait("Category", "Story1.3")]
-    public void AddRestLib_ValidHttpProblemTypeBaseUri_DoesNotThrow()
-    {
-        // Arrange
-        var services = new ServiceCollection();
-
-        // Act
-        var act = () => services.AddRestLib(o =>
-            o.ProblemTypeBaseUri = new Uri("http://localhost:5000"));
-
-        // Assert
-        act.Should().NotThrow();
-
-        // Cleanup: reset global static to prevent leaking into parallel tests
-        ProblemTypes.Configure(null);
-    }
+    // NOTE: Tests for valid ProblemTypeBaseUri (https and http schemes) are in
+    // ProblemTypeBaseUriRegistrationTests to share the "ProblemTypeBaseUri" xUnit
+    // collection with ProblemTypeResolveTests, preventing parallel static-state races.
 
     [Fact]
     [Trait("Category", "Story1.3")]

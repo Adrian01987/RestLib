@@ -939,3 +939,52 @@ public class ProblemTypeResolveTests : IDisposable
         json.Should().Contain("\"type\":\"https://api.example.com/problems/not-found\"");
     }
 }
+
+/// <summary>
+/// Tests for <see cref="RestLibServiceExtensions.AddRestLib"/> with valid
+/// <see cref="RestLibOptions.ProblemTypeBaseUri"/> values. These live in the
+/// "ProblemTypeBaseUri" collection so they do not run in parallel with
+/// <see cref="ProblemTypeResolveTests"/>, avoiding static-state races on
+/// <see cref="ProblemTypes"/>.
+/// </summary>
+[Collection("ProblemTypeBaseUri")]
+public class ProblemTypeBaseUriRegistrationTests : IDisposable
+{
+    /// <summary>
+    /// Reset the static base URI after each test to prevent leaking state.
+    /// </summary>
+    public void Dispose()
+    {
+        ProblemTypes.Configure(null);
+    }
+
+    [Fact]
+    [Trait("Category", "Story1.3")]
+    public void AddRestLib_ValidHttpsProblemTypeBaseUri_DoesNotThrow()
+    {
+        // Arrange
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+
+        // Act
+        var act = () => services.AddRestLib(o =>
+            o.ProblemTypeBaseUri = new Uri("https://api.example.com"));
+
+        // Assert
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    [Trait("Category", "Story1.3")]
+    public void AddRestLib_ValidHttpProblemTypeBaseUri_DoesNotThrow()
+    {
+        // Arrange
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+
+        // Act
+        var act = () => services.AddRestLib(o =>
+            o.ProblemTypeBaseUri = new Uri("http://localhost:5000"));
+
+        // Assert
+        act.Should().NotThrow();
+    }
+}
