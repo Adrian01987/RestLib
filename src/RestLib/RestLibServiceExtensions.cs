@@ -8,6 +8,7 @@ using RestLib.Abstractions;
 using RestLib.Caching;
 using RestLib.Configuration;
 using RestLib.Hooks;
+using RestLib.Responses;
 using RestLib.Serialization;
 
 namespace RestLib;
@@ -34,6 +35,8 @@ public static class RestLibServiceExtensions
         configure?.Invoke(options);
 
         ValidateOptions(options);
+
+        ProblemTypes.Configure(options.ProblemTypeBaseUri);
 
         services.TryAddSingleton(options);
 
@@ -326,6 +329,21 @@ public static class RestLibServiceExtensions
         {
             throw new InvalidOperationException(
                 $"RestLibOptions.MaxCursorLength must be greater than 0. Current value: {options.MaxCursorLength}.");
+        }
+
+        if (options.ProblemTypeBaseUri is not null)
+        {
+            if (!options.ProblemTypeBaseUri.IsAbsoluteUri)
+            {
+                throw new InvalidOperationException(
+                    $"RestLibOptions.ProblemTypeBaseUri must be an absolute URI. Current value: '{options.ProblemTypeBaseUri}'.");
+            }
+
+            if (options.ProblemTypeBaseUri.Scheme != "https" && options.ProblemTypeBaseUri.Scheme != "http")
+            {
+                throw new InvalidOperationException(
+                    $"RestLibOptions.ProblemTypeBaseUri must use the http or https scheme. Current value: '{options.ProblemTypeBaseUri}'.");
+            }
         }
     }
 }

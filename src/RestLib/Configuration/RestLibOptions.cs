@@ -86,4 +86,12 @@ public class RestLibOptions
     /// any base64 decoding or JSON parsing occurs. Defaults to 4096.
     /// </summary>
     public int MaxCursorLength { get; set; } = 4096;
+
+    /// <summary>
+    /// Gets or sets the base URI prepended to problem type relative paths.
+    /// When set, problem type URIs change from relative paths like <c>/problems/not-found</c>
+    /// to absolute URIs like <c>https://api.example.com/problems/not-found</c>.
+    /// Must be an absolute URI with no trailing slash. Defaults to <c>null</c> (relative paths).
+    /// </summary>
+    public Uri? ProblemTypeBaseUri { get; set; }
 }

@@ -2,6 +2,8 @@ namespace RestLib.Responses;
 
 /// <summary>
 /// Standard problem type URIs for RestLib errors.
+/// Constants hold the relative path portion; use <see cref="Resolve"/> to obtain
+/// the full URI when a <see cref="Configuration.RestLibOptions.ProblemTypeBaseUri"/> is configured.
 /// </summary>
 public static class ProblemTypes
 {
@@ -55,4 +57,29 @@ public static class ProblemTypes
 
     /// <summary>Hook short-circuited the operation (varies).</summary>
     public const string HookShortCircuit = "/problems/hook-short-circuit";
+
+    private static string? _baseUri;
+
+    /// <summary>
+    /// Resolves a relative problem type path to its full URI.
+    /// When no base URI is configured, the relative path is returned unchanged.
+    /// </summary>
+    /// <param name="relativeType">A relative problem type path (e.g., <c>/problems/not-found</c>).</param>
+    /// <returns>The resolved URI string.</returns>
+    public static string Resolve(string relativeType)
+    {
+        return _baseUri is null ? relativeType : _baseUri + relativeType;
+    }
+
+    /// <summary>
+    /// Configures the base URI that is prepended to all relative problem type paths.
+    /// Called once during service registration. Pass <c>null</c> to keep relative paths.
+    /// </summary>
+    /// <param name="baseUri">
+    /// An absolute URI with no trailing slash (e.g., <c>https://api.example.com</c>), or <c>null</c>.
+    /// </param>
+    internal static void Configure(Uri? baseUri)
+    {
+        _baseUri = baseUri?.ToString().TrimEnd('/');
+    }
 }

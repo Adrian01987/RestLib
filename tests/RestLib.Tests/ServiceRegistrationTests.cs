@@ -536,6 +536,68 @@ public class ServiceRegistrationTests
 
     [Fact]
     [Trait("Category", "Story1.3")]
+    public void AddRestLib_RelativeProblemTypeBaseUri_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        var act = () => services.AddRestLib(o =>
+            o.ProblemTypeBaseUri = new Uri("/relative/path", UriKind.Relative));
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*ProblemTypeBaseUri*absolute*");
+    }
+
+    [Fact]
+    [Trait("Category", "Story1.3")]
+    public void AddRestLib_NonHttpProblemTypeBaseUri_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        var act = () => services.AddRestLib(o =>
+            o.ProblemTypeBaseUri = new Uri("ftp://example.com"));
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*ProblemTypeBaseUri*http*https*");
+    }
+
+    [Fact]
+    [Trait("Category", "Story1.3")]
+    public void AddRestLib_ValidHttpsProblemTypeBaseUri_DoesNotThrow()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        var act = () => services.AddRestLib(o =>
+            o.ProblemTypeBaseUri = new Uri("https://api.example.com"));
+
+        // Assert
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    [Trait("Category", "Story1.3")]
+    public void AddRestLib_ValidHttpProblemTypeBaseUri_DoesNotThrow()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        var act = () => services.AddRestLib(o =>
+            o.ProblemTypeBaseUri = new Uri("http://localhost:5000"));
+
+        // Assert
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    [Trait("Category", "Story1.3")]
     public void AddRestLib_DefaultPageSizeEqualsMaxPageSize_DoesNotThrow()
     {
         // Arrange

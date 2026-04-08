@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Hosting;
+using RestLib.Configuration;
 using RestLib.FieldSelection;
 using RestLib.Filtering;
 using RestLib.Responses;
@@ -798,5 +799,143 @@ public class ProblemDetailsTests : IDisposable
     {
         _client.Dispose();
         _host.Dispose();
+    }
+}
+
+/// <summary>
+/// Tests for <see cref="ProblemTypes.Resolve"/> and the configurable
+/// <see cref="RestLibOptions.ProblemTypeBaseUri"/> option.
+/// </summary>
+[Collection("ProblemTypeBaseUri")]
+public class ProblemTypeResolveTests : IDisposable
+{
+    /// <summary>
+    /// Reset the static base URI after each test to prevent leaking state.
+    /// </summary>
+    public void Dispose()
+    {
+        ProblemTypes.Configure(null);
+    }
+
+    [Fact]
+    [Trait("Category", "Story3.3")]
+    public void Resolve_WithoutBaseUri_ReturnsRelativePath()
+    {
+        // Arrange
+        ProblemTypes.Configure(null);
+
+        // Act & Assert
+        ProblemTypes.Resolve(ProblemTypes.NotFound).Should().Be("/problems/not-found");
+        ProblemTypes.Resolve(ProblemTypes.ValidationFailed).Should().Be("/problems/validation-failed");
+        ProblemTypes.Resolve(ProblemTypes.InternalError).Should().Be("/problems/internal-error");
+    }
+
+    [Fact]
+    [Trait("Category", "Story3.3")]
+    public void Resolve_WithBaseUri_ReturnsAbsoluteUri()
+    {
+        // Arrange
+        ProblemTypes.Configure(new Uri("https://api.example.com"));
+
+        // Act & Assert
+        ProblemTypes.Resolve(ProblemTypes.NotFound).Should().Be("https://api.example.com/problems/not-found");
+        ProblemTypes.Resolve(ProblemTypes.ValidationFailed).Should().Be("https://api.example.com/problems/validation-failed");
+        ProblemTypes.Resolve(ProblemTypes.InternalError).Should().Be("https://api.example.com/problems/internal-error");
+    }
+
+    [Fact]
+    [Trait("Category", "Story3.3")]
+    public void Resolve_WithTrailingSlashBaseUri_DoesNotDoubleSlash()
+    {
+        // Arrange
+        ProblemTypes.Configure(new Uri("https://api.example.com/"));
+
+        // Act
+        var resolved = ProblemTypes.Resolve(ProblemTypes.NotFound);
+
+        // Assert — no double slash between base and relative path
+        resolved.Should().Be("https://api.example.com/problems/not-found");
+    }
+
+    [Fact]
+    [Trait("Category", "Story3.3")]
+    public void Factory_NotFound_WithBaseUri_ProducesAbsoluteType()
+    {
+        // Arrange
+        ProblemTypes.Configure(new Uri("https://api.example.com"));
+
+        // Act
+        var problem = ProblemDetailsFactory.NotFound("Product", Guid.Empty);
+
+        // Assert
+        problem.Type.Should().Be("https://api.example.com/problems/not-found");
+    }
+
+    [Fact]
+    [Trait("Category", "Story3.3")]
+    public void Factory_AllMethods_WithBaseUri_ProduceAbsoluteTypes()
+    {
+        // Arrange
+        ProblemTypes.Configure(new Uri("https://docs.example.com"));
+        var errors = new Dictionary<string, string[]> { ["f"] = ["err"] };
+        var filterErrors = new List<FilterValidationError>
+        {
+            new() { ParameterName = "p", ProvidedValue = "v", ExpectedType = typeof(int), Message = "bad" },
+        };
+        var sortErrors = new List<SortValidationError>
+        {
+            new() { Field = "f", Message = "bad" },
+        };
+        var fieldErrors = new List<FieldSelectionValidationError>
+        {
+            new() { Field = "f", Message = "bad" },
+        };
+
+        // Act & Assert — every factory method should produce an absolute type URI
+        ProblemDetailsFactory.NotFound("E", 1).Type
+            .Should().StartWith("https://docs.example.com/problems/");
+        ProblemDetailsFactory.ValidationFailed(errors).Type
+            .Should().StartWith("https://docs.example.com/problems/");
+        ProblemDetailsFactory.BadRequest("x").Type
+            .Should().StartWith("https://docs.example.com/problems/");
+        ProblemDetailsFactory.InvalidCursor("x").Type
+            .Should().StartWith("https://docs.example.com/problems/");
+        ProblemDetailsFactory.InvalidLimit(0, 1, 100).Type
+            .Should().StartWith("https://docs.example.com/problems/");
+        ProblemDetailsFactory.InvalidFilters(filterErrors).Type
+            .Should().StartWith("https://docs.example.com/problems/");
+        ProblemDetailsFactory.InvalidSort(sortErrors).Type
+            .Should().StartWith("https://docs.example.com/problems/");
+        ProblemDetailsFactory.InvalidFields(fieldErrors).Type
+            .Should().StartWith("https://docs.example.com/problems/");
+        ProblemDetailsFactory.InvalidBatchRequest("x").Type
+            .Should().StartWith("https://docs.example.com/problems/");
+        ProblemDetailsFactory.BatchSizeExceeded(10, 5).Type
+            .Should().StartWith("https://docs.example.com/problems/");
+        ProblemDetailsFactory.BatchActionNotEnabled("x", ["y"]).Type
+            .Should().StartWith("https://docs.example.com/problems/");
+        ProblemDetailsFactory.Conflict("x").Type
+            .Should().StartWith("https://docs.example.com/problems/");
+        ProblemDetailsFactory.PreconditionFailed("x").Type
+            .Should().StartWith("https://docs.example.com/problems/");
+        ProblemDetailsFactory.InternalError().Type
+            .Should().StartWith("https://docs.example.com/problems/");
+        ProblemDetailsFactory.HookShortCircuit(500).Type
+            .Should().StartWith("https://docs.example.com/problems/");
+    }
+
+    [Fact]
+    [Trait("Category", "Story3.3")]
+    public void Factory_NotFound_Serialized_WithBaseUri_ContainsAbsoluteType()
+    {
+        // Arrange
+        ProblemTypes.Configure(new Uri("https://api.example.com"));
+        var problem = ProblemDetailsFactory.NotFound("Product", Guid.Empty);
+
+        // Act
+        var json = JsonSerializer.Serialize(problem);
+
+        // Assert — the serialized JSON contains the absolute type URI
+        json.Should().Contain("\"type\":\"https://api.example.com/problems/not-found\"");
     }
 }

@@ -45,10 +45,29 @@ Error responses in REST APIs need a consistent, machine-readable format. Options
 ## Consequences
 
 - **All 4xx and 5xx responses** return `application/problem+json` content type
-- **Problem type URIs** are relative paths (e.g., `/problems/not-found`)
+- **Problem type URIs** default to relative paths (e.g., `/problems/not-found`) for zero-configuration convenience
+- **Absolute URIs** can be enabled by setting `RestLibOptions.ProblemTypeBaseUri` (e.g., `https://api.example.com`), which produces URIs like `https://api.example.com/problems/not-found`
 - **Validation errors** use the `errors` extension property for field-level details
+- **Extension members** (RFC 9457 Section 3.2) are supported via the `[JsonExtensionData]` `Extensions` property on `RestLibProblemDetails`
 - **Clients can programmatically handle** errors based on `type` field
 - **Consistent error experience** across all RestLib endpoints
+
+### Problem Type URI Strategy
+
+RFC 9457 recommends absolute URIs for interoperability. RestLib defaults to relative paths
+for simplicity but provides `ProblemTypeBaseUri` as an opt-in:
+
+```csharp
+services.AddRestLib(options =>
+{
+    options.ProblemTypeBaseUri = new Uri("https://api.example.com");
+});
+```
+
+When configured, all problem type URIs are resolved at runtime by prepending the base URI
+to the relative path constants defined in `ProblemTypes`. The `ProblemTypes` constants
+remain available for programmatic comparison; use `ProblemTypes.Resolve()` to obtain the
+full URI that matches the runtime output.
 
 ## Error Types
 

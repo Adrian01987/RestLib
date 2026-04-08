@@ -20,7 +20,7 @@ public static class ProblemDetailsFactory
     {
         return new RestLibProblemDetails
         {
-            Type = ProblemTypes.NotFound,
+            Type = ProblemTypes.Resolve(ProblemTypes.NotFound),
             Title = "Resource Not Found",
             Status = StatusCodes.Status404NotFound,
             Detail = $"{entityName} with ID '{id}' does not exist.",
@@ -39,7 +39,7 @@ public static class ProblemDetailsFactory
     {
         return new RestLibProblemDetails
         {
-            Type = ProblemTypes.ValidationFailed,
+            Type = ProblemTypes.Resolve(ProblemTypes.ValidationFailed),
             Title = "Validation Failed",
             Status = StatusCodes.Status400BadRequest,
             Detail = "One or more validation errors occurred.",
@@ -57,7 +57,7 @@ public static class ProblemDetailsFactory
     {
         return new RestLibProblemDetails
         {
-            Type = ProblemTypes.BadRequest,
+            Type = ProblemTypes.Resolve(ProblemTypes.BadRequest),
             Title = "Bad Request",
             Status = StatusCodes.Status400BadRequest,
             Detail = detail,
@@ -75,7 +75,7 @@ public static class ProblemDetailsFactory
     {
         return new RestLibProblemDetails
         {
-            Type = ProblemTypes.InvalidCursor,
+            Type = ProblemTypes.Resolve(ProblemTypes.InvalidCursor),
             Title = "Invalid Cursor",
             Status = StatusCodes.Status400BadRequest,
             Detail = detail ?? "The provided cursor is not a valid pagination cursor.",
@@ -94,7 +94,7 @@ public static class ProblemDetailsFactory
     {
         return new RestLibProblemDetails
         {
-            Type = ProblemTypes.InvalidLimit,
+            Type = ProblemTypes.Resolve(ProblemTypes.InvalidLimit),
             Title = "Invalid Limit",
             Status = StatusCodes.Status400BadRequest,
             Detail = $"The limit value '{limit}' is invalid. Limit must be between {minLimit} and {maxLimit}.",
@@ -119,7 +119,7 @@ public static class ProblemDetailsFactory
 
         return new RestLibProblemDetails
         {
-            Type = ProblemTypes.InvalidFilter,
+            Type = ProblemTypes.Resolve(ProblemTypes.InvalidFilter),
             Title = "Invalid Filter Value",
             Status = StatusCodes.Status400BadRequest,
             Detail = errors.Count == 1
@@ -147,7 +147,7 @@ public static class ProblemDetailsFactory
 
         return new RestLibProblemDetails
         {
-            Type = ProblemTypes.InvalidSort,
+            Type = ProblemTypes.Resolve(ProblemTypes.InvalidSort),
             Title = "Invalid Sort Parameter",
             Status = StatusCodes.Status400BadRequest,
             Detail = errors.Count == 1
@@ -175,7 +175,7 @@ public static class ProblemDetailsFactory
 
         return new RestLibProblemDetails
         {
-            Type = ProblemTypes.InvalidFields,
+            Type = ProblemTypes.Resolve(ProblemTypes.InvalidFields),
             Title = "Invalid Field Selection",
             Status = StatusCodes.Status400BadRequest,
             Detail = errors.Count == 1
@@ -199,7 +199,7 @@ public static class ProblemDetailsFactory
     {
         return new RestLibProblemDetails
         {
-            Type = ProblemTypes.InvalidBatchRequest,
+            Type = ProblemTypes.Resolve(ProblemTypes.InvalidBatchRequest),
             Title = "Invalid Batch Request",
             Status = StatusCodes.Status400BadRequest,
             Detail = detail,
@@ -221,7 +221,7 @@ public static class ProblemDetailsFactory
     {
         return new RestLibProblemDetails
         {
-            Type = ProblemTypes.BatchSizeExceeded,
+            Type = ProblemTypes.Resolve(ProblemTypes.BatchSizeExceeded),
             Title = "Batch Size Exceeded",
             Status = StatusCodes.Status400BadRequest,
             Detail = $"The batch contains {itemCount} items but the maximum allowed is {maxBatchSize}.",
@@ -243,7 +243,7 @@ public static class ProblemDetailsFactory
         var allowed = string.Join(", ", enabledActions);
         return new RestLibProblemDetails
         {
-            Type = ProblemTypes.BatchActionNotEnabled,
+            Type = ProblemTypes.Resolve(ProblemTypes.BatchActionNotEnabled),
             Title = "Batch Action Not Enabled",
             Status = StatusCodes.Status400BadRequest,
             Detail = $"The batch action '{action}' is not enabled for this resource. Enabled actions: {allowed}.",
@@ -260,7 +260,7 @@ public static class ProblemDetailsFactory
     {
         return new RestLibProblemDetails
         {
-            Type = ProblemTypes.Conflict,
+            Type = ProblemTypes.Resolve(ProblemTypes.Conflict),
             Title = "Conflict",
             Status = StatusCodes.Status409Conflict,
             Detail = detail,
@@ -277,7 +277,7 @@ public static class ProblemDetailsFactory
     {
         return new RestLibProblemDetails
         {
-            Type = ProblemTypes.PreconditionFailed,
+            Type = ProblemTypes.Resolve(ProblemTypes.PreconditionFailed),
             Title = "Precondition Failed",
             Status = StatusCodes.Status412PreconditionFailed,
             Detail = detail,
@@ -294,7 +294,7 @@ public static class ProblemDetailsFactory
     {
         return new RestLibProblemDetails
         {
-            Type = ProblemTypes.InternalError,
+            Type = ProblemTypes.Resolve(ProblemTypes.InternalError),
             Title = "Internal Server Error",
             Status = StatusCodes.Status500InternalServerError,
             Detail = detail ?? "An unexpected error occurred.",
@@ -312,7 +312,7 @@ public static class ProblemDetailsFactory
     {
         return new RestLibProblemDetails
         {
-            Type = ProblemTypes.HookShortCircuit,
+            Type = ProblemTypes.Resolve(ProblemTypes.HookShortCircuit),
             Title = "Hook Short-Circuit",
             Status = statusCode,
             Detail = "The operation was short-circuited by a hook.",
