@@ -518,6 +518,112 @@ public class ProblemDetailsTests : IDisposable
         json.Should().Contain("\"Error 1\"");
     }
 
+    [Fact]
+    public void ProblemDetails_Serializes_ExtensionData()
+    {
+        // Arrange
+        var problem = new RestLibProblemDetails
+        {
+            Type = ProblemTypes.InternalError,
+            Title = "Internal Server Error",
+            Status = 500,
+            Extensions = new Dictionary<string, JsonElement>
+            {
+                ["trace_id"] = JsonSerializer.SerializeToElement("abc-123"),
+                ["retry_after"] = JsonSerializer.SerializeToElement(30),
+            },
+        };
+
+        // Act
+        var json = JsonSerializer.Serialize(problem);
+
+        // Assert — extension members appear as top-level properties
+        json.Should().Contain("\"trace_id\":\"abc-123\"");
+        json.Should().Contain("\"retry_after\":30");
+    }
+
+    [Fact]
+    public void ProblemDetails_OmitsExtensionData_WhenNull()
+    {
+        // Arrange
+        var problem = new RestLibProblemDetails
+        {
+            Type = ProblemTypes.NotFound,
+            Title = "Not Found",
+            Status = 404,
+            Extensions = null,
+        };
+
+        // Act
+        var json = JsonSerializer.Serialize(problem);
+
+        // Assert — no extra properties appear
+        var doc = JsonDocument.Parse(json);
+        var props = doc.RootElement.EnumerateObject().Select(p => p.Name).ToList();
+        props.Should().BeEquivalentTo(new[] { "type", "title", "status" });
+    }
+
+    [Fact]
+    public void ProblemDetails_Deserializes_UnknownMembers_Into_ExtensionData()
+    {
+        // Arrange — JSON with a custom extension member
+        var json = """
+            {
+                "type": "/problems/internal-error",
+                "title": "Internal Server Error",
+                "status": 500,
+                "trace_id": "abc-123",
+                "retry_after": 30
+            }
+            """;
+
+        // Act
+        var problem = JsonSerializer.Deserialize<RestLibProblemDetails>(json);
+
+        // Assert
+        problem.Should().NotBeNull();
+        problem!.Extensions.Should().NotBeNull();
+        problem.Extensions.Should().ContainKey("trace_id");
+        problem.Extensions.Should().ContainKey("retry_after");
+        problem.Extensions!["trace_id"].GetString().Should().Be("abc-123");
+        problem.Extensions["retry_after"].GetInt32().Should().Be(30);
+    }
+
+    [Fact]
+    public void ProblemDetails_RoundTrips_ExtensionData()
+    {
+        // Arrange
+        var original = new RestLibProblemDetails
+        {
+            Type = ProblemTypes.BadRequest,
+            Title = "Bad Request",
+            Status = 400,
+            Detail = "Something went wrong",
+            Extensions = new Dictionary<string, JsonElement>
+            {
+                ["correlation_id"] = JsonSerializer.SerializeToElement("corr-456"),
+                ["is_transient"] = JsonSerializer.SerializeToElement(true),
+            },
+        };
+
+        // Act
+        var json = JsonSerializer.Serialize(original);
+        var deserialized = JsonSerializer.Deserialize<RestLibProblemDetails>(json);
+
+        // Assert — known properties round-trip
+        deserialized.Should().NotBeNull();
+        deserialized!.Type.Should().Be(original.Type);
+        deserialized.Title.Should().Be(original.Title);
+        deserialized.Status.Should().Be(original.Status);
+        deserialized.Detail.Should().Be(original.Detail);
+
+        // Assert — extension data round-trips
+        deserialized.Extensions.Should().NotBeNull();
+        deserialized.Extensions.Should().HaveCount(2);
+        deserialized.Extensions!["correlation_id"].GetString().Should().Be("corr-456");
+        deserialized.Extensions["is_transient"].GetBoolean().Should().BeTrue();
+    }
+
     #endregion
 
     #region Success Responses Do Not Use Problem Details

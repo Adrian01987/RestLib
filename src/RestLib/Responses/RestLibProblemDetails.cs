@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace RestLib.Responses;
@@ -45,4 +46,12 @@ public class RestLibProblemDetails
     [JsonPropertyName("errors")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IDictionary<string, string[]>? Errors { get; init; }
+
+    /// <summary>
+    /// Additional extension members as defined by RFC 9457 Section 3.2.
+    /// Any members not mapped to a declared property are captured here during
+    /// deserialization and emitted during serialization.
+    /// </summary>
+    [JsonExtensionData]
+    public IDictionary<string, JsonElement>? Extensions { get; set; }
 }

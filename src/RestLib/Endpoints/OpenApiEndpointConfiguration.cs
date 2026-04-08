@@ -799,7 +799,9 @@ internal static class OpenApiEndpointConfiguration
                                 }
                             }
                         },
-                        Required = new HashSet<string> { "type", "title", "status" }
+                        Required = new HashSet<string> { "type", "title", "status" },
+                        AdditionalPropertiesAllowed = true,
+                        Description = "RFC 9457 Problem Details. Additional extension members may be present."
                     }
                 }
             }
