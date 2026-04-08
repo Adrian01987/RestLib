@@ -150,7 +150,14 @@ internal static class GetAllHandler
 
                 var result = await repository.GetAllAsync(paginationRequest, ct);
 
-                var response = PaginationHelper.BuildCollectionResponse(result, httpContext.Request, cursor, effectiveLimit, options);
+                // If the repository supports counting, get the total count
+                long? totalCount = null;
+                if (repository is ICountableRepository<TEntity, TKey> countable)
+                {
+                    totalCount = await countable.CountAsync(filterValues, ct);
+                }
+
+                var response = PaginationHelper.BuildCollectionResponse(result, httpContext.Request, cursor, effectiveLimit, options, totalCount);
 
                 // BeforeResponse hook
                 var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
@@ -163,6 +170,7 @@ internal static class GetAllHandler
                     var projectedResponse = new
                     {
                         items = projectedItems,
+                        total_count = response.TotalCount,
                         self = response.Self,
                         first = response.First,
                         next = response.Next,

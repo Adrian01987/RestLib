@@ -9,13 +9,13 @@ using RestLib.Sorting;
 namespace RestLib.InMemory;
 
 /// <summary>
-/// Thread-safe in-memory implementation of <see cref="IRepository{TEntity, TKey}"/>
-/// and <see cref="IBatchRepository{TEntity, TKey}"/>.
+/// Thread-safe in-memory implementation of <see cref="IRepository{TEntity, TKey}"/>,
+/// <see cref="IBatchRepository{TEntity, TKey}"/>, and <see cref="ICountableRepository{TEntity, TKey}"/>.
 /// Ideal for testing, prototyping, and scenarios where data persistence is not required.
 /// </summary>
 /// <typeparam name="TEntity">The entity type.</typeparam>
 /// <typeparam name="TKey">The key type.</typeparam>
-public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBatchRepository<TEntity, TKey>
+public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBatchRepository<TEntity, TKey>, ICountableRepository<TEntity, TKey>
     where TEntity : class
     where TKey : notnull
 {
@@ -286,6 +286,14 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
         }
 
         return Task.FromResult<IReadOnlyList<TEntity>>(results);
+    }
+
+    /// <inheritdoc />
+    public Task<long> CountAsync(IReadOnlyList<FilterValue> filters, CancellationToken ct = default)
+    {
+        var items = _store.Values.AsEnumerable();
+        items = ApplyFilters(items, filters);
+        return Task.FromResult((long)items.Count());
     }
 
     /// <summary>

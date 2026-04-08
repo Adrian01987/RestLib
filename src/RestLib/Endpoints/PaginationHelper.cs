@@ -20,13 +20,18 @@ internal static class PaginationHelper
     /// <param name="currentCursor">The current cursor value, if any.</param>
     /// <param name="limit">The effective page size.</param>
     /// <param name="options">The RestLib options.</param>
+    /// <param name="totalCount">
+    /// The total number of matching entities, or <c>null</c> when the repository
+    /// does not implement <see cref="Abstractions.ICountableRepository{TEntity, TKey}"/>.
+    /// </param>
     /// <returns>A collection response with pagination links.</returns>
     internal static CollectionResponse<T> BuildCollectionResponse<T>(
         PagedResult<T> result,
         HttpRequest request,
         string? currentCursor,
         int limit,
-        RestLibOptions options)
+        RestLibOptions options,
+        long? totalCount = null)
     {
         string? selfLink = null;
         string? firstLink = null;
@@ -59,6 +64,7 @@ internal static class PaginationHelper
         return new CollectionResponse<T>
         {
             Items = result.Items,
+            TotalCount = totalCount,
             Self = selfLink,
             First = firstLink,
             Next = nextLink,

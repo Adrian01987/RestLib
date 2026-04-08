@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace RestLib.Responses;
 
 /// <summary>
@@ -11,6 +13,14 @@ public class CollectionResponse<T>
     /// The items in the current page.
     /// </summary>
     public required IReadOnlyList<T> Items { get; init; }
+
+    /// <summary>
+    /// The total number of entities matching the current filters.
+    /// Only present when the repository implements
+    /// <see cref="Abstractions.ICountableRepository{TEntity, TKey}"/>.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? TotalCount { get; init; }
 
     /// <summary>
     /// The URL to the current page (self link).
