@@ -16,6 +16,8 @@ namespace RestLib.Tests;
 /// Tests for Story 10.1: Data Annotation Validation
 /// Verifies that entities are validated using Data Annotations.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Validation")]
 public class DataAnnotationValidationTests : IDisposable
 {
     private IHost? _host;

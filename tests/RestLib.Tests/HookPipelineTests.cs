@@ -4,7 +4,6 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,6 +11,7 @@ using Microsoft.Extensions.Hosting;
 using RestLib.Abstractions;
 using RestLib.Hooks;
 using RestLib.Pagination;
+using RestLib.Tests.Fakes;
 using Xunit;
 
 namespace RestLib.Tests;
@@ -20,6 +20,8 @@ namespace RestLib.Tests;
 /// Tests for Story 6.1: Hook Pipeline Definition
 /// Verifies that all 6 hooks are available, optional, execute in order, and support async.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Hooks")]
 public class HookPipelineTests
 {
     private readonly JsonSerializerOptions _jsonOptions = new()
@@ -1181,36 +1183,21 @@ public class HookPipelineTests
 
     #region Test Host Helper
 
-    private static async Task<IHost> CreateHostWithHooks(
+    private static Task<IHost> CreateHostWithHooks(
       HookTestRepository repository,
       Action<RestLibHooks<HookTestEntity, int>> configureHooks)
     {
-        var host = await new HostBuilder()
-          .ConfigureWebHost(webBuilder =>
-          {
-              webBuilder.UseTestServer();
-              webBuilder.ConfigureServices(services =>
-          {
-              services.AddRouting();
-              services.AddSingleton<IRepository<HookTestEntity, int>>(repository);
-          });
-              webBuilder.Configure(app =>
-          {
-              app.UseRouting();
-              app.UseEndpoints(endpoints =>
-          {
-              endpoints.MapRestLib<HookTestEntity, int>("/api/items", config =>
+        var (host, _) = new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
+            .SkipRestLibRegistration()
+            .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
                 config.KeySelector = e => e.Id;
                 config.UseHooks(configureHooks);
-            });
-          });
-          });
-          })
-          .StartAsync();
+            })
+            .Build();
 
-        return host;
+        return Task.FromResult(host);
     }
 
     #endregion

@@ -9,6 +9,8 @@ namespace RestLib.Tests;
 /// <summary>
 /// Unit tests for <see cref="NamingUtils"/> internal utility methods.
 /// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "Naming")]
 public class NamingUtilsTests
 {
     #region ConvertToSnakeCase

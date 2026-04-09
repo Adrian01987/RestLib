@@ -22,6 +22,8 @@ namespace RestLib.Tests;
 /// Integration tests for versioned endpoint registration patterns.
 /// </summary>
 [Trait("Category", "Story8.1")]
+[Trait("Type", "Integration")]
+[Trait("Feature", "Versioning")]
 public class VersioningTests : IDisposable
 {
     private IHost? _host;

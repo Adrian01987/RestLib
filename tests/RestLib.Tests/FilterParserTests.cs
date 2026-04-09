@@ -10,6 +10,8 @@ namespace RestLib.Tests;
 /// Dedicated unit tests for <see cref="FilterParser"/> static helpers
 /// (ParseQueryParameterKey, GetOperatorName, GetFriendlyTypeName, TryConvertValue, Parse).
 /// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "Filtering")]
 public class FilterParserUnitTests
 {
     #region ParseQueryParameterKey
@@ -824,6 +826,8 @@ public class FilterParserUnitTests
 /// <summary>
 /// Unit tests for <see cref="FilterConfiguration{TEntity}"/>.
 /// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "Filtering")]
 public class FilterConfigurationTests
 {
     [Fact]

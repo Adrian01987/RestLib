@@ -146,6 +146,8 @@ public class ThrowingBulkBatchRepository : IBatchRepository<BatchEntity, Guid>
 /// <summary>
 /// Integration tests for batch operations (Stories 8.1–8.8).
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Batch")]
 public class BatchOperationsTests : IDisposable
 {
     private readonly InMemoryRepository<BatchEntity, Guid> _repository;

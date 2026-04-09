@@ -2,10 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using RestLib.Abstractions;
@@ -19,6 +17,8 @@ namespace RestLib.Tests;
 /// Tests for Story 6.1: Rate Limiting Integration
 /// Verifies that rate limiting policies are correctly applied to RestLib endpoints.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "RateLimiting")]
 public class RateLimitingTests : IDisposable
 {
     private IHost? _host;
@@ -304,58 +304,43 @@ public class RateLimitingTests : IDisposable
     public void JsonConfig_ByOperation_InvalidName_ThrowsInvalidOperationException()
     {
         // Act
-        var act = async () =>
+        var act = () =>
         {
-            using var host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
-            {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
+            var (host, _) = new TestJsonHostBuilder()
+                .WithServices(services =>
+                {
+                    services.AddSingleton<IRepository<TestEntity, Guid>>(new TestEntityRepository());
+                    services.AddRateLimiter(options =>
                     {
-                        services.AddRestLib();
-                        services.AddSingleton<IRepository<TestEntity, Guid>>(new TestEntityRepository());
-                        services.AddRouting();
-                        services.AddRateLimiter(options =>
-                      {
-                          options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-                          options.AddFixedWindowLimiter("some-policy", limiter =>
+                        options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+                        options.AddFixedWindowLimiter("some-policy", limiter =>
                         {
                             limiter.PermitLimit = 1;
                             limiter.Window = TimeSpan.FromMinutes(1);
                         });
-                      });
-                        services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
-                        {
-                            Name = "limited",
-                            Route = "/api/limited",
-                            AllowAnonymousAll = true,
-                            RateLimiting = new RestLibJsonRateLimitingConfiguration
-                            {
-                                ByOperation = new Dictionary<string, string>
-                                {
-                                    ["NotAnOperation"] = "some-policy"
-                                }
-                            }
-                        });
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseRateLimiter();
-                        app.UseEndpoints(endpoints =>
-                      {
-                          endpoints.MapJsonResources();
-                      });
                     });
-            })
-            .Build();
+                    services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+                    {
+                        Name = "limited",
+                        Route = "/api/limited",
+                        AllowAnonymousAll = true,
+                        RateLimiting = new RestLibJsonRateLimitingConfiguration
+                        {
+                            ByOperation = new Dictionary<string, string>
+                            {
+                                ["NotAnOperation"] = "some-policy"
+                            }
+                        }
+                    });
+                })
+                .WithMiddleware(app => app.UseRateLimiter())
+                .Build();
 
-            await host.StartAsync();
+            host.Dispose();
         };
 
         // Assert
-        act.Should().ThrowAsync<InvalidOperationException>()
+        act.Should().Throw<InvalidOperationException>()
             .WithMessage("*'NotAnOperation' is not a valid RestLib operation name*");
     }
 
@@ -384,50 +369,35 @@ public class RateLimitingTests : IDisposable
         // Arrange — configure rate limiting via JSON config model
         _repository = new TestEntityRepository();
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        var (host, client) = new TestJsonHostBuilder()
+            .WithServices(services =>
             {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
+                services.AddSingleton<IRepository<TestEntity, Guid>>(_repository);
+                services.AddRateLimiter(options =>
+                {
+                    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+                    options.AddFixedWindowLimiter("json-strict", limiter =>
                     {
-                        services.AddRestLib();
-                        services.AddSingleton<IRepository<TestEntity, Guid>>(_repository);
-                        services.AddRouting();
-                        services.AddRateLimiter(options =>
-                    {
-                        options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-                        options.AddFixedWindowLimiter("json-strict", limiter =>
-                      {
-                          limiter.PermitLimit = 1;
-                          limiter.Window = TimeSpan.FromMinutes(1);
-                      });
+                        limiter.PermitLimit = 1;
+                        limiter.Window = TimeSpan.FromMinutes(1);
                     });
-                        services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
-                        {
-                            Name = "limited",
-                            Route = "/api/limited",
-                            AllowAnonymousAll = true,
-                            RateLimiting = new RestLibJsonRateLimitingConfiguration
-                            {
-                                Default = "json-strict"
-                            }
-                        });
-                    })
-                    .Configure(app =>
+                });
+                services.AddJsonResource<TestEntity, Guid>(new RestLibJsonResourceConfiguration
+                {
+                    Name = "limited",
+                    Route = "/api/limited",
+                    AllowAnonymousAll = true,
+                    RateLimiting = new RestLibJsonRateLimitingConfiguration
                     {
-                        app.UseRouting();
-                        app.UseRateLimiter();
-                        app.UseEndpoints(endpoints =>
-                    {
-                        endpoints.MapJsonResources();
-                    });
-                    });
+                        Default = "json-strict"
+                    }
+                });
             })
+            .WithMiddleware(app => app.UseRateLimiter())
             .Build();
 
-        _host.Start();
-        _client = _host.GetTestClient();
+        _host = host;
+        _client = client;
 
         // Act — first request consumes the limit, second should be rejected
         var first = await _client.GetAsync("/api/limited");

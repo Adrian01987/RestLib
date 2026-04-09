@@ -2,14 +2,13 @@ using System.Net.Http;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi;
-using RestLib.Abstractions;
 using RestLib.InMemory;
+using RestLib.Tests.Fakes;
 using Xunit;
 
 namespace RestLib.Tests;
@@ -77,38 +76,22 @@ public partial class OpenApiDocumentationTests
         var nextId = 1;
         var repository = new InMemoryRepository<OpenApiTestEntity, int>(e => e.Id, () => nextId++);
 
-        using var host = await new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
-            {
-                webBuilder.UseTestServer();
-                webBuilder.ConfigureServices(services =>
-            {
-                services.AddRestLib(options =>
+        var (host, client) = new TestHostBuilder<OpenApiTestEntity, int>(repository, "/api/items")
+            .WithOptions(options =>
             {
                 options.DefaultPageSize = 50;
                 options.MaxPageSize = 500;
-            });
-                services.AddRouting();
-                services.AddOpenApi();
-                services.AddSingleton<IRepository<OpenApiTestEntity, int>>(repository);
-            });
-                webBuilder.Configure(app =>
-            {
-                app.UseRouting();
-                app.UseEndpoints(endpoints =>
-            {
-                endpoints.MapOpenApi();
-                endpoints.MapRestLib<OpenApiTestEntity, int>("/api/items", config =>
-              {
-                  config.AllowAnonymous();
-                  config.KeySelector = e => e.Id;
-              });
-            });
-            });
             })
-            .StartAsync();
+            .WithServices(services => services.AddOpenApi())
+            .WithAdditionalEndpoints(endpoints => endpoints.MapOpenApi())
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.KeySelector = e => e.Id;
+            })
+            .Build();
 
-        var client = host.GetTestClient();
+        using var _ = host;
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);

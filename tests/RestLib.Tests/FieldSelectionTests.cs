@@ -3,8 +3,6 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using RestLib.Abstractions;
@@ -32,6 +30,8 @@ public class FieldSelectableEntity
 /// <summary>
 /// Integration tests for field selection / sparse fieldsets (Story 7.1).
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "FieldSelection")]
 public class FieldSelectionTests : IDisposable
 {
     private readonly IHost _host;
@@ -399,6 +399,8 @@ public class FieldSelectionTests : IDisposable
 /// <summary>
 /// Integration tests for field selection when no AllowFieldSelection is configured.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "FieldSelection")]
 public class FieldSelectionNoConfigTests : IDisposable
 {
     private readonly IHost _host;
@@ -462,6 +464,8 @@ public class FieldSelectionNoConfigTests : IDisposable
 /// <summary>
 /// Unit tests for <see cref="FieldSelectionParser"/>.
 /// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "FieldSelection")]
 public class FieldSelectionParserTests
 {
     private static FieldSelectionConfiguration<FieldSelectableEntity> CreateConfiguration()
@@ -581,6 +585,8 @@ public class FieldSelectionParserTests
 /// <summary>
 /// Unit tests for <see cref="FieldSelectionConfiguration{TEntity}"/>.
 /// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "FieldSelection")]
 public class FieldSelectionConfigurationTests
 {
     [Fact]
@@ -617,6 +623,8 @@ public class FieldSelectionConfigurationTests
 /// <summary>
 /// Integration tests for field selection configured via JSON resource configuration.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "FieldSelection")]
 public class FieldSelectionJsonConfigTests : IDisposable
 {
     private readonly IHost _host;
@@ -631,39 +639,23 @@ public class FieldSelectionJsonConfigTests : IDisposable
             e => e.Id,
             Guid.NewGuid);
 
-        _host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        var (host, client) = new TestJsonHostBuilder()
+            .WithServices(services =>
             {
-                webBuilder
-                    .UseTestServer()
-                    .ConfigureServices(services =>
+                services.AddSingleton<IRepository<FieldSelectableEntity, Guid>>(_repository);
+                services.AddJsonResource<FieldSelectableEntity, Guid>(
+                    new RestLibJsonResourceConfiguration
                     {
-                        services.AddRestLib();
-                        services.AddSingleton<IRepository<FieldSelectableEntity, Guid>>(_repository);
-                        services.AddRouting();
-
-                        services.AddJsonResource<FieldSelectableEntity, Guid>(
-                        new RestLibJsonResourceConfiguration
-                        {
-                            Name = "field-select-items",
-                            Route = "/api/fs-items",
-                            AllowAnonymousAll = true,
-                            FieldSelection = ["Id", "Name", "Price"],
-                        });
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseRouting();
-                        app.UseEndpoints(endpoints =>
-                    {
-                        endpoints.MapJsonResources();
-                    });
+                        Name = "field-select-items",
+                        Route = "/api/fs-items",
+                        AllowAnonymousAll = true,
+                        FieldSelection = ["Id", "Name", "Price"],
                     });
             })
             .Build();
 
-        _host.Start();
-        _client = _host.GetTestClient();
+        _host = host;
+        _client = client;
 
         _repository.Seed([
             new FieldSelectableEntity
@@ -725,6 +717,8 @@ public class FieldSelectionJsonConfigTests : IDisposable
 /// <summary>
 /// Unit tests for <see cref="FieldProjector"/> cache key correctness.
 /// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "FieldSelection")]
 public class FieldProjectorCacheTests
 {
     /// <summary>

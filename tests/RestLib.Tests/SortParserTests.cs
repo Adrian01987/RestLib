@@ -8,6 +8,8 @@ namespace RestLib.Tests;
 /// <summary>
 /// Unit tests for <see cref="SortParser"/>.
 /// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "Sorting")]
 public class SortParserTests
 {
     private static SortConfiguration<FilterableEntity> CreateConfiguration()
@@ -225,6 +227,8 @@ public class SortParserTests
 /// <summary>
 /// Tests for <see cref="SortConfiguration{TEntity}"/>.
 /// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "Sorting")]
 public class SortConfigurationTests
 {
     [Fact]

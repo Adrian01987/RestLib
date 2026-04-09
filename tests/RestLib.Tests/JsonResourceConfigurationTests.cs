@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
@@ -17,6 +16,8 @@ using Xunit;
 
 namespace RestLib.Tests;
 
+[Trait("Type", "Integration")]
+[Trait("Feature", "Configuration")]
 public class JsonResourceConfigurationTests
 {
     [Fact]
@@ -740,44 +741,26 @@ public class JsonResourceConfigurationTests
         containsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    private static async Task<IHost> CreateHost(
+    private static Task<IHost> CreateHost(
         Action<IServiceCollection> configureServices,
         string? mapResourceName = null)
     {
-        var host = new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        var builder = new TestJsonHostBuilder()
+            .WithServices(services =>
             {
-                webBuilder
-                .UseTestServer()
-                .ConfigureServices(services =>
-                {
-                    services.AddRestLib();
-                    services.AddSingleton<TestEntityRepository>();
-                    services.AddSingleton<IRepository<TestEntity, Guid>>(sp => sp.GetRequiredService<TestEntityRepository>());
-                    services.AddRouting();
-                    services.AddOpenApi();
-                    configureServices(services);
-                })
-                .Configure(app =>
-                {
-                    app.UseRouting();
-                    app.UseEndpoints(endpoints =>
-                {
-                    endpoints.MapOpenApi();
-                    if (mapResourceName is not null)
-                    {
-                        endpoints.MapJsonResource(mapResourceName);
-                    }
-                    else
-                    {
-                        endpoints.MapJsonResources();
-                    }
-                });
-                });
+                services.AddSingleton<TestEntityRepository>();
+                services.AddSingleton<IRepository<TestEntity, Guid>>(sp => sp.GetRequiredService<TestEntityRepository>());
+                services.AddOpenApi();
+                configureServices(services);
             })
-            .Build();
+            .WithAdditionalEndpoints(endpoints => endpoints.MapOpenApi());
 
-        await host.StartAsync();
-        return host;
+        if (mapResourceName is not null)
+        {
+            builder.MapOnly(mapResourceName);
+        }
+
+        var (host, _) = builder.Build();
+        return Task.FromResult(host);
     }
 }

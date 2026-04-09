@@ -12,6 +12,8 @@ namespace RestLib.Tests;
 /// <summary>
 /// Tests for disabling pagination links via configuration.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Pagination")]
 public class PaginationLinksDisabledTests : IDisposable
 {
     private readonly IHost _host;

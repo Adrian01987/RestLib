@@ -4,14 +4,13 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using RestLib.Abstractions;
 using RestLib.Hooks;
 using RestLib.Pagination;
+using RestLib.Tests.Fakes;
 using Xunit;
 
 namespace RestLib.Tests;
@@ -26,6 +25,8 @@ namespace RestLib.Tests;
 /// - [ ] Can short-circuit pipeline
 /// - [ ] Items dictionary for data sharing
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Hooks")]
 public partial class HookContextTests
 {
     private readonly JsonSerializerOptions _jsonOptions = new()
@@ -119,36 +120,21 @@ public partial class HookContextTests
 
     #region Test Host Helper
 
-    private static async Task<IHost> CreateHostWithHooks(
+    private static Task<IHost> CreateHostWithHooks(
       ContextTestRepository repository,
       Action<RestLibHooks<ContextTestEntity, int>> configureHooks)
     {
-        var host = await new HostBuilder()
-          .ConfigureWebHost(webBuilder =>
-          {
-              webBuilder.UseTestServer();
-              webBuilder.ConfigureServices(services =>
-          {
-              services.AddRouting();
-              services.AddSingleton<IRepository<ContextTestEntity, int>>(repository);
-          });
-              webBuilder.Configure(app =>
-          {
-              app.UseRouting();
-              app.UseEndpoints(endpoints =>
-          {
-              endpoints.MapRestLib<ContextTestEntity, int>("/api/items", config =>
+        var (host, _) = new TestHostBuilder<ContextTestEntity, int>(repository, "/api/items")
+            .SkipRestLibRegistration()
+            .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
                 config.KeySelector = e => e.Id;
                 config.UseHooks(configureHooks);
-            });
-          });
-          });
-          })
-          .StartAsync();
+            })
+            .Build();
 
-        return host;
+        return Task.FromResult(host);
     }
 
     private static async Task<IHost> CreateHostWithHooksAndErrorSimulation(

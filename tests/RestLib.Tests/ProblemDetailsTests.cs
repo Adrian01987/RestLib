@@ -17,6 +17,8 @@ namespace RestLib.Tests;
 /// Tests for Story 3.3: Problem Details for Errors
 /// Verifies that all error responses use RFC 9457 Problem Details format.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "ProblemDetails")]
 public class ProblemDetailsTests : IDisposable
 {
     private readonly IHost _host;
@@ -807,6 +809,8 @@ public class ProblemDetailsTests : IDisposable
 /// <see cref="RestLibOptions.ProblemTypeBaseUri"/> option.
 /// </summary>
 [Collection("ProblemTypeBaseUri")]
+[Trait("Type", "Unit")]
+[Trait("Feature", "ProblemDetails")]
 public class ProblemTypeResolveTests : IDisposable
 {
     /// <summary>
@@ -948,6 +952,8 @@ public class ProblemTypeResolveTests : IDisposable
 /// <see cref="ProblemTypes"/>.
 /// </summary>
 [Collection("ProblemTypeBaseUri")]
+[Trait("Type", "Unit")]
+[Trait("Feature", "Configuration")]
 public class ProblemTypeBaseUriRegistrationTests : IDisposable
 {
     /// <summary>

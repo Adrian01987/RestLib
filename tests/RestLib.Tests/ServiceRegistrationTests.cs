@@ -12,6 +12,8 @@ namespace RestLib.Tests;
 /// <summary>
 /// Tests for Story 1.3: Service Registration Extensions.
 /// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "Configuration")]
 public class ServiceRegistrationTests
 {
     #region AddRestLib Tests

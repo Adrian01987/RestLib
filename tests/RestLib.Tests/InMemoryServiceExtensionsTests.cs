@@ -7,6 +7,8 @@ using Xunit;
 
 namespace RestLib.Tests;
 
+[Trait("Type", "Unit")]
+[Trait("Feature", "Configuration")]
 public class InMemoryServiceExtensionsTests
 {
     private record Product(Guid Id, string Name, decimal Price);

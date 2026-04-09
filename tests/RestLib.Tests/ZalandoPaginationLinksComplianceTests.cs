@@ -12,6 +12,8 @@ namespace RestLib.Tests;
 /// <summary>
 /// Tests for Zalando compliance of pagination links.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Pagination")]
 public class ZalandoPaginationLinksComplianceTests : IDisposable
 {
     private readonly IHost _host;

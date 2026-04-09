@@ -15,6 +15,8 @@ namespace RestLib.Tests;
 /// Verifies that collections are wrapped in { "items": [...] } with pagination links,
 /// and single resources are returned unwrapped.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "CRUD")]
 public class ResponseWrapperTests : IDisposable
 {
     private readonly IHost _host;
@@ -434,6 +436,8 @@ public class ResponseWrapperTests : IDisposable
 /// <summary>
 /// Tests for disabling pagination links via configuration.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "CRUD")]
 public class ResponseWrapperConfigTests : IDisposable
 {
     private IHost? _host;

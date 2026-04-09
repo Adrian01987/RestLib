@@ -12,6 +12,8 @@ namespace RestLib.Tests;
 /// Tests for Story 5.2: Conditional Requests
 /// Verifies If-Match and If-None-Match header handling per RFC 9110.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "ConditionalRequests")]
 public class ConditionalRequestTests : IDisposable
 {
     private readonly IHost _host;
@@ -618,6 +620,8 @@ public class ConditionalRequestTests : IDisposable
 /// <summary>
 /// Unit tests for ETagComparer helper class
 /// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "ConditionalRequests")]
 public class ETagComparerTests
 {
     #region IfMatchSucceeds Tests

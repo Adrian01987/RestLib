@@ -9,6 +9,8 @@ namespace RestLib.Tests;
 /// <summary>
 /// Unit tests for the EntityValidator class.
 /// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "Validation")]
 public class EntityValidatorTests
 {
     #region Success scenarios

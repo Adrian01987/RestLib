@@ -14,6 +14,8 @@ namespace RestLib.Tests;
 /// field in collection responses.
 /// </summary>
 [Trait("Category", "Story20")]
+[Trait("Type", "Integration")]
+[Trait("Feature", "Pagination")]
 public class CountableRepositoryTests : IDisposable
 {
     private readonly IHost _host;
@@ -152,6 +154,8 @@ public class CountableRepositoryTests : IDisposable
 /// ICountableRepository.
 /// </summary>
 [Trait("Category", "Story20")]
+[Trait("Type", "Integration")]
+[Trait("Feature", "Pagination")]
 public class NonCountableRepositoryTests : IDisposable
 {
     private readonly IHost _host;
@@ -197,6 +201,8 @@ public class NonCountableRepositoryTests : IDisposable
 /// Unit tests for InMemoryRepository.CountAsync.
 /// </summary>
 [Trait("Category", "Story20")]
+[Trait("Type", "Unit")]
+[Trait("Feature", "Repository")]
 public class InMemoryCountAsyncTests
 {
     [Fact]

@@ -12,6 +12,8 @@ namespace RestLib.Tests;
 /// <summary>
 /// Edge case tests for pagination links.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Pagination")]
 public class PaginationLinksEdgeCaseTests : IDisposable
 {
     private readonly IHost _host;

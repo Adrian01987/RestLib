@@ -7,6 +7,8 @@ using Xunit;
 
 namespace RestLib.Tests;
 
+[Trait("Type", "Unit")]
+[Trait("Feature", "Repository")]
 public partial class InMemoryRepositoryTests
 {
     private record TestEntity(Guid Id, string Name, int Value, DateTime CreatedAt);

@@ -10,6 +10,8 @@ namespace RestLib.Tests;
 /// Tests for Story 1.2: Repository Interface Contract
 /// Verifies that the IRepository interface contract is properly defined.
 /// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "Repository")]
 public class RepositoryInterfaceTests
 {
     #region Interface Definition Tests

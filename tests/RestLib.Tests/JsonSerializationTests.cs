@@ -15,6 +15,8 @@ namespace RestLib.Tests;
 /// Tests for Story 3.1: JSON Serialization with snake_case
 /// Verifies that all JSON responses use snake_case naming per Zalando Rule 118.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Serialization")]
 public class JsonSerializationTests : IDisposable
 {
     private readonly IHost _host;
@@ -494,6 +496,8 @@ public class JsonSerializationTests : IDisposable
 /// <summary>
 /// Tests for custom JSON configuration via AddRestLib options.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Serialization")]
 public class JsonSerializationCustomConfigTests : IDisposable
 {
     private IHost? _host;

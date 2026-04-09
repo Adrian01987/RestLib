@@ -14,6 +14,8 @@ namespace RestLib.Tests;
 /// Tests for Story 4.2: Pagination Links.
 /// Verifies that links are absolute URLs, preserve query filters, and can be disabled.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Pagination")]
 public class PaginationLinksTests : IDisposable
 {
     private readonly IHost _host;

@@ -1,15 +1,14 @@
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi;
 using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.Pagination;
+using RestLib.Tests.Fakes;
 using Xunit;
 
 namespace RestLib.Tests;
@@ -23,6 +22,8 @@ namespace RestLib.Tests;
 /// - [ ] Custom summaries
 /// - [ ] Deprecation marking
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "OpenApi")]
 public partial class OpenApiMetadataConfigurationTests
 {
     #region Test Entity and Repository
@@ -122,34 +123,19 @@ public partial class OpenApiMetadataConfigurationTests
 
     #region Helper Methods
 
-    private static async Task<IHost> CreateHostWithOpenApi(
+    private static Task<IHost> CreateHostWithOpenApi(
         Action<RestLibEndpointConfiguration<MetadataTestEntity, int>> configure)
     {
         var repository = new MetadataTestRepository();
 
-        var host = await new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
-            {
-                webBuilder.UseTestServer();
-                webBuilder.ConfigureServices(services =>
-            {
-                services.AddRouting();
-                services.AddOpenApi();
-                services.AddSingleton<IRepository<MetadataTestEntity, int>>(repository);
-            });
-                webBuilder.Configure(app =>
-            {
-                app.UseRouting();
-                app.UseEndpoints(endpoints =>
-            {
-                endpoints.MapOpenApi();
-                endpoints.MapRestLib<MetadataTestEntity, int>("/api/items", configure);
-            });
-            });
-            })
-            .StartAsync();
+        var (host, _) = new TestHostBuilder<MetadataTestEntity, int>(repository, "/api/items")
+            .SkipRestLibRegistration()
+            .WithServices(services => services.AddOpenApi())
+            .WithAdditionalEndpoints(endpoints => endpoints.MapOpenApi())
+            .WithEndpoint(configure)
+            .Build();
 
-        return host;
+        return Task.FromResult(host);
     }
 
     private static async Task<OpenApiDocument> GetOpenApiDocument(HttpClient client)

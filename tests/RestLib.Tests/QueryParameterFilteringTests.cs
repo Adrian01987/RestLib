@@ -83,6 +83,8 @@ public class NullConverterEntity
 /// Tests for Story 4.3: Query Parameter Filtering.
 /// Verifies filter configuration, snake_case param names, validation, and pagination integration.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Filtering")]
 public class QueryParameterFilteringTests : IDisposable
 {
     private readonly IHost _host;
@@ -598,6 +600,8 @@ public class QueryParameterFilteringTests : IDisposable
 /// <summary>
 /// Tests for filter configuration without filters (baseline behavior).
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Filtering")]
 public class NoFilterConfigurationTests : IDisposable
 {
     private readonly IHost _host;
@@ -660,6 +664,8 @@ public class NoFilterConfigurationTests : IDisposable
 /// <summary>
 /// Tests for FilterParser unit behavior.
 /// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "Filtering")]
 public class FilterParserTests
 {
     [Fact]
@@ -855,6 +861,8 @@ public class FilterParserTests
 /// <summary>
 /// Tests verifying OpenAPI documentation for filters.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Filtering")]
 public class FilterOpenApiTests : IDisposable
 {
     private readonly IHost _host;
@@ -929,6 +937,8 @@ public class FilterOpenApiTests : IDisposable
 /// <summary>
 /// Unit tests for FilterParser bracket-syntax operator parsing.
 /// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "Filtering")]
 public class FilterParserOperatorTests
 {
     [Theory]
@@ -1433,6 +1443,8 @@ public class FilterParserOperatorTests
 /// <summary>
 /// Tests for FilterConfiguration with operator support.
 /// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "Filtering")]
 public class FilterConfigurationOperatorTests
 {
     [Fact]
@@ -1530,6 +1542,8 @@ public class FilterConfigurationOperatorTests
 /// Integration tests for filter operators through the HTTP pipeline.
 /// Uses InMemoryRepository which handles all operators.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Filtering")]
 public class FilterOperatorIntegrationTests : IDisposable
 {
     private readonly IHost _host;
@@ -1908,6 +1922,8 @@ public class FilterOperatorIntegrationTests : IDisposable
 /// Tests that <see cref="RestLibOptions.MaxFilterInListSize"/> is configurable
 /// and threaded through to the filter parser.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Filtering")]
 public class MaxFilterInListSizeTests : IDisposable
 {
     private readonly IHost _host;

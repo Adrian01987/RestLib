@@ -17,6 +17,8 @@ namespace RestLib.Tests;
 /// and always produce well-formed results.
 /// </summary>
 [Trait("Category", "PropertyBased")]
+[Trait("Type", "Unit")]
+[Trait("Feature", "Filtering")]
 public class ParserPropertyTests
 {
     /// <summary>

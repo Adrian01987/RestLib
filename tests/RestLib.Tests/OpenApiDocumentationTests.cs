@@ -2,14 +2,12 @@ using System.Net.Http;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi;
-using RestLib.Abstractions;
 using RestLib.InMemory;
+using RestLib.Tests.Fakes;
 using Xunit;
 
 namespace RestLib.Tests;
@@ -24,6 +22,8 @@ namespace RestLib.Tests;
 /// - [ ] Status codes documented
 /// - [ ] Parameters with constraints
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "OpenApi")]
 public partial class OpenApiDocumentationTests
 {
     #region Test Entity
@@ -43,75 +43,41 @@ public partial class OpenApiDocumentationTests
 
     #region Helper Methods
 
-    private static async Task<IHost> CreateHostWithOpenApi()
+    private static Task<IHost> CreateHostWithOpenApi()
     {
         var nextId = 1;
         var repository = new InMemoryRepository<OpenApiTestEntity, int>(e => e.Id, () => nextId++);
 
-        var host = await new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        var (host, _) = new TestHostBuilder<OpenApiTestEntity, int>(repository, "/api/items")
+            .WithServices(services => services.AddOpenApi())
+            .WithAdditionalEndpoints(endpoints => endpoints.MapOpenApi())
+            .WithEndpoint(config =>
             {
-                webBuilder.UseTestServer();
-                webBuilder.ConfigureServices(services =>
-            {
-                services.AddRestLib();
-                services.AddRouting();
-                services.AddOpenApi();
-                services.AddSingleton<IRepository<OpenApiTestEntity, int>>(repository);
-            });
-                webBuilder.Configure(app =>
-            {
-                app.UseRouting();
-                app.UseEndpoints(endpoints =>
-            {
-                endpoints.MapOpenApi();
-                endpoints.MapRestLib<OpenApiTestEntity, int>("/api/items", config =>
-              {
-                  config.AllowAnonymous();
-                  config.KeySelector = e => e.Id;
-              });
-            });
-            });
+                config.AllowAnonymous();
+                config.KeySelector = e => e.Id;
             })
-            .StartAsync();
+            .Build();
 
-        return host;
+        return Task.FromResult(host);
     }
 
-    private static async Task<IHost> CreateHostWithFilters()
+    private static Task<IHost> CreateHostWithFilters()
     {
         var nextId = 1;
         var repository = new InMemoryRepository<OpenApiTestEntity, int>(e => e.Id, () => nextId++);
 
-        var host = await new HostBuilder()
-            .ConfigureWebHost(webBuilder =>
+        var (host, _) = new TestHostBuilder<OpenApiTestEntity, int>(repository, "/api/items")
+            .WithServices(services => services.AddOpenApi())
+            .WithAdditionalEndpoints(endpoints => endpoints.MapOpenApi())
+            .WithEndpoint(config =>
             {
-                webBuilder.UseTestServer();
-                webBuilder.ConfigureServices(services =>
-            {
-                services.AddRestLib();
-                services.AddRouting();
-                services.AddOpenApi();
-                services.AddSingleton<IRepository<OpenApiTestEntity, int>>(repository);
-            });
-                webBuilder.Configure(app =>
-            {
-                app.UseRouting();
-                app.UseEndpoints(endpoints =>
-            {
-                endpoints.MapOpenApi();
-                endpoints.MapRestLib<OpenApiTestEntity, int>("/api/items", config =>
-              {
-                  config.AllowAnonymous();
-                  config.KeySelector = e => e.Id;
-                  config.AllowFiltering(e => e.IsActive, e => e.CategoryId);
-              });
-            });
-            });
+                config.AllowAnonymous();
+                config.KeySelector = e => e.Id;
+                config.AllowFiltering(e => e.IsActive, e => e.CategoryId);
             })
-            .StartAsync();
+            .Build();
 
-        return host;
+        return Task.FromResult(host);
     }
 
     private static async Task<OpenApiDocument> GetOpenApiDocument(HttpClient client)

@@ -12,6 +12,8 @@ namespace RestLib.Tests;
 /// Tests for Story 3.4: Correct HTTP Status Codes
 /// Verifies that all operations return appropriate status codes per Zalando guidelines.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "CRUD")]
 public class HttpStatusCodeTests : IDisposable
 {
     private readonly IHost _host;
@@ -349,6 +351,8 @@ public class HttpStatusCodeTests : IDisposable
 /// <summary>
 /// Tests for 412 Precondition Failed when ETag support is enabled.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "ConditionalRequests")]
 public class ETagPreconditionTests : IDisposable
 {
     private IHost? _host;
@@ -577,6 +581,8 @@ public class ETagPreconditionTests : IDisposable
 /// <summary>
 /// Tests verifying status codes match Zalando guidelines table.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "CRUD")]
 public class ZalandoStatusCodeComplianceTests : IDisposable
 {
     private readonly IHost _host;

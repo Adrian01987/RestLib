@@ -14,6 +14,8 @@ namespace RestLib.Tests;
 /// Tests for Story 5.1: ETag Generation
 /// Verifies ETag headers are generated correctly per RFC 9110.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "ConditionalRequests")]
 public class ETagGenerationTests : IDisposable
 {
     private readonly IHost _host;
@@ -319,6 +321,8 @@ public class ETagGenerationTests : IDisposable
 /// <summary>
 /// Unit tests for HashBasedETagGenerator
 /// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "ConditionalRequests")]
 public class HashBasedETagGeneratorTests
 {
     private readonly HashBasedETagGenerator _generator = new();
@@ -478,6 +482,8 @@ public class HashBasedETagGeneratorTests
 /// <summary>
 /// Tests for custom ETag generator injection
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "ConditionalRequests")]
 public class CustomETagGeneratorTests : IDisposable
 {
     private readonly IHost _host;

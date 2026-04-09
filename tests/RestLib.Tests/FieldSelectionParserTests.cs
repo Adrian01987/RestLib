@@ -8,6 +8,8 @@ namespace RestLib.Tests;
 /// Dedicated unit tests for <see cref="FieldSelectionParser"/> covering edge cases
 /// in parsing, whitespace handling, error reporting, and mixed valid/invalid input.
 /// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "FieldSelection")]
 public class FieldSelectionParserUnitTests
 {
     #region Helpers
@@ -442,6 +444,8 @@ public class FieldSelectionParserUnitTests
 /// Dedicated unit tests for <see cref="FieldSelectionConfiguration{TEntity}"/>
 /// covering AddProperty overloads, FindByQueryName, and edge cases.
 /// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "FieldSelection")]
 public class FieldSelectionConfigurationUnitTests
 {
     #region AddProperty (expression-based)

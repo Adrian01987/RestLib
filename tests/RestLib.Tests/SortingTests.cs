@@ -25,6 +25,8 @@ public class SortableEntity
 /// <summary>
 /// Integration tests for sorting / ordering support (Story 5.1).
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Sorting")]
 public class SortingTests : IDisposable
 {
     private readonly IHost _host;
@@ -266,6 +268,8 @@ public class SortingTests : IDisposable
 /// <summary>
 /// Tests for default sort and no-sort configuration scenarios.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Sorting")]
 public class SortingDefaultSortTests : IDisposable
 {
     private readonly IHost _host;
@@ -340,6 +344,8 @@ public class SortingDefaultSortTests : IDisposable
 /// <summary>
 /// Tests for sorting when no sort configuration is applied.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Sorting")]
 public class SortingNoConfigTests : IDisposable
 {
     private readonly IHost _host;

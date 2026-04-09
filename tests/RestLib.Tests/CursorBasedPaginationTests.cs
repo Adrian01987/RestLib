@@ -16,6 +16,8 @@ namespace RestLib.Tests;
 /// Tests for Story 4.1: Cursor-Based Pagination.
 /// Verifies cursor encoding/decoding, limit validation, and proper error handling.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Pagination")]
 public class CursorBasedPaginationTests : IDisposable
 {
     private readonly IHost _host;
@@ -755,6 +757,8 @@ public class CursorBasedPaginationTests : IDisposable
 /// <summary>
 /// Tests for cursor encoding with custom page size configuration.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Pagination")]
 public class CursorPaginationCustomConfigTests : IDisposable
 {
     private readonly IHost _host;
@@ -834,6 +838,8 @@ public class CursorPaginationCustomConfigTests : IDisposable
 /// <summary>
 /// Integration tests verifying Zalando Rule 160 compliance for cursor pagination.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Pagination")]
 public class ZalandoPaginationComplianceTests : IDisposable
 {
     private readonly IHost _host;
@@ -857,7 +863,7 @@ public class ZalandoPaginationComplianceTests : IDisposable
 
     [Fact]
     [Trait("Category", "Story4.1")]
-    [Trait("Compliance", "Zalando Rule 160")]
+    [Trait("Compliance", "Zalando-Rule-160")]
     public void CursorsAreOpaque_NotExposingInternalDetails()
     {
         // Arrange
@@ -875,7 +881,7 @@ public class ZalandoPaginationComplianceTests : IDisposable
 
     [Fact]
     [Trait("Category", "Story4.1")]
-    [Trait("Compliance", "Zalando")]
+    [Trait("Compliance", "Zalando-Rule-160")]
     public async Task GetAll_SupportsLimitQueryParameter()
     {
         // Arrange
@@ -892,7 +898,7 @@ public class ZalandoPaginationComplianceTests : IDisposable
 
     [Fact]
     [Trait("Category", "Story4.1")]
-    [Trait("Compliance", "Zalando")]
+    [Trait("Compliance", "Zalando-Rule-160")]
     public async Task GetAll_SupportsCursorQueryParameter()
     {
         // Arrange
@@ -908,7 +914,7 @@ public class ZalandoPaginationComplianceTests : IDisposable
 
     [Fact]
     [Trait("Category", "Story4.1")]
-    [Trait("Compliance", "Zalando")]
+    [Trait("Compliance", "Zalando-Rule-160")]
     public async Task GetAll_InvalidCursor_ReturnsProperProblemDetails()
     {
         // Act

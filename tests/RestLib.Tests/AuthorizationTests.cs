@@ -18,6 +18,8 @@ namespace RestLib.Tests;
 /// Tests for Story 2.1: Authorization by Default
 /// Verifies that endpoints require authorization unless explicitly anonymous.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Authorization")]
 public class AuthorizationTests : IDisposable
 {
     private IHost? _host;

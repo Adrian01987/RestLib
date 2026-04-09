@@ -11,6 +11,8 @@ namespace RestLib.Tests;
 /// Tests for Story 1.1: Minimal Endpoint Registration
 /// Verifies that MapRestLib generates all 6 CRUD endpoints correctly.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "CRUD")]
 public class EndpointRegistrationTests : IDisposable
 {
     private readonly IHost _host;

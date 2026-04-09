@@ -13,6 +13,8 @@ namespace RestLib.Tests;
 /// Tests for operation selection (IncludeOperations / ExcludeOperations).
 /// Verifies that only the configured endpoints are registered.
 /// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Configuration")]
 public class OperationSelectionTests
 {
     private static (IHost host, HttpClient client, TestEntityRepository repository) CreateTestHost(
