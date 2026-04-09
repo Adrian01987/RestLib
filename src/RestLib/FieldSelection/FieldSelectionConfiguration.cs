@@ -6,7 +6,7 @@ namespace RestLib.FieldSelection;
 /// <summary>
 /// Represents configuration for a single selectable field.
 /// </summary>
-public class FieldPropertyConfiguration
+public class FieldSelectionPropertyConfiguration
 {
     /// <summary>
     /// Gets the original property name in C# (e.g., "CategoryId").
@@ -14,9 +14,9 @@ public class FieldPropertyConfiguration
     public required string PropertyName { get; init; }
 
     /// <summary>
-    /// Gets the snake_case field name for the query string (e.g., "category_id").
+    /// Gets the snake_case parameter name for the query string (e.g., "category_id").
     /// </summary>
-    public required string QueryFieldName { get; init; }
+    public required string QueryParameterName { get; init; }
 }
 
 /// <summary>
@@ -25,22 +25,22 @@ public class FieldPropertyConfiguration
 /// <typeparam name="TEntity">The entity type.</typeparam>
 public class FieldSelectionConfiguration<TEntity> where TEntity : class
 {
-    private readonly List<FieldPropertyConfiguration> _properties = [];
+    private readonly List<FieldSelectionPropertyConfiguration> _properties = [];
 
     /// <summary>
     /// Gets the configured selectable properties.
     /// </summary>
-    public IReadOnlyList<FieldPropertyConfiguration> Properties => _properties;
+    public IReadOnlyList<FieldSelectionPropertyConfiguration> Properties => _properties;
 
     /// <summary>
-    /// Finds a configured property by its snake_case query field name.
+    /// Finds a configured property by its snake_case query parameter name.
     /// </summary>
-    /// <param name="queryFieldName">The snake_case field name from the query string.</param>
+    /// <param name="queryParameterName">The snake_case parameter name from the query string.</param>
     /// <returns>The matching configuration, or null.</returns>
-    public FieldPropertyConfiguration? FindByQueryName(string queryFieldName)
+    public FieldSelectionPropertyConfiguration? FindByQueryName(string queryParameterName)
     {
         return _properties.FirstOrDefault(p =>
-            string.Equals(p.QueryFieldName, queryFieldName, StringComparison.OrdinalIgnoreCase));
+            string.Equals(p.QueryParameterName, queryParameterName, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -54,7 +54,7 @@ public class FieldSelectionConfiguration<TEntity> where TEntity : class
             ?? throw new ArgumentException("Expression must be a member expression", nameof(propertyExpression));
 
         var propertyName = memberExpression.Member.Name;
-        var queryFieldName = NamingUtils.ConvertToSnakeCase(propertyName);
+        var queryParameterName = NamingUtils.ConvertToSnakeCase(propertyName);
 
         if (_properties.Any(p => string.Equals(p.PropertyName, propertyName, StringComparison.Ordinal)))
         {
@@ -62,10 +62,10 @@ public class FieldSelectionConfiguration<TEntity> where TEntity : class
                 $"Property '{propertyName}' is already configured for field selection.");
         }
 
-        _properties.Add(new FieldPropertyConfiguration
+        _properties.Add(new FieldSelectionPropertyConfiguration
         {
             PropertyName = propertyName,
-            QueryFieldName = queryFieldName
+            QueryParameterName = queryParameterName
         });
     }
 
@@ -73,8 +73,8 @@ public class FieldSelectionConfiguration<TEntity> where TEntity : class
     /// Adds a selectable property using explicit parameters.
     /// </summary>
     /// <param name="propertyName">The C# property name.</param>
-    /// <param name="queryFieldName">The snake_case query field name.</param>
-    internal void AddProperty(string propertyName, string queryFieldName)
+    /// <param name="queryParameterName">The snake_case query parameter name.</param>
+    internal void AddProperty(string propertyName, string queryParameterName)
     {
         if (_properties.Any(p => string.Equals(p.PropertyName, propertyName, StringComparison.Ordinal)))
         {
@@ -82,10 +82,10 @@ public class FieldSelectionConfiguration<TEntity> where TEntity : class
                 $"Property '{propertyName}' is already configured for field selection.");
         }
 
-        _properties.Add(new FieldPropertyConfiguration
+        _properties.Add(new FieldSelectionPropertyConfiguration
         {
             PropertyName = propertyName,
-            QueryFieldName = queryFieldName
+            QueryParameterName = queryParameterName
         });
     }
 }

@@ -684,9 +684,9 @@ public class FilterParserTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values.Should().HaveCount(1);
-        result.Values[0].TypedValue.Should().Be(true);
-        result.Values[0].PropertyName.Should().Be("IsActive");
+        result.Filters.Should().HaveCount(1);
+        result.Filters[0].TypedValue.Should().Be(true);
+        result.Filters[0].PropertyName.Should().Be("IsActive");
     }
 
     [Fact]
@@ -709,8 +709,8 @@ public class FilterParserTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values.Should().HaveCount(1);
-        result.Values[0].TypedValue.Should().Be(guid);
+        result.Filters.Should().HaveCount(1);
+        result.Filters[0].TypedValue.Should().Be(guid);
     }
 
     [Fact]
@@ -753,7 +753,7 @@ public class FilterParserTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values.Should().BeEmpty();
+        result.Filters.Should().BeEmpty();
     }
 
     [Fact]
@@ -775,8 +775,8 @@ public class FilterParserTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values.Should().HaveCount(1);
-        result.Values[0].TypedValue.Should().Be(ProductStatus.Active);
+        result.Filters.Should().HaveCount(1);
+        result.Filters[0].TypedValue.Should().Be(ProductStatus.Active);
     }
 
     [Fact]
@@ -851,7 +851,7 @@ public class FilterParserTests
         result.Errors[0].ParameterName.Should().Be("status");
         result.Errors[0].Message.Should().Contain("Multiple values");
         result.Errors[0].Message.Should().Contain("not supported");
-        result.Values.Should().BeEmpty();
+        result.Filters.Should().BeEmpty();
     }
 }
 
@@ -1017,9 +1017,9 @@ public class FilterParserOperatorTests
         // Assert
         resultBare.IsValid.Should().BeTrue();
         resultBracket.IsValid.Should().BeTrue();
-        resultBare.Values[0].TypedValue.Should().Be(resultBracket.Values[0].TypedValue);
-        resultBare.Values[0].Operator.Should().Be(FilterOperator.Eq);
-        resultBracket.Values[0].Operator.Should().Be(FilterOperator.Eq);
+        resultBare.Filters[0].TypedValue.Should().Be(resultBracket.Filters[0].TypedValue);
+        resultBare.Filters[0].Operator.Should().Be(FilterOperator.Eq);
+        resultBracket.Filters[0].Operator.Should().Be(FilterOperator.Eq);
     }
 
     [Fact]
@@ -1041,9 +1041,9 @@ public class FilterParserOperatorTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values.Should().HaveCount(1);
-        result.Values[0].Operator.Should().Be(FilterOperator.Gte);
-        result.Values[0].TypedValue.Should().Be(10);
+        result.Filters.Should().HaveCount(1);
+        result.Filters[0].Operator.Should().Be(FilterOperator.Gte);
+        result.Filters[0].TypedValue.Should().Be(10);
     }
 
     [Fact]
@@ -1066,9 +1066,9 @@ public class FilterParserOperatorTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values.Should().HaveCount(2);
-        result.Values.Should().Contain(v => v.Operator == FilterOperator.Gte);
-        result.Values.Should().Contain(v => v.Operator == FilterOperator.Lte);
+        result.Filters.Should().HaveCount(2);
+        result.Filters.Should().Contain(v => v.Operator == FilterOperator.Gte);
+        result.Filters.Should().Contain(v => v.Operator == FilterOperator.Lte);
     }
 
     [Fact]
@@ -1183,9 +1183,9 @@ public class FilterParserOperatorTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values.Should().HaveCount(1);
-        result.Values[0].Operator.Should().Be(FilterOperator.Contains);
-        result.Values[0].TypedValue.Should().Be("wid");
+        result.Filters.Should().HaveCount(1);
+        result.Filters[0].Operator.Should().Be(FilterOperator.Contains);
+        result.Filters[0].TypedValue.Should().Be("wid");
     }
 
     [Fact]
@@ -1207,8 +1207,8 @@ public class FilterParserOperatorTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values.Should().HaveCount(1);
-        result.Values[0].Operator.Should().Be(FilterOperator.StartsWith);
+        result.Filters.Should().HaveCount(1);
+        result.Filters[0].Operator.Should().Be(FilterOperator.StartsWith);
     }
 
     [Fact]
@@ -1230,8 +1230,8 @@ public class FilterParserOperatorTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values[0].Operator.Should().Be(FilterOperator.Neq);
-        result.Values[0].TypedValue.Should().Be(42);
+        result.Filters[0].Operator.Should().Be(FilterOperator.Neq);
+        result.Filters[0].TypedValue.Should().Be(42);
     }
 
     [Fact]
@@ -1253,10 +1253,10 @@ public class FilterParserOperatorTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values.Should().HaveCount(1);
-        result.Values[0].Operator.Should().Be(FilterOperator.In);
-        result.Values[0].TypedValues.Should().HaveCount(3);
-        result.Values[0].TypedValues.Should().ContainInOrder(10, 20, 30);
+        result.Filters.Should().HaveCount(1);
+        result.Filters[0].Operator.Should().Be(FilterOperator.In);
+        result.Filters[0].TypedValues.Should().HaveCount(3);
+        result.Filters[0].TypedValues.Should().ContainInOrder(10, 20, 30);
     }
 
     [Fact]
@@ -1369,7 +1369,7 @@ public class FilterParserOperatorTests
 
         // Assert — bare quantity=42 uses Eq which is always available
         result.IsValid.Should().BeTrue();
-        result.Values[0].Operator.Should().Be(FilterOperator.Eq);
+        result.Filters[0].Operator.Should().Be(FilterOperator.Eq);
     }
 
     [Fact]

@@ -62,7 +62,7 @@ internal static class FieldProjector
             {
                 var value = accessor.GetValue(entity!);
                 var element = JsonSerializer.SerializeToElement(value, accessor.PropertyType, jsonOptions);
-                result[field.QueryFieldName] = element;
+                result[field.QueryParameterName] = element;
             }
         }
 
@@ -131,9 +131,9 @@ internal static class FieldProjector
 
         foreach (var field in selectedFields)
         {
-            if (doc.RootElement.TryGetProperty(field.QueryFieldName, out var value))
+            if (doc.RootElement.TryGetProperty(field.QueryParameterName, out var value))
             {
-                result[field.QueryFieldName] = value.Clone();
+                result[field.QueryParameterName] = value.Clone();
             }
         }
 

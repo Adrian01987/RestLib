@@ -137,29 +137,39 @@ public static partial class FilterParser
                 continue;
             }
 
-            // Get raw values
+            // Get raw values — avoid LINQ to reduce allocations on the hot path.
             var rawValues = query[key];
-            var nonEmptyValues = rawValues.Where(v => !string.IsNullOrEmpty(v)).ToList();
+            string? firstNonEmpty = null;
+            var nonEmptyCount = 0;
 
-            if (nonEmptyValues.Count == 0)
+            foreach (var v in rawValues)
+            {
+                if (!string.IsNullOrEmpty(v))
+                {
+                    firstNonEmpty ??= v;
+                    nonEmptyCount++;
+                }
+            }
+
+            if (nonEmptyCount == 0)
             {
                 continue;
             }
 
             // Reject multiple values for the same query parameter key
-            if (nonEmptyValues.Count > 1)
+            if (nonEmptyCount > 1)
             {
                 errors.Add(new FilterValidationError
                 {
                     ParameterName = key,
-                    ProvidedValue = string.Join(", ", nonEmptyValues),
+                    ProvidedValue = string.Join(", ", rawValues.Where(v => !string.IsNullOrEmpty(v))),
                     ExpectedType = property.PropertyType,
                     Message = $"Multiple values for filter '{key}' are not supported. Provide a single value.",
                 });
                 continue;
             }
 
-            var rawValue = nonEmptyValues[0]!;
+            var rawValue = firstNonEmpty!;
 
             // Detect duplicate (property, operator) pairs
             if (!seen.Add((property.PropertyName, filterOp)))
@@ -187,7 +197,7 @@ public static partial class FilterParser
 
         return new FilterParseResult
         {
-            Values = values,
+            Filters = values,
             Errors = errors,
         };
     }

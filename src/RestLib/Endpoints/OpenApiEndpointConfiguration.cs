@@ -574,9 +574,9 @@ internal static class OpenApiEndpointConfiguration
     /// <param name="properties">The configured field selection properties.</param>
     internal static void AddFieldSelectionTransformer(
         RouteHandlerBuilder endpoint,
-        IReadOnlyList<FieldPropertyConfiguration> properties)
+        IReadOnlyList<FieldSelectionPropertyConfiguration> properties)
     {
-        var allowedFields = string.Join(", ", properties.Select(p => p.QueryFieldName));
+        var allowedFields = string.Join(", ", properties.Select(p => p.QueryParameterName));
 
         endpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
         {

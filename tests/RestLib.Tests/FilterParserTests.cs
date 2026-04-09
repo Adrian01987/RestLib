@@ -410,12 +410,12 @@ public class FilterParserUnitTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values.Should().HaveCount(1);
-        result.Values[0].PropertyName.Should().Be("Name");
-        result.Values[0].QueryParameterName.Should().Be("name");
-        result.Values[0].RawValue.Should().Be("Alice");
-        result.Values[0].TypedValue.Should().Be("Alice");
-        result.Values[0].Operator.Should().Be(FilterOperator.Eq);
+        result.Filters.Should().HaveCount(1);
+        result.Filters[0].PropertyName.Should().Be("Name");
+        result.Filters[0].QueryParameterName.Should().Be("name");
+        result.Filters[0].RawValue.Should().Be("Alice");
+        result.Filters[0].TypedValue.Should().Be("Alice");
+        result.Filters[0].Operator.Should().Be(FilterOperator.Eq);
     }
 
     [Fact]
@@ -431,11 +431,11 @@ public class FilterParserUnitTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values.Should().HaveCount(1);
-        result.Values[0].PropertyName.Should().Be("Price");
-        result.Values[0].RawValue.Should().Be("10.50");
-        result.Values[0].Operator.Should().Be(FilterOperator.Gte);
-        result.Values[0].TypedValue.Should().Be(10.50m);
+        result.Filters.Should().HaveCount(1);
+        result.Filters[0].PropertyName.Should().Be("Price");
+        result.Filters[0].RawValue.Should().Be("10.50");
+        result.Filters[0].Operator.Should().Be(FilterOperator.Gte);
+        result.Filters[0].TypedValue.Should().Be(10.50m);
     }
 
     [Fact]
@@ -453,7 +453,7 @@ public class FilterParserUnitTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values.Should().HaveCount(2);
+        result.Filters.Should().HaveCount(2);
     }
 
     [Fact]
@@ -469,9 +469,9 @@ public class FilterParserUnitTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values.Should().HaveCount(2);
-        result.Values.Should().Contain(v => v.Operator == FilterOperator.Gte);
-        result.Values.Should().Contain(v => v.Operator == FilterOperator.Lte);
+        result.Filters.Should().HaveCount(2);
+        result.Filters.Should().Contain(v => v.Operator == FilterOperator.Gte);
+        result.Filters.Should().Contain(v => v.Operator == FilterOperator.Lte);
     }
 
     [Fact]
@@ -487,8 +487,8 @@ public class FilterParserUnitTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values.Should().HaveCount(1);
-        result.Values[0].PropertyName.Should().Be("Name");
+        result.Filters.Should().HaveCount(1);
+        result.Filters[0].PropertyName.Should().Be("Name");
     }
 
     [Fact]
@@ -504,7 +504,7 @@ public class FilterParserUnitTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values.Should().BeEmpty();
+        result.Filters.Should().BeEmpty();
         result.Errors.Should().BeEmpty();
     }
 
@@ -521,7 +521,7 @@ public class FilterParserUnitTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values.Should().BeEmpty();
+        result.Filters.Should().BeEmpty();
     }
 
     #endregion
@@ -541,13 +541,13 @@ public class FilterParserUnitTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values.Should().HaveCount(1);
-        result.Values[0].Operator.Should().Be(FilterOperator.In);
-        result.Values[0].TypedValues.Should().HaveCount(3);
-        result.Values[0].TypedValues.Should().Contain("Draft");
-        result.Values[0].TypedValues.Should().Contain("Active");
-        result.Values[0].TypedValues.Should().Contain("Discontinued");
-        result.Values[0].TypedValue.Should().BeNull("TypedValue is null for In operator; TypedValues is used instead");
+        result.Filters.Should().HaveCount(1);
+        result.Filters[0].Operator.Should().Be(FilterOperator.In);
+        result.Filters[0].TypedValues.Should().HaveCount(3);
+        result.Filters[0].TypedValues.Should().Contain("Draft");
+        result.Filters[0].TypedValues.Should().Contain("Active");
+        result.Filters[0].TypedValues.Should().Contain("Discontinued");
+        result.Filters[0].TypedValue.Should().BeNull("TypedValue is null for In operator; TypedValues is used instead");
     }
 
     [Fact]
@@ -758,9 +758,9 @@ public class FilterParserUnitTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values.Should().HaveCount(1);
-        result.Values[0].Operator.Should().Be(expectedOp);
-        result.Values[0].TypedValue.Should().Be(value);
+        result.Filters.Should().HaveCount(1);
+        result.Filters[0].Operator.Should().Be(expectedOp);
+        result.Filters[0].TypedValue.Should().Be(value);
     }
 
     [Fact]
@@ -776,9 +776,9 @@ public class FilterParserUnitTests
 
         // Assert
         result.IsValid.Should().BeTrue();
-        result.Values.Should().HaveCount(1);
-        result.Values[0].Operator.Should().Be(FilterOperator.Neq);
-        result.Values[0].TypedValue.Should().Be(true);
+        result.Filters.Should().HaveCount(1);
+        result.Filters[0].Operator.Should().Be(FilterOperator.Neq);
+        result.Filters[0].TypedValue.Should().Be(true);
     }
 
     #endregion

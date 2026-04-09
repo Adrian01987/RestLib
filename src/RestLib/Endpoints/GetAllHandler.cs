@@ -88,7 +88,7 @@ internal static class GetAllHandler
                             jsonOptions);
                     }
 
-                    filterValues = filterResult.Values;
+                    filterValues = filterResult.Filters;
                 }
 
                 // Parse and validate sort

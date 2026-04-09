@@ -490,7 +490,7 @@ public class FieldSelectionParserTests
         result.IsValid.Should().BeTrue();
         result.Fields.Should().HaveCount(3);
         result.Fields[0].PropertyName.Should().Be("Id");
-        result.Fields[0].QueryFieldName.Should().Be("id");
+        result.Fields[0].QueryParameterName.Should().Be("id");
         result.Fields[1].PropertyName.Should().Be("Name");
         result.Fields[2].PropertyName.Should().Be("Price");
     }
@@ -574,8 +574,8 @@ public class FieldSelectionParserTests
         // Assert
         result.IsValid.Should().BeTrue();
         result.Fields.Should().HaveCount(2);
-        result.Fields[0].QueryFieldName.Should().Be("id");
-        result.Fields[1].QueryFieldName.Should().Be("name");
+        result.Fields[0].QueryParameterName.Should().Be("id");
+        result.Fields[1].QueryParameterName.Should().Be("name");
     }
 }
 
@@ -597,7 +597,7 @@ public class FieldSelectionConfigurationTests
         // Assert
         config.Properties.Should().HaveCount(1);
         config.Properties[0].PropertyName.Should().Be("CreatedAt");
-        config.Properties[0].QueryFieldName.Should().Be("created_at");
+        config.Properties[0].QueryParameterName.Should().Be("created_at");
     }
 
     [Fact]
@@ -753,8 +753,8 @@ public class FieldProjectorCacheTests
 
         var selectedFields = new List<SelectedField>
         {
-            new() { PropertyName = "Name", QueryFieldName = "name" },
-            new() { PropertyName = "Price", QueryFieldName = "price" },
+            new() { PropertyName = "Name", QueryParameterName = "name" },
+            new() { PropertyName = "Price", QueryParameterName = "price" },
         };
 
         // Act — first call populates the cache; second call should hit the cache

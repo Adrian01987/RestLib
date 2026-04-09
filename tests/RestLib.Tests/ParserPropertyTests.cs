@@ -70,7 +70,7 @@ public class ParserPropertyTests
 
         var result = FilterParser.Parse(query, config);
 
-        return result != null && result.Values != null && result.Errors != null;
+        return result != null && result.Filters != null && result.Errors != null;
     }
 
     /// <summary>
@@ -302,7 +302,7 @@ public class ParserPropertyTests
 
         var result = FilterParser.Parse(query, config);
 
-        return result != null && result.Values != null && result.Errors != null;
+        return result != null && result.Filters != null && result.Errors != null;
     }
 
     /// <summary>

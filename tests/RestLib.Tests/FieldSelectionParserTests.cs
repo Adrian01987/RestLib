@@ -55,7 +55,7 @@ public class FieldSelectionParserUnitTests
         result.IsValid.Should().BeTrue();
         result.Fields.Should().HaveCount(1);
         result.Fields[0].PropertyName.Should().Be("Name");
-        result.Fields[0].QueryFieldName.Should().Be("name");
+        result.Fields[0].QueryParameterName.Should().Be("name");
     }
 
     [Fact]
@@ -90,7 +90,7 @@ public class FieldSelectionParserUnitTests
         result.IsValid.Should().BeTrue();
         result.Fields.Should().HaveCount(1);
         result.Fields[0].PropertyName.Should().Be("CreatedAt");
-        result.Fields[0].QueryFieldName.Should().Be("created_at");
+        result.Fields[0].QueryParameterName.Should().Be("created_at");
     }
 
     [Fact]
@@ -121,9 +121,9 @@ public class FieldSelectionParserUnitTests
         // Assert
         result.IsValid.Should().BeTrue();
         result.Fields.Should().HaveCount(3);
-        result.Fields[0].QueryFieldName.Should().Be("id");
-        result.Fields[1].QueryFieldName.Should().Be("name");
-        result.Fields[2].QueryFieldName.Should().Be("created_at");
+        result.Fields[0].QueryParameterName.Should().Be("id");
+        result.Fields[1].QueryParameterName.Should().Be("name");
+        result.Fields[2].QueryParameterName.Should().Be("created_at");
     }
 
     #endregion
@@ -463,7 +463,7 @@ public class FieldSelectionConfigurationUnitTests
         // Assert
         config.Properties.Should().HaveCount(1);
         config.Properties[0].PropertyName.Should().Be("CreatedAt");
-        config.Properties[0].QueryFieldName.Should().Be("created_at");
+        config.Properties[0].QueryParameterName.Should().Be("created_at");
     }
 
     [Fact]
@@ -496,7 +496,7 @@ public class FieldSelectionConfigurationUnitTests
         config.AddProperty(e => e.Name);
 
         // Assert
-        config.Properties[0].QueryFieldName.Should().Be("name");
+        config.Properties[0].QueryParameterName.Should().Be("name");
     }
 
     [Fact]
@@ -532,7 +532,7 @@ public class FieldSelectionConfigurationUnitTests
         // Assert
         config.Properties.Should().HaveCount(1);
         config.Properties[0].PropertyName.Should().Be("MyCustomProp");
-        config.Properties[0].QueryFieldName.Should().Be("my_custom_prop");
+        config.Properties[0].QueryParameterName.Should().Be("my_custom_prop");
     }
 
     [Fact]
@@ -569,7 +569,7 @@ public class FieldSelectionConfigurationUnitTests
         // Assert
         found.Should().NotBeNull();
         found!.PropertyName.Should().Be("CreatedAt");
-        found.QueryFieldName.Should().Be("created_at");
+        found.QueryParameterName.Should().Be("created_at");
     }
 
     [Fact]

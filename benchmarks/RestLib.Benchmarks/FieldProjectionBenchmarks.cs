@@ -24,36 +24,36 @@ public class FieldProjectionBenchmarks
     // Pre-built field lists for different selection sizes
     private static readonly IReadOnlyList<SelectedField> TwoFields =
     [
-        new SelectedField { PropertyName = "Id", QueryFieldName = "id" },
-        new SelectedField { PropertyName = "Name", QueryFieldName = "name" },
+        new SelectedField { PropertyName = "Id", QueryParameterName = "id" },
+        new SelectedField { PropertyName = "Name", QueryParameterName = "name" },
     ];
 
     private static readonly IReadOnlyList<SelectedField> FiveFields =
     [
-        new SelectedField { PropertyName = "Id", QueryFieldName = "id" },
-        new SelectedField { PropertyName = "Name", QueryFieldName = "name" },
-        new SelectedField { PropertyName = "Price", QueryFieldName = "price" },
-        new SelectedField { PropertyName = "Category", QueryFieldName = "category" },
-        new SelectedField { PropertyName = "IsActive", QueryFieldName = "is_active" },
+        new SelectedField { PropertyName = "Id", QueryParameterName = "id" },
+        new SelectedField { PropertyName = "Name", QueryParameterName = "name" },
+        new SelectedField { PropertyName = "Price", QueryParameterName = "price" },
+        new SelectedField { PropertyName = "Category", QueryParameterName = "category" },
+        new SelectedField { PropertyName = "IsActive", QueryParameterName = "is_active" },
     ];
 
     private static readonly IReadOnlyList<SelectedField> AllFields =
     [
-        new SelectedField { PropertyName = "Id", QueryFieldName = "id" },
-        new SelectedField { PropertyName = "Name", QueryFieldName = "name" },
-        new SelectedField { PropertyName = "Description", QueryFieldName = "description" },
-        new SelectedField { PropertyName = "Price", QueryFieldName = "price" },
-        new SelectedField { PropertyName = "Category", QueryFieldName = "category" },
-        new SelectedField { PropertyName = "SubCategory", QueryFieldName = "sub_category" },
-        new SelectedField { PropertyName = "IsActive", QueryFieldName = "is_active" },
-        new SelectedField { PropertyName = "StockQuantity", QueryFieldName = "stock_quantity" },
-        new SelectedField { PropertyName = "Rating", QueryFieldName = "rating" },
-        new SelectedField { PropertyName = "CreatedAt", QueryFieldName = "created_at" },
-        new SelectedField { PropertyName = "UpdatedAt", QueryFieldName = "updated_at" },
-        new SelectedField { PropertyName = "Sku", QueryFieldName = "sku" },
-        new SelectedField { PropertyName = "Weight", QueryFieldName = "weight" },
-        new SelectedField { PropertyName = "Manufacturer", QueryFieldName = "manufacturer" },
-        new SelectedField { PropertyName = "Tags", QueryFieldName = "tags" },
+        new SelectedField { PropertyName = "Id", QueryParameterName = "id" },
+        new SelectedField { PropertyName = "Name", QueryParameterName = "name" },
+        new SelectedField { PropertyName = "Description", QueryParameterName = "description" },
+        new SelectedField { PropertyName = "Price", QueryParameterName = "price" },
+        new SelectedField { PropertyName = "Category", QueryParameterName = "category" },
+        new SelectedField { PropertyName = "SubCategory", QueryParameterName = "sub_category" },
+        new SelectedField { PropertyName = "IsActive", QueryParameterName = "is_active" },
+        new SelectedField { PropertyName = "StockQuantity", QueryParameterName = "stock_quantity" },
+        new SelectedField { PropertyName = "Rating", QueryParameterName = "rating" },
+        new SelectedField { PropertyName = "CreatedAt", QueryParameterName = "created_at" },
+        new SelectedField { PropertyName = "UpdatedAt", QueryParameterName = "updated_at" },
+        new SelectedField { PropertyName = "Sku", QueryParameterName = "sku" },
+        new SelectedField { PropertyName = "Weight", QueryParameterName = "weight" },
+        new SelectedField { PropertyName = "Manufacturer", QueryParameterName = "manufacturer" },
+        new SelectedField { PropertyName = "Tags", QueryParameterName = "tags" },
     ];
 
     private RichProduct _singleEntity = null!;
@@ -179,9 +179,9 @@ public class FieldProjectionBenchmarks
 
         foreach (var field in selectedFields)
         {
-            if (doc.RootElement.TryGetProperty(field.QueryFieldName, out var value))
+            if (doc.RootElement.TryGetProperty(field.QueryParameterName, out var value))
             {
-                result[field.QueryFieldName] = value.Clone();
+                result[field.QueryParameterName] = value.Clone();
             }
         }
 

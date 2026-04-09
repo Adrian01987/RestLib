@@ -11,9 +11,9 @@ public class SelectedField
     public required string PropertyName { get; init; }
 
     /// <summary>
-    /// Gets the snake_case query field name (e.g., "category_id").
+    /// Gets the snake_case query parameter name (e.g., "category_id").
     /// </summary>
-    public required string QueryFieldName { get; init; }
+    public required string QueryParameterName { get; init; }
 }
 
 /// <summary>

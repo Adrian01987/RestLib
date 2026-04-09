@@ -51,12 +51,12 @@ public class FilterParseResult
     /// <summary>
     /// Gets the successfully parsed filter values.
     /// </summary>
-    public required IReadOnlyList<FilterValue> Values { get; init; }
+    public IReadOnlyList<FilterValue> Filters { get; init; } = [];
 
     /// <summary>
     /// Gets any validation errors that occurred during parsing.
     /// </summary>
-    public required IReadOnlyList<FilterValidationError> Errors { get; init; }
+    public IReadOnlyList<FilterValidationError> Errors { get; init; } = [];
 
     /// <summary>
     /// Gets whether parsing was successful (no errors).

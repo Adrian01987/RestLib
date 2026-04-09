@@ -52,7 +52,7 @@ public static class FieldSelectionParser
             if (property is null)
             {
                 allowedNames ??= string.Join(", ",
-                    configuration.Properties.Select(p => p.QueryFieldName));
+                    configuration.Properties.Select(p => p.QueryParameterName));
                 errors.Add(new FieldSelectionValidationError
                 {
                     Field = trimmed,
@@ -64,7 +64,7 @@ public static class FieldSelectionParser
             fields.Add(new SelectedField
             {
                 PropertyName = property.PropertyName,
-                QueryFieldName = property.QueryFieldName
+                QueryParameterName = property.QueryParameterName
             });
         }
 
