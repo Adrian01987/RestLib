@@ -44,7 +44,7 @@ public static class ProblemDetailsResult
     /// Creates a 400 Validation Failed result.
     /// </summary>
     public static IResult ValidationFailed(
-        IDictionary<string, string[]> errors,
+        IReadOnlyDictionary<string, string[]> errors,
         string? instance = null,
         JsonSerializerOptions? jsonOptions = null)
     {
@@ -140,7 +140,7 @@ public static class ProblemDetailsResult
     /// <param name="jsonOptions">Optional JSON serializer options.</param>
     public static IResult InvalidBatchRequest(
         string detail,
-        IDictionary<string, string[]>? errors = null,
+        IReadOnlyDictionary<string, string[]>? errors = null,
         string? instance = null,
         JsonSerializerOptions? jsonOptions = null)
     {

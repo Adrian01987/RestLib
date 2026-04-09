@@ -76,7 +76,7 @@ internal static class PatchHandler
                         if (!validationResult.IsValid)
                         {
                             return Responses.ProblemDetailsResult.ValidationFailed(
-                                validationResult.Errors.ToDictionary(e => e.Key, e => e.Value),
+                                validationResult.Errors,
                                 httpContext.Request.Path,
                                 jsonOptions);
                         }

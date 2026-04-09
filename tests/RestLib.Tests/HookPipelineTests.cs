@@ -53,6 +53,9 @@ public class HookPipelineTests
         public bool ShouldThrowOnCreate { get; set; }
         public bool ShouldThrowOnUpdate { get; set; }
         public bool ShouldThrowOnDelete { get; set; }
+        public bool ShouldThrowOnPatch { get; set; }
+        public bool ShouldThrowOnGetById { get; set; }
+        public bool ShouldThrowOnGetAll { get; set; }
         public Exception? ExceptionToThrow { get; set; }
 
         public void AddTestData(params HookTestEntity[] entities)
@@ -80,18 +83,21 @@ public class HookPipelineTests
 
         public Task<PagedResult<HookTestEntity>> GetAllAsync(PaginationRequest request, CancellationToken ct = default)
         {
+            if (ShouldThrowOnGetAll) throw ExceptionToThrow ?? new InvalidOperationException("GetAll error");
             var items = _data.Values.ToList();
             return Task.FromResult(new PagedResult<HookTestEntity> { Items = items, NextCursor = null });
         }
 
         public Task<HookTestEntity?> GetByIdAsync(int id, CancellationToken ct = default)
         {
+            if (ShouldThrowOnGetById) throw ExceptionToThrow ?? new InvalidOperationException("GetById error");
             _data.TryGetValue(id, out var entity);
             return Task.FromResult(entity);
         }
 
         public Task<HookTestEntity?> PatchAsync(int id, JsonElement patchDocument, CancellationToken ct = default)
         {
+            if (ShouldThrowOnPatch) throw ExceptionToThrow ?? new InvalidOperationException("Patch error");
             if (!_data.TryGetValue(id, out var entity)) return Task.FromResult<HookTestEntity?>(null);
             if (patchDocument.TryGetProperty("name", out var name))
             {
@@ -895,6 +901,283 @@ public class HookPipelineTests
         var act = async () => await client.PostAsJsonAsync("/api/items", entity);
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("Create error");
+    }
+
+    [Fact]
+    public async Task OnError_Patch_Should_BeCalled_WhenRepositoryThrows()
+    {
+        // Arrange
+        Exception? capturedError = null;
+        RestLibOperation? capturedOperation = null;
+        var repository = new HookTestRepository();
+        repository.ShouldThrowOnPatch = true;
+        repository.ExceptionToThrow = new InvalidOperationException("Patch error");
+        repository.AddTestData(new HookTestEntity { Id = 1, Name = "Existing" });
+
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnError = async ctx =>
+        {
+            capturedError = ctx.Exception;
+            capturedOperation = ctx.Operation;
+            ctx.Handled = true;
+            ctx.ErrorResult = Results.StatusCode(StatusCodes.Status500InternalServerError);
+            await Task.CompletedTask;
+        };
+        });
+
+        var client = host.GetTestClient();
+        var patch = new { name = "Updated" };
+        var content = new StringContent(
+            JsonSerializer.Serialize(patch), Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await client.PatchAsync("/api/items/1", content);
+
+        // Assert
+        capturedError.Should().NotBeNull();
+        capturedError!.Message.Should().Be("Patch error");
+        capturedOperation.Should().Be(RestLibOperation.Patch);
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
+
+    [Fact]
+    public async Task OnError_GetById_Should_BeCalled_WhenRepositoryThrows()
+    {
+        // Arrange
+        Exception? capturedError = null;
+        RestLibOperation? capturedOperation = null;
+        var repository = new HookTestRepository();
+        repository.ShouldThrowOnGetById = true;
+        repository.ExceptionToThrow = new InvalidOperationException("GetById error");
+
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnError = async ctx =>
+        {
+            capturedError = ctx.Exception;
+            capturedOperation = ctx.Operation;
+            ctx.Handled = true;
+            ctx.ErrorResult = Results.StatusCode(StatusCodes.Status500InternalServerError);
+            await Task.CompletedTask;
+        };
+        });
+
+        var client = host.GetTestClient();
+
+        // Act
+        var response = await client.GetAsync("/api/items/1");
+
+        // Assert
+        capturedError.Should().NotBeNull();
+        capturedError!.Message.Should().Be("GetById error");
+        capturedOperation.Should().Be(RestLibOperation.GetById);
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
+
+    [Fact]
+    public async Task OnError_GetAll_Should_BeCalled_WhenRepositoryThrows()
+    {
+        // Arrange
+        Exception? capturedError = null;
+        RestLibOperation? capturedOperation = null;
+        var repository = new HookTestRepository();
+        repository.ShouldThrowOnGetAll = true;
+        repository.ExceptionToThrow = new InvalidOperationException("GetAll error");
+
+        using var host = await CreateHostWithHooks(repository, hooks =>
+        {
+            hooks.OnError = async ctx =>
+        {
+            capturedError = ctx.Exception;
+            capturedOperation = ctx.Operation;
+            ctx.Handled = true;
+            ctx.ErrorResult = Results.StatusCode(StatusCodes.Status500InternalServerError);
+            await Task.CompletedTask;
+        };
+        });
+
+        var client = host.GetTestClient();
+
+        // Act
+        var response = await client.GetAsync("/api/items");
+
+        // Assert
+        capturedError.Should().NotBeNull();
+        capturedError!.Message.Should().Be("GetAll error");
+        capturedOperation.Should().Be(RestLibOperation.GetAll);
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
+
+    #endregion
+
+    #region Unhandled Repository Exception Tests (No Hooks)
+
+    [Fact]
+    public async Task Create_RepositoryThrows_NoHooks_ExceptionPropagates()
+    {
+        // Arrange — no hooks configured at all, so pipeline is null
+        var repository = new HookTestRepository();
+        repository.ShouldThrowOnCreate = true;
+        repository.ExceptionToThrow = new InvalidOperationException("Database timeout on create");
+
+        var (host, client) = new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
+            .SkipRestLibRegistration()
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.KeySelector = e => e.Id;
+            })
+            .Build();
+
+        using (host)
+        {
+            var entity = new HookTestEntity { Name = "Will Fail" };
+
+            // Act & Assert — exception should propagate since there are no hooks to catch it
+            var act = async () => await client.PostAsJsonAsync("/api/items", entity);
+            await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("Database timeout on create");
+        }
+    }
+
+    [Fact]
+    public async Task GetById_RepositoryThrows_NoHooks_ExceptionPropagates()
+    {
+        // Arrange — no hooks configured at all
+        var repository = new HookTestRepository();
+        repository.ShouldThrowOnGetById = true;
+        repository.ExceptionToThrow = new TimeoutException("Database timeout on read");
+
+        var (host, client) = new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
+            .SkipRestLibRegistration()
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.KeySelector = e => e.Id;
+            })
+            .Build();
+
+        using (host)
+        {
+            // Act & Assert
+            var act = async () => await client.GetAsync("/api/items/1");
+            await act.Should().ThrowAsync<TimeoutException>()
+                .WithMessage("Database timeout on read");
+        }
+    }
+
+    [Fact]
+    public async Task GetAll_RepositoryThrows_NoHooks_ExceptionPropagates()
+    {
+        // Arrange — no hooks configured at all
+        var repository = new HookTestRepository();
+        repository.ShouldThrowOnGetAll = true;
+        repository.ExceptionToThrow = new TimeoutException("Database timeout on list");
+
+        var (host, client) = new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
+            .SkipRestLibRegistration()
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.KeySelector = e => e.Id;
+            })
+            .Build();
+
+        using (host)
+        {
+            // Act & Assert
+            var act = async () => await client.GetAsync("/api/items");
+            await act.Should().ThrowAsync<TimeoutException>()
+                .WithMessage("Database timeout on list");
+        }
+    }
+
+    [Fact]
+    public async Task Patch_RepositoryThrows_NoHooks_ExceptionPropagates()
+    {
+        // Arrange — no hooks configured at all
+        var repository = new HookTestRepository();
+        repository.ShouldThrowOnPatch = true;
+        repository.ExceptionToThrow = new InvalidOperationException("Database timeout on patch");
+        repository.AddTestData(new HookTestEntity { Id = 1, Name = "Existing" });
+
+        var (host, client) = new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
+            .SkipRestLibRegistration()
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.KeySelector = e => e.Id;
+            })
+            .Build();
+
+        using (host)
+        {
+            var patch = new { name = "Updated" };
+            var content = new StringContent(
+                JsonSerializer.Serialize(patch), Encoding.UTF8, "application/json");
+
+            // Act & Assert
+            var act = async () => await client.PatchAsync("/api/items/1", content);
+            await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("Database timeout on patch");
+        }
+    }
+
+    [Fact]
+    public async Task Update_RepositoryThrows_NoHooks_ExceptionPropagates()
+    {
+        // Arrange — no hooks configured at all
+        var repository = new HookTestRepository();
+        repository.ShouldThrowOnUpdate = true;
+        repository.ExceptionToThrow = new InvalidOperationException("Database timeout on update");
+        repository.AddTestData(new HookTestEntity { Id = 1, Name = "Existing" });
+
+        var (host, client) = new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
+            .SkipRestLibRegistration()
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.KeySelector = e => e.Id;
+            })
+            .Build();
+
+        using (host)
+        {
+            var entity = new HookTestEntity { Name = "Will Fail" };
+
+            // Act & Assert
+            var act = async () => await client.PutAsJsonAsync("/api/items/1", entity);
+            await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("Database timeout on update");
+        }
+    }
+
+    [Fact]
+    public async Task Delete_RepositoryThrows_NoHooks_ExceptionPropagates()
+    {
+        // Arrange — no hooks configured at all
+        var repository = new HookTestRepository();
+        repository.ShouldThrowOnDelete = true;
+        repository.ExceptionToThrow = new InvalidOperationException("Database timeout on delete");
+        repository.AddTestData(new HookTestEntity { Id = 1, Name = "Existing" });
+
+        var (host, client) = new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
+            .SkipRestLibRegistration()
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.KeySelector = e => e.Id;
+            })
+            .Build();
+
+        using (host)
+        {
+            // Act & Assert
+            var act = async () => await client.DeleteAsync("/api/items/1");
+            await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("Database timeout on delete");
+        }
     }
 
     #endregion

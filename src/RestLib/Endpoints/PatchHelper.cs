@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Text.Json;
 
 namespace RestLib.Endpoints;
@@ -23,26 +24,42 @@ internal static class PatchHelper
         JsonSerializerOptions jsonOptions)
         where TEntity : class
     {
-        // Serialize original entity to a mutable dictionary
+        // Serialize original entity to a JSON document
         var originalJson = JsonSerializer.SerializeToUtf8Bytes(original, jsonOptions);
         using var originalDoc = JsonDocument.Parse(originalJson);
 
-        var merged = new Dictionary<string, JsonElement>();
-
-        // Start with all original properties
-        foreach (var prop in originalDoc.RootElement.EnumerateObject())
-        {
-            merged[prop.Name] = prop.Value.Clone();
-        }
-
-        // Apply patch values (overwrite originals, add new ones)
+        // Collect patch property names for O(1) lookups
+        var patchPropertyNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var prop in patchDocument.EnumerateObject())
         {
-            merged[prop.Name] = prop.Value.Clone();
+            patchPropertyNames.Add(prop.Name);
         }
 
-        // Serialize merged dictionary and deserialize back to entity
-        var mergedJson = JsonSerializer.SerializeToUtf8Bytes(merged, jsonOptions);
-        return JsonSerializer.Deserialize<TEntity>(mergedJson, jsonOptions);
+        // Merge original + patch into a single JSON buffer using Utf8JsonWriter
+        var buffer = new ArrayBufferWriter<byte>();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartObject();
+
+            // Write original properties not overridden by the patch
+            foreach (var prop in originalDoc.RootElement.EnumerateObject())
+            {
+                if (!patchPropertyNames.Contains(prop.Name))
+                {
+                    prop.WriteTo(writer);
+                }
+            }
+
+            // Write all patch properties (overrides + additions)
+            foreach (var prop in patchDocument.EnumerateObject())
+            {
+                prop.WriteTo(writer);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        // Deserialize the merged JSON back to the entity type
+        return JsonSerializer.Deserialize<TEntity>(buffer.WrittenSpan, jsonOptions);
     }
 }

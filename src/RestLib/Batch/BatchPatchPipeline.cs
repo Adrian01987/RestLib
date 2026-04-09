@@ -108,7 +108,7 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
                             Index = index,
                             Status = StatusCodes.Status400BadRequest,
                             Error = ProblemDetailsFactory.ValidationFailed(
-                                new Dictionary<string, string[]>(validationResult.Errors),
+                                validationResult.Errors,
                                 context.HttpContext.Request.Path)
                         };
                         continue;
@@ -165,7 +165,7 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
                         Index = index,
                         Status = StatusCodes.Status400BadRequest,
                         Error = ProblemDetailsFactory.ValidationFailed(
-                            new Dictionary<string, string[]>(validationResult.Errors),
+                            validationResult.Errors,
                             context.HttpContext.Request.Path)
                     };
                     return;

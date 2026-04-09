@@ -222,7 +222,7 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
             Index = index,
             Status = StatusCodes.Status400BadRequest,
             Error = ProblemDetailsFactory.ValidationFailed(
-                new Dictionary<string, string[]>(validationResult.Errors),
+                validationResult.Errors,
                 instance)
         };
     }

@@ -45,7 +45,7 @@ public class RestLibProblemDetails
     /// </summary>
     [JsonPropertyName("errors")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public IDictionary<string, string[]>? Errors { get; init; }
+    public IReadOnlyDictionary<string, string[]>? Errors { get; init; }
 
     /// <summary>
     /// Additional extension members as defined by RFC 9457 Section 3.2.

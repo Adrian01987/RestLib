@@ -34,7 +34,7 @@ public static class ProblemDetailsFactory
     /// <param name="errors">Dictionary of field names to error messages.</param>
     /// <param name="instance">The request path.</param>
     public static RestLibProblemDetails ValidationFailed(
-        IDictionary<string, string[]> errors,
+        IReadOnlyDictionary<string, string[]> errors,
         string? instance = null)
     {
         return new RestLibProblemDetails
@@ -194,7 +194,7 @@ public static class ProblemDetailsFactory
     /// <param name="instance">The request path.</param>
     public static RestLibProblemDetails InvalidBatchRequest(
         string detail,
-        IDictionary<string, string[]>? errors = null,
+        IReadOnlyDictionary<string, string[]>? errors = null,
         string? instance = null)
     {
         return new RestLibProblemDetails

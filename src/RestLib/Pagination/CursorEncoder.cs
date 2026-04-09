@@ -1,4 +1,3 @@
-using System.Buffers.Text;
 using System.Text;
 using System.Text.Json;
 
@@ -19,8 +18,7 @@ public static class CursorEncoder
     public static string Encode<T>(T value)
     {
         var payload = new CursorPayload<T> { Value = value };
-        var json = JsonSerializer.Serialize(payload);
-        var bytes = Encoding.UTF8.GetBytes(json);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(payload);
         return Base64UrlEncode(bytes);
     }
 
