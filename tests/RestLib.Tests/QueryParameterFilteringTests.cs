@@ -383,12 +383,9 @@ public class QueryParameterFilteringTests : IDisposable
         var response = await _client.GetAsync("/api/items?is_active=invalid");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        json.GetProperty("type").GetString().Should().Be("/problems/invalid-filter");
-        json.GetProperty("status").GetInt32().Should().Be(400);
+        var json = await response.ShouldBeProblemDetailsJson(
+            HttpStatusCode.BadRequest,
+            "/problems/invalid-filter");
         json.TryGetProperty("errors", out var errors).Should().BeTrue();
         errors.TryGetProperty("is_active", out _).Should().BeTrue();
     }
@@ -1801,11 +1798,9 @@ public class FilterOperatorIntegrationTests : IDisposable
         var response = await _client.GetAsync("/api/items?status[gte]=Active");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        json.GetProperty("type").GetString().Should().Be("/problems/invalid-filter");
+        await response.ShouldBeProblemDetailsJson(
+            HttpStatusCode.BadRequest,
+            "/problems/invalid-filter");
     }
 
     [Fact]

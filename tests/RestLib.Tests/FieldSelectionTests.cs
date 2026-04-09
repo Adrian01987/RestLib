@@ -207,13 +207,10 @@ public class FieldSelectionTests : IDisposable
         var response = await _client.GetAsync($"/api/items/{_knownId}?fields=id,secret_field");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
-
-        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        json.GetProperty("type").GetString().Should().Be("/problems/invalid-fields");
-        json.GetProperty("title").GetString().Should().Be("Invalid Field Selection");
-        json.GetProperty("status").GetInt32().Should().Be(400);
+        var json = await response.ShouldBeProblemDetailsJson(
+            HttpStatusCode.BadRequest,
+            "/problems/invalid-fields",
+            expectedTitle: "Invalid Field Selection");
 
         var errors = json.GetProperty("errors");
         errors.TryGetProperty("secret_field", out _).Should().BeTrue();
@@ -227,9 +224,9 @@ public class FieldSelectionTests : IDisposable
         var response = await _client.GetAsync("/api/items?fields=bad1,bad2");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        json.GetProperty("type").GetString().Should().Be("/problems/invalid-fields");
+        var json = await response.ShouldBeProblemDetailsJson(
+            HttpStatusCode.BadRequest,
+            "/problems/invalid-fields");
 
         var errors = json.GetProperty("errors");
         errors.TryGetProperty("bad1", out _).Should().BeTrue();
@@ -285,9 +282,9 @@ public class FieldSelectionTests : IDisposable
         var response = await _client.GetAsync($"/api/items/{_knownId}?fields=id,id,name");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        json.GetProperty("type").GetString().Should().Be("/problems/invalid-fields");
+        var json = await response.ShouldBeProblemDetailsJson(
+            HttpStatusCode.BadRequest,
+            "/problems/invalid-fields");
         json.GetProperty("errors").GetProperty("id").GetArrayLength().Should().BeGreaterThanOrEqualTo(1);
     }
 
@@ -705,9 +702,9 @@ public class FieldSelectionJsonConfigTests : IDisposable
         var response = await _client.GetAsync($"/api/fs-items/{_knownId}?fields=id,category");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        json.GetProperty("type").GetString().Should().Be("/problems/invalid-fields");
+        var json = await response.ShouldBeProblemDetailsJson(
+            HttpStatusCode.BadRequest,
+            "/problems/invalid-fields");
 
         var errors = json.GetProperty("errors");
         errors.TryGetProperty("category", out _).Should().BeTrue();

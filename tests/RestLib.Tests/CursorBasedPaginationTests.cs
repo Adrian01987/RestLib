@@ -103,14 +103,10 @@ public class CursorBasedPaginationTests : IDisposable
         var response = await _client.GetAsync($"/api/products?cursor={invalidCursor}");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Type.Should().Be("/problems/invalid-cursor");
-        problem.Title.Should().Be("Invalid Cursor");
-        problem.Status.Should().Be(400);
+        await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            "/problems/invalid-cursor",
+            expectedTitle: "Invalid Cursor");
     }
 
     [Fact]
@@ -124,9 +120,7 @@ public class CursorBasedPaginationTests : IDisposable
         var response = await _client.GetAsync($"/api/products?cursor={malformedCursor}");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem!.Type.Should().Be("/problems/invalid-cursor");
+        await response.ShouldBeProblemDetails(HttpStatusCode.BadRequest, "/problems/invalid-cursor");
     }
 
     [Fact]
@@ -155,14 +149,10 @@ public class CursorBasedPaginationTests : IDisposable
         var response = await _client.GetAsync($"/api/products?cursor={oversizedCursor}");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Type.Should().Be("/problems/invalid-cursor");
-        problem.Title.Should().Be("Invalid Cursor");
-        problem.Status.Should().Be(400);
+        var problem = await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            "/problems/invalid-cursor",
+            expectedTitle: "Invalid Cursor");
         problem.Detail.Should().Contain("4096");
     }
 
@@ -208,10 +198,9 @@ public class CursorBasedPaginationTests : IDisposable
             var response = await client.GetAsync($"/api/products?cursor={longCursor}");
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-            problem.Should().NotBeNull();
-            problem!.Type.Should().Be("/problems/invalid-cursor");
+            var problem = await response.ShouldBeProblemDetails(
+                HttpStatusCode.BadRequest,
+                "/problems/invalid-cursor");
             problem.Detail.Should().Contain("10");
         }
     }
@@ -296,14 +285,10 @@ public class CursorBasedPaginationTests : IDisposable
         var response = await _client.GetAsync("/api/products?limit=0");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Type.Should().Be("/problems/invalid-limit");
-        problem.Title.Should().Be("Invalid Limit");
-        problem.Status.Should().Be(400);
+        var problem = await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            "/problems/invalid-limit",
+            expectedTitle: "Invalid Limit");
         problem.Detail.Should().Contain("0").And.Contain("1").And.Contain("100");
     }
 
@@ -315,10 +300,9 @@ public class CursorBasedPaginationTests : IDisposable
         var response = await _client.GetAsync("/api/products?limit=-5");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem!.Type.Should().Be("/problems/invalid-limit");
+        var problem = await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            "/problems/invalid-limit");
         problem.Detail.Should().Contain("-5");
     }
 
@@ -330,10 +314,9 @@ public class CursorBasedPaginationTests : IDisposable
         var response = await _client.GetAsync("/api/products?limit=101");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem!.Type.Should().Be("/problems/invalid-limit");
+        var problem = await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            "/problems/invalid-limit");
         problem.Detail.Should().Contain("101");
     }
 
@@ -345,10 +328,7 @@ public class CursorBasedPaginationTests : IDisposable
         var response = await _client.GetAsync("/api/products?limit=1000");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem!.Type.Should().Be("/problems/invalid-limit");
+        await response.ShouldBeProblemDetails(HttpStatusCode.BadRequest, "/problems/invalid-limit");
     }
 
     #endregion
@@ -596,9 +576,7 @@ public class CursorBasedPaginationTests : IDisposable
         var response = await _client.GetAsync($"/api/products?cursor={invalidCursor}&limit=10");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem!.Type.Should().Be("/problems/invalid-cursor");
+        await response.ShouldBeProblemDetails(HttpStatusCode.BadRequest, "/problems/invalid-cursor");
     }
 
     [Fact]
@@ -612,9 +590,7 @@ public class CursorBasedPaginationTests : IDisposable
         var response = await _client.GetAsync($"/api/products?cursor={Uri.EscapeDataString(validCursor)}&limit=0");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem!.Type.Should().Be("/problems/invalid-limit");
+        await response.ShouldBeProblemDetails(HttpStatusCode.BadRequest, "/problems/invalid-limit");
     }
 
     #endregion
@@ -732,9 +708,7 @@ public class CursorBasedPaginationTests : IDisposable
         var response = await _client.GetAsync("/api/products?limit=150");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem!.Type.Should().Be("/problems/invalid-limit");
+        await response.ShouldBeProblemDetails(HttpStatusCode.BadRequest, "/problems/invalid-limit");
     }
 
     [Fact]
@@ -812,9 +786,9 @@ public class CursorPaginationCustomConfigTests : IDisposable
         var response = await _client.GetAsync("/api/products?limit=51");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem!.Type.Should().Be("/problems/invalid-limit");
+        var problem = await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            "/problems/invalid-limit");
         problem.Detail.Should().Contain("50"); // Custom max
     }
 

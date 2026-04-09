@@ -139,12 +139,9 @@ public class SortingTests : IDisposable
         var response = await _client.GetAsync("/api/sortable?sort=unknown_field:asc");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        json.GetProperty("type").GetString().Should().Be("/problems/invalid-sort");
-        json.GetProperty("status").GetInt32().Should().Be(400);
+        var json = await response.ShouldBeProblemDetailsJson(
+            HttpStatusCode.BadRequest,
+            "/problems/invalid-sort");
         json.TryGetProperty("errors", out var errors).Should().BeTrue();
         errors.TryGetProperty("unknown_field", out _).Should().BeTrue();
     }
@@ -157,9 +154,9 @@ public class SortingTests : IDisposable
         var response = await _client.GetAsync("/api/sortable?sort=price:sideways");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        json.GetProperty("type").GetString().Should().Be("/problems/invalid-sort");
+        await response.ShouldBeProblemDetailsJson(
+            HttpStatusCode.BadRequest,
+            "/problems/invalid-sort");
     }
 
     [Fact]
@@ -252,13 +249,10 @@ public class SortingTests : IDisposable
         var response = await _client.GetAsync("/api/sortable?sort=bad_field:asc");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        json.GetProperty("type").GetString().Should().Be("/problems/invalid-sort");
-        json.GetProperty("title").GetString().Should().Be("Invalid Sort Parameter");
-        json.GetProperty("status").GetInt32().Should().Be(400);
+        var json = await response.ShouldBeProblemDetailsJson(
+            HttpStatusCode.BadRequest,
+            "/problems/invalid-sort",
+            expectedTitle: "Invalid Sort Parameter");
         json.TryGetProperty("detail", out _).Should().BeTrue();
         json.TryGetProperty("errors", out var errors).Should().BeTrue();
         errors.EnumerateObject().Should().HaveCountGreaterThan(0);

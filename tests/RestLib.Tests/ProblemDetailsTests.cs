@@ -46,14 +46,10 @@ public class ProblemDetailsTests : IDisposable
         var response = await _client.GetAsync($"/api/products/{nonExistentId}");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Type.Should().Be(ProblemTypes.NotFound);
-        problem.Title.Should().Be("Resource Not Found");
-        problem.Status.Should().Be(404);
+        await response.ShouldBeProblemDetails(
+            HttpStatusCode.NotFound,
+            ProblemTypes.NotFound,
+            expectedTitle: "Resource Not Found");
     }
 
     [Fact]
@@ -67,12 +63,7 @@ public class ProblemDetailsTests : IDisposable
         var response = await _client.PutAsJsonAsync($"/api/products/{nonExistentId}", entity);
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Status.Should().Be(404);
+        await response.ShouldBeProblemDetails(HttpStatusCode.NotFound, ProblemTypes.NotFound);
     }
 
     [Fact]
@@ -86,12 +77,7 @@ public class ProblemDetailsTests : IDisposable
         var response = await _client.PatchAsJsonAsync($"/api/products/{nonExistentId}", patch);
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Status.Should().Be(404);
+        await response.ShouldBeProblemDetails(HttpStatusCode.NotFound, ProblemTypes.NotFound);
     }
 
     [Fact]
@@ -104,12 +90,7 @@ public class ProblemDetailsTests : IDisposable
         var response = await _client.DeleteAsync($"/api/products/{nonExistentId}");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Status.Should().Be(404);
+        await response.ShouldBeProblemDetails(HttpStatusCode.NotFound, ProblemTypes.NotFound);
     }
 
     [Fact]
@@ -174,11 +155,10 @@ public class ProblemDetailsTests : IDisposable
 
         // Act
         var response = await _client.GetAsync($"/api/products/{nonExistentId}");
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
 
         // Assert
-        problem.Should().NotBeNull();
-        problem!.Detail.Should().Contain("ProductEntity");
+        var problem = await response.ShouldBeProblemDetails(HttpStatusCode.NotFound, ProblemTypes.NotFound);
+        problem.Detail.Should().Contain("ProductEntity");
         problem.Detail.Should().Contain(nonExistentId.ToString());
     }
 
@@ -190,11 +170,10 @@ public class ProblemDetailsTests : IDisposable
 
         // Act
         var response = await _client.GetAsync($"/api/products/{nonExistentId}");
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
 
         // Assert — detail should contain the clean type name, not the internal endpoint name with route suffix
-        problem.Should().NotBeNull();
-        problem!.Detail.Should().Contain("ProductEntity");
+        var problem = await response.ShouldBeProblemDetails(HttpStatusCode.NotFound, ProblemTypes.NotFound);
+        problem.Detail.Should().Contain("ProductEntity");
         problem.Detail.Should().NotContain("ProductEntity_");
     }
 
@@ -206,11 +185,10 @@ public class ProblemDetailsTests : IDisposable
 
         // Act
         var response = await _client.GetAsync($"/api/products/{nonExistentId}");
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
 
         // Assert
-        problem.Should().NotBeNull();
-        problem!.Instance.Should().Contain("/api/products/");
+        var problem = await response.ShouldBeProblemDetails(HttpStatusCode.NotFound, ProblemTypes.NotFound);
+        problem.Instance.Should().Contain("/api/products/");
         problem.Instance.Should().Contain(nonExistentId.ToString());
     }
 
@@ -223,11 +201,10 @@ public class ProblemDetailsTests : IDisposable
 
         // Act
         var response = await _client.PutAsJsonAsync($"/api/products/{nonExistentId}", entity);
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
 
         // Assert
-        problem.Should().NotBeNull();
-        problem!.Instance.Should().Contain("/api/products/");
+        var problem = await response.ShouldBeProblemDetails(HttpStatusCode.NotFound, ProblemTypes.NotFound);
+        problem.Instance.Should().Contain("/api/products/");
     }
 
     #endregion

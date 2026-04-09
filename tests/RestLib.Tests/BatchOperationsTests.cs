@@ -789,12 +789,7 @@ public class BatchOperationsTests : IDisposable
         var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Type.Should().Be(ProblemTypes.InvalidBatchRequest);
+        await response.ShouldBeProblemDetails(HttpStatusCode.BadRequest, ProblemTypes.InvalidBatchRequest);
     }
 
     [Fact]
@@ -815,12 +810,7 @@ public class BatchOperationsTests : IDisposable
         var response = await _client!.PostAsync("/api/items/batch", content);
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Type.Should().Be(ProblemTypes.InvalidBatchRequest);
+        await response.ShouldBeProblemDetails(HttpStatusCode.BadRequest, ProblemTypes.InvalidBatchRequest);
     }
 
     [Fact]
@@ -840,12 +830,7 @@ public class BatchOperationsTests : IDisposable
         var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Type.Should().Be(ProblemTypes.InvalidBatchRequest);
+        await response.ShouldBeProblemDetails(HttpStatusCode.BadRequest, ProblemTypes.InvalidBatchRequest);
     }
 
     [Fact]
@@ -874,12 +859,7 @@ public class BatchOperationsTests : IDisposable
         var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Type.Should().Be(ProblemTypes.BatchSizeExceeded);
+        await response.ShouldBeProblemDetails(HttpStatusCode.BadRequest, ProblemTypes.BatchSizeExceeded);
     }
 
     [Fact]
@@ -903,12 +883,7 @@ public class BatchOperationsTests : IDisposable
         var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Type.Should().Be(ProblemTypes.BatchActionNotEnabled);
+        await response.ShouldBeProblemDetails(HttpStatusCode.BadRequest, ProblemTypes.BatchActionNotEnabled);
     }
 
     [Fact]
@@ -928,12 +903,7 @@ public class BatchOperationsTests : IDisposable
         var response = await _client!.PostAsync("/api/items/batch", content);
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Type.Should().Be(ProblemTypes.InvalidBatchRequest);
+        await response.ShouldBeProblemDetails(HttpStatusCode.BadRequest, ProblemTypes.InvalidBatchRequest);
     }
 
     [Fact]
@@ -953,12 +923,7 @@ public class BatchOperationsTests : IDisposable
         var response = await _client!.PostAsync("/api/items/batch", content);
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Type.Should().Be(ProblemTypes.InvalidBatchRequest);
+        await response.ShouldBeProblemDetails(HttpStatusCode.BadRequest, ProblemTypes.InvalidBatchRequest);
     }
 
     #endregion
@@ -1054,9 +1019,7 @@ public class BatchOperationsTests : IDisposable
             items = new[] { new { id = Guid.NewGuid(), body = new { name = "X", price = 1m, is_active = true } } }
         };
         var updateResponse = await _client!.PostAsync("/api/items/batch", BatchJson(updatePayload));
-        updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var updateProblem = await updateResponse.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        updateProblem!.Type.Should().Be(ProblemTypes.BatchActionNotEnabled);
+        await updateResponse.ShouldBeProblemDetails(HttpStatusCode.BadRequest, ProblemTypes.BatchActionNotEnabled);
 
         // Act & Assert — Patch should be rejected
         var patchPayload = new
@@ -1065,9 +1028,7 @@ public class BatchOperationsTests : IDisposable
             items = new[] { new { id = Guid.NewGuid(), body = new { price = 1m } } }
         };
         var patchResponse = await _client!.PostAsync("/api/items/batch", BatchJson(patchPayload));
-        patchResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var patchProblem = await patchResponse.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        patchProblem!.Type.Should().Be(ProblemTypes.BatchActionNotEnabled);
+        await patchResponse.ShouldBeProblemDetails(HttpStatusCode.BadRequest, ProblemTypes.BatchActionNotEnabled);
     }
 
     #endregion
@@ -1773,9 +1734,7 @@ public class BatchOperationsTests : IDisposable
             items = new[] { new { id = Guid.NewGuid(), body = new { name = "X", price = 1m, is_active = true } } }
         };
         var updateResponse = await _client!.PostAsync("/api/items/batch", BatchJson(updatePayload));
-        updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var problem = await updateResponse.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem!.Type.Should().Be(ProblemTypes.BatchActionNotEnabled);
+        await updateResponse.ShouldBeProblemDetails(HttpStatusCode.BadRequest, ProblemTypes.BatchActionNotEnabled);
     }
 
     #endregion

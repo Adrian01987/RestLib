@@ -424,13 +424,9 @@ public class ETagPreconditionTests : IDisposable
         var response = await _client!.SendAsync(request);
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Type.Should().Be(ProblemTypes.PreconditionFailed);
-        problem.Status.Should().Be(412);
+        var problem = await response.ShouldBeProblemDetails(
+            HttpStatusCode.PreconditionFailed,
+            ProblemTypes.PreconditionFailed);
     }
 
     [Fact]

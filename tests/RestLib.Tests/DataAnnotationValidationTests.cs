@@ -59,11 +59,10 @@ public class DataAnnotationValidationTests : IDisposable
         var response = await _client!.PostAsJsonAsync("/api/validated", entity);
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Errors.Should().ContainKey("name");
+        var problem = await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            ProblemTypes.ValidationFailed);
+        problem.Errors.Should().ContainKey("name");
     }
 
     [Fact]
@@ -81,11 +80,10 @@ public class DataAnnotationValidationTests : IDisposable
         var response = await _client!.PostAsJsonAsync("/api/validated", entity);
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Errors.Should().ContainKey("name");
+        var problem = await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            ProblemTypes.ValidationFailed);
+        problem.Errors.Should().ContainKey("name");
     }
 
     [Fact]
@@ -103,11 +101,10 @@ public class DataAnnotationValidationTests : IDisposable
         var response = await _client!.PostAsJsonAsync("/api/validated", entity);
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Errors.Should().ContainKey("unit_price");
+        var problem = await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            ProblemTypes.ValidationFailed);
+        problem.Errors.Should().ContainKey("unit_price");
     }
 
     [Fact]
@@ -126,11 +123,10 @@ public class DataAnnotationValidationTests : IDisposable
         var response = await _client!.PostAsJsonAsync("/api/validated", entity);
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Errors.Should().ContainKey("contact_email");
+        var problem = await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            ProblemTypes.ValidationFailed);
+        problem.Errors.Should().ContainKey("contact_email");
     }
 
     [Fact]
@@ -171,11 +167,10 @@ public class DataAnnotationValidationTests : IDisposable
         var response = await _client!.PutAsJsonAsync($"/api/validated/{existingId}", entity);
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Errors.Should().ContainKey("name");
+        var problem = await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            ProblemTypes.ValidationFailed);
+        problem.Errors.Should().ContainKey("name");
     }
 
     [Fact]
@@ -245,13 +240,12 @@ public class DataAnnotationValidationTests : IDisposable
 
         // Act
         var response = await _client!.PostAsJsonAsync("/api/validated", entity);
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
 
         // Assert
-        problem.Should().NotBeNull();
-        problem!.Type.Should().Be(ProblemTypes.ValidationFailed);
-        problem.Title.Should().Be("Validation Failed");
-        problem.Status.Should().Be(400);
+        await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            ProblemTypes.ValidationFailed,
+            expectedTitle: "Validation Failed");
     }
 
     #endregion
@@ -272,11 +266,12 @@ public class DataAnnotationValidationTests : IDisposable
 
         // Act
         var response = await _client!.PostAsJsonAsync("/api/validated", entity);
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
 
         // Assert
-        problem.Should().NotBeNull();
-        problem!.Errors.Should().NotBeNull();
+        var problem = await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            ProblemTypes.ValidationFailed);
+        problem.Errors.Should().NotBeNull();
         problem.Errors!.Should().HaveCountGreaterThanOrEqualTo(2); // At least name and one other
         problem.Errors.Should().ContainKey("name");
         // Price or email error should also be present
@@ -291,12 +286,12 @@ public class DataAnnotationValidationTests : IDisposable
 
         // Act
         var response = await _client!.PostAsJsonAsync("/api/validated", entity);
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
 
         // Assert
-        problem.Should().NotBeNull();
-        problem!.Detail.Should().NotBeNullOrEmpty();
-        problem.Detail.Should().Contain("validation");
+        var problem = await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            ProblemTypes.ValidationFailed,
+            expectedDetail: "validation");
     }
 
     #endregion
@@ -312,11 +307,12 @@ public class DataAnnotationValidationTests : IDisposable
 
         // Act
         var response = await _client!.PostAsJsonAsync("/api/validated", entity);
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
 
         // Assert
-        problem.Should().NotBeNull();
-        problem!.Errors.Should().ContainKey("name"); // Single word stays lowercase
+        var problem = await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            ProblemTypes.ValidationFailed);
+        problem.Errors.Should().ContainKey("name"); // Single word stays lowercase
     }
 
     [Fact]
@@ -332,11 +328,12 @@ public class DataAnnotationValidationTests : IDisposable
 
         // Act
         var response = await _client!.PostAsJsonAsync("/api/validated", entity);
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
 
         // Assert
-        problem.Should().NotBeNull();
-        problem!.Errors.Should().ContainKey("unit_price"); // UnitPrice -> unit_price
+        var problem = await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            ProblemTypes.ValidationFailed);
+        problem.Errors.Should().ContainKey("unit_price"); // UnitPrice -> unit_price
     }
 
     [Fact]
@@ -353,11 +350,12 @@ public class DataAnnotationValidationTests : IDisposable
 
         // Act
         var response = await _client!.PostAsJsonAsync("/api/validated", entity);
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
 
         // Assert
-        problem.Should().NotBeNull();
-        problem!.Errors.Should().ContainKey("contact_email"); // ContactEmail -> contact_email
+        var problem = await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            ProblemTypes.ValidationFailed);
+        problem.Errors.Should().ContainKey("contact_email"); // ContactEmail -> contact_email
     }
 
     #endregion
@@ -403,11 +401,10 @@ public class DataAnnotationValidationTests : IDisposable
         var response = await _client!.PatchAsJsonAsync($"/api/validated/{existingId}", patch);
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
-        problem.Should().NotBeNull();
-        problem!.Errors.Should().ContainKey("name");
+        var problem = await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            ProblemTypes.ValidationFailed);
+        problem.Errors.Should().ContainKey("name");
     }
 
     [Fact]
@@ -476,11 +473,12 @@ public class DataAnnotationValidationTests : IDisposable
 
         // Act
         var response = await _client!.PostAsJsonAsync("/api/validated", entity);
-        var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
 
         // Assert
-        problem.Should().NotBeNull();
-        problem!.Instance.Should().Be("/api/validated");
+        var problem = await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            ProblemTypes.ValidationFailed);
+        problem.Instance.Should().Be("/api/validated");
     }
 
     #endregion
