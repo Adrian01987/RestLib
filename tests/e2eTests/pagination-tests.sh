@@ -224,6 +224,32 @@ test_limit_exceeds_max() {
 }
 
 # =============================================================================
+# TEST 13: Prev link is null (cursor pagination is forward-only)
+#   The response shape includes a `prev` field, but cursor-based pagination
+#   is currently forward-only — prev is always null.
+# =============================================================================
+test_prev_link_null() {
+  # Get page 1
+  http_get "${BASE_URL}/api/products?limit=3"
+  assert_http_status "200"                               || return 1
+
+  local next_link
+  next_link=$(jq_val '.next')
+  assert_ne "next link on page 1" "$next_link" "null"    || return 1
+
+  # prev should be null on page 1
+  assert_json_field_null ".prev"                         || return 1
+
+  # Get page 2
+  http_get "$next_link"
+  assert_http_status "200"                               || return 1
+
+  # prev should also be null on page 2 (forward-only cursors)
+  assert_json_field_null ".prev"                         || return 1
+  pass "prev is null on both pages (forward-only cursor pagination)"
+}
+
+# =============================================================================
 # Run all tests
 # =============================================================================
 
@@ -239,6 +265,7 @@ run_test "Invalid Limit (non-numeric)"                    test_invalid_limit_tex
 run_test "Invalid Cursor"                                 test_invalid_cursor
 run_test "Links Preserve Query Params"                    test_links_preserve_params
 run_test "Limit Exceeds Max (> 100)"                      test_limit_exceeds_max
+run_test "Prev Link is Null (forward-only cursors)"       test_prev_link_null
 
 print_summary
 exit $?

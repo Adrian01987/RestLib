@@ -272,6 +272,26 @@ test_operator_with_field_selection() {
 }
 
 # =============================================================================
+# TEST 18: status[in] — set membership filter
+#   Orders Status is configured with [eq, neq, in] operators.
+# =============================================================================
+test_status_in_operator() {
+  http_get "${BASE_URL}/api/orders?status[in]=Pending,Shipped"
+
+  assert_http_status "200"                               || return 1
+
+  local count
+  count=$(jq_len ".items")
+  # Orders: Pending (Bob), Shipped (Alice) = 2 out of 3 total
+  assert_eq "status in [Pending,Shipped] count" "$count" "2" || return 1
+
+  # Verify none are "Completed"
+  local statuses
+  statuses=$(jq_val '[.items[].status] | join(",")')
+  assert_not_contains "statuses" "$statuses" "Completed"  || return 1
+}
+
+# =============================================================================
 # Run all tests
 # =============================================================================
 
@@ -292,6 +312,7 @@ run_test "Disallowed operator returns 400"                         test_disallow
 run_test "Operator + pagination combined"                          test_operator_with_pagination
 run_test "Operator + sorting combined"                             test_operator_with_sorting
 run_test "Operator + field selection combined"                     test_operator_with_field_selection
+run_test "status[in] — set membership filter"                      test_status_in_operator
 
 print_summary
 exit $?

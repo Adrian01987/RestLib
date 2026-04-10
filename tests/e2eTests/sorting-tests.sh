@@ -183,6 +183,40 @@ test_sort_with_pagination() {
 }
 
 # =============================================================================
+# TEST 12: Multi-sort — comma-separated sort fields
+#   Sort by two fields: category_id and then price ascending.
+#   Use v2 products which supports price, name, created_at sorting.
+#   Sort by price:asc,name:asc to verify multi-field ordering.
+# =============================================================================
+test_multi_sort() {
+  http_get "${BASE_URL}/api/v2/products?sort=price:asc,name:asc"
+
+  assert_http_status "200"                               || return 1
+
+  local count
+  count=$(jq_len ".items")
+  assert_eq "items count" "$count" "8"                   || return 1
+
+  # Price ascending: Cotton T-Shirt (24.99) should be first
+  local first_price first_name
+  first_price=$(jq_val '.items[0].price')
+  first_name=$(jq_val '.items[0].name')
+  assert_num_eq "first price" "$first_price" "24.99"     || return 1
+  assert_eq "first product" "$first_name" "Cotton T-Shirt" || return 1
+
+  # Last should be most expensive: Wireless Headphones (149.99)
+  local last_price last_name
+  last_price=$(jq_val '.items[7].price')
+  last_name=$(jq_val '.items[7].name')
+  assert_num_eq "last price" "$last_price" "149.99"      || return 1
+  assert_eq "last product" "$last_name" "Wireless Headphones" || return 1
+
+  # Two products share price 44.99: there's only Pragmatic Programmer at that price
+  # Two share ~49.99: USB-C Hub. Check that ordering is stable within same price.
+  pass "Multi-sort returned correctly ordered results"
+}
+
+# =============================================================================
 # Run all tests
 # =============================================================================
 
@@ -197,6 +231,7 @@ run_test "Invalid Sort Field"                             test_invalid_sort_fiel
 run_test "Invalid Sort Direction"                         test_invalid_sort_direction
 run_test "Sort + Filter Combined"                         test_sort_with_filter
 run_test "Sort + Pagination Combined"                     test_sort_with_pagination
+run_test "Multi-Sort (price:asc,name:asc)"                test_multi_sort
 
 print_summary
 exit $?

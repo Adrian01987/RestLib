@@ -60,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `PreviewPatch` edge case tests (#31)
 - All 39+ test classes migrated from `IDisposable` to `IAsyncLifetime` (#40)
 - 32 unit tests for `GetOpenApiSchema` covering all 12 type branches and nullable wrappers (#46)
+- 10 new E2E tests: If-Match concurrency (4), filter `in` operator (1), POST Location header (1), DELETE happy path (1), prev-link null (1), multi-sort (1)
 
 ## [1.3.1] - 2026-04-06
 

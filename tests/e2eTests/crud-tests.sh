@@ -252,6 +252,76 @@ test_cleanup_product() {
 }
 
 # =============================================================================
+# TEST 13: Create returns Location header
+#   POST → 201 should include a Location header pointing to the new resource.
+#   Uses v2 Products (full CRUD, anonymous).
+# =============================================================================
+test_create_returns_location_header() {
+  http_post "${BASE_URL}/api/v2/products" '{
+    "name": "Location Header Widget",
+    "description": "Testing Location header",
+    "price": 10.00,
+    "category_id": "'"${ELECTRONICS_ID}"'",
+    "is_active": true
+  }'
+
+  assert_http_status "201"                               || return 1
+
+  # Capture the new product ID for cleanup
+  local new_id
+  new_id=$(jq_val '.id')
+
+  local location
+  location=$(get_header "Location")
+  assert_ne "Location header" "$location" ""             || return 1
+  assert_contains "Location header" "$location" "/api/v2/products/" || return 1
+  pass "Location header: $location"
+
+  # Follow the Location to verify it points to the created resource.
+  # Location may be a relative path, so prepend BASE_URL if needed.
+  local follow_url="$location"
+  if [[ "$follow_url" != http* ]]; then
+    follow_url="${BASE_URL}${follow_url}"
+  fi
+  http_get "$follow_url"
+  assert_http_status "200"                               || { http_delete "${BASE_URL}/api/v2/products/${new_id}"; return 1; }
+  assert_json_field ".name" "Location Header Widget"     || { http_delete "${BASE_URL}/api/v2/products/${new_id}"; return 1; }
+
+  # Clean up — delete via v2 (which allows DELETE)
+  http_delete "${BASE_URL}/api/v2/products/${new_id}"
+  info "Cleaned up Location Header Widget"
+}
+
+# =============================================================================
+# TEST 14: Delete happy path (204 No Content)
+#   v2 Products allows DELETE. Create a product, then delete it.
+# =============================================================================
+test_delete_happy_path() {
+  # Create a product to delete
+  http_post "${BASE_URL}/api/v2/products" '{
+    "name": "Delete Me Widget",
+    "description": "Created to be deleted",
+    "price": 5.00,
+    "category_id": "'"${ELECTRONICS_ID}"'",
+    "is_active": true
+  }'
+  assert_http_status "201"                               || return 1
+
+  local delete_id
+  delete_id=$(jq_val '.id')
+
+  # DELETE → 204 No Content
+  http_delete "${BASE_URL}/api/v2/products/${delete_id}"
+  assert_http_status "204"                               || return 1
+  pass "DELETE returned 204 No Content"
+
+  # Confirm it's gone
+  http_get "${BASE_URL}/api/v2/products/${delete_id}"
+  assert_http_status "404"                               || return 1
+  pass "Deleted product is gone"
+}
+
+# =============================================================================
 # Run all tests
 # =============================================================================
 
@@ -267,6 +337,8 @@ run_test "Delete Not Allowed on Products"                 test_delete_product_no
 run_test "Patch Not Allowed on Orders"                    test_patch_order_not_allowed
 run_test "Create with Missing Required Field"             test_create_missing_required_field
 run_test "Cleanup Test Product (via batch delete)"        test_cleanup_product
+run_test "Create Returns Location Header"                 test_create_returns_location_header
+run_test "Delete Happy Path (204)"                        test_delete_happy_path
 
 print_summary
 exit $?

@@ -347,6 +347,46 @@ assert_header_contains() {
   fi
 }
 
+# http_patch_with_headers — PATCH with extra headers (e.g., If-Match)
+#   Usage: http_patch_with_headers <url> <body> <header1> [header2] ...
+http_patch_with_headers() {
+  local url="$1"; local body="$2"; shift 2
+  local tmpbody tmpheaders
+  tmpbody=$(mktemp)
+  tmpheaders=$(mktemp)
+
+  local curl_args=(-s -D "$tmpheaders" -o "$tmpbody" -w "%{http_code}" -X PATCH -H "Content-Type: application/json" -d "$body")
+  for h in "$@"; do
+    curl_args+=(-H "$h")
+  done
+  curl_args+=("$url")
+
+  HTTP_STATUS=$(curl "${curl_args[@]}")
+  HTTP_BODY=$(cat "$tmpbody")
+  HTTP_HEADERS=$(cat "$tmpheaders")
+  rm -f "$tmpbody" "$tmpheaders"
+}
+
+# http_delete_with_headers — DELETE with extra headers (e.g., If-Match)
+#   Usage: http_delete_with_headers <url> <header1> [header2] ...
+http_delete_with_headers() {
+  local url="$1"; shift
+  local tmpbody tmpheaders
+  tmpbody=$(mktemp)
+  tmpheaders=$(mktemp)
+
+  local curl_args=(-s -D "$tmpheaders" -o "$tmpbody" -w "%{http_code}" -X DELETE)
+  for h in "$@"; do
+    curl_args+=(-H "$h")
+  done
+  curl_args+=("$url")
+
+  HTTP_STATUS=$(curl "${curl_args[@]}")
+  HTTP_BODY=$(cat "$tmpbody")
+  HTTP_HEADERS=$(cat "$tmpheaders")
+  rm -f "$tmpbody" "$tmpheaders"
+}
+
 # ---------------------------------------------------------------------------
 # Batch-specific assertion helpers
 # ---------------------------------------------------------------------------

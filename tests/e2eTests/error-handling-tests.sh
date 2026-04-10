@@ -254,6 +254,105 @@ test_if_none_match_getall() {
 }
 
 # =============================================================================
+# TEST 15: If-Match with matching ETag on PUT → 200 OK
+#   ETags are globally enabled. Fetch the current ETag, then PUT with
+#   If-Match set to the matching value — should succeed.
+# =============================================================================
+test_if_match_put_success() {
+  # Get current ETag for Headphones
+  http_get "${BASE_URL}/api/products/${HEADPHONES_ID}"
+  assert_http_status "200"                               || return 1
+
+  local etag
+  etag=$(get_header "ETag")
+  assert_ne "ETag" "$etag" ""                            || return 1
+  info "Current ETag: $etag"
+
+  # PUT with matching If-Match — should succeed
+  http_put_with_headers "${BASE_URL}/api/products/${HEADPHONES_ID}" '{
+    "id": "'"${HEADPHONES_ID}"'",
+    "name": "Wireless Headphones",
+    "description": "Noise-canceling Bluetooth headphones",
+    "price": 149.99,
+    "category_id": "'"${ELECTRONICS_ID}"'",
+    "is_active": true
+  }' "If-Match: ${etag}"
+
+  assert_http_status "200"                               || return 1
+  assert_json_field ".name" "Wireless Headphones"        || return 1
+  pass "PUT with matching If-Match succeeded"
+}
+
+# =============================================================================
+# TEST 16: If-Match with mismatching ETag on PUT → 412 Precondition Failed
+# =============================================================================
+test_if_match_put_mismatch() {
+  http_put_with_headers "${BASE_URL}/api/products/${HEADPHONES_ID}" '{
+    "id": "'"${HEADPHONES_ID}"'",
+    "name": "Wireless Headphones",
+    "description": "Noise-canceling Bluetooth headphones",
+    "price": 149.99,
+    "category_id": "'"${ELECTRONICS_ID}"'",
+    "is_active": true
+  }' 'If-Match: "wrong-etag-value"'
+
+  assert_http_status "412"                               || return 1
+  assert_problem_type "/problems/precondition-failed"    || return 1
+  pass "PUT with mismatching If-Match returns 412"
+}
+
+# =============================================================================
+# TEST 17: If-Match wildcard (*) on PATCH → 200 OK
+#   Wildcard If-Match: * matches any existing resource.
+# =============================================================================
+test_if_match_wildcard_patch() {
+  http_patch_with_headers "${BASE_URL}/api/products/${HEADPHONES_ID}" \
+    '{"price": 159.99}' \
+    'If-Match: *'
+
+  assert_http_status "200"                               || return 1
+
+  local price
+  price=$(jq_val '.price')
+  assert_num_eq "price (patched)" "$price" "159.99"      || return 1
+  pass "PATCH with If-Match: * succeeded"
+
+  # Restore original price
+  http_patch "${BASE_URL}/api/products/${HEADPHONES_ID}" '{"price": 149.99}'
+}
+
+# =============================================================================
+# TEST 18: If-Match with mismatching ETag on DELETE → 412
+#   v2 Products allows anonymous DELETE. Create a temp product,
+#   get its ETag, then DELETE with a wrong ETag.
+# =============================================================================
+test_if_match_delete_mismatch() {
+  # Create a temporary product via v2
+  http_post "${BASE_URL}/api/v2/products" '{
+    "name": "If-Match Delete Test",
+    "description": "Temporary product for ETag testing",
+    "price": 1.00,
+    "category_id": "'"${ELECTRONICS_ID}"'",
+    "is_active": true
+  }'
+  assert_http_status "201"                               || return 1
+
+  local temp_id
+  temp_id=$(jq_val '.id')
+
+  # DELETE with a bogus If-Match ETag
+  http_delete_with_headers "${BASE_URL}/api/v2/products/${temp_id}" 'If-Match: "stale-etag"'
+
+  assert_http_status "412"                               || { http_delete "${BASE_URL}/api/v2/products/${temp_id}"; return 1; }
+  assert_problem_type "/problems/precondition-failed"    || { http_delete "${BASE_URL}/api/v2/products/${temp_id}"; return 1; }
+  pass "DELETE with mismatching If-Match returns 412"
+
+  # Clean up — delete without If-Match (should succeed)
+  http_delete "${BASE_URL}/api/v2/products/${temp_id}"
+  info "Cleaned up If-Match test product"
+}
+
+# =============================================================================
 # Run all tests
 # =============================================================================
 
@@ -271,6 +370,10 @@ run_test "JSON snake_case Naming"                         test_snake_case_naming
 run_test "Null Values Omitted"                            test_null_values_omitted
 run_test "Custom Statistics Endpoint"                     test_custom_statistics_endpoint
 run_test "If-None-Match on GetAll (304)"                  test_if_none_match_getall
+run_test "If-Match PUT with Matching ETag (200)"          test_if_match_put_success
+run_test "If-Match PUT with Mismatching ETag (412)"       test_if_match_put_mismatch
+run_test "If-Match Wildcard on PATCH (200)"               test_if_match_wildcard_patch
+run_test "If-Match DELETE with Mismatching ETag (412)"    test_if_match_delete_mismatch
 
 print_summary
 exit $?

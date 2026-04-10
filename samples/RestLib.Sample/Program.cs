@@ -111,7 +111,7 @@ app.MapRestLib<Order, Guid>("/api/orders", cfg =>
     cfg.AllowAnonymous(RestLibOperation.GetAll, RestLibOperation.GetById, RestLibOperation.BatchCreate);
 
     // Filtering — equality for status, string operators for email, comparison for total
-    cfg.AllowFiltering(o => o.Status);
+    cfg.AllowFiltering(o => o.Status, [FilterOperator.Eq, FilterOperator.Neq, FilterOperator.In]);
     cfg.AllowFiltering(o => o.CustomerEmail, FilterOperators.String);
     cfg.AllowFiltering(o => o.Total, FilterOperators.Comparison);
 
