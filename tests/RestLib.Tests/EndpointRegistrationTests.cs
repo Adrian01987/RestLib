@@ -261,3 +261,83 @@ public class EndpointRegistrationTests : IAsyncLifetime
 
     private record GetAllResponse(List<TestEntity> Items);
 }
+
+/// <summary>
+/// Tests for route prefix validation at registration time.
+/// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "CRUD")]
+public class RoutePrefixValidationTests
+{
+    [Fact]
+    public async Task MapRestLib_WithPrefixMissingLeadingSlash_ThrowsArgumentException()
+    {
+        // Arrange
+        var repository = new TestEntityRepository();
+
+        // Act
+        var act = async () => await new TestHostBuilder<TestEntity, Guid>(repository, "api/entities")
+            .WithEndpoint(cfg => cfg.AllowAnonymous())
+            .BuildAsync();
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*must start with '/'*");
+    }
+
+    [Fact]
+    public async Task MapRestLib_WithWhitespaceOnlyPrefix_ThrowsArgumentException()
+    {
+        // Arrange
+        var repository = new TestEntityRepository();
+
+        // Act
+        var act = async () => await new TestHostBuilder<TestEntity, Guid>(repository, "   ")
+            .WithEndpoint(cfg => cfg.AllowAnonymous())
+            .BuildAsync();
+
+        // Assert
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*must not be whitespace-only*");
+    }
+
+    [Fact]
+    public async Task MapRestLib_WithValidPrefix_Succeeds()
+    {
+        // Arrange
+        var repository = new TestEntityRepository();
+
+        // Act
+        var (host, client) = await new TestHostBuilder<TestEntity, Guid>(repository, "/api/entities")
+            .WithEndpoint(cfg => cfg.AllowAnonymous())
+            .BuildAsync();
+
+        // Assert
+        var response = await client.GetAsync("/api/entities");
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+
+        client.Dispose();
+        await host.StopAsync();
+        host.Dispose();
+    }
+
+    [Fact]
+    public async Task MapRestLib_WithEmptyPrefix_Succeeds()
+    {
+        // Arrange
+        var repository = new TestEntityRepository();
+
+        // Act
+        var (host, client) = await new TestHostBuilder<TestEntity, Guid>(repository, string.Empty)
+            .WithEndpoint(cfg => cfg.AllowAnonymous())
+            .BuildAsync();
+
+        // Assert — endpoints mapped at root
+        var response = await client.GetAsync("/");
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK);
+
+        client.Dispose();
+        await host.StopAsync();
+        host.Dispose();
+    }
+}

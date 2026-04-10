@@ -37,6 +37,9 @@ public static class RestLibEndpointExtensions
         where TEntity : class
         where TKey : notnull
     {
+        ArgumentNullException.ThrowIfNull(endpoints);
+        ValidateRoutePrefix(prefix);
+
         var group = endpoints.MapGroup(prefix);
         ConfigureRestLibEndpoints(group, configure, prefix);
         return group;
@@ -234,6 +237,33 @@ public static class RestLibEndpointExtensions
             var batchEndpoint = group.MapPost("batch", BatchHandler.CreateDelegate<TEntity, TKey>(config));
             OpenApiEndpointConfiguration.ConfigureBatchEndpoint(batchEndpoint, config, baseEntityName, entityName);
         } // end Batch
+    }
+
+    /// <summary>
+    /// Validates that a route prefix follows URL conventions.
+    /// Empty strings are allowed (maps at the root), but non-empty prefixes must start with '/'.
+    /// </summary>
+    /// <param name="prefix">The route prefix to validate.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="prefix"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="prefix"/> is whitespace-only or does not start with '/'.</exception>
+    private static void ValidateRoutePrefix(string prefix)
+    {
+        ArgumentNullException.ThrowIfNull(prefix);
+
+        if (prefix.Length == 0)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(prefix))
+        {
+            throw new ArgumentException("Route prefix must not be whitespace-only.", nameof(prefix));
+        }
+
+        if (!prefix.StartsWith('/'))
+        {
+            throw new ArgumentException("Route prefix must start with '/'.", nameof(prefix));
+        }
     }
 
     /// <summary>
