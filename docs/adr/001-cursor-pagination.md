@@ -39,6 +39,28 @@ Use **cursor-based pagination** as the default.
 - **Response includes navigation links** — `self`, `first`, `next`, `prev` for client convenience
 - **`prev` is structurally present but always null** — simple cursor pagination is forward-only; the `prev` property exists on the response model for future bidirectional cursor support but is not populated in the current implementation
 
+## Security Considerations
+
+Cursors are base64url-encoded JSON containing the pagination key value (e.g.,
+`{"v":"<entity-id>"}`). They are **opaque by convention but not by enforcement**:
+
+- **Not signed or encrypted.** Clients can decode a cursor, modify the key value, and
+  re-encode it to resume pagination from an arbitrary position. This is generally
+  acceptable because the same data is accessible via other endpoints (GetById) and
+  cursors do not grant access beyond what the client's authorization already permits.
+- **Do not embed sensitive data.** Because cursors are trivially reversible, entity key
+  values used as cursor payloads must not contain secrets, tokens, or personally
+  identifiable information that is not already exposed through the API.
+- **Length-limited.** A configurable `MaxCursorLength` (default: 4096 characters) is
+  enforced before any decoding attempt. Cursors exceeding this limit are rejected with
+  a 400 Problem Details response, preventing large-payload abuse.
+- **Decode failures are safe.** Malformed or tampered cursors that fail base64 decoding
+  or JSON deserialization result in a 400 response. No partial state is applied.
+
+If a future version requires tamper-proof cursors (e.g., for access-controlled
+pagination windows), the encoding can be extended with HMAC signatures without
+changing the external cursor format — clients already treat cursors as opaque strings.
+
 ## References
 
 - [Zalando RESTful API Guidelines - Rule 160](https://opensource.zalando.com/restful-api-guidelines/#160)
