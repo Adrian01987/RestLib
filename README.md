@@ -7,7 +7,7 @@
 [![NuGet](https://img.shields.io/nuget/v/RestLib.svg)](https://www.nuget.org/packages/RestLib/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/Adrian01987/RestLib/blob/main/LICENSE)
 
-RestLib is a .NET 10 library for ASP.NET Core Minimal APIs that generates CRUD endpoints from your model and repository. It bakes in secure defaults, cursor pagination, filtering, sorting, OpenAPI metadata, and RFC 9457 Problem Details so you can ship consistent APIs faster.
+RestLib is a .NET 10 library for ASP.NET Core Minimal APIs that generates CRUD endpoints from your model and repository. It bakes in secure defaults, cursor pagination, filtering, sorting, field selection, HATEOAS hypermedia links, OpenAPI metadata, and RFC 9457 Problem Details so you can ship consistent APIs faster.
 
 ## Install
 
@@ -93,6 +93,7 @@ RestLib removes that repetition while keeping the parts that matter explicit:
 - Proper REST semantics inspired by the Zalando REST API Guidelines
 - Secure-by-default endpoints with per-operation opt-out
 - Machine-readable RFC 9457 Problem Details responses
+- Opt-in HATEOAS hypermedia links (Richardson Maturity Model Level 3)
 - Hook-based extensibility instead of controller inheritance
 - OpenAPI metadata and package-ready defaults out of the box
 
@@ -263,6 +264,51 @@ return 207 Multi-Status with individual status codes per item.
 Batch size is limited to 100 items by default (configurable via
 `RestLibOptions.MaxBatchSize`). Hooks fire once per item, and validation runs
 per item with errors reported individually.
+
+### HATEOAS Hypermedia Links
+
+Enable HAL-style `_links` on every entity response for discoverability:
+
+```csharp
+builder.Services.AddRestLib(opts =>
+{
+    opts.EnableHateoas = true;
+});
+```
+
+Responses include contextual navigation links:
+
+```json
+{
+  "id": "a1b2c3d4-...",
+  "name": "Keyboard",
+  "price": 49.99,
+  "_links": {
+    "self":       { "href": "https://api.example.com/api/products/a1b2c3d4-..." },
+    "collection": { "href": "https://api.example.com/api/products" },
+    "update":     { "href": "https://api.example.com/api/products/a1b2c3d4-..." },
+    "patch":      { "href": "https://api.example.com/api/products/a1b2c3d4-..." }
+  }
+}
+```
+
+Links are CRUD-aware: `update`, `patch`, and `delete` only appear when those
+operations are enabled on the endpoint. Batch responses include per-item links.
+
+For custom link relations (e.g., related resources), implement
+`IHateoasLinkProvider<TEntity, TKey>`:
+
+```csharp
+public class ProductLinkProvider : IHateoasLinkProvider<Product, Guid>
+{
+    public IEnumerable<HateoasLink> GetLinks(Product entity, Guid key, string baseUrl, string collectionPath)
+    {
+        yield return new HateoasLink("category", $"{baseUrl}/api/categories/{entity.CategoryId}");
+    }
+}
+
+builder.Services.AddHateoasLinkProvider<Product, Guid, ProductLinkProvider>();
+```
 
 ### Select Operations
 
@@ -530,6 +576,8 @@ Key decisions are documented as Architecture Decision Records:
 | [ADR-015](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/015-data-annotation-validation.md) | Data Annotation validation |
 | [ADR-016](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/016-json-resource-configuration.md) | JSON resource configuration |
 | [ADR-017](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/017-rate-limiting.md) | Rate limiting integration |
+| [ADR-018](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/018-patch-json-element-coupling.md) | PATCH JsonElement coupling acknowledgement |
+| [ADR-019](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/019-hateoas.md) | HATEOAS hypermedia links |
 
 ## Packages
 

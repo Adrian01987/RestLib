@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-04-10
+
+### Breaking Changes
+
+- `RestLibProblemDetails.Errors` changed from `IDictionary<string, string[]>?` to `IReadOnlyDictionary<string, string[]>?` — consumers assigning to `IDictionary` or calling mutable methods (`.Add()`, `.Remove()`) must update their code
+- `IBatchRepository<TEntity, TKey>` gained a new required method `GetByIdsAsync(IReadOnlyList<TKey>, CancellationToken)` — all implementations of this interface must add the new method
+- Route prefix validation in `MapRestLib` now rejects null, whitespace, and prefixes missing a leading `/` at startup — previously invalid prefixes were silently accepted
+
 ### Added
 
 - HATEOAS hypermedia links — opt-in via `RestLibOptions.EnableHateoas` adds HAL-style `_links` to all entity responses (GetById, GetAll, Create, Update, Patch, Batch) with `self`, `collection`, and CRUD-aware links conditioned on enabled operations (#42)
@@ -276,7 +284,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Architecture Decision Records (ADRs) for key design choices
 - XML documentation for public APIs
 
-[Unreleased]: https://github.com/Adrian01987/RestLib/compare/v1.3.1...HEAD
+[Unreleased]: https://github.com/Adrian01987/RestLib/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/Adrian01987/RestLib/compare/v1.3.1...v2.0.0
 [1.3.1]: https://github.com/Adrian01987/RestLib/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/Adrian01987/RestLib/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Adrian01987/RestLib/compare/v1.1.0...v1.2.0
