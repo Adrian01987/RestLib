@@ -50,4 +50,17 @@ internal sealed class BatchContext<TEntity, TKey>
     /// Gets the cancellation token.
     /// </summary>
     internal required CancellationToken CancellationToken { get; init; }
+
+    /// <summary>
+    /// Gets the endpoint configuration. Used for HATEOAS link generation
+    /// to determine which operations are enabled.
+    /// </summary>
+    internal required RestLibEndpointConfiguration<TEntity, TKey> EndpointConfig { get; init; }
+
+    /// <summary>
+    /// Gets the collection route path (e.g., "/api/products").
+    /// Used for constructing HATEOAS links. The batch suffix has already
+    /// been stripped by the batch handler before assignment.
+    /// </summary>
+    internal required string CollectionPath { get; init; }
 }

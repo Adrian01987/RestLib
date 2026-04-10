@@ -1,10 +1,12 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.FieldSelection;
 using RestLib.Filtering;
 using RestLib.Hooks;
+using RestLib.Hypermedia;
 using RestLib.Pagination;
 using RestLib.Sorting;
 
@@ -167,6 +169,16 @@ internal static class GetAllHandler
                 if (selectedFields.Count > 0)
                 {
                     var projectedItems = FieldProjector.ProjectMany(response.Items, selectedFields, jsonOptions);
+
+                    // Inject per-item HATEOAS links into projected dictionaries
+                    if (options.EnableHateoas && projectedItems is not null)
+                    {
+                        var collectionPath = httpContext.Request.Path.ToString();
+                        var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TEntity, TKey>>();
+                        HateoasHelper.InjectLinksIntoProjectedCollection(
+                            projectedItems, response.Items, config, httpContext.Request, collectionPath, jsonOptions, customLinksProvider);
+                    }
+
                     var projectedResponse = new
                     {
                         items = projectedItems,
@@ -177,6 +189,25 @@ internal static class GetAllHandler
                         prev = response.Prev
                     };
                     return Results.Json(projectedResponse, jsonOptions);
+                }
+
+                // Inject per-item HATEOAS links into full entities
+                if (options.EnableHateoas)
+                {
+                    var collectionPath = httpContext.Request.Path.ToString();
+                    var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TEntity, TKey>>();
+                    var wrappedItems = HateoasHelper.WrapCollectionWithLinks(
+                        response.Items, config, httpContext.Request, collectionPath, jsonOptions, customLinksProvider);
+                    var hateoasResponse = new
+                    {
+                        items = wrappedItems,
+                        total_count = response.TotalCount,
+                        self = response.Self,
+                        first = response.First,
+                        next = response.Next,
+                        prev = response.Prev
+                    };
+                    return Results.Json(hateoasResponse, jsonOptions);
                 }
 
                 return Results.Json(response, jsonOptions);

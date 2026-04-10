@@ -1,10 +1,12 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using RestLib.Abstractions;
 using RestLib.Caching;
 using RestLib.Configuration;
 using RestLib.FieldSelection;
 using RestLib.Hooks;
+using RestLib.Hypermedia;
 
 namespace RestLib.Endpoints;
 
@@ -112,8 +114,29 @@ internal static class GetByIdHandler
                     var projected = FieldProjector.Project(entity, selectedFields, jsonOptions);
                     if (projected is not null)
                     {
+                        // Inject HATEOAS links into projected dictionary
+                        if (options.EnableHateoas)
+                        {
+                            var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false);
+                            var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TEntity, TKey>>();
+                            var customLinks = customLinksProvider?.GetLinks(entity, id);
+                            var links = HateoasLinkBuilder.BuildEntityLinks(httpContext.Request, collectionPath, id, config, customLinks);
+                            HateoasHelper.InjectLinksIntoProjected(projected, links, jsonOptions);
+                        }
+
                         return Results.Json(projected, jsonOptions);
                     }
+                }
+
+                // Inject HATEOAS links into full entity response
+                if (options.EnableHateoas)
+                {
+                    var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false);
+                    var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TEntity, TKey>>();
+                    var customLinks = customLinksProvider?.GetLinks(entity, id);
+                    var links = HateoasLinkBuilder.BuildEntityLinks(httpContext.Request, collectionPath, id, config, customLinks);
+                    var entityWithLinks = HateoasHelper.EntityWithLinks<TEntity, TKey>(entity, links, jsonOptions);
+                    return Results.Json(entityWithLinks, jsonOptions);
                 }
 
                 return Results.Json(entity, jsonOptions);

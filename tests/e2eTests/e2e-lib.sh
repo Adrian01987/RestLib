@@ -86,20 +86,34 @@ _http_request() {
   local method="$1"
   local url="$2"
   local body="${3:-}"
-  local tmpbody tmpheaders
-  tmpbody=$(mktemp)
-  tmpheaders=$(mktemp)
+  local max_retries="${E2E_RETRY_ON_429:-5}"
+  local retry_wait="${E2E_RETRY_WAIT:-8}"
+  local attempt=0
 
-  local curl_args=(-s -g -D "$tmpheaders" -o "$tmpbody" -w "%{http_code}" -X "$method")
-  if [ -n "$body" ]; then
-    curl_args+=(-H "Content-Type: application/json" -d "$body")
-  fi
-  curl_args+=("$url")
+  while true; do
+    local tmpbody tmpheaders
+    tmpbody=$(mktemp)
+    tmpheaders=$(mktemp)
 
-  HTTP_STATUS=$(curl "${curl_args[@]}")
-  HTTP_BODY=$(cat "$tmpbody")
-  HTTP_HEADERS=$(cat "$tmpheaders")
-  rm -f "$tmpbody" "$tmpheaders"
+    local curl_args=(-s -g -D "$tmpheaders" -o "$tmpbody" -w "%{http_code}" -X "$method")
+    if [ -n "$body" ]; then
+      curl_args+=(-H "Content-Type: application/json" -d "$body")
+    fi
+    curl_args+=("$url")
+
+    HTTP_STATUS=$(curl "${curl_args[@]}")
+    HTTP_BODY=$(cat "$tmpbody")
+    HTTP_HEADERS=$(cat "$tmpheaders")
+    rm -f "$tmpbody" "$tmpheaders"
+
+    if [ "$HTTP_STATUS" = "429" ] && [ "$attempt" -lt "$max_retries" ]; then
+      attempt=$((attempt + 1))
+      warn "Rate limited (429), retrying in ${retry_wait}s (attempt ${attempt}/${max_retries})..."
+      sleep "$retry_wait"
+    else
+      break
+    fi
+  done
 }
 
 http_get()    { _http_request GET    "$1"; }
@@ -112,40 +126,70 @@ http_delete() { _http_request DELETE "$1"; }
 #   Usage: http_get_with_headers <url> <header1> [header2] ...
 http_get_with_headers() {
   local url="$1"; shift
-  local tmpbody tmpheaders
-  tmpbody=$(mktemp)
-  tmpheaders=$(mktemp)
+  local extra_headers=("$@")
+  local max_retries="${E2E_RETRY_ON_429:-5}"
+  local retry_wait="${E2E_RETRY_WAIT:-8}"
+  local attempt=0
 
-  local curl_args=(-s -D "$tmpheaders" -o "$tmpbody" -w "%{http_code}" -X GET)
-  for h in "$@"; do
-    curl_args+=(-H "$h")
+  while true; do
+    local tmpbody tmpheaders
+    tmpbody=$(mktemp)
+    tmpheaders=$(mktemp)
+
+    local curl_args=(-s -D "$tmpheaders" -o "$tmpbody" -w "%{http_code}" -X GET)
+    for h in "${extra_headers[@]}"; do
+      curl_args+=(-H "$h")
+    done
+    curl_args+=("$url")
+
+    HTTP_STATUS=$(curl "${curl_args[@]}")
+    HTTP_BODY=$(cat "$tmpbody")
+    HTTP_HEADERS=$(cat "$tmpheaders")
+    rm -f "$tmpbody" "$tmpheaders"
+
+    if [ "$HTTP_STATUS" = "429" ] && [ "$attempt" -lt "$max_retries" ]; then
+      attempt=$((attempt + 1))
+      warn "Rate limited (429), retrying in ${retry_wait}s (attempt ${attempt}/${max_retries})..."
+      sleep "$retry_wait"
+    else
+      break
+    fi
   done
-  curl_args+=("$url")
-
-  HTTP_STATUS=$(curl "${curl_args[@]}")
-  HTTP_BODY=$(cat "$tmpbody")
-  HTTP_HEADERS=$(cat "$tmpheaders")
-  rm -f "$tmpbody" "$tmpheaders"
 }
 
 # http_put_with_headers — PUT with extra headers (e.g., If-Match)
 #   Usage: http_put_with_headers <url> <body> <header1> [header2] ...
 http_put_with_headers() {
   local url="$1"; local body="$2"; shift 2
-  local tmpbody tmpheaders
-  tmpbody=$(mktemp)
-  tmpheaders=$(mktemp)
+  local extra_headers=("$@")
+  local max_retries="${E2E_RETRY_ON_429:-5}"
+  local retry_wait="${E2E_RETRY_WAIT:-8}"
+  local attempt=0
 
-  local curl_args=(-s -D "$tmpheaders" -o "$tmpbody" -w "%{http_code}" -X PUT -H "Content-Type: application/json" -d "$body")
-  for h in "$@"; do
-    curl_args+=(-H "$h")
+  while true; do
+    local tmpbody tmpheaders
+    tmpbody=$(mktemp)
+    tmpheaders=$(mktemp)
+
+    local curl_args=(-s -D "$tmpheaders" -o "$tmpbody" -w "%{http_code}" -X PUT -H "Content-Type: application/json" -d "$body")
+    for h in "${extra_headers[@]}"; do
+      curl_args+=(-H "$h")
+    done
+    curl_args+=("$url")
+
+    HTTP_STATUS=$(curl "${curl_args[@]}")
+    HTTP_BODY=$(cat "$tmpbody")
+    HTTP_HEADERS=$(cat "$tmpheaders")
+    rm -f "$tmpbody" "$tmpheaders"
+
+    if [ "$HTTP_STATUS" = "429" ] && [ "$attempt" -lt "$max_retries" ]; then
+      attempt=$((attempt + 1))
+      warn "Rate limited (429), retrying in ${retry_wait}s (attempt ${attempt}/${max_retries})..."
+      sleep "$retry_wait"
+    else
+      break
+    fi
   done
-  curl_args+=("$url")
-
-  HTTP_STATUS=$(curl "${curl_args[@]}")
-  HTTP_BODY=$(cat "$tmpbody")
-  HTTP_HEADERS=$(cat "$tmpheaders")
-  rm -f "$tmpbody" "$tmpheaders"
 }
 
 # ---------------------------------------------------------------------------
@@ -351,40 +395,70 @@ assert_header_contains() {
 #   Usage: http_patch_with_headers <url> <body> <header1> [header2] ...
 http_patch_with_headers() {
   local url="$1"; local body="$2"; shift 2
-  local tmpbody tmpheaders
-  tmpbody=$(mktemp)
-  tmpheaders=$(mktemp)
+  local extra_headers=("$@")
+  local max_retries="${E2E_RETRY_ON_429:-5}"
+  local retry_wait="${E2E_RETRY_WAIT:-8}"
+  local attempt=0
 
-  local curl_args=(-s -D "$tmpheaders" -o "$tmpbody" -w "%{http_code}" -X PATCH -H "Content-Type: application/json" -d "$body")
-  for h in "$@"; do
-    curl_args+=(-H "$h")
+  while true; do
+    local tmpbody tmpheaders
+    tmpbody=$(mktemp)
+    tmpheaders=$(mktemp)
+
+    local curl_args=(-s -D "$tmpheaders" -o "$tmpbody" -w "%{http_code}" -X PATCH -H "Content-Type: application/json" -d "$body")
+    for h in "${extra_headers[@]}"; do
+      curl_args+=(-H "$h")
+    done
+    curl_args+=("$url")
+
+    HTTP_STATUS=$(curl "${curl_args[@]}")
+    HTTP_BODY=$(cat "$tmpbody")
+    HTTP_HEADERS=$(cat "$tmpheaders")
+    rm -f "$tmpbody" "$tmpheaders"
+
+    if [ "$HTTP_STATUS" = "429" ] && [ "$attempt" -lt "$max_retries" ]; then
+      attempt=$((attempt + 1))
+      warn "Rate limited (429), retrying in ${retry_wait}s (attempt ${attempt}/${max_retries})..."
+      sleep "$retry_wait"
+    else
+      break
+    fi
   done
-  curl_args+=("$url")
-
-  HTTP_STATUS=$(curl "${curl_args[@]}")
-  HTTP_BODY=$(cat "$tmpbody")
-  HTTP_HEADERS=$(cat "$tmpheaders")
-  rm -f "$tmpbody" "$tmpheaders"
 }
 
 # http_delete_with_headers — DELETE with extra headers (e.g., If-Match)
 #   Usage: http_delete_with_headers <url> <header1> [header2] ...
 http_delete_with_headers() {
   local url="$1"; shift
-  local tmpbody tmpheaders
-  tmpbody=$(mktemp)
-  tmpheaders=$(mktemp)
+  local extra_headers=("$@")
+  local max_retries="${E2E_RETRY_ON_429:-5}"
+  local retry_wait="${E2E_RETRY_WAIT:-8}"
+  local attempt=0
 
-  local curl_args=(-s -D "$tmpheaders" -o "$tmpbody" -w "%{http_code}" -X DELETE)
-  for h in "$@"; do
-    curl_args+=(-H "$h")
+  while true; do
+    local tmpbody tmpheaders
+    tmpbody=$(mktemp)
+    tmpheaders=$(mktemp)
+
+    local curl_args=(-s -D "$tmpheaders" -o "$tmpbody" -w "%{http_code}" -X DELETE)
+    for h in "${extra_headers[@]}"; do
+      curl_args+=(-H "$h")
+    done
+    curl_args+=("$url")
+
+    HTTP_STATUS=$(curl "${curl_args[@]}")
+    HTTP_BODY=$(cat "$tmpbody")
+    HTTP_HEADERS=$(cat "$tmpheaders")
+    rm -f "$tmpbody" "$tmpheaders"
+
+    if [ "$HTTP_STATUS" = "429" ] && [ "$attempt" -lt "$max_retries" ]; then
+      attempt=$((attempt + 1))
+      warn "Rate limited (429), retrying in ${retry_wait}s (attempt ${attempt}/${max_retries})..."
+      sleep "$retry_wait"
+    else
+      break
+    fi
   done
-  curl_args+=("$url")
-
-  HTTP_STATUS=$(curl "${curl_args[@]}")
-  HTTP_BODY=$(cat "$tmpbody")
-  HTTP_HEADERS=$(cat "$tmpheaders")
-  rm -f "$tmpbody" "$tmpheaders"
 }
 
 # ---------------------------------------------------------------------------

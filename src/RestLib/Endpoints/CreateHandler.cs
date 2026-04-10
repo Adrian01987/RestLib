@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using RestLib.Abstractions;
 using RestLib.Configuration;
+using RestLib.Hypermedia;
 
 namespace RestLib.Endpoints;
 
@@ -85,6 +87,17 @@ internal static class CreateHandler
                 // BeforeResponse hook
                 var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
                 if (beforeResponseResult is not null) return beforeResponseResult;
+
+                // Inject HATEOAS links into created entity response
+                if (options.EnableHateoas && createdId is not null)
+                {
+                    var collectionPath = httpContext.Request.Path.ToString();
+                    var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TEntity, TKey>>();
+                    var customLinks = customLinksProvider?.GetLinks(created, createdId);
+                    var links = HateoasLinkBuilder.BuildEntityLinks(httpContext.Request, collectionPath, createdId, config, customLinks);
+                    var entityWithLinks = HateoasHelper.EntityWithLinks<TEntity, TKey>(created, links, jsonOptions);
+                    return Results.Json(entityWithLinks, jsonOptions, statusCode: StatusCodes.Status201Created);
+                }
 
                 return Results.Json(created, jsonOptions, statusCode: StatusCodes.Status201Created);
             }

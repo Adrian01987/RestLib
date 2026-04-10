@@ -1,8 +1,11 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using RestLib.Abstractions;
 using RestLib.Configuration;
+using RestLib.Endpoints;
 using RestLib.Hooks;
+using RestLib.Hypermedia;
 using RestLib.Responses;
 using RestLib.Serialization;
 using RestLib.Validation;
@@ -363,8 +366,7 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
 
     /// <summary>
     /// Runs the AfterPersist hook for a persisted entity and builds the success result.
-    /// If the hook short-circuits, returns the hook result instead. This helper
-    /// consolidates the common post-persist pattern shared by all entity-returning actions.
+    /// When HATEOAS is enabled, injects <c>_links</c> into the entity.
     /// </summary>
     /// <param name="index">The item index.</param>
     /// <param name="entity">The persisted entity.</param>
@@ -389,11 +391,29 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
             }
         }
 
+        // Inject HATEOAS links when enabled
+        object resultEntity = entity;
+        if (context.Options.EnableHateoas)
+        {
+            // Always extract the key from the persisted entity via KeySelector.
+            // For Create actions, resourceId is default(TKey) which for value types
+            // (e.g. Guid.Empty) is not null, so we cannot rely on null-coalescing.
+            var entityKey = EntityKeyHelper.GetEntityKey(entity, context.EndpointConfig.KeySelector);
+            if (entityKey is not null)
+            {
+                var customLinksProvider = context.HttpContext.RequestServices.GetService<IHateoasLinkProvider<TEntity, TKey>>();
+                var customLinks = customLinksProvider?.GetLinks(entity, entityKey);
+                var links = HateoasLinkBuilder.BuildEntityLinks(
+                    context.HttpContext.Request, context.CollectionPath, entityKey, context.EndpointConfig, customLinks);
+                resultEntity = HateoasHelper.EntityWithLinks<TEntity, TKey>(entity, links, context.JsonOptions);
+            }
+        }
+
         return new BatchItemResult
         {
             Index = index,
             Status = SuccessStatusCode,
-            Entity = entity
+            Entity = resultEntity
         };
     }
 

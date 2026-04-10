@@ -8,6 +8,7 @@ using RestLib.Abstractions;
 using RestLib.Caching;
 using RestLib.Configuration;
 using RestLib.Hooks;
+using RestLib.Hypermedia;
 using RestLib.Responses;
 using RestLib.Serialization;
 
@@ -191,6 +192,42 @@ public static class RestLibServiceExtensions
 
         var resolver = GetOrCreateNamedHookResolver<TEntity, TKey>(services);
         resolver.AddError(name, hook);
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers a custom HATEOAS link provider for the specified entity and key types.
+    /// When HATEOAS is enabled (<see cref="RestLibOptions.EnableHateoas"/>), the provider
+    /// is called for every entity response to append custom links (e.g., related resources)
+    /// alongside the standard CRUD links.
+    /// </summary>
+    /// <typeparam name="TEntity">The entity type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <typeparam name="TProvider">The link provider implementation type.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="lifetime">The service lifetime. Defaults to Scoped.</param>
+    /// <returns>The service collection for chaining.</returns>
+    /// <example>
+    /// <code>
+    /// services.AddHateoasLinkProvider&lt;Product, Guid, ProductLinkProvider&gt;();
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddHateoasLinkProvider<TEntity, TKey, TProvider>(
+        this IServiceCollection services,
+        ServiceLifetime lifetime = ServiceLifetime.Scoped)
+        where TEntity : class
+        where TKey : notnull
+        where TProvider : class, IHateoasLinkProvider<TEntity, TKey>
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        var descriptor = new ServiceDescriptor(
+            typeof(IHateoasLinkProvider<TEntity, TKey>),
+            typeof(TProvider),
+            lifetime);
+
+        services.Add(descriptor);
 
         return services;
     }

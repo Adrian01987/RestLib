@@ -136,7 +136,9 @@ internal static class BatchHandler
                 Pipeline = pipeline,
                 Options = options,
                 JsonOptions = jsonOptions,
-                CancellationToken = ct
+                CancellationToken = ct,
+                EndpointConfig = config,
+                CollectionPath = GetCollectionPathFromBatchPath(instance)
             };
 
             // Dispatch to the appropriate pipeline
@@ -178,5 +180,22 @@ internal static class BatchHandler
 
             return Results.Json(response, jsonOptions, statusCode: statusCode);
         };
+    }
+
+    /// <summary>
+    /// Extracts the collection path from the batch endpoint path by removing the trailing "/batch" segment.
+    /// For example, "/api/products/batch" becomes "/api/products".
+    /// </summary>
+    /// <param name="batchPath">The full batch endpoint path.</param>
+    /// <returns>The collection path.</returns>
+    private static string GetCollectionPathFromBatchPath(string batchPath)
+    {
+        const string batchSuffix = "/batch";
+        if (batchPath.EndsWith(batchSuffix, StringComparison.OrdinalIgnoreCase))
+        {
+            return batchPath[..^batchSuffix.Length];
+        }
+
+        return batchPath;
     }
 }

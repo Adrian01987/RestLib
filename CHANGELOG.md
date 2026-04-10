@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- HATEOAS hypermedia links — opt-in via `RestLibOptions.EnableHateoas` adds HAL-style `_links` to all entity responses (GetById, GetAll, Create, Update, Patch, Batch) with `self`, `collection`, and CRUD-aware links conditioned on enabled operations (#42)
+- `IHateoasLinkProvider<TEntity, TKey>` extensibility interface for injecting custom links (e.g., related resources) into entity responses (#42)
+- `AddHateoasLinkProvider<TEntity, TKey, TProvider>()` DI extension method for registering custom link providers (#42)
 - `IBatchRepository.DeleteManyAsync` now wired into the batch delete pipeline (#3)
 - `GetByIdsAsync` used in batch validation to check entity existence before persisting (#12)
 - `MaxCursorLength` guard rejects cursors exceeding the configured maximum before decoding (#15)
@@ -42,11 +45,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- ADR-019: HATEOAS design decisions — flat injection, opt-in, custom links, batch integration (#42)
 - ADR-008: added batch transactional semantics section (#13)
 - ADR-001: added security considerations for cursor pagination (#38)
 
 ### Tests
 
+- HATEOAS integration tests — 28 tests covering all endpoints, field selection, disabled operations, custom link providers, and batch operations (#42)
+- `HateoasLinkBuilder` unit tests — 17 tests for link building, path extraction, serialization, and custom link merging (#42)
 - `FilterParser` unit tests for edge cases and error paths (#21)
 - `FieldSelectionParser` unit tests for edge cases and error paths (#22)
 - `NamingUtils` unit tests for snake_case conversion (#23)

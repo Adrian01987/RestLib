@@ -94,4 +94,12 @@ public class RestLibOptions
     /// Must be an absolute URI with no trailing slash. Defaults to <c>null</c> (relative paths).
     /// </summary>
     public Uri? ProblemTypeBaseUri { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether HATEOAS (hypermedia links) are included in entity responses.
+    /// When enabled, each entity response includes a <c>_links</c> object with HAL-style
+    /// links for <c>self</c>, <c>collection</c>, and enabled CRUD operations.
+    /// Defaults to <c>false</c>.
+    /// </summary>
+    public bool EnableHateoas { get; set; } = false;
 }

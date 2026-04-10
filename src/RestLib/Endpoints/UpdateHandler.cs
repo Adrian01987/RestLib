@@ -1,8 +1,10 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.Hooks;
+using RestLib.Hypermedia;
 
 namespace RestLib.Endpoints;
 
@@ -113,6 +115,17 @@ internal static class UpdateHandler
                 // BeforeResponse hook
                 var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
                 if (beforeResponseResult is not null) return beforeResponseResult;
+
+                // Inject HATEOAS links into updated entity response
+                if (options.EnableHateoas)
+                {
+                    var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false);
+                    var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TEntity, TKey>>();
+                    var customLinks = customLinksProvider?.GetLinks(updated, id);
+                    var links = HateoasLinkBuilder.BuildEntityLinks(httpContext.Request, collectionPath, id, config, customLinks);
+                    var entityWithLinks = HateoasHelper.EntityWithLinks<TEntity, TKey>(updated, links, jsonOptions);
+                    return Results.Json(entityWithLinks, jsonOptions);
+                }
 
                 return Results.Json(updated, jsonOptions);
             }

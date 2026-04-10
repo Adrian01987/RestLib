@@ -142,6 +142,7 @@ ALL_SUITES=(
   "error-handling-tests.sh"
   "batch-tests.sh"
   "versioning-tests.sh"
+  "hateoas-tests.sh"
 )
 
 # ---------------------------------------------------------------------------

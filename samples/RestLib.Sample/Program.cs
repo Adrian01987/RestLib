@@ -18,7 +18,11 @@ var builder = WebApplication.CreateBuilder(args);
 // attributes ([Required], [Range], [StringLength], [EmailAddress]) so invalid payloads return a
 // 400 Problem Details response with per-field errors. Try it:
 //   curl -X POST http://localhost:5000/api/products -H 'Content-Type: application/json' -d '{}'
-builder.Services.AddRestLib(opts => { opts.EnableETagSupport = true; });
+builder.Services.AddRestLib(opts =>
+{
+    opts.EnableETagSupport = true;
+    opts.EnableHateoas = true;
+});
 builder.Services.AddRestLibInMemoryWithData(c => c.Id, Guid.NewGuid, SeedData.GetCategories());
 builder.Services.AddRestLibInMemoryWithData(p => p.Id, Guid.NewGuid, SeedData.GetProducts());
 builder.Services.AddRestLibInMemoryWithData(o => o.Id, Guid.NewGuid, SeedData.GetOrders());
@@ -51,12 +55,12 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.AddFixedWindowLimiter("restlib-read", limiter =>
     {
-        limiter.PermitLimit = 100;
+        limiter.PermitLimit = 200;
         limiter.Window = TimeSpan.FromMinutes(1);
     });
     options.AddFixedWindowLimiter("restlib-write", limiter =>
     {
-        limiter.PermitLimit = 20;
+        limiter.PermitLimit = 200;
         limiter.Window = TimeSpan.FromMinutes(1);
     });
 });
