@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `IBatchRepository.DeleteManyAsync` now wired into the batch delete pipeline (#3)
+- `GetByIdsAsync` used in batch validation to check entity existence before persisting (#12)
+- `MaxCursorLength` guard rejects cursors exceeding the configured maximum before decoding (#15)
+- `JsonExtensionData` on `RestLibProblemDetails` to preserve unknown members during deserialization (#18)
+- Configurable problem type URIs via `RestLibOptions.ProblemTypeBaseUri` (#19)
+- `CountAsync` on `IRepository<TEntity, TKey>` for total count queries (#20)
+- `SECURITY.md` with vulnerability reporting instructions (#37)
+- Route prefix validation in `MapRestLib` — rejects null, whitespace, and prefixes missing a leading `/` (#41)
+
+### Changed
+
+- Batch executor logic extracted from monolithic class into individual pipeline classes (`BatchPatchPipeline`, etc.) (#5)
+- `EndpointHelpers` decomposed into individual handler files and `OptionsResolver` (#6)
+- Field selection OpenAPI metadata deduplication — shared schema generation instead of per-endpoint copies (#7)
+- `PatchAsync` decoupled from `JsonElement` — accepts pre-deserialized patch dictionary (#9)
+- `HookContext.EarlyResult` cleared between pipeline stages to prevent stale results leaking (#16)
+- `CursorEncoder` rewritten to use UTF-8 `Span<byte>` instead of `Convert.ToBase64String(Encoding.UTF8.GetBytes(...))` (#32)
+- `PreviewPatch` allocation reduced by reusing serializer options and avoiding intermediate strings (#33)
+- Validation error dictionary uses `IReadOnlyDictionary<string, string[]>` and deduplicates keys (#34)
+- Parser naming consistency: `QueryFieldName` → `QueryParameterName`, `FieldPropertyConfiguration` → `FieldSelectionPropertyConfiguration`, `FilterParseResult.Values` → `.Filters` (#35)
+- `FilterParser.Parse` replaced `.Where().ToList()` LINQ chain with manual `foreach` loop (#36)
+
+### Fixed
+
+- Bulk batch error attribution — errors now reference the correct item index instead of always index 0 (#2)
+- Named hook resolver made thread-safe with `ConcurrentDictionary` (#4)
+- `CursorEncoder` catches only `FormatException` instead of broad `Exception` (#8)
+- `GetEntityKey` fails fast at registration time if the key property cannot be resolved (#10)
+- Error hook exceptions no longer swallow the original exception — wrapped in `AggregateException` (#14)
+- `FieldProjector` cache key includes property order to prevent incorrect cache hits (#17)
+
+### Documentation
+
+- ADR-008: added batch transactional semantics section (#13)
+- ADR-001: added security considerations for cursor pagination (#38)
+
+### Tests
+
+- `FilterParser` unit tests for edge cases and error paths (#21)
+- `FieldSelectionParser` unit tests for edge cases and error paths (#22)
+- `NamingUtils` unit tests for snake_case conversion (#23)
+- Batch bulk exception tests for error propagation (#24)
+- `MapJsonResource` singular overload tests (#25)
+- `MaxFilterInListSize` validation tests (#26)
+- `TestHostBuilder` migration — all integration tests use shared builder (#27)
+- `Trait` annotations added to all test classes (#28)
+- `ProblemDetailsAssert` helper for consistent assertion patterns (#29)
+- Repository exception tests for error paths (#30)
+- `PreviewPatch` edge case tests (#31)
+- All 39+ test classes migrated from `IDisposable` to `IAsyncLifetime` (#40)
+- 32 unit tests for `GetOpenApiSchema` covering all 12 type branches and nullable wrappers (#46)
+
 ## [1.3.1] - 2026-04-06
 
 ### Fixed

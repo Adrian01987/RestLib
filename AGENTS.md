@@ -13,7 +13,7 @@ field selection, RFC 9457 Problem Details, and OpenAPI metadata out of the box.
 ```bash
 dotnet restore                # Restore packages
 dotnet build                  # Build all projects
-dotnet test                   # Run all tests (773 tests)
+dotnet test                   # Run all tests (1166 tests)
 ```
 
 ### Run a single test
@@ -148,43 +148,27 @@ error types table in `docs/adr/005-problem-details.md`.
 ### Integration test structure
 
 ```csharp
-public class FeatureTests : IDisposable
+public class FeatureTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly InMemoryRepository<Entity, Guid> _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private InMemoryRepository<Entity, Guid> _repository = null!;
 
-    public FeatureTests()
+    public async Task InitializeAsync()
     {
         _repository = new InMemoryRepository<Entity, Guid>(e => e.Id, Guid.NewGuid);
-        _host = new HostBuilder()
-            .ConfigureWebHost(wb =>
-            {
-                wb.UseTestServer()
-                  .ConfigureServices(s =>
-                  {
-                      s.AddRestLib();
-                      s.AddSingleton<IRepository<Entity, Guid>>(_repository);
-                      s.AddRouting();
-                  })
-                  .Configure(app =>
-                  {
-                      app.UseRouting();
-                      app.UseEndpoints(ep =>
-                      {
-                          ep.MapRestLib<Entity, Guid>("/api/entities", cfg =>
-                          {
-                              cfg.AllowAnonymous();
-                          });
-                      });
-                  });
-            })
-            .Build();
-        _host.Start();
-        _client = _host.GetTestClient();
+
+        (_host, _client) = await new TestHostBuilder<Entity, Guid>(_repository, "/api/entities")
+            .WithEndpoint(config => config.AllowAnonymous())
+            .BuildAsync();
     }
 
-    public void Dispose() { _client.Dispose(); _host.Dispose(); }
+    public async Task DisposeAsync()
+    {
+        _client.Dispose();
+        await _host.StopAsync();
+        _host.Dispose();
+    }
 }
 ```
 
