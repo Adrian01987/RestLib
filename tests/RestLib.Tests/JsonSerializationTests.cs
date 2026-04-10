@@ -17,19 +17,20 @@ namespace RestLib.Tests;
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "Serialization")]
-public class JsonSerializationTests : IDisposable
+public class JsonSerializationTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly ProductEntityRepository _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private ProductEntityRepository _repository = null!;
 
-    public JsonSerializationTests()
+    /// <inheritdoc />
+    public async Task InitializeAsync()
     {
         _repository = new ProductEntityRepository();
 
-        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+        (_host, _client) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
+            .BuildAsync();
     }
 
     #region Acceptance Criteria: Response properties are snake_case
@@ -486,9 +487,11 @@ public class JsonSerializationTests : IDisposable
 
     #endregion
 
-    public void Dispose()
+    /// <inheritdoc />
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 }
@@ -498,27 +501,30 @@ public class JsonSerializationTests : IDisposable
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "Serialization")]
-public class JsonSerializationCustomConfigTests : IDisposable
+public class JsonSerializationCustomConfigTests : IAsyncLifetime
 {
     private IHost? _host;
     private HttpClient? _client;
     private ProductEntityRepository? _repository;
 
-    private void SetupHost(Action<RestLibOptions>? configure = null)
+    /// <inheritdoc />
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    private async Task SetupHostAsync(Action<RestLibOptions>? configure = null)
     {
         _repository = new ProductEntityRepository();
 
-        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+        (_host, _client) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithOptions(configure ?? (_ => { }))
             .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
+            .BuildAsync();
     }
 
     [Fact]
     public async Task Custom_CamelCase_NamingPolicy_Is_Applied()
     {
         // Arrange
-        SetupHost(options =>
+        await SetupHostAsync(options =>
         {
             options.JsonNamingPolicy = JsonNamingPolicy.CamelCase;
         });
@@ -557,7 +563,7 @@ public class JsonSerializationCustomConfigTests : IDisposable
     public async Task Custom_OmitNullValues_False_Includes_Nulls()
     {
         // Arrange
-        SetupHost(options =>
+        await SetupHostAsync(options =>
         {
             options.OmitNullValues = false;
         });
@@ -587,9 +593,15 @@ public class JsonSerializationCustomConfigTests : IDisposable
         rawJson.Should().Contain("\"optional_description\":null");
     }
 
-    public void Dispose()
+    /// <inheritdoc />
+    public async Task DisposeAsync()
     {
         _client?.Dispose();
+        if (_host is not null)
+        {
+            await _host.StopAsync();
+        }
+
         _host?.Dispose();
     }
 }

@@ -16,24 +16,25 @@ namespace RestLib.Tests;
 [Trait("Category", "Story20")]
 [Trait("Type", "Integration")]
 [Trait("Feature", "Pagination")]
-public class CountableRepositoryTests : IDisposable
+public class CountableRepositoryTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly InMemoryRepository<ProductEntity, Guid> _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private InMemoryRepository<ProductEntity, Guid> _repository = null!;
 
-    public CountableRepositoryTests()
+    /// <inheritdoc />
+    public async Task InitializeAsync()
     {
         _repository = new InMemoryRepository<ProductEntity, Guid>(e => e.Id, Guid.NewGuid);
 
-        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+        (_host, _client) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
                 config.AllowFiltering(p => p.IsActive, p => p.UnitPrice);
                 config.AllowFieldSelection(p => p.Id, p => p.ProductName, p => p.UnitPrice);
             })
-            .Build();
+            .BuildAsync();
     }
 
     [Fact]
@@ -123,9 +124,11 @@ public class CountableRepositoryTests : IDisposable
         totalCount.GetInt64().Should().Be(3);
     }
 
-    public void Dispose()
+    /// <inheritdoc />
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 
@@ -156,19 +159,20 @@ public class CountableRepositoryTests : IDisposable
 [Trait("Category", "Story20")]
 [Trait("Type", "Integration")]
 [Trait("Feature", "Pagination")]
-public class NonCountableRepositoryTests : IDisposable
+public class NonCountableRepositoryTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly TestEntityRepository _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private TestEntityRepository _repository = null!;
 
-    public NonCountableRepositoryTests()
+    /// <inheritdoc />
+    public async Task InitializeAsync()
     {
         _repository = new TestEntityRepository();
 
-        (_host, _client) = new TestHostBuilder<TestEntity, Guid>(_repository, "/api/items")
+        (_host, _client) = await new TestHostBuilder<TestEntity, Guid>(_repository, "/api/items")
             .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
+            .BuildAsync();
     }
 
     [Fact]
@@ -190,9 +194,11 @@ public class NonCountableRepositoryTests : IDisposable
             "total_count should be omitted when repository does not implement ICountableRepository");
     }
 
-    public void Dispose()
+    /// <inheritdoc />
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 }

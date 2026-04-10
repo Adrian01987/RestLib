@@ -741,7 +741,7 @@ public class JsonResourceConfigurationTests
         containsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    private static Task<IHost> CreateHost(
+    private static async Task<IHost> CreateHost(
         Action<IServiceCollection> configureServices,
         string? mapResourceName = null)
     {
@@ -760,7 +760,7 @@ public class JsonResourceConfigurationTests
             builder.MapOnly(mapResourceName);
         }
 
-        var (host, _) = builder.Build();
-        return Task.FromResult(host);
+        var (host, _) = await builder.BuildAsync();
+        return host;
     }
 }

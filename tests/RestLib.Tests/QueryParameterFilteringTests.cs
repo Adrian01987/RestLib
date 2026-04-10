@@ -85,17 +85,17 @@ public class NullConverterEntity
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "Filtering")]
-public class QueryParameterFilteringTests : IDisposable
+public class QueryParameterFilteringTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly InMemoryRepository<FilterableEntity, Guid> _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private InMemoryRepository<FilterableEntity, Guid> _repository = null!;
 
-    public QueryParameterFilteringTests()
+    public async Task InitializeAsync()
     {
         _repository = new InMemoryRepository<FilterableEntity, Guid>(e => e.Id, Guid.NewGuid);
 
-        (_host, _client) = new TestHostBuilder<FilterableEntity, Guid>(_repository, "/api/items")
+        (_host, _client) = await new TestHostBuilder<FilterableEntity, Guid>(_repository, "/api/items")
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
@@ -107,12 +107,13 @@ public class QueryParameterFilteringTests : IDisposable
                     p => p.Name,
                     p => p.Price);
             })
-            .Build();
+            .BuildAsync();
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 
@@ -599,28 +600,29 @@ public class QueryParameterFilteringTests : IDisposable
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "Filtering")]
-public class NoFilterConfigurationTests : IDisposable
+public class NoFilterConfigurationTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly InMemoryRepository<FilterableEntity, Guid> _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private InMemoryRepository<FilterableEntity, Guid> _repository = null!;
 
-    public NoFilterConfigurationTests()
+    public async Task InitializeAsync()
     {
         _repository = new InMemoryRepository<FilterableEntity, Guid>(e => e.Id, Guid.NewGuid);
 
-        (_host, _client) = new TestHostBuilder<FilterableEntity, Guid>(_repository, "/api/items")
+        (_host, _client) = await new TestHostBuilder<FilterableEntity, Guid>(_repository, "/api/items")
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
                 // No AllowFiltering call
             })
-            .Build();
+            .BuildAsync();
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 
@@ -860,14 +862,14 @@ public class FilterParserTests
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "Filtering")]
-public class FilterOpenApiTests : IDisposable
+public class FilterOpenApiTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
 
-    public FilterOpenApiTests()
+    public async Task InitializeAsync()
     {
-        (_host, _client) = new TestHostBuilder<FilterableEntity, Guid>(new InMemoryRepository<FilterableEntity, Guid>(e => e.Id, Guid.NewGuid), "/api/items")
+        (_host, _client) = await new TestHostBuilder<FilterableEntity, Guid>(new InMemoryRepository<FilterableEntity, Guid>(e => e.Id, Guid.NewGuid), "/api/items")
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
@@ -880,12 +882,13 @@ public class FilterOpenApiTests : IDisposable
             {
                 services.AddEndpointsApiExplorer();
             })
-            .Build();
+            .BuildAsync();
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 
@@ -1541,17 +1544,17 @@ public class FilterConfigurationOperatorTests
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "Filtering")]
-public class FilterOperatorIntegrationTests : IDisposable
+public class FilterOperatorIntegrationTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly InMemoryRepository<FilterableEntity, Guid> _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private InMemoryRepository<FilterableEntity, Guid> _repository = null!;
 
-    public FilterOperatorIntegrationTests()
+    public async Task InitializeAsync()
     {
         _repository = new InMemoryRepository<FilterableEntity, Guid>(e => e.Id, Guid.NewGuid);
 
-        (_host, _client) = new TestHostBuilder<FilterableEntity, Guid>(_repository, "/api/items")
+        (_host, _client) = await new TestHostBuilder<FilterableEntity, Guid>(_repository, "/api/items")
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
@@ -1561,10 +1564,10 @@ public class FilterOperatorIntegrationTests : IDisposable
                 config.AllowFiltering(p => p.IsActive, FilterOperator.Neq);
                 config.AllowFiltering(p => p.Status, FilterOperator.In, FilterOperator.Neq);
             })
-            .Build();
+            .BuildAsync();
 
         // Seed test data
-        SeedTestData().GetAwaiter().GetResult();
+        await SeedTestData();
     }
 
     private async Task SeedTestData()
@@ -1584,9 +1587,10 @@ public class FilterOperatorIntegrationTests : IDisposable
         }
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 
@@ -1919,17 +1923,17 @@ public class FilterOperatorIntegrationTests : IDisposable
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "Filtering")]
-public class MaxFilterInListSizeTests : IDisposable
+public class MaxFilterInListSizeTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly InMemoryRepository<FilterableEntity, Guid> _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private InMemoryRepository<FilterableEntity, Guid> _repository = null!;
 
-    public MaxFilterInListSizeTests()
+    public async Task InitializeAsync()
     {
         _repository = new InMemoryRepository<FilterableEntity, Guid>(e => e.Id, Guid.NewGuid);
 
-        (_host, _client) = new TestHostBuilder<FilterableEntity, Guid>(_repository, "/api/items")
+        (_host, _client) = await new TestHostBuilder<FilterableEntity, Guid>(_repository, "/api/items")
             .WithOptions(options =>
             {
                 options.MaxFilterInListSize = 3;
@@ -1939,12 +1943,13 @@ public class MaxFilterInListSizeTests : IDisposable
                 config.AllowAnonymous();
                 config.AllowFiltering(p => p.Quantity, FilterOperator.In);
             })
-            .Build();
+            .BuildAsync();
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 

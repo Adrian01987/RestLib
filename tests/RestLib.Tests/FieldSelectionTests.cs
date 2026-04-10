@@ -32,21 +32,21 @@ public class FieldSelectableEntity
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "FieldSelection")]
-public class FieldSelectionTests : IDisposable
+public class FieldSelectionTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly InMemoryRepository<FieldSelectableEntity, Guid> _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private InMemoryRepository<FieldSelectableEntity, Guid> _repository = null!;
 
-    private readonly Guid _knownId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    private Guid _knownId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
 
-    public FieldSelectionTests()
+    public async Task InitializeAsync()
     {
         _repository = new InMemoryRepository<FieldSelectableEntity, Guid>(
             e => e.Id,
             Guid.NewGuid);
 
-        (_host, _client) = new TestHostBuilder<FieldSelectableEntity, Guid>(_repository, "/api/items")
+        (_host, _client) = await new TestHostBuilder<FieldSelectableEntity, Guid>(_repository, "/api/items")
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
@@ -59,7 +59,7 @@ public class FieldSelectionTests : IDisposable
                 config.AllowFiltering(p => p.Category);
                 config.AllowSorting(p => p.Price, p => p.Name);
             })
-            .Build();
+            .BuildAsync();
 
         SeedData();
     }
@@ -97,9 +97,10 @@ public class FieldSelectionTests : IDisposable
     ]);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 
@@ -398,27 +399,27 @@ public class FieldSelectionTests : IDisposable
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "FieldSelection")]
-public class FieldSelectionNoConfigTests : IDisposable
+public class FieldSelectionNoConfigTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly InMemoryRepository<FieldSelectableEntity, Guid> _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private InMemoryRepository<FieldSelectableEntity, Guid> _repository = null!;
 
-    private readonly Guid _knownId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    private Guid _knownId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
 
-    public FieldSelectionNoConfigTests()
+    public async Task InitializeAsync()
     {
         _repository = new InMemoryRepository<FieldSelectableEntity, Guid>(
             e => e.Id,
             Guid.NewGuid);
 
-        (_host, _client) = new TestHostBuilder<FieldSelectableEntity, Guid>(_repository, "/api/items")
+        (_host, _client) = await new TestHostBuilder<FieldSelectableEntity, Guid>(_repository, "/api/items")
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
                 // No AllowFieldSelection configured
             })
-            .Build();
+            .BuildAsync();
 
         _repository.Seed([
             new FieldSelectableEntity
@@ -433,9 +434,10 @@ public class FieldSelectionNoConfigTests : IDisposable
     ]);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 
@@ -622,21 +624,21 @@ public class FieldSelectionConfigurationTests
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "FieldSelection")]
-public class FieldSelectionJsonConfigTests : IDisposable
+public class FieldSelectionJsonConfigTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly InMemoryRepository<FieldSelectableEntity, Guid> _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private InMemoryRepository<FieldSelectableEntity, Guid> _repository = null!;
 
-    private readonly Guid _knownId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+    private Guid _knownId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
 
-    public FieldSelectionJsonConfigTests()
+    public async Task InitializeAsync()
     {
         _repository = new InMemoryRepository<FieldSelectableEntity, Guid>(
             e => e.Id,
             Guid.NewGuid);
 
-        var (host, client) = new TestJsonHostBuilder()
+        (_host, _client) = await new TestJsonHostBuilder()
             .WithServices(services =>
             {
                 services.AddSingleton<IRepository<FieldSelectableEntity, Guid>>(_repository);
@@ -649,10 +651,7 @@ public class FieldSelectionJsonConfigTests : IDisposable
                         FieldSelection = ["Id", "Name", "Price"],
                     });
             })
-            .Build();
-
-        _host = host;
-        _client = client;
+            .BuildAsync();
 
         _repository.Seed([
             new FieldSelectableEntity
@@ -667,9 +666,10 @@ public class FieldSelectionJsonConfigTests : IDisposable
     ]);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 

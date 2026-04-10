@@ -14,19 +14,19 @@ namespace RestLib.Tests;
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "CRUD")]
-public class HttpStatusCodeTests : IDisposable
+public class HttpStatusCodeTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly ProductEntityRepository _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private ProductEntityRepository _repository = null!;
 
-    public HttpStatusCodeTests()
+    public async Task InitializeAsync()
     {
         _repository = new ProductEntityRepository();
 
-        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+        (_host, _client) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
+            .BuildAsync();
     }
 
     #region GET /collection - List
@@ -341,9 +341,10 @@ public class HttpStatusCodeTests : IDisposable
 
     #endregion
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 }
@@ -353,27 +354,32 @@ public class HttpStatusCodeTests : IDisposable
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "ConditionalRequests")]
-public class ETagPreconditionTests : IDisposable
+public class ETagPreconditionTests : IAsyncLifetime
 {
     private IHost? _host;
     private HttpClient? _client;
     private ProductEntityRepository? _repository;
 
-    private void SetupHost(bool enableETagSupport)
+    /// <summary>
+    /// Initializes the test instance. No-op since host is created per test via <see cref="SetupHostAsync"/>.
+    /// </summary>
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    private async Task SetupHostAsync(bool enableETagSupport)
     {
         _repository = new ProductEntityRepository();
 
-        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+        (_host, _client) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithOptions(options => options.EnableETagSupport = enableETagSupport)
             .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
+            .BuildAsync();
     }
 
     [Fact]
     public async Task Update_With_IfMatch_Mismatch_Returns_412_WhenETagEnabled()
     {
         // Arrange
-        SetupHost(enableETagSupport: true);
+        await SetupHostAsync(enableETagSupport: true);
 
         var id = Guid.NewGuid();
         _repository!.Seed(
@@ -405,7 +411,7 @@ public class ETagPreconditionTests : IDisposable
     public async Task Update_With_IfMatch_Mismatch_Returns_ProblemDetails()
     {
         // Arrange
-        SetupHost(enableETagSupport: true);
+        await SetupHostAsync(enableETagSupport: true);
 
         var id = Guid.NewGuid();
         _repository!.Seed(
@@ -433,7 +439,7 @@ public class ETagPreconditionTests : IDisposable
     public async Task Patch_With_IfMatch_Mismatch_Returns_412_WhenETagEnabled()
     {
         // Arrange
-        SetupHost(enableETagSupport: true);
+        await SetupHostAsync(enableETagSupport: true);
 
         var id = Guid.NewGuid();
         _repository!.Seed(
@@ -459,7 +465,7 @@ public class ETagPreconditionTests : IDisposable
     public async Task Update_With_IfMatch_Wildcard_Succeeds()
     {
         // Arrange
-        SetupHost(enableETagSupport: true);
+        await SetupHostAsync(enableETagSupport: true);
 
         var id = Guid.NewGuid();
         _repository!.Seed(
@@ -491,7 +497,7 @@ public class ETagPreconditionTests : IDisposable
     public async Task Update_Without_IfMatch_Succeeds_WhenETagEnabled()
     {
         // Arrange
-        SetupHost(enableETagSupport: true);
+        await SetupHostAsync(enableETagSupport: true);
 
         var id = Guid.NewGuid();
         _repository!.Seed(
@@ -517,7 +523,7 @@ public class ETagPreconditionTests : IDisposable
     public async Task Update_With_IfMatch_NoETagSupport_IgnoresHeader()
     {
         // Arrange
-        SetupHost(enableETagSupport: false);
+        await SetupHostAsync(enableETagSupport: false);
 
         var id = Guid.NewGuid();
         _repository!.Seed(
@@ -549,7 +555,7 @@ public class ETagPreconditionTests : IDisposable
     public async Task Update_With_IfMatch_NonExistingResource_Returns_404()
     {
         // Arrange
-        SetupHost(enableETagSupport: true);
+        await SetupHostAsync(enableETagSupport: true);
 
         var nonExistentId = Guid.NewGuid();
         var updatedProduct = new { product_name = "Updated" };
@@ -567,9 +573,14 @@ public class ETagPreconditionTests : IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client?.Dispose();
+        if (_host is not null)
+        {
+            await _host.StopAsync();
+        }
+
         _host?.Dispose();
     }
 }
@@ -579,19 +590,19 @@ public class ETagPreconditionTests : IDisposable
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "CRUD")]
-public class ZalandoStatusCodeComplianceTests : IDisposable
+public class ZalandoStatusCodeComplianceTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly ProductEntityRepository _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private ProductEntityRepository _repository = null!;
 
-    public ZalandoStatusCodeComplianceTests()
+    public async Task InitializeAsync()
     {
         _repository = new ProductEntityRepository();
 
-        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+        (_host, _client) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
+            .BuildAsync();
     }
 
     /// <summary>
@@ -754,9 +765,10 @@ public class ZalandoStatusCodeComplianceTests : IDisposable
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 }

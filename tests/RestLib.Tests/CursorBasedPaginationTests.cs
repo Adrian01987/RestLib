@@ -18,29 +18,33 @@ namespace RestLib.Tests;
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "Pagination")]
-public class CursorBasedPaginationTests : IDisposable
+public class CursorBasedPaginationTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly InMemoryRepository<ProductEntity, Guid> _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private InMemoryRepository<ProductEntity, Guid> _repository = null!;
 
     public CursorBasedPaginationTests()
     {
         _repository = new InMemoryRepository<ProductEntity, Guid>(e => e.Id, Guid.NewGuid);
+    }
 
-        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+    public async Task InitializeAsync()
+    {
+        (_host, _client) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithOptions(options =>
             {
                 options.DefaultPageSize = 20;
                 options.MaxPageSize = 100;
             })
             .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
+            .BuildAsync();
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 
@@ -180,16 +184,15 @@ public class CursorBasedPaginationTests : IDisposable
     {
         // Arrange — build a host with a very small MaxCursorLength
         var repository = new InMemoryRepository<ProductEntity, Guid>(e => e.Id, Guid.NewGuid);
-        var (host, client) = new TestHostBuilder<ProductEntity, Guid>(repository, "/api/products")
+        var (host, client) = await new TestHostBuilder<ProductEntity, Guid>(repository, "/api/products")
             .WithOptions(options =>
             {
                 options.MaxCursorLength = 10;
             })
             .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
+            .BuildAsync();
 
-        using (host)
-        using (client)
+        try
         {
             // A cursor longer than 10 characters
             var longCursor = new string('A', 11);
@@ -202,6 +205,12 @@ public class CursorBasedPaginationTests : IDisposable
                 HttpStatusCode.BadRequest,
                 "/problems/invalid-cursor");
             problem.Detail.Should().Contain("10");
+        }
+        finally
+        {
+            client.Dispose();
+            await host.StopAsync();
+            host.Dispose();
         }
     }
 
@@ -733,29 +742,33 @@ public class CursorBasedPaginationTests : IDisposable
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "Pagination")]
-public class CursorPaginationCustomConfigTests : IDisposable
+public class CursorPaginationCustomConfigTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly InMemoryRepository<ProductEntity, Guid> _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private InMemoryRepository<ProductEntity, Guid> _repository = null!;
 
     public CursorPaginationCustomConfigTests()
     {
         _repository = new InMemoryRepository<ProductEntity, Guid>(e => e.Id, Guid.NewGuid);
+    }
 
-        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+    public async Task InitializeAsync()
+    {
+        (_host, _client) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithOptions(options =>
             {
                 options.DefaultPageSize = 5;   // Custom default
                 options.MaxPageSize = 50;      // Custom max
             })
             .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
+            .BuildAsync();
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 
@@ -814,24 +827,28 @@ public class CursorPaginationCustomConfigTests : IDisposable
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "Pagination")]
-public class ZalandoPaginationComplianceTests : IDisposable
+public class ZalandoPaginationComplianceTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly InMemoryRepository<ProductEntity, Guid> _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private InMemoryRepository<ProductEntity, Guid> _repository = null!;
 
     public ZalandoPaginationComplianceTests()
     {
         _repository = new InMemoryRepository<ProductEntity, Guid>(e => e.Id, Guid.NewGuid);
-
-        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
-            .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
     }
 
-    public void Dispose()
+    public async Task InitializeAsync()
+    {
+        (_host, _client) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+            .WithEndpoint(config => config.AllowAnonymous())
+            .BuildAsync();
+    }
+
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 

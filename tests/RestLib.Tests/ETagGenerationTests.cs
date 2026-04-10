@@ -16,20 +16,21 @@ namespace RestLib.Tests;
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "ConditionalRequests")]
-public class ETagGenerationTests : IDisposable
+public class ETagGenerationTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly ProductEntityRepository _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private ProductEntityRepository _repository = null!;
 
-    public ETagGenerationTests()
+    /// <inheritdoc />
+    public async Task InitializeAsync()
     {
         _repository = new ProductEntityRepository();
 
-        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+        (_host, _client) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithOptions(options => options.EnableETagSupport = true)
             .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
+            .BuildAsync();
     }
 
     #region GET /collection/{id} - ETag in Response
@@ -290,10 +291,10 @@ public class ETagGenerationTests : IDisposable
     public async Task GetById_WithETagDisabled_Does_Not_Return_ETag_Header()
     {
         // Arrange - Create a separate host with ETag disabled
-        var (disabledHost, disabledClient) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+        var (disabledHost, disabledClient) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithOptions(options => options.EnableETagSupport = false)
             .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
+            .BuildAsync();
         using var _ = disabledHost;
 
         var id = Guid.NewGuid();
@@ -311,9 +312,11 @@ public class ETagGenerationTests : IDisposable
 
     #endregion
 
-    public void Dispose()
+    /// <inheritdoc />
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 }
@@ -484,21 +487,22 @@ public class HashBasedETagGeneratorTests
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "ConditionalRequests")]
-public class CustomETagGeneratorTests : IDisposable
+public class CustomETagGeneratorTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly ProductEntityRepository _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private ProductEntityRepository _repository = null!;
 
-    public CustomETagGeneratorTests()
+    /// <inheritdoc />
+    public async Task InitializeAsync()
     {
         _repository = new ProductEntityRepository();
 
-        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+        (_host, _client) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithOptions(options => options.EnableETagSupport = true)
             .WithEndpoint(config => config.AllowAnonymous())
             .WithServices(services => services.AddSingleton<IETagGenerator>(new FixedETagGenerator("custom-etag-value")))
-            .Build();
+            .BuildAsync();
     }
 
     [Fact]
@@ -518,9 +522,11 @@ public class CustomETagGeneratorTests : IDisposable
         response.Headers.ETag!.Tag.Should().Be("\"custom-etag-value\"");
     }
 
-    public void Dispose()
+    /// <inheritdoc />
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 

@@ -120,11 +120,11 @@ public partial class HookContextTests
 
     #region Test Host Helper
 
-    private static Task<IHost> CreateHostWithHooks(
+    private static async Task<IHost> CreateHostWithHooks(
       ContextTestRepository repository,
       Action<RestLibHooks<ContextTestEntity, int>> configureHooks)
     {
-        var (host, _) = new TestHostBuilder<ContextTestEntity, int>(repository, "/api/items")
+        var (host, _) = await new TestHostBuilder<ContextTestEntity, int>(repository, "/api/items")
             .SkipRestLibRegistration()
             .WithEndpoint(config =>
             {
@@ -132,9 +132,9 @@ public partial class HookContextTests
                 config.KeySelector = e => e.Id;
                 config.UseHooks(configureHooks);
             })
-            .Build();
+            .BuildAsync();
 
-        return Task.FromResult(host);
+        return host;
     }
 
     private static async Task<IHost> CreateHostWithHooksAndErrorSimulation(

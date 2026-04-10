@@ -19,17 +19,20 @@ namespace RestLib.Tests;
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "RateLimiting")]
-public class RateLimitingTests : IDisposable
+public class RateLimitingTests : IAsyncLifetime
 {
     private IHost? _host;
     private HttpClient? _client;
     private TestEntityRepository? _repository;
 
-    private void CreateHost(Action<RestLibEndpointConfiguration<TestEntity, Guid>> configure)
+    /// <inheritdoc />
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    private async Task CreateHostAsync(Action<RestLibEndpointConfiguration<TestEntity, Guid>> configure)
     {
         _repository = new TestEntityRepository();
 
-        (_host, _client) = new TestHostBuilder<TestEntity, Guid>(_repository, "/api/limited")
+        (_host, _client) = await new TestHostBuilder<TestEntity, Guid>(_repository, "/api/limited")
             .WithServices(services =>
             {
                 services.AddRateLimiter(options =>
@@ -53,12 +56,17 @@ public class RateLimitingTests : IDisposable
                 cfg.AllowAnonymous();
                 configure(cfg);
             })
-            .Build();
+            .BuildAsync();
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client?.Dispose();
+        if (_host is not null)
+        {
+            await _host.StopAsync();
+        }
+
         _host?.Dispose();
     }
 
@@ -67,7 +75,7 @@ public class RateLimitingTests : IDisposable
     public async Task NoRateLimitConfig_RequestsSucceed()
     {
         // Arrange — no rate limiting configured
-        CreateHost(_ => { });
+        await CreateHostAsync(_ => { });
 
         // Act — send multiple requests
         var response1 = await _client!.GetAsync("/api/limited");
@@ -85,7 +93,7 @@ public class RateLimitingTests : IDisposable
     public async Task GlobalPolicy_FirstRequestSucceeds()
     {
         // Arrange — strict policy allows only 1 request per window
-        CreateHost(cfg => cfg.UseRateLimiting("strict"));
+        await CreateHostAsync(cfg => cfg.UseRateLimiting("strict"));
 
         // Act
         var response = await _client!.GetAsync("/api/limited");
@@ -99,7 +107,7 @@ public class RateLimitingTests : IDisposable
     public async Task GlobalPolicy_Returns429WhenExceeded()
     {
         // Arrange — strict policy allows only 1 request per window
-        CreateHost(cfg => cfg.UseRateLimiting("strict"));
+        await CreateHostAsync(cfg => cfg.UseRateLimiting("strict"));
 
         // Act — first request consumes the limit, second should be rejected
         await _client!.GetAsync("/api/limited");
@@ -115,7 +123,7 @@ public class RateLimitingTests : IDisposable
     {
         // Arrange — strict policy only on GetAll
         var entityId = Guid.NewGuid();
-        CreateHost(cfg => cfg.UseRateLimiting("strict", RestLibOperation.GetAll));
+        await CreateHostAsync(cfg => cfg.UseRateLimiting("strict", RestLibOperation.GetAll));
         _repository!.Seed(new TestEntity { Id = entityId, Name = "Test" });
 
         // Act — exhaust GetAll limit
@@ -135,7 +143,7 @@ public class RateLimitingTests : IDisposable
     public async Task PerOperationOverridesDefault()
     {
         // Arrange — relaxed default, strict override on Create
-        CreateHost(cfg =>
+        await CreateHostAsync(cfg =>
         {
             cfg.UseRateLimiting("relaxed");
             cfg.UseRateLimiting("strict", RestLibOperation.Create);
@@ -159,7 +167,7 @@ public class RateLimitingTests : IDisposable
     {
         // Arrange — strict default, but GetById is exempt
         var entityId = Guid.NewGuid();
-        CreateHost(cfg =>
+        await CreateHostAsync(cfg =>
         {
             cfg.UseRateLimiting("strict");
             cfg.DisableRateLimiting(RestLibOperation.GetById);
@@ -185,7 +193,7 @@ public class RateLimitingTests : IDisposable
     public async Task DisableRateLimiting_TakesPrecedenceOverPerOperation()
     {
         // Arrange — strict per-operation on GetAll, then disable GetAll
-        CreateHost(cfg =>
+        await CreateHostAsync(cfg =>
         {
             cfg.UseRateLimiting("strict", RestLibOperation.GetAll);
             cfg.DisableRateLimiting(RestLibOperation.GetAll);
@@ -207,7 +215,7 @@ public class RateLimitingTests : IDisposable
     public async Task Response429_HasCorrectStatusCode()
     {
         // Arrange
-        CreateHost(cfg => cfg.UseRateLimiting("strict"));
+        await CreateHostAsync(cfg => cfg.UseRateLimiting("strict"));
 
         // Act — exhaust the limit
         await _client!.GetAsync("/api/limited");
@@ -223,7 +231,7 @@ public class RateLimitingTests : IDisposable
     public async Task DifferentPolicies_ReadVsWrite()
     {
         // Arrange — relaxed for reads, strict for writes
-        CreateHost(cfg =>
+        await CreateHostAsync(cfg =>
         {
             cfg.UseRateLimiting("relaxed", RestLibOperation.GetAll, RestLibOperation.GetById);
             cfg.UseRateLimiting("strict", RestLibOperation.Create, RestLibOperation.Update,
@@ -263,7 +271,7 @@ public class RateLimitingTests : IDisposable
     public async Task DisableRateLimiting_NoOperations_IsNoOp()
     {
         // Arrange — strict default, DisableRateLimiting with no args should not disable anything
-        CreateHost(cfg =>
+        await CreateHostAsync(cfg =>
         {
             cfg.UseRateLimiting("strict");
             cfg.DisableRateLimiting();
@@ -282,7 +290,7 @@ public class RateLimitingTests : IDisposable
     public async Task UseRateLimiting_CalledMultipleTimes_LastDefaultWins()
     {
         // Arrange — first call sets strict (1 permit), second overwrites with relaxed (10 permits)
-        CreateHost(cfg =>
+        await CreateHostAsync(cfg =>
         {
             cfg.UseRateLimiting("strict");
             cfg.UseRateLimiting("relaxed");
@@ -301,12 +309,12 @@ public class RateLimitingTests : IDisposable
 
     [Fact]
     [Trait("Category", "Story6.1")]
-    public void JsonConfig_ByOperation_InvalidName_ThrowsInvalidOperationException()
+    public async Task JsonConfig_ByOperation_InvalidName_ThrowsInvalidOperationException()
     {
         // Act
-        var act = () =>
+        var act = async () =>
         {
-            var (host, _) = new TestJsonHostBuilder()
+            var (host, _) = await new TestJsonHostBuilder()
                 .WithServices(services =>
                 {
                     services.AddSingleton<IRepository<TestEntity, Guid>>(new TestEntityRepository());
@@ -334,13 +342,13 @@ public class RateLimitingTests : IDisposable
                     });
                 })
                 .WithMiddleware(app => app.UseRateLimiter())
-                .Build();
+                .BuildAsync();
 
             host.Dispose();
         };
 
         // Assert
-        act.Should().Throw<InvalidOperationException>()
+        await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*'NotAnOperation' is not a valid RestLib operation name*");
     }
 
@@ -349,7 +357,7 @@ public class RateLimitingTests : IDisposable
     public async Task UseRateLimiting_PerOperation_NoOperations_IsNoOp()
     {
         // Arrange — per-operation call with no operations is a no-op; no default set either
-        CreateHost(cfg => cfg.UseRateLimiting("strict", Array.Empty<RestLibOperation>()));
+        await CreateHostAsync(cfg => cfg.UseRateLimiting("strict", Array.Empty<RestLibOperation>()));
 
         // Act — send multiple requests
         var response1 = await _client!.GetAsync("/api/limited");
@@ -369,7 +377,7 @@ public class RateLimitingTests : IDisposable
         // Arrange — configure rate limiting via JSON config model
         _repository = new TestEntityRepository();
 
-        var (host, client) = new TestJsonHostBuilder()
+        var (host, client) = await new TestJsonHostBuilder()
             .WithServices(services =>
             {
                 services.AddSingleton<IRepository<TestEntity, Guid>>(_repository);
@@ -394,7 +402,7 @@ public class RateLimitingTests : IDisposable
                 });
             })
             .WithMiddleware(app => app.UseRateLimiter())
-            .Build();
+            .BuildAsync();
 
         _host = host;
         _client = client;

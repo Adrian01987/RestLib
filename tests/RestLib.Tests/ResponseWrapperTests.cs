@@ -17,19 +17,20 @@ namespace RestLib.Tests;
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "CRUD")]
-public class ResponseWrapperTests : IDisposable
+public class ResponseWrapperTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly ProductEntityRepository _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private ProductEntityRepository _repository = null!;
 
-    public ResponseWrapperTests()
+    /// <inheritdoc />
+    public async Task InitializeAsync()
     {
         _repository = new ProductEntityRepository();
 
-        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+        (_host, _client) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
+            .BuildAsync();
     }
 
     #region Acceptance Criteria: GET collection never returns raw array
@@ -409,9 +410,11 @@ public class ResponseWrapperTests : IDisposable
 
     #endregion
 
-    public void Dispose()
+    /// <inheritdoc />
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 
@@ -438,27 +441,30 @@ public class ResponseWrapperTests : IDisposable
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "CRUD")]
-public class ResponseWrapperConfigTests : IDisposable
+public class ResponseWrapperConfigTests : IAsyncLifetime
 {
     private IHost? _host;
     private HttpClient? _client;
     private ProductEntityRepository? _repository;
 
-    private void SetupHost(Action<RestLibOptions>? configure = null)
+    /// <inheritdoc />
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    private async Task SetupHostAsync(Action<RestLibOptions>? configure = null)
     {
         _repository = new ProductEntityRepository();
 
-        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+        (_host, _client) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithOptions(configure ?? (_ => { }))
             .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
+            .BuildAsync();
     }
 
     [Fact]
     public async Task GetAll_Omits_Pagination_Links_When_Disabled()
     {
         // Arrange
-        SetupHost(options =>
+        await SetupHostAsync(options =>
         {
             options.IncludePaginationLinks = false;
         });
@@ -487,7 +493,7 @@ public class ResponseWrapperConfigTests : IDisposable
     public async Task GetAll_Custom_DefaultPageSize_Is_Applied()
     {
         // Arrange
-        SetupHost(options =>
+        await SetupHostAsync(options =>
         {
             options.DefaultPageSize = 5;
         });
@@ -514,7 +520,7 @@ public class ResponseWrapperConfigTests : IDisposable
     public async Task GetAll_Custom_MaxPageSize_Is_Enforced()
     {
         // Arrange
-        SetupHost(options =>
+        await SetupHostAsync(options =>
         {
             options.DefaultPageSize = 10;
             options.MaxPageSize = 10;
@@ -535,9 +541,15 @@ public class ResponseWrapperConfigTests : IDisposable
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
     }
 
-    public void Dispose()
+    /// <inheritdoc />
+    public async Task DisposeAsync()
     {
         _client?.Dispose();
+        if (_host is not null)
+        {
+            await _host.StopAsync();
+        }
+
         _host?.Dispose();
     }
 }

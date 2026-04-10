@@ -109,7 +109,7 @@ public sealed class TestHostBuilder<TEntity, TKey>
     /// Builds and starts the test host, returning the host and an <see cref="HttpClient"/>.
     /// </summary>
     /// <returns>A tuple of the started host and HTTP client.</returns>
-    public (IHost Host, HttpClient Client) Build()
+    public async Task<(IHost Host, HttpClient Client)> BuildAsync()
     {
         var host = new HostBuilder()
             .ConfigureWebHost(webBuilder =>
@@ -140,7 +140,7 @@ public sealed class TestHostBuilder<TEntity, TKey>
             })
             .Build();
 
-        host.Start();
+        await host.StartAsync();
         return (host, host.GetTestClient());
     }
 }
@@ -220,7 +220,7 @@ public sealed class TestJsonHostBuilder
     /// Builds and starts the test host, returning the host and an <see cref="HttpClient"/>.
     /// </summary>
     /// <returns>A tuple of the started host and HTTP client.</returns>
-    public (IHost Host, HttpClient Client) Build()
+    public async Task<(IHost Host, HttpClient Client)> BuildAsync()
     {
         var host = new HostBuilder()
             .ConfigureWebHost(webBuilder =>
@@ -253,7 +253,7 @@ public sealed class TestJsonHostBuilder
             })
             .Build();
 
-        host.Start();
+        await host.StartAsync();
         return (host, host.GetTestClient());
     }
 }

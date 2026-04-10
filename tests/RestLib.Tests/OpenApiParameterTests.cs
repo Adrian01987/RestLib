@@ -76,7 +76,7 @@ public partial class OpenApiDocumentationTests
         var nextId = 1;
         var repository = new InMemoryRepository<OpenApiTestEntity, int>(e => e.Id, () => nextId++);
 
-        var (host, client) = new TestHostBuilder<OpenApiTestEntity, int>(repository, "/api/items")
+        var (host, client) = await new TestHostBuilder<OpenApiTestEntity, int>(repository, "/api/items")
             .WithOptions(options =>
             {
                 options.DefaultPageSize = 50;
@@ -89,7 +89,7 @@ public partial class OpenApiDocumentationTests
                 config.AllowAnonymous();
                 config.KeySelector = e => e.Id;
             })
-            .Build();
+            .BuildAsync();
 
         using var _ = host;
 

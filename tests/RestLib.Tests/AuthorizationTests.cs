@@ -20,13 +20,16 @@ namespace RestLib.Tests;
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "Authorization")]
-public class AuthorizationTests : IDisposable
+public class AuthorizationTests : IAsyncLifetime
 {
     private IHost? _host;
     private HttpClient? _client;
     private TestEntityRepository? _repository;
 
-    private void CreateHost(Action<RestLibEndpointConfiguration<TestEntity, Guid>> configure, bool addAuthentication = true)
+    /// <inheritdoc />
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    private async Task CreateHostAsync(Action<RestLibEndpointConfiguration<TestEntity, Guid>> configure, bool addAuthentication = true)
     {
         _repository = new TestEntityRepository();
 
@@ -57,12 +60,18 @@ public class AuthorizationTests : IDisposable
                 });
         }
 
-        (_host, _client) = builder.Build();
+        (_host, _client) = await builder.BuildAsync();
     }
 
-    public void Dispose()
+    /// <inheritdoc />
+    public async Task DisposeAsync()
     {
         _client?.Dispose();
+        if (_host is not null)
+        {
+            await _host.StopAsync();
+        }
+
         _host?.Dispose();
     }
 
@@ -72,7 +81,7 @@ public class AuthorizationTests : IDisposable
     public async Task GetAll_WithoutAuth_Returns401()
     {
         // Arrange
-        CreateHost(_ => { }); // No configuration = secure by default
+        await CreateHostAsync(_ => { }); // No configuration = secure by default
 
         // Act
         var response = await _client!.GetAsync("/api/test-entities");
@@ -85,7 +94,7 @@ public class AuthorizationTests : IDisposable
     public async Task GetById_WithoutAuth_Returns401()
     {
         // Arrange
-        CreateHost(_ => { });
+        await CreateHostAsync(_ => { });
         var id = Guid.NewGuid();
 
         // Act
@@ -99,7 +108,7 @@ public class AuthorizationTests : IDisposable
     public async Task Create_WithoutAuth_Returns401()
     {
         // Arrange
-        CreateHost(_ => { });
+        await CreateHostAsync(_ => { });
         var entity = new TestEntity { Name = "Test" };
 
         // Act
@@ -113,7 +122,7 @@ public class AuthorizationTests : IDisposable
     public async Task Update_WithoutAuth_Returns401()
     {
         // Arrange
-        CreateHost(_ => { });
+        await CreateHostAsync(_ => { });
         var id = Guid.NewGuid();
         var entity = new TestEntity { Name = "Test" };
 
@@ -128,7 +137,7 @@ public class AuthorizationTests : IDisposable
     public async Task Patch_WithoutAuth_Returns401()
     {
         // Arrange
-        CreateHost(_ => { });
+        await CreateHostAsync(_ => { });
         var id = Guid.NewGuid();
 
         // Act
@@ -142,7 +151,7 @@ public class AuthorizationTests : IDisposable
     public async Task Delete_WithoutAuth_Returns401()
     {
         // Arrange
-        CreateHost(_ => { });
+        await CreateHostAsync(_ => { });
         var id = Guid.NewGuid();
 
         // Act
@@ -160,7 +169,7 @@ public class AuthorizationTests : IDisposable
     public async Task GetAll_WithAllowAnonymous_Returns200()
     {
         // Arrange
-        CreateHost(config => config.AllowAnonymous(RestLibOperation.GetAll));
+        await CreateHostAsync(config => config.AllowAnonymous(RestLibOperation.GetAll));
 
         // Act
         var response = await _client!.GetAsync("/api/test-entities");
@@ -173,7 +182,7 @@ public class AuthorizationTests : IDisposable
     public async Task GetById_WithAllowAnonymous_ReturnsNotFound_WhenEntityMissing()
     {
         // Arrange
-        CreateHost(config => config.AllowAnonymous(RestLibOperation.GetById));
+        await CreateHostAsync(config => config.AllowAnonymous(RestLibOperation.GetById));
         var id = Guid.NewGuid();
 
         // Act
@@ -187,7 +196,7 @@ public class AuthorizationTests : IDisposable
     public async Task Create_WithAllowAnonymous_Returns201()
     {
         // Arrange
-        CreateHost(config => config.AllowAnonymous(RestLibOperation.Create));
+        await CreateHostAsync(config => config.AllowAnonymous(RestLibOperation.Create));
         var entity = new TestEntity { Name = "Test" };
 
         // Act
@@ -201,7 +210,7 @@ public class AuthorizationTests : IDisposable
     public async Task AllowAnonymous_OnlyAffectsSpecifiedOperations()
     {
         // Arrange - Allow anonymous for GetAll only
-        CreateHost(config => config.AllowAnonymous(RestLibOperation.GetAll));
+        await CreateHostAsync(config => config.AllowAnonymous(RestLibOperation.GetAll));
 
         // Act & Assert - GetAll should work
         var getAllResponse = await _client!.GetAsync("/api/test-entities");
@@ -220,7 +229,7 @@ public class AuthorizationTests : IDisposable
     public async Task AllowAnonymous_MultipleOperations()
     {
         // Arrange
-        CreateHost(config => config.AllowAnonymous(RestLibOperation.GetAll, RestLibOperation.GetById));
+        await CreateHostAsync(config => config.AllowAnonymous(RestLibOperation.GetAll, RestLibOperation.GetById));
 
         // Act & Assert - Both read operations should work
         var getAllResponse = await _client!.GetAsync("/api/test-entities");
@@ -238,7 +247,7 @@ public class AuthorizationTests : IDisposable
     public async Task AllowAnonymous_AllOperations()
     {
         // Arrange - Allow anonymous for all operations
-        CreateHost(config => config.AllowAnonymous());
+        await CreateHostAsync(config => config.AllowAnonymous());
 
         // Act & Assert - All operations should work without auth
         var getAllResponse = await _client!.GetAsync("/api/test-entities");
@@ -256,7 +265,7 @@ public class AuthorizationTests : IDisposable
     public async Task Delete_WithAdminPolicy_AuthenticatedUserWithoutRole_Returns403()
     {
         // Arrange - Delete requires AdminOnly policy
-        CreateHost(config => config.RequirePolicy(RestLibOperation.Delete, "AdminOnly"));
+        await CreateHostAsync(config => config.RequirePolicy(RestLibOperation.Delete, "AdminOnly"));
         _client!.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Test");
         // Note: No X-Test-Role header = no admin claim
@@ -272,7 +281,7 @@ public class AuthorizationTests : IDisposable
     public async Task Delete_WithAdminPolicy_UserWithAdminRole_Succeeds()
     {
         // Arrange - Delete requires AdminOnly policy
-        CreateHost(config => config.RequirePolicy(RestLibOperation.Delete, "AdminOnly"));
+        await CreateHostAsync(config => config.RequirePolicy(RestLibOperation.Delete, "AdminOnly"));
         _client!.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Test");
         _client.DefaultRequestHeaders.Add("X-Test-Role", "admin");
@@ -288,7 +297,7 @@ public class AuthorizationTests : IDisposable
     public async Task Delete_WithAdminPolicy_UnauthenticatedUser_Returns401()
     {
         // Arrange - Delete requires AdminOnly policy
-        CreateHost(config => config.RequirePolicy(RestLibOperation.Delete, "AdminOnly"));
+        await CreateHostAsync(config => config.RequirePolicy(RestLibOperation.Delete, "AdminOnly"));
         // No auth header
 
         // Act
@@ -302,7 +311,7 @@ public class AuthorizationTests : IDisposable
     public async Task Create_WithAdminPolicy_UserWithAdminRole_Returns201()
     {
         // Arrange
-        CreateHost(config => config.RequirePolicy(RestLibOperation.Create, "AdminOnly"));
+        await CreateHostAsync(config => config.RequirePolicy(RestLibOperation.Create, "AdminOnly"));
         _client!.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Test");
         _client.DefaultRequestHeaders.Add("X-Test-Role", "admin");
@@ -319,7 +328,7 @@ public class AuthorizationTests : IDisposable
     public async Task Create_WithAdminPolicy_UserWithoutAdminRole_Returns403()
     {
         // Arrange
-        CreateHost(config => config.RequirePolicy(RestLibOperation.Create, "AdminOnly"));
+        await CreateHostAsync(config => config.RequirePolicy(RestLibOperation.Create, "AdminOnly"));
         _client!.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Test");
         var entity = new TestEntity { Name = "RegularUser" };
@@ -335,7 +344,7 @@ public class AuthorizationTests : IDisposable
     public async Task Policy_OnlyAffectsSpecifiedOperation()
     {
         // Arrange - Only Delete requires admin
-        CreateHost(config => config.RequirePolicy(RestLibOperation.Delete, "AdminOnly"));
+        await CreateHostAsync(config => config.RequirePolicy(RestLibOperation.Delete, "AdminOnly"));
         _client!.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Test");
         // Regular authenticated user (no admin role)
@@ -357,7 +366,7 @@ public class AuthorizationTests : IDisposable
     public async Task RequirePolicyForOperations_AppliesPolicyToMultipleOperations()
     {
         // Arrange - Create, Update, Delete all require admin
-        CreateHost(config => config.RequirePolicyForOperations(
+        await CreateHostAsync(config => config.RequirePolicyForOperations(
             "AdminOnly",
             RestLibOperation.Create,
             RestLibOperation.Update,
@@ -385,7 +394,7 @@ public class AuthorizationTests : IDisposable
     public async Task RequirePolicyForOperations_WithCorrectRole_AllOperationsSucceed()
     {
         // Arrange - Create, Update, Delete all require admin
-        CreateHost(config => config.RequirePolicyForOperations(
+        await CreateHostAsync(config => config.RequirePolicyForOperations(
             "AdminOnly",
             RestLibOperation.Create,
             RestLibOperation.Update,
@@ -407,7 +416,7 @@ public class AuthorizationTests : IDisposable
     public async Task MultiplePoliciesCanBeCombined_DifferentOperationsDifferentPolicies()
     {
         // Arrange - Different policies for different operations
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.RequirePolicy(RestLibOperation.Delete, "AdminOnly");
             config.RequirePolicy(RestLibOperation.Create, "EditorOnly");
@@ -437,7 +446,7 @@ public class AuthorizationTests : IDisposable
     public async Task GetAll_WithValidAuth_Returns200()
     {
         // Arrange
-        CreateHost(_ => { });
+        await CreateHostAsync(_ => { });
         _client!.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Test");
 
@@ -452,7 +461,7 @@ public class AuthorizationTests : IDisposable
     public async Task Create_WithValidAuth_Returns201()
     {
         // Arrange
-        CreateHost(_ => { });
+        await CreateHostAsync(_ => { });
         _client!.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Test");
         var entity = new TestEntity { Name = "Test" };
@@ -468,7 +477,7 @@ public class AuthorizationTests : IDisposable
     public async Task Delete_WithValidAuth_ReturnsNoContentOrNotFound()
     {
         // Arrange
-        CreateHost(_ => { });
+        await CreateHostAsync(_ => { });
         _client!.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Test");
 

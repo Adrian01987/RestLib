@@ -24,18 +24,26 @@ namespace RestLib.Tests;
 [Trait("Category", "Story8.1")]
 [Trait("Type", "Integration")]
 [Trait("Feature", "Versioning")]
-public class VersioningTests : IDisposable
+public class VersioningTests : IAsyncLifetime
 {
     private IHost? _host;
     private HttpClient? _client;
 
-    public void Dispose()
+    /// <inheritdoc />
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync()
     {
         _client?.Dispose();
+        if (_host is not null)
+        {
+            await _host.StopAsync();
+        }
+
         _host?.Dispose();
     }
 
-    private (IHost Host, HttpClient Client) CreateHost(Action<IApplicationBuilder> configureApp, Action<IServiceCollection>? configureServices = null)
+    private async Task<(IHost Host, HttpClient Client)> CreateHostAsync(Action<IApplicationBuilder> configureApp, Action<IServiceCollection>? configureServices = null)
     {
         var host = new HostBuilder()
             .ConfigureWebHost(webBuilder =>
@@ -56,7 +64,7 @@ public class VersioningTests : IDisposable
             })
             .Build();
 
-        host.Start();
+        await host.StartAsync();
         var client = host.GetTestClient();
 
         _host = host;
@@ -76,7 +84,7 @@ public class VersioningTests : IDisposable
         var repository = new InMemoryRepository<TestEntity, Guid>(e => e.Id, Guid.NewGuid);
         repository.Seed(new[] { new TestEntity { Id = Guid.NewGuid(), Name = "Widget", Price = 9.99m } });
 
-        var (_, client) = CreateHost(
+        var (_, client) = await CreateHostAsync(
             app => app.UseEndpoints(endpoints =>
             {
                 endpoints.MapGroup("/api/v1").MapRestLib<TestEntity, Guid>("/products", config =>
@@ -102,7 +110,7 @@ public class VersioningTests : IDisposable
         var repository = new InMemoryRepository<TestEntity, Guid>(e => e.Id, Guid.NewGuid);
         repository.Seed(new[] { new TestEntity { Id = Guid.NewGuid(), Name = "Gadget", Price = 19.99m } });
 
-        var (_, client) = CreateHost(
+        var (_, client) = await CreateHostAsync(
             app => app.UseEndpoints(endpoints =>
             {
                 endpoints.MapGroup("/api/v1/products").MapRestLib<TestEntity, Guid>(config =>
@@ -127,7 +135,7 @@ public class VersioningTests : IDisposable
         // Arrange
         var repository = new InMemoryRepository<TestEntity, Guid>(e => e.Id, Guid.NewGuid);
 
-        var (_, client) = CreateHost(
+        var (_, client) = await CreateHostAsync(
             app => app.UseEndpoints(endpoints =>
             {
                 endpoints.MapGroup("/api/v1/products").MapRestLib<TestEntity, Guid>(config =>
@@ -189,7 +197,7 @@ public class VersioningTests : IDisposable
             new TestEntity { Id = Guid.NewGuid(), Name = "Expensive", Price = 100.0m }
         });
 
-        var (_, client) = CreateHost(
+        var (_, client) = await CreateHostAsync(
             app => app.UseEndpoints(endpoints =>
             {
                 endpoints.MapGroup("/api/v1/products").MapRestLib<TestEntity, Guid>(config =>
@@ -222,7 +230,7 @@ public class VersioningTests : IDisposable
             new TestEntity { Id = Guid.NewGuid(), Name = "Cherry", Price = 3.0m }
         });
 
-        var (_, client) = CreateHost(
+        var (_, client) = await CreateHostAsync(
             app => app.UseEndpoints(endpoints =>
             {
                 endpoints.MapGroup("/api/v1/products").MapRestLib<TestEntity, Guid>(config =>
@@ -253,7 +261,7 @@ public class VersioningTests : IDisposable
         var knownId = Guid.NewGuid();
         repository.Seed(new[] { new TestEntity { Id = knownId, Name = "Widget", Price = 9.99m } });
 
-        var (_, client) = CreateHost(
+        var (_, client) = await CreateHostAsync(
             app => app.UseEndpoints(endpoints =>
             {
                 endpoints.MapGroup("/api/v1/products").MapRestLib<TestEntity, Guid>(config =>
@@ -280,7 +288,7 @@ public class VersioningTests : IDisposable
         // Arrange
         var repository = new InMemoryRepository<TestEntity, Guid>(e => e.Id, Guid.NewGuid);
 
-        var (_, client) = CreateHost(
+        var (_, client) = await CreateHostAsync(
             app => app.UseEndpoints(endpoints =>
             {
                 endpoints.MapGroup("/api/v1/products").MapRestLib<TestEntity, Guid>(config =>
@@ -321,7 +329,7 @@ public class VersioningTests : IDisposable
         var repository = new InMemoryRepository<TestEntity, Guid>(e => e.Id, Guid.NewGuid);
         var hookFired = false;
 
-        var (_, client) = CreateHost(
+        var (_, client) = await CreateHostAsync(
             app => app.UseEndpoints(endpoints =>
             {
                 endpoints.MapGroup("/api/v1/products").MapRestLib<TestEntity, Guid>(config =>
@@ -353,7 +361,7 @@ public class VersioningTests : IDisposable
         var repository = new InMemoryRepository<TestEntity, Guid>(e => e.Id, Guid.NewGuid);
         repository.Seed(new[] { new TestEntity { Id = Guid.NewGuid(), Name = "Widget", Price = 9.99m } });
 
-        var (_, client) = CreateHost(
+        var (_, client) = await CreateHostAsync(
             app => app.UseEndpoints(endpoints =>
             {
                 // v1: read-only — use prefix-based overload on version group for unique endpoint names
@@ -394,7 +402,7 @@ public class VersioningTests : IDisposable
         var productRepo = new InMemoryRepository<ProductEntity, Guid>(e => e.Id, Guid.NewGuid);
         productRepo.Seed(new[] { new ProductEntity { Id = Guid.NewGuid(), ProductName = "Gadget", UnitPrice = 19.99m, IsActive = true } });
 
-        var (_, client) = CreateHost(
+        var (_, client) = await CreateHostAsync(
             app => app.UseEndpoints(endpoints =>
             {
                 endpoints.MapGroup("/api/v1/items").MapRestLib<TestEntity, Guid>(config =>
@@ -428,7 +436,7 @@ public class VersioningTests : IDisposable
     }
 
     [Fact]
-    public void PrefixlessMapRestLib_ReturnsRouteGroupBuilder()
+    public async Task PrefixlessMapRestLib_ReturnsRouteGroupBuilder()
     {
         // Arrange & Act
         RouteGroupBuilder? returnedGroup = null;
@@ -460,11 +468,12 @@ public class VersioningTests : IDisposable
             })
             .Build();
 
-        host.Start();
+        await host.StartAsync();
 
         // Assert
         returnedGroup.Should().NotBeNull();
 
+        await host.StopAsync();
         host.Dispose();
     }
 
@@ -475,7 +484,7 @@ public class VersioningTests : IDisposable
         var repository = new InMemoryRepository<TestEntity, Guid>(e => e.Id, Guid.NewGuid);
         repository.Seed(new[] { new TestEntity { Id = Guid.NewGuid(), Name = "Default", Price = 1.0m } });
 
-        var (_, client) = CreateHost(
+        var (_, client) = await CreateHostAsync(
             app =>
             {
                 app.UseAuthorization();
@@ -507,7 +516,7 @@ public class VersioningTests : IDisposable
         var repository = new InMemoryRepository<TestEntity, Guid>(e => e.Id, Guid.NewGuid);
         repository.Seed(new[] { new TestEntity { Id = Guid.NewGuid(), Name = "Deep", Price = 42.0m } });
 
-        var (_, client) = CreateHost(
+        var (_, client) = await CreateHostAsync(
             app => app.UseEndpoints(endpoints =>
             {
                 endpoints.MapGroup("/api")
@@ -540,7 +549,7 @@ public class VersioningTests : IDisposable
             repository.Seed(new[] { new TestEntity { Id = Guid.NewGuid(), Name = $"Item{i}", Price = i } });
         }
 
-        var (_, client) = CreateHost(
+        var (_, client) = await CreateHostAsync(
             app => app.UseEndpoints(endpoints =>
             {
                 endpoints.MapGroup("/api/v1/products").MapRestLib<TestEntity, Guid>(config =>
@@ -578,7 +587,7 @@ public class VersioningTests : IDisposable
         var repository = new InMemoryRepository<TestEntity, Guid>(e => e.Id, Guid.NewGuid);
         repository.Seed(new[] { new TestEntity { Id = Guid.NewGuid(), Name = "Existing", Price = 7.77m } });
 
-        var (_, client) = CreateHost(
+        var (_, client) = await CreateHostAsync(
             app => app.UseEndpoints(endpoints =>
             {
                 endpoints.MapRestLib<TestEntity, Guid>("/api/products", config =>
@@ -609,7 +618,7 @@ public class VersioningTests : IDisposable
             new TestEntity { Id = Guid.NewGuid(), Name = "Cherry", Price = 3.0m }
         });
 
-        var (_, client) = CreateHost(
+        var (_, client) = await CreateHostAsync(
             app => app.UseEndpoints(endpoints =>
             {
                 endpoints.MapGroup("/api/v2/products").MapRestLib<TestEntity, Guid>(config =>
@@ -647,7 +656,7 @@ public class VersioningTests : IDisposable
         var repository = new InMemoryRepository<TestEntity, Guid>(e => e.Id, Guid.NewGuid);
         repository.Seed(new[] { new TestEntity { Id = Guid.NewGuid(), Name = "Shared", Price = 5.0m } });
 
-        var (_, client) = CreateHost(
+        var (_, client) = await CreateHostAsync(
             app => app.UseEndpoints(endpoints =>
             {
                 // Use MapRestLib with a prefix on a version group — the prefix-based overload
@@ -687,7 +696,7 @@ public class VersioningTests : IDisposable
         var repository = new InMemoryRepository<TestEntity, Guid>(e => e.Id, Guid.NewGuid);
         repository.Seed(new[] { new TestEntity { Id = Guid.NewGuid(), Name = "Root", Price = 1.0m } });
 
-        var (_, client) = CreateHost(
+        var (_, client) = await CreateHostAsync(
             app => app.UseEndpoints(endpoints =>
             {
                 endpoints.MapGroup("/products").MapRestLib<TestEntity, Guid>(config =>
@@ -732,7 +741,7 @@ public class VersioningTests : IDisposable
         var entityId = Guid.NewGuid();
         repository.Seed(new[] { new TestEntity { Id = entityId, Name = "Protected", Price = 5.0m } });
 
-        var (_, client) = CreateHost(
+        var (_, client) = await CreateHostAsync(
             app =>
             {
                 app.UseAuthentication();

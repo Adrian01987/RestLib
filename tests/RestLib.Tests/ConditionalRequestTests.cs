@@ -14,20 +14,21 @@ namespace RestLib.Tests;
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "ConditionalRequests")]
-public class ConditionalRequestTests : IDisposable
+public class ConditionalRequestTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly ProductEntityRepository _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private ProductEntityRepository _repository = null!;
 
-    public ConditionalRequestTests()
+    /// <inheritdoc />
+    public async Task InitializeAsync()
     {
         _repository = new ProductEntityRepository();
 
-        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+        (_host, _client) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithOptions(options => options.EnableETagSupport = true)
             .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
+            .BuildAsync();
     }
 
     #region If-None-Match - 304 Not Modified
@@ -562,10 +563,10 @@ public class ConditionalRequestTests : IDisposable
     public async Task GetById_WithIfNoneMatch_WhenETagDisabled_IgnoresHeader()
     {
         // Arrange
-        var (disabledHost, disabledClient) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+        var (disabledHost, disabledClient) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithOptions(options => options.EnableETagSupport = false)
             .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
+            .BuildAsync();
         using var _ = disabledHost;
 
         var id = Guid.NewGuid();
@@ -587,10 +588,10 @@ public class ConditionalRequestTests : IDisposable
     public async Task Delete_WithIfMatch_WhenETagDisabled_IgnoresHeader()
     {
         // Arrange
-        var (disabledHost, disabledClient) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+        var (disabledHost, disabledClient) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithOptions(options => options.EnableETagSupport = false)
             .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
+            .BuildAsync();
         using var _ = disabledHost;
 
         var id = Guid.NewGuid();
@@ -610,9 +611,11 @@ public class ConditionalRequestTests : IDisposable
 
     #endregion
 
-    public void Dispose()
+    /// <inheritdoc />
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 }

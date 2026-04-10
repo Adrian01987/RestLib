@@ -18,17 +18,20 @@ namespace RestLib.Tests;
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "Validation")]
-public class DataAnnotationValidationTests : IDisposable
+public class DataAnnotationValidationTests : IAsyncLifetime
 {
     private IHost? _host;
     private HttpClient? _client;
     private ValidatedEntityRepository? _repository;
 
-    private void SetupHost(bool enableValidation = true)
+    /// <inheritdoc />
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    private async Task SetupHostAsync(bool enableValidation = true)
     {
         _repository = new ValidatedEntityRepository();
 
-        (_host, _client) = new TestHostBuilder<ValidatedEntity, Guid>(_repository, "/api/validated")
+        (_host, _client) = await new TestHostBuilder<ValidatedEntity, Guid>(_repository, "/api/validated")
             .WithOptions(options =>
             {
                 options.EnableValidation = enableValidation;
@@ -37,12 +40,18 @@ public class DataAnnotationValidationTests : IDisposable
             {
                 config.AllowAnonymous();
             })
-            .Build();
+            .BuildAsync();
     }
 
-    public void Dispose()
+    /// <inheritdoc />
+    public async Task DisposeAsync()
     {
         _client?.Dispose();
+        if (_host is not null)
+        {
+            await _host.StopAsync();
+        }
+
         _host?.Dispose();
     }
 
@@ -52,7 +61,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task Create_WithMissingRequiredField_Returns_ValidationError()
     {
         // Arrange
-        SetupHost();
+        await SetupHostAsync();
         var entity = new { unit_price = 10.00 }; // Missing required 'name'
 
         // Act
@@ -69,7 +78,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task Create_WithStringTooLong_Returns_ValidationError()
     {
         // Arrange
-        SetupHost();
+        await SetupHostAsync();
         var entity = new
         {
             name = new string('a', 101), // Exceeds MaxLength(100)
@@ -90,7 +99,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task Create_WithValueOutOfRange_Returns_ValidationError()
     {
         // Arrange
-        SetupHost();
+        await SetupHostAsync();
         var entity = new
         {
             name = "Test Product",
@@ -111,7 +120,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task Create_WithInvalidEmail_Returns_ValidationError()
     {
         // Arrange
-        SetupHost();
+        await SetupHostAsync();
         var entity = new
         {
             name = "Test Product",
@@ -133,7 +142,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task Create_WithValidEntity_Succeeds()
     {
         // Arrange
-        SetupHost();
+        await SetupHostAsync();
         var entity = new
         {
             name = "Valid Product",
@@ -152,7 +161,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task Update_WithMissingRequiredField_Returns_ValidationError()
     {
         // Arrange
-        SetupHost();
+        await SetupHostAsync();
         var existingId = Guid.NewGuid();
         _repository!.Seed(new ValidatedEntity
         {
@@ -177,7 +186,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task Update_WithValidEntity_Succeeds()
     {
         // Arrange
-        SetupHost();
+        await SetupHostAsync();
         var existingId = Guid.NewGuid();
         _repository!.Seed(new ValidatedEntity
         {
@@ -207,7 +216,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task ValidationFailure_Returns_400BadRequest()
     {
         // Arrange
-        SetupHost();
+        await SetupHostAsync();
         var entity = new { unit_price = 10.00 }; // Missing required field
 
         // Act
@@ -221,7 +230,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task ValidationFailure_Returns_ProblemDetails_ContentType()
     {
         // Arrange
-        SetupHost();
+        await SetupHostAsync();
         var entity = new { unit_price = 10.00 };
 
         // Act
@@ -235,7 +244,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task ValidationFailure_Returns_CorrectProblemType()
     {
         // Arrange
-        SetupHost();
+        await SetupHostAsync();
         var entity = new { unit_price = 10.00 };
 
         // Act
@@ -256,7 +265,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task MultipleValidationErrors_ReturnsAllErrors()
     {
         // Arrange
-        SetupHost();
+        await SetupHostAsync();
         var entity = new
         {
             // Missing 'name' (Required)
@@ -281,7 +290,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task ValidationError_ContainsDetailMessage()
     {
         // Arrange
-        SetupHost();
+        await SetupHostAsync();
         var entity = new { unit_price = 10.00 };
 
         // Act
@@ -302,7 +311,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task ValidationError_FieldName_IsSnakeCase_ForSingleWord()
     {
         // Arrange
-        SetupHost();
+        await SetupHostAsync();
         var entity = new { unit_price = 10.00 }; // Missing 'name'
 
         // Act
@@ -319,7 +328,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task ValidationError_FieldName_IsSnakeCase_ForMultipleWords()
     {
         // Arrange
-        SetupHost();
+        await SetupHostAsync();
         var entity = new
         {
             name = "Test",
@@ -340,7 +349,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task ValidationError_FieldName_IsSnakeCase_ForComplexPropertyName()
     {
         // Arrange
-        SetupHost();
+        await SetupHostAsync();
         var entity = new
         {
             name = "Test",
@@ -366,7 +375,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task Create_WithValidationDisabled_DoesNotValidate()
     {
         // Arrange
-        SetupHost(enableValidation: false);
+        await SetupHostAsync(enableValidation: false);
         var entity = new { unit_price = 10.00 }; // Missing required 'name'
 
         // Act
@@ -385,7 +394,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task Patch_ThatResultsInInvalidEntity_Returns_ValidationError()
     {
         // Arrange
-        SetupHost();
+        await SetupHostAsync();
         var existingId = Guid.NewGuid();
         _repository!.Seed(new ValidatedEntity
         {
@@ -412,7 +421,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task Patch_ThatResultsInInvalidEntity_DoesNotPersistInvalidData()
     {
         // Arrange
-        SetupHost();
+        await SetupHostAsync();
         var existingId = Guid.NewGuid();
         _repository!.Seed(new ValidatedEntity
         {
@@ -442,7 +451,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task Patch_ThatKeepsEntityValid_Succeeds()
     {
         // Arrange
-        SetupHost();
+        await SetupHostAsync();
         var existingId = Guid.NewGuid();
         _repository!.Seed(new ValidatedEntity
         {
@@ -468,7 +477,7 @@ public class DataAnnotationValidationTests : IDisposable
     public async Task ValidationError_IncludesInstance()
     {
         // Arrange
-        SetupHost();
+        await SetupHostAsync();
         var entity = new { unit_price = 10.00 };
 
         // Act

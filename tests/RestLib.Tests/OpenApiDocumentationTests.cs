@@ -43,12 +43,12 @@ public partial class OpenApiDocumentationTests
 
     #region Helper Methods
 
-    private static Task<IHost> CreateHostWithOpenApi()
+    private static async Task<IHost> CreateHostWithOpenApi()
     {
         var nextId = 1;
         var repository = new InMemoryRepository<OpenApiTestEntity, int>(e => e.Id, () => nextId++);
 
-        var (host, _) = new TestHostBuilder<OpenApiTestEntity, int>(repository, "/api/items")
+        var (host, _) = await new TestHostBuilder<OpenApiTestEntity, int>(repository, "/api/items")
             .WithServices(services => services.AddOpenApi())
             .WithAdditionalEndpoints(endpoints => endpoints.MapOpenApi())
             .WithEndpoint(config =>
@@ -56,17 +56,17 @@ public partial class OpenApiDocumentationTests
                 config.AllowAnonymous();
                 config.KeySelector = e => e.Id;
             })
-            .Build();
+            .BuildAsync();
 
-        return Task.FromResult(host);
+        return host;
     }
 
-    private static Task<IHost> CreateHostWithFilters()
+    private static async Task<IHost> CreateHostWithFilters()
     {
         var nextId = 1;
         var repository = new InMemoryRepository<OpenApiTestEntity, int>(e => e.Id, () => nextId++);
 
-        var (host, _) = new TestHostBuilder<OpenApiTestEntity, int>(repository, "/api/items")
+        var (host, _) = await new TestHostBuilder<OpenApiTestEntity, int>(repository, "/api/items")
             .WithServices(services => services.AddOpenApi())
             .WithAdditionalEndpoints(endpoints => endpoints.MapOpenApi())
             .WithEndpoint(config =>
@@ -75,9 +75,9 @@ public partial class OpenApiDocumentationTests
                 config.KeySelector = e => e.Id;
                 config.AllowFiltering(e => e.IsActive, e => e.CategoryId);
             })
-            .Build();
+            .BuildAsync();
 
-        return Task.FromResult(host);
+        return host;
     }
 
     private static async Task<OpenApiDocument> GetOpenApiDocument(HttpClient client)

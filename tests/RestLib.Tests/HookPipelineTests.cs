@@ -1021,14 +1021,14 @@ public class HookPipelineTests
         repository.ShouldThrowOnCreate = true;
         repository.ExceptionToThrow = new InvalidOperationException("Database timeout on create");
 
-        var (host, client) = new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
+        var (host, client) = await new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
             .SkipRestLibRegistration()
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
                 config.KeySelector = e => e.Id;
             })
-            .Build();
+            .BuildAsync();
 
         using (host)
         {
@@ -1049,14 +1049,14 @@ public class HookPipelineTests
         repository.ShouldThrowOnGetById = true;
         repository.ExceptionToThrow = new TimeoutException("Database timeout on read");
 
-        var (host, client) = new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
+        var (host, client) = await new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
             .SkipRestLibRegistration()
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
                 config.KeySelector = e => e.Id;
             })
-            .Build();
+            .BuildAsync();
 
         using (host)
         {
@@ -1075,14 +1075,14 @@ public class HookPipelineTests
         repository.ShouldThrowOnGetAll = true;
         repository.ExceptionToThrow = new TimeoutException("Database timeout on list");
 
-        var (host, client) = new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
+        var (host, client) = await new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
             .SkipRestLibRegistration()
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
                 config.KeySelector = e => e.Id;
             })
-            .Build();
+            .BuildAsync();
 
         using (host)
         {
@@ -1102,14 +1102,14 @@ public class HookPipelineTests
         repository.ExceptionToThrow = new InvalidOperationException("Database timeout on patch");
         repository.AddTestData(new HookTestEntity { Id = 1, Name = "Existing" });
 
-        var (host, client) = new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
+        var (host, client) = await new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
             .SkipRestLibRegistration()
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
                 config.KeySelector = e => e.Id;
             })
-            .Build();
+            .BuildAsync();
 
         using (host)
         {
@@ -1133,14 +1133,14 @@ public class HookPipelineTests
         repository.ExceptionToThrow = new InvalidOperationException("Database timeout on update");
         repository.AddTestData(new HookTestEntity { Id = 1, Name = "Existing" });
 
-        var (host, client) = new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
+        var (host, client) = await new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
             .SkipRestLibRegistration()
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
                 config.KeySelector = e => e.Id;
             })
-            .Build();
+            .BuildAsync();
 
         using (host)
         {
@@ -1162,14 +1162,14 @@ public class HookPipelineTests
         repository.ExceptionToThrow = new InvalidOperationException("Database timeout on delete");
         repository.AddTestData(new HookTestEntity { Id = 1, Name = "Existing" });
 
-        var (host, client) = new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
+        var (host, client) = await new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
             .SkipRestLibRegistration()
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
                 config.KeySelector = e => e.Id;
             })
-            .Build();
+            .BuildAsync();
 
         using (host)
         {
@@ -1466,11 +1466,11 @@ public class HookPipelineTests
 
     #region Test Host Helper
 
-    private static Task<IHost> CreateHostWithHooks(
+    private static async Task<IHost> CreateHostWithHooks(
       HookTestRepository repository,
       Action<RestLibHooks<HookTestEntity, int>> configureHooks)
     {
-        var (host, _) = new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
+        var (host, _) = await new TestHostBuilder<HookTestEntity, int>(repository, "/api/items")
             .SkipRestLibRegistration()
             .WithEndpoint(config =>
             {
@@ -1478,9 +1478,9 @@ public class HookPipelineTests
                 config.KeySelector = e => e.Id;
                 config.UseHooks(configureHooks);
             })
-            .Build();
+            .BuildAsync();
 
-        return Task.FromResult(host);
+        return host;
     }
 
     #endregion

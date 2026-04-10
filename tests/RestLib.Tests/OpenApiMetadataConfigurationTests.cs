@@ -123,19 +123,19 @@ public partial class OpenApiMetadataConfigurationTests
 
     #region Helper Methods
 
-    private static Task<IHost> CreateHostWithOpenApi(
+    private static async Task<IHost> CreateHostWithOpenApi(
         Action<RestLibEndpointConfiguration<MetadataTestEntity, int>> configure)
     {
         var repository = new MetadataTestRepository();
 
-        var (host, _) = new TestHostBuilder<MetadataTestEntity, int>(repository, "/api/items")
+        var (host, _) = await new TestHostBuilder<MetadataTestEntity, int>(repository, "/api/items")
             .SkipRestLibRegistration()
             .WithServices(services => services.AddOpenApi())
             .WithAdditionalEndpoints(endpoints => endpoints.MapOpenApi())
             .WithEndpoint(configure)
-            .Build();
+            .BuildAsync();
 
-        return Task.FromResult(host);
+        return host;
     }
 
     private static async Task<OpenApiDocument> GetOpenApiDocument(HttpClient client)

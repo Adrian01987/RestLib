@@ -19,19 +19,19 @@ namespace RestLib.Tests;
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "ProblemDetails")]
-public class ProblemDetailsTests : IDisposable
+public class ProblemDetailsTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly ProductEntityRepository _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private ProductEntityRepository _repository = null!;
 
-    public ProblemDetailsTests()
+    public async Task InitializeAsync()
     {
         _repository = new ProductEntityRepository();
 
-        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+        (_host, _client) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
+            .BuildAsync();
     }
 
     #region Acceptance Criteria: All 4xx/5xx use Problem Details
@@ -774,9 +774,10 @@ public class ProblemDetailsTests : IDisposable
 
     #endregion
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 }
@@ -788,14 +789,20 @@ public class ProblemDetailsTests : IDisposable
 [Collection("ProblemTypeBaseUri")]
 [Trait("Type", "Unit")]
 [Trait("Feature", "ProblemDetails")]
-public class ProblemTypeResolveTests : IDisposable
+public class ProblemTypeResolveTests : IAsyncLifetime
 {
+    /// <summary>
+    /// Initializes the test. No setup required.
+    /// </summary>
+    public Task InitializeAsync() => Task.CompletedTask;
+
     /// <summary>
     /// Reset the static base URI after each test to prevent leaking state.
     /// </summary>
-    public void Dispose()
+    public Task DisposeAsync()
     {
         ProblemTypes.Configure(null);
+        return Task.CompletedTask;
     }
 
     [Fact]
@@ -931,14 +938,20 @@ public class ProblemTypeResolveTests : IDisposable
 [Collection("ProblemTypeBaseUri")]
 [Trait("Type", "Unit")]
 [Trait("Feature", "Configuration")]
-public class ProblemTypeBaseUriRegistrationTests : IDisposable
+public class ProblemTypeBaseUriRegistrationTests : IAsyncLifetime
 {
+    /// <summary>
+    /// Initializes the test. No setup required.
+    /// </summary>
+    public Task InitializeAsync() => Task.CompletedTask;
+
     /// <summary>
     /// Reset the static base URI after each test to prevent leaking state.
     /// </summary>
-    public void Dispose()
+    public Task DisposeAsync()
     {
         ProblemTypes.Configure(null);
+        return Task.CompletedTask;
     }
 
     [Fact]

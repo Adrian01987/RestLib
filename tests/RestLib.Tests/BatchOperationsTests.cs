@@ -148,7 +148,7 @@ public class ThrowingBulkBatchRepository : IBatchRepository<BatchEntity, Guid>
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "Batch")]
-public class BatchOperationsTests : IDisposable
+public class BatchOperationsTests : IAsyncLifetime
 {
     private readonly InMemoryRepository<BatchEntity, Guid> _repository;
     private IHost? _host;
@@ -164,7 +164,10 @@ public class BatchOperationsTests : IDisposable
             Guid.NewGuid);
     }
 
-    private void CreateHost(
+    /// <inheritdoc />
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    private async Task CreateHostAsync(
         Action<RestLibEndpointConfiguration<BatchEntity, Guid>> configure,
         Action<RestLibOptions>? configureOptions = null)
     {
@@ -176,13 +179,18 @@ public class BatchOperationsTests : IDisposable
             builder.WithOptions(configureOptions);
         }
 
-        (_host, _client) = builder.Build();
+        (_host, _client) = await builder.BuildAsync();
     }
 
     /// <inheritdoc />
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client?.Dispose();
+        if (_host is not null)
+        {
+            await _host.StopAsync();
+        }
+
         _host?.Dispose();
     }
 
@@ -202,7 +210,7 @@ public class BatchOperationsTests : IDisposable
     public async Task BatchCreate_ValidItems_Returns200WithCreatedEntities()
     {
         // Arrange
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -242,7 +250,7 @@ public class BatchOperationsTests : IDisposable
     public async Task BatchCreate_MixedValidation_Returns207WithPerItemStatus()
     {
         // Arrange
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -283,7 +291,7 @@ public class BatchOperationsTests : IDisposable
     public async Task BatchCreate_AllInvalid_Returns207WithAllErrors()
     {
         // Arrange
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -323,7 +331,7 @@ public class BatchOperationsTests : IDisposable
     public async Task BatchCreate_EntitiesArePersisted()
     {
         // Arrange
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -376,7 +384,7 @@ public class BatchOperationsTests : IDisposable
         new BatchEntity { Id = id2, Name = "Item2", Price = 20m },
     ]);
 
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -415,7 +423,7 @@ public class BatchOperationsTests : IDisposable
             new BatchEntity { Id = existingId, Name = "Existing", Price = 10m },
     ]);
 
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -451,7 +459,7 @@ public class BatchOperationsTests : IDisposable
             new BatchEntity { Id = id1, Name = "ToDelete", Price = 10m },
     ]);
 
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -488,7 +496,7 @@ public class BatchOperationsTests : IDisposable
         new BatchEntity { Id = id2, Name = "Original2", Price = 20m },
     ]);
 
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -532,7 +540,7 @@ public class BatchOperationsTests : IDisposable
             new BatchEntity { Id = existingId, Name = "Existing", Price = 10m },
     ]);
 
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -574,7 +582,7 @@ public class BatchOperationsTests : IDisposable
             new BatchEntity { Id = id1, Name = "Existing", Price = 10m },
     ]);
 
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -619,7 +627,7 @@ public class BatchOperationsTests : IDisposable
         new BatchEntity { Id = id2, Name = "Item2", Price = 20m, IsActive = true },
     ]);
 
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -664,7 +672,7 @@ public class BatchOperationsTests : IDisposable
             new BatchEntity { Id = existingId, Name = "Existing", Price = 10m },
     ]);
 
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -704,7 +712,7 @@ public class BatchOperationsTests : IDisposable
             new BatchEntity { Id = id, Name = "OriginalName", Price = 42m, IsActive = true },
     ]);
 
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -745,13 +753,13 @@ public class BatchOperationsTests : IDisposable
 
         var spy = new RepositorySpy<BatchEntity, Guid>(_repository);
 
-        (_host, _client) = new TestHostBuilder<BatchEntity, Guid>(spy, "/api/items")
+        (_host, _client) = await new TestHostBuilder<BatchEntity, Guid>(spy, "/api/items")
             .WithEndpoint(cfg =>
             {
                 cfg.AllowAnonymous();
                 cfg.EnableBatch();
             })
-            .Build();
+            .BuildAsync();
 
         var payload = new
         {
@@ -777,7 +785,7 @@ public class BatchOperationsTests : IDisposable
     public async Task Batch_InvalidAction_Returns400()
     {
         // Arrange
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -797,7 +805,7 @@ public class BatchOperationsTests : IDisposable
     public async Task Batch_MissingItems_Returns400()
     {
         // Arrange
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -818,7 +826,7 @@ public class BatchOperationsTests : IDisposable
     public async Task Batch_EmptyItems_Returns400()
     {
         // Arrange
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -838,7 +846,7 @@ public class BatchOperationsTests : IDisposable
     public async Task Batch_SizeExceeded_Returns400()
     {
         // Arrange
-        CreateHost(
+        await CreateHostAsync(
             config =>
             {
                 config.AllowAnonymous();
@@ -867,7 +875,7 @@ public class BatchOperationsTests : IDisposable
     public async Task Batch_ActionNotEnabled_Returns400()
     {
         // Arrange — only enable Create
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch(BatchAction.Create);
@@ -891,7 +899,7 @@ public class BatchOperationsTests : IDisposable
     public async Task Batch_InvalidJson_Returns400()
     {
         // Arrange
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -911,7 +919,7 @@ public class BatchOperationsTests : IDisposable
     public async Task Batch_NullBody_Returns400()
     {
         // Arrange
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -935,7 +943,7 @@ public class BatchOperationsTests : IDisposable
     public async Task NoBatchConfig_BatchEndpointNotMapped()
     {
         // Arrange — no EnableBatch call
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
         });
@@ -958,7 +966,7 @@ public class BatchOperationsTests : IDisposable
     public async Task EnableBatch_NoArgs_EnablesAllActions()
     {
         // Arrange
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -1001,7 +1009,7 @@ public class BatchOperationsTests : IDisposable
     public async Task EnableBatch_SpecificActions_OnlyThoseEnabled()
     {
         // Arrange — only Create and Delete
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch(BatchAction.Create, BatchAction.Delete);
@@ -1042,7 +1050,7 @@ public class BatchOperationsTests : IDisposable
         // Arrange
         var hookCount = 0;
 
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -1080,7 +1088,7 @@ public class BatchOperationsTests : IDisposable
     public async Task BatchCreate_HookShortCircuit_AffectsOnlyThatItem()
     {
         // Arrange — short-circuit item at index 1 without setting EarlyResult
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -1136,7 +1144,7 @@ public class BatchOperationsTests : IDisposable
     public async Task BatchCreate_HookShortCircuit_WithEarlyResult_RespectsStatusCode()
     {
         // Arrange — short-circuit with a 403 Forbidden ProblemDetails EarlyResult
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -1203,7 +1211,7 @@ public class BatchOperationsTests : IDisposable
     public async Task BatchCreate_HookShortCircuit_WithStatusCodeResult_ExtractsStatusCode()
     {
         // Arrange — short-circuit with a plain status-code-only EarlyResult (no body)
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -1270,7 +1278,7 @@ public class BatchOperationsTests : IDisposable
       new BatchEntity { Id = id2, Name = "C", Price = 3m }
         ]);
 
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch(BatchAction.Create, BatchAction.Update);
@@ -1336,7 +1344,7 @@ public class BatchOperationsTests : IDisposable
       new BatchEntity { Id = id1, Name = "ToDelete1", Price = 2m }
         ]);
 
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch(BatchAction.Create, BatchAction.Delete);
@@ -1383,7 +1391,7 @@ public class BatchOperationsTests : IDisposable
         // Arrange
         var beforeResponseCount = 0;
 
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -1421,7 +1429,7 @@ public class BatchOperationsTests : IDisposable
     public async Task BatchCreate_BeforeResponseHook_ShortCircuit_ReturnsEarlyResult()
     {
         // Arrange — BeforeResponse hook short-circuits the whole batch response
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -1462,7 +1470,7 @@ public class BatchOperationsTests : IDisposable
         var errorHandledCount = 0;
 
         var throwingRepo = new ThrowingBatchRepository();
-        (_host, _client) = new TestHostBuilder<BatchEntity, Guid>(throwingRepo, "/api/items")
+        (_host, _client) = await new TestHostBuilder<BatchEntity, Guid>(throwingRepo, "/api/items")
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
@@ -1486,7 +1494,7 @@ public class BatchOperationsTests : IDisposable
                     };
                 });
             })
-            .Build();
+            .BuildAsync();
 
         var payload = new
         {
@@ -1521,7 +1529,7 @@ public class BatchOperationsTests : IDisposable
         // Arrange — error hook itself throws; each item should still get a 500 error
         // based on the original repository exception, not crash the batch.
         var throwingRepo = new ThrowingBatchRepository();
-        (_host, _client) = new TestHostBuilder<BatchEntity, Guid>(throwingRepo, "/api/items")
+        (_host, _client) = await new TestHostBuilder<BatchEntity, Guid>(throwingRepo, "/api/items")
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
@@ -1532,7 +1540,7 @@ public class BatchOperationsTests : IDisposable
                         throw new InvalidOperationException("Hook explosion");
                 });
             })
-            .Build();
+            .BuildAsync();
 
         var payload = new
         {
@@ -1564,7 +1572,7 @@ public class BatchOperationsTests : IDisposable
     public async Task BatchCreate_AfterPersistHook_ShortCircuit_RespectsEarlyResult()
     {
         // Arrange — AfterPersist hook short-circuits with a 409 Conflict for specific items
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -1630,7 +1638,7 @@ public class BatchOperationsTests : IDisposable
     public async Task BatchCreate_AfterPersistHook_ShortCircuit_WithoutEarlyResult_Returns500()
     {
         // Arrange — AfterPersist hook short-circuits without setting EarlyResult
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -1690,7 +1698,7 @@ public class BatchOperationsTests : IDisposable
     public async Task JsonConfig_EnablesBatch()
     {
         // Arrange — use EnableBatch() via code (JSON config tested after Commit 6 adds the builder)
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -1716,7 +1724,7 @@ public class BatchOperationsTests : IDisposable
     public async Task JsonConfig_SpecificActions()
     {
         // Arrange — enable only Create and Delete
-        CreateHost(config =>
+        await CreateHostAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch(BatchAction.Create, BatchAction.Delete);
@@ -1748,7 +1756,7 @@ public class BatchOperationsTests : IDisposable
     /// Creates a test host that also registers <see cref="IBatchRepository{TEntity, TKey}"/>
     /// via a <see cref="BatchRepositorySpy{TEntity, TKey}"/> so we can verify bulk calls.
     /// </summary>
-    private void CreateHostWithBatchRepository(
+    private async Task CreateHostWithBatchRepositoryAsync(
         Action<RestLibEndpointConfiguration<BatchEntity, Guid>> configure,
         Action<RestLibOptions>? configureOptions = null)
     {
@@ -1767,7 +1775,7 @@ public class BatchOperationsTests : IDisposable
             builder.WithOptions(configureOptions);
         }
 
-        (_host, _client) = builder.Build();
+        (_host, _client) = await builder.BuildAsync();
     }
 
     [Fact]
@@ -1775,7 +1783,7 @@ public class BatchOperationsTests : IDisposable
     public async Task BatchCreate_UsesBatchRepository_WhenAvailable()
     {
         // Arrange
-        CreateHostWithBatchRepository(config =>
+        await CreateHostWithBatchRepositoryAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -1813,7 +1821,7 @@ public class BatchOperationsTests : IDisposable
       new BatchEntity { Id = id2, Name = "Old2", Price = 2m }
     });
 
-        CreateHostWithBatchRepository(config =>
+        await CreateHostWithBatchRepositoryAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -1850,7 +1858,7 @@ public class BatchOperationsTests : IDisposable
       new BatchEntity { Id = id2, Name = "PatchMe2", Price = 2m }
     });
 
-        CreateHostWithBatchRepository(config =>
+        await CreateHostWithBatchRepositoryAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -1887,7 +1895,7 @@ public class BatchOperationsTests : IDisposable
       new BatchEntity { Id = id2, Name = "Del2", Price = 2m }
     });
 
-        CreateHostWithBatchRepository(config =>
+        await CreateHostWithBatchRepositoryAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -1914,13 +1922,13 @@ public class BatchOperationsTests : IDisposable
         // Arrange — use CreateHost which does NOT register IBatchRepository
         var spy = new RepositorySpy<BatchEntity, Guid>(_repository);
 
-        (_host, _client) = new TestHostBuilder<BatchEntity, Guid>(spy, "/api/items")
+        (_host, _client) = await new TestHostBuilder<BatchEntity, Guid>(spy, "/api/items")
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
                 config.EnableBatch();
             })
-            .Build();
+            .BuildAsync();
 
         var payload = new
         {
@@ -1951,7 +1959,7 @@ public class BatchOperationsTests : IDisposable
         // Arrange
         var hookCallCount = 0;
 
-        CreateHostWithBatchRepository(config =>
+        await CreateHostWithBatchRepositoryAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -1990,7 +1998,7 @@ public class BatchOperationsTests : IDisposable
     public async Task BatchCreate_BatchRepository_ValidationStillAppliesPerItem()
     {
         // Arrange
-        CreateHostWithBatchRepository(config =>
+        await CreateHostWithBatchRepositoryAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -2032,13 +2040,13 @@ public class BatchOperationsTests : IDisposable
     {
         // Arrange — use a throwing repository with default options (IncludeExceptionDetailsInErrors = false)
         var throwingRepo = new ThrowingBatchRepository();
-        (_host, _client) = new TestHostBuilder<BatchEntity, Guid>(throwingRepo, "/api/items")
+        (_host, _client) = await new TestHostBuilder<BatchEntity, Guid>(throwingRepo, "/api/items")
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
                 config.EnableBatch();
             })
-            .Build();
+            .BuildAsync();
 
         var payload = new
         {
@@ -2071,7 +2079,7 @@ public class BatchOperationsTests : IDisposable
     {
         // Arrange — use a throwing repository with IncludeExceptionDetailsInErrors = true
         var throwingRepo = new ThrowingBatchRepository();
-        (_host, _client) = new TestHostBuilder<BatchEntity, Guid>(throwingRepo, "/api/items")
+        (_host, _client) = await new TestHostBuilder<BatchEntity, Guid>(throwingRepo, "/api/items")
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
@@ -2081,7 +2089,7 @@ public class BatchOperationsTests : IDisposable
             {
                 options.IncludeExceptionDetailsInErrors = true;
             })
-            .Build();
+            .BuildAsync();
 
         var payload = new
         {
@@ -2113,13 +2121,13 @@ public class BatchOperationsTests : IDisposable
     {
         // Arrange — use a throwing repository with default options
         var throwingRepo = new ThrowingBatchRepository();
-        (_host, _client) = new TestHostBuilder<BatchEntity, Guid>(throwingRepo, "/api/items")
+        (_host, _client) = await new TestHostBuilder<BatchEntity, Guid>(throwingRepo, "/api/items")
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
                 config.EnableBatch();
             })
-            .Build();
+            .BuildAsync();
 
         var payload = new
         {
@@ -2149,7 +2157,7 @@ public class BatchOperationsTests : IDisposable
         // Arrange — use a repository that returns entities from GetByIdAsync but throws on UpdateAsync
         var id = Guid.NewGuid();
         var throwingUpdateRepo = new ThrowingUpdateRepository(id);
-        (_host, _client) = new TestHostBuilder<BatchEntity, Guid>(throwingUpdateRepo, "/api/items")
+        (_host, _client) = await new TestHostBuilder<BatchEntity, Guid>(throwingUpdateRepo, "/api/items")
             .WithEndpoint(cfg =>
             {
                 cfg.AllowAnonymous();
@@ -2159,7 +2167,7 @@ public class BatchOperationsTests : IDisposable
             {
                 options.IncludeExceptionDetailsInErrors = true;
             })
-            .Build();
+            .BuildAsync();
 
         var payload = new
         {
@@ -2194,7 +2202,7 @@ public class BatchOperationsTests : IDisposable
     /// while individual <see cref="IRepository{TEntity, TKey}"/> operations still work.
     /// This verifies that the bulk-failure fallback produces per-item results.
     /// </summary>
-    private void CreateHostWithThrowingBulkRepository(
+    private async Task CreateHostWithThrowingBulkRepositoryAsync(
         Action<RestLibEndpointConfiguration<BatchEntity, Guid>> configure,
         Action<RestLibOptions>? configureOptions = null)
     {
@@ -2210,7 +2218,7 @@ public class BatchOperationsTests : IDisposable
             builder.WithOptions(configureOptions);
         }
 
-        (_host, _client) = builder.Build();
+        (_host, _client) = await builder.BuildAsync();
     }
 
     [Fact]
@@ -2218,7 +2226,7 @@ public class BatchOperationsTests : IDisposable
     public async Task BatchCreate_BulkThrows_FallsBackToIndividual_AllItemsSucceed()
     {
         // Arrange — bulk CreateManyAsync will throw; individual CreateAsync works
-        CreateHostWithThrowingBulkRepository(config =>
+        await CreateHostWithThrowingBulkRepositoryAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -2271,7 +2279,7 @@ public class BatchOperationsTests : IDisposable
             new BatchEntity { Id = id2, Name = "Old2", Price = 2m }
         });
 
-        CreateHostWithThrowingBulkRepository(config =>
+        await CreateHostWithThrowingBulkRepositoryAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -2319,7 +2327,7 @@ public class BatchOperationsTests : IDisposable
             new BatchEntity { Id = id2, Name = "PatchMe2", Price = 2m }
         });
 
-        CreateHostWithThrowingBulkRepository(config =>
+        await CreateHostWithThrowingBulkRepositoryAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -2360,7 +2368,7 @@ public class BatchOperationsTests : IDisposable
     {
         // Arrange — one valid item, one invalid item (empty name fails [Required])
         // Bulk CreateManyAsync throws, fallback should produce 201 for valid, 400 for invalid
-        CreateHostWithThrowingBulkRepository(config =>
+        await CreateHostWithThrowingBulkRepositoryAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -2414,7 +2422,7 @@ public class BatchOperationsTests : IDisposable
             new BatchEntity { Id = id2, Name = "Keep2", Price = 20m }
         });
 
-        CreateHostWithThrowingBulkRepository(config =>
+        await CreateHostWithThrowingBulkRepositoryAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -2464,7 +2472,7 @@ public class BatchOperationsTests : IDisposable
             new BatchEntity { Id = id2, Name = "Del2", Price = 2m }
         });
 
-        CreateHostWithThrowingBulkRepository(config =>
+        await CreateHostWithThrowingBulkRepositoryAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();
@@ -2507,7 +2515,7 @@ public class BatchOperationsTests : IDisposable
 
         // id2 does NOT exist in the repository
 
-        CreateHostWithBatchRepository(config =>
+        await CreateHostWithBatchRepositoryAsync(config =>
         {
             config.AllowAnonymous();
             config.EnableBatch();

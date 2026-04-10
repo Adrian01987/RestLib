@@ -17,14 +17,14 @@ namespace RestLib.Tests;
 [Trait("Feature", "Configuration")]
 public class OperationSelectionTests
 {
-    private static (IHost host, HttpClient client, TestEntityRepository repository) CreateTestHost(
+    private static async Task<(IHost host, HttpClient client, TestEntityRepository repository)> CreateTestHost(
         Action<RestLib.Configuration.RestLibEndpointConfiguration<TestEntity, Guid>> configure)
     {
         var repository = new TestEntityRepository();
 
-        var (host, client) = new TestHostBuilder<TestEntity, Guid>(repository, "/api/items")
+        var (host, client) = await new TestHostBuilder<TestEntity, Guid>(repository, "/api/items")
             .WithEndpoint(configure)
-            .Build();
+            .BuildAsync();
 
         return (host, client, repository);
     }
@@ -35,7 +35,7 @@ public class OperationSelectionTests
     public async Task Default_AllEndpointsAreAccessible()
     {
         // Arrange
-        var (host, client, repository) = CreateTestHost(config => config.AllowAnonymous());
+        var (host, client, repository) = await CreateTestHost(config => config.AllowAnonymous());
         using var _ = host;
         using var __ = client;
 
@@ -67,7 +67,7 @@ public class OperationSelectionTests
     public async Task IncludeOperations_ReadOnly_OnlyGetAllAndGetByIdAreAccessible()
     {
         // Arrange
-        var (host, client, repository) = CreateTestHost(config =>
+        var (host, client, repository) = await CreateTestHost(config =>
         {
             config.AllowAnonymous();
             config.IncludeOperations(RestLibOperation.GetAll, RestLibOperation.GetById);
@@ -103,7 +103,7 @@ public class OperationSelectionTests
     public async Task IncludeOperations_SingleEndpoint_OnlyThatEndpointIsAccessible()
     {
         // Arrange
-        var (host, client, repository) = CreateTestHost(config =>
+        var (host, client, repository) = await CreateTestHost(config =>
         {
             config.AllowAnonymous();
             config.IncludeOperations(RestLibOperation.Create);
@@ -128,7 +128,7 @@ public class OperationSelectionTests
     public async Task IncludeOperations_AllOperations_BehavesLikeDefault()
     {
         // Arrange
-        var (host, client, repository) = CreateTestHost(config =>
+        var (host, client, repository) = await CreateTestHost(config =>
         {
             config.AllowAnonymous();
             config.IncludeOperations(
@@ -170,7 +170,7 @@ public class OperationSelectionTests
     public async Task ExcludeOperations_DeleteExcluded_AllOthersWork()
     {
         // Arrange
-        var (host, client, repository) = CreateTestHost(config =>
+        var (host, client, repository) = await CreateTestHost(config =>
         {
             config.AllowAnonymous();
             config.ExcludeOperations(RestLibOperation.Delete);
@@ -206,7 +206,7 @@ public class OperationSelectionTests
     public async Task ExcludeOperations_MultipleExcluded_OnlyNonExcludedWork()
     {
         // Arrange
-        var (host, client, repository) = CreateTestHost(config =>
+        var (host, client, repository) = await CreateTestHost(config =>
         {
             config.AllowAnonymous();
             config.ExcludeOperations(RestLibOperation.Delete, RestLibOperation.Patch, RestLibOperation.Update);
@@ -435,7 +435,7 @@ public class OperationSelectionTests
     public async Task IncludeOperations_MergedAcrossMultipleCalls_EndpointsWork()
     {
         // Arrange
-        var (host, client, repository) = CreateTestHost(config =>
+        var (host, client, repository) = await CreateTestHost(config =>
         {
             config.AllowAnonymous();
             config.IncludeOperations(RestLibOperation.GetAll);
@@ -472,7 +472,7 @@ public class OperationSelectionTests
         // Arrange
         var repository = new TestEntityRepository();
 
-        var (host, client) = new TestHostBuilder<TestEntity, Guid>(repository, "/api/items")
+        var (host, client) = await new TestHostBuilder<TestEntity, Guid>(repository, "/api/items")
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
@@ -492,7 +492,7 @@ public class OperationSelectionTests
                     }).AllowAnonymous();
                 });
             })
-            .Build();
+            .BuildAsync();
 
         using var _ = host;
         using var __ = client;
@@ -518,37 +518,37 @@ public class OperationSelectionTests
     #region Key extraction validation at registration time
 
     [Fact]
-    public void MapRestLib_NoKeySelectorAndNoIdProperty_ThrowsInvalidOperationException()
+    public async Task MapRestLib_NoKeySelectorAndNoIdProperty_ThrowsInvalidOperationException()
     {
         // Arrange — CustomKeyEntity has 'Code' instead of 'Id'
         var repository = new CustomKeyEntityRepository();
 
-        // Act — Build() calls host.Start() which triggers MapRestLib and the validation
-        var act = () => new TestHostBuilder<CustomKeyEntity, Guid>(repository, "/api/custom")
+        // Act — BuildAsync() calls host.StartAsync() which triggers MapRestLib and the validation
+        var act = async () => await new TestHostBuilder<CustomKeyEntity, Guid>(repository, "/api/custom")
             .WithEndpoint(cfg => cfg.AllowAnonymous())
-            .Build();
+            .BuildAsync();
 
         // Assert
-        act.Should().Throw<InvalidOperationException>()
+        await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*CustomKeyEntity*")
             .WithMessage("*Id*")
             .WithMessage("*KeySelector*");
     }
 
     [Fact]
-    public void MapRestLib_WithKeySelectorAndNoIdProperty_Succeeds()
+    public async Task MapRestLib_WithKeySelectorAndNoIdProperty_Succeeds()
     {
         // Arrange — CustomKeyEntity has no 'Id' but we provide a KeySelector
         var repository = new CustomKeyEntityRepository();
 
         // Act
-        var (host, client) = new TestHostBuilder<CustomKeyEntity, Guid>(repository, "/api/custom")
+        var (host, client) = await new TestHostBuilder<CustomKeyEntity, Guid>(repository, "/api/custom")
             .WithEndpoint(cfg =>
             {
                 cfg.AllowAnonymous();
                 cfg.KeySelector = e => e.Code;
             })
-            .Build();
+            .BuildAsync();
 
         using var _ = host;
         using var __ = client;
@@ -558,15 +558,15 @@ public class OperationSelectionTests
     }
 
     [Fact]
-    public void MapRestLib_WithIdPropertyAndNoKeySelector_Succeeds()
+    public async Task MapRestLib_WithIdPropertyAndNoKeySelector_Succeeds()
     {
         // Arrange — TestEntity has a Guid 'Id' property
         var repository = new TestEntityRepository();
 
         // Act
-        var (host, client) = new TestHostBuilder<TestEntity, Guid>(repository, "/api/items")
+        var (host, client) = await new TestHostBuilder<TestEntity, Guid>(repository, "/api/items")
             .WithEndpoint(cfg => cfg.AllowAnonymous())
-            .Build();
+            .BuildAsync();
 
         using var _ = host;
         using var __ = client;
@@ -576,20 +576,20 @@ public class OperationSelectionTests
     }
 
     [Fact]
-    public void MapRestLib_CreateExcluded_NoKeySelectorAndNoIdProperty_Succeeds()
+    public async Task MapRestLib_CreateExcluded_NoKeySelectorAndNoIdProperty_Succeeds()
     {
         // Arrange — CustomKeyEntity has no 'Id' and no KeySelector,
         // but Create is excluded so key extraction validation is skipped
         var repository = new CustomKeyEntityRepository();
 
         // Act
-        var (host, client) = new TestHostBuilder<CustomKeyEntity, Guid>(repository, "/api/custom")
+        var (host, client) = await new TestHostBuilder<CustomKeyEntity, Guid>(repository, "/api/custom")
             .WithEndpoint(cfg =>
             {
                 cfg.AllowAnonymous();
                 cfg.ExcludeOperations(RestLibOperation.Create);
             })
-            .Build();
+            .BuildAsync();
 
         using var _ = host;
         using var __ = client;

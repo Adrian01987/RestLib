@@ -27,19 +27,19 @@ public class SortableEntity
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "Sorting")]
-public class SortingTests : IDisposable
+public class SortingTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly InMemoryRepository<SortableEntity, Guid> _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private InMemoryRepository<SortableEntity, Guid> _repository = null!;
 
-    public SortingTests()
+    public async Task InitializeAsync()
     {
         _repository = new InMemoryRepository<SortableEntity, Guid>(
             e => e.Id,
             Guid.NewGuid);
 
-        (_host, _client) = new TestHostBuilder<SortableEntity, Guid>(_repository, "/api/sortable")
+        (_host, _client) = await new TestHostBuilder<SortableEntity, Guid>(_repository, "/api/sortable")
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
@@ -50,7 +50,7 @@ public class SortingTests : IDisposable
                     p => p.Quantity);
                 config.AllowFiltering(p => p.Category);
             })
-            .Build();
+            .BuildAsync();
 
         SeedData();
     }
@@ -66,9 +66,10 @@ public class SortingTests : IDisposable
     ]);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 
@@ -264,26 +265,26 @@ public class SortingTests : IDisposable
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "Sorting")]
-public class SortingDefaultSortTests : IDisposable
+public class SortingDefaultSortTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly InMemoryRepository<SortableEntity, Guid> _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private InMemoryRepository<SortableEntity, Guid> _repository = null!;
 
-    public SortingDefaultSortTests()
+    public async Task InitializeAsync()
     {
         _repository = new InMemoryRepository<SortableEntity, Guid>(
             e => e.Id,
             Guid.NewGuid);
 
-        (_host, _client) = new TestHostBuilder<SortableEntity, Guid>(_repository, "/api/sorted")
+        (_host, _client) = await new TestHostBuilder<SortableEntity, Guid>(_repository, "/api/sorted")
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
                 config.AllowSorting(p => p.Price, p => p.Name);
                 config.DefaultSort("name:asc");
             })
-            .Build();
+            .BuildAsync();
 
         _repository.Seed([
             new SortableEntity { Id = Guid.NewGuid(), Name = "Cherry", Price = 4.00m, Category = "Fruit", Quantity = 60 },
@@ -292,9 +293,10 @@ public class SortingDefaultSortTests : IDisposable
     ]);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 
@@ -340,26 +342,26 @@ public class SortingDefaultSortTests : IDisposable
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "Sorting")]
-public class SortingNoConfigTests : IDisposable
+public class SortingNoConfigTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly InMemoryRepository<SortableEntity, Guid> _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private InMemoryRepository<SortableEntity, Guid> _repository = null!;
 
-    public SortingNoConfigTests()
+    public async Task InitializeAsync()
     {
         _repository = new InMemoryRepository<SortableEntity, Guid>(
             e => e.Id,
             Guid.NewGuid);
 
-        (_host, _client) = new TestHostBuilder<SortableEntity, Guid>(_repository, "/api/unsorted")
+        (_host, _client) = await new TestHostBuilder<SortableEntity, Guid>(_repository, "/api/unsorted")
             .WithEndpoint(config =>
             {
                 config.AllowAnonymous();
 
                 // No AllowSorting call
             })
-            .Build();
+            .BuildAsync();
 
         _repository.Seed([
             new SortableEntity { Id = Guid.NewGuid(), Name = "Banana", Price = 1.50m, Category = "Fruit", Quantity = 100 },
@@ -367,9 +369,10 @@ public class SortingNoConfigTests : IDisposable
     ]);
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 

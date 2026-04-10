@@ -13,19 +13,20 @@ namespace RestLib.Tests;
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "CRUD")]
-public class EndpointRegistrationTests : IDisposable
+public class EndpointRegistrationTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly TestEntityRepository _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private TestEntityRepository _repository = null!;
 
-    public EndpointRegistrationTests()
+    /// <inheritdoc />
+    public async Task InitializeAsync()
     {
         _repository = new TestEntityRepository();
 
-        (_host, _client) = new TestHostBuilder<TestEntity, Guid>(_repository, "/api/test-entities")
+        (_host, _client) = await new TestHostBuilder<TestEntity, Guid>(_repository, "/api/test-entities")
             .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
+            .BuildAsync();
     }
 
     #region GET /api/test-entities (GetAll)
@@ -250,9 +251,11 @@ public class EndpointRegistrationTests : IDisposable
 
     #endregion
 
-    public void Dispose()
+    /// <inheritdoc />
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 

@@ -16,17 +16,17 @@ namespace RestLib.Tests;
 /// </summary>
 [Trait("Type", "Integration")]
 [Trait("Feature", "Pagination")]
-public class PaginationLinksTests : IDisposable
+public class PaginationLinksTests : IAsyncLifetime
 {
-    private readonly IHost _host;
-    private readonly HttpClient _client;
-    private readonly InMemoryRepository<ProductEntity, Guid> _repository;
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private InMemoryRepository<ProductEntity, Guid> _repository = null!;
 
-    public PaginationLinksTests()
+    public async Task InitializeAsync()
     {
         _repository = new InMemoryRepository<ProductEntity, Guid>(e => e.Id, Guid.NewGuid);
 
-        (_host, _client) = new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+        (_host, _client) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
             .WithOptions(options =>
             {
                 options.DefaultPageSize = 10;
@@ -34,12 +34,13 @@ public class PaginationLinksTests : IDisposable
                 options.IncludePaginationLinks = true;
             })
             .WithEndpoint(config => config.AllowAnonymous())
-            .Build();
+            .BuildAsync();
     }
 
-    public void Dispose()
+    public async Task DisposeAsync()
     {
         _client.Dispose();
+        await _host.StopAsync();
         _host.Dispose();
     }
 
