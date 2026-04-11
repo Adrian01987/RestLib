@@ -801,7 +801,7 @@ public class ProblemTypeResolveTests : IAsyncLifetime
     /// </summary>
     public Task DisposeAsync()
     {
-        ProblemTypes.Configure(null);
+        ProblemTypes.Reset();
         return Task.CompletedTask;
     }
 
@@ -810,7 +810,7 @@ public class ProblemTypeResolveTests : IAsyncLifetime
     public void Resolve_WithoutBaseUri_ReturnsRelativePath()
     {
         // Arrange
-        ProblemTypes.Configure(null);
+        ProblemTypes.Reset();
 
         // Act & Assert
         ProblemTypes.Resolve(ProblemTypes.NotFound).Should().Be("/problems/not-found");
@@ -950,7 +950,7 @@ public class ProblemTypeBaseUriRegistrationTests : IAsyncLifetime
     /// </summary>
     public Task DisposeAsync()
     {
-        ProblemTypes.Configure(null);
+        ProblemTypes.Reset();
         return Task.CompletedTask;
     }
 

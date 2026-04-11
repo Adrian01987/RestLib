@@ -37,7 +37,10 @@ public static class RestLibServiceExtensions
 
         ValidateOptions(options);
 
-        ProblemTypes.Configure(options.ProblemTypeBaseUri);
+        if (options.ProblemTypeBaseUri is not null)
+        {
+            ProblemTypes.Configure(options.ProblemTypeBaseUri);
+        }
 
         services.TryAddSingleton(options);
 

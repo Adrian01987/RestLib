@@ -58,7 +58,7 @@ public static class ProblemTypes
     /// <summary>Hook short-circuited the operation (varies).</summary>
     public const string HookShortCircuit = "/problems/hook-short-circuit";
 
-    private static string? _baseUri;
+    private static volatile string? _baseUri;
 
     /// <summary>
     /// Resolves a relative problem type path to its full URI.
@@ -73,13 +73,23 @@ public static class ProblemTypes
 
     /// <summary>
     /// Configures the base URI that is prepended to all relative problem type paths.
-    /// Called once during service registration. Pass <c>null</c> to keep relative paths.
+    /// Called once during service registration when a non-<c>null</c> base URI is provided.
     /// </summary>
     /// <param name="baseUri">
-    /// An absolute URI with no trailing slash (e.g., <c>https://api.example.com</c>), or <c>null</c>.
+    /// An absolute URI with no trailing slash (e.g., <c>https://api.example.com</c>).
     /// </param>
-    internal static void Configure(Uri? baseUri)
+    internal static void Configure(Uri baseUri)
     {
-        _baseUri = baseUri?.ToString().TrimEnd('/');
+        ArgumentNullException.ThrowIfNull(baseUri);
+        _baseUri = baseUri.ToString().TrimEnd('/');
+    }
+
+    /// <summary>
+    /// Resets the base URI to <c>null</c>, restoring relative problem type paths.
+    /// Intended for test cleanup only.
+    /// </summary>
+    internal static void Reset()
+    {
+        _baseUri = null;
     }
 }
