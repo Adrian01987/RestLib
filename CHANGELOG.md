@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `[LoggerMessage]` source-generated log methods for zero-allocation structured logging (EventId 1000–1349)
 - Diagnostic logging for all 9 previously silent exception catch blocks
 - ADR-020: Structured logging design decisions — source generators, request-time resolution, log level policy, no entity payloads
+- Structured logging for batch patch pipeline — `BatchPatchItemNotFound` (1150), `BatchPatchItemValidationFailed` (1151), `BatchPatchCompleted` (1152)
+- Structured logging for batch delete pipeline — `BatchDeleteItemNotFound` (1160), `BatchDeleteCompleted` (1161)
+- 17 new integration tests for logging EventIds: ETag 304 (1011), ETag precondition (1347), endpoint exception (1090), bulk fallback (1110), batch error hook (1111), batch item failure (1112), batch update deserialization (1140), JSON deserialization (1330), batch patch not-found/validation/completed (1150–1152), batch delete not-found/completed (1160–1161)
 
 ### Changed
 

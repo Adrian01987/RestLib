@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using RestLib.Abstractions;
 using RestLib.Endpoints;
+using RestLib.Logging;
 using RestLib.Responses;
 using RestLib.Validation;
 
@@ -88,6 +89,7 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
                 if (!originals.TryGetValue(id, out var original))
                 {
                     var entityName = typeof(TEntity).Name;
+                    RestLibLogMessages.BatchPatchItemNotFound(context.Logger, index, entityName, id!);
                     results[index] = new BatchItemResult
                     {
                         Index = index,
@@ -103,6 +105,7 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
                     var validationResult = EntityValidator.Validate(preview, context.JsonOptions.PropertyNamingPolicy);
                     if (!validationResult.IsValid)
                     {
+                        RestLibLogMessages.BatchPatchItemValidationFailed(context.Logger, index);
                         results[index] = new BatchItemResult
                         {
                             Index = index,
@@ -127,6 +130,8 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
             var patched = await context.BatchRepository!.PatchManyAsync(patches, context.CancellationToken);
 
             await ProcessBulkResultsAsync(itemsToPersist, patched, results, context);
+
+            RestLibLogMessages.BatchPatchCompleted(context.Logger, patched.Count);
         }
     }
 
@@ -145,6 +150,7 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
             if (original is null)
             {
                 var entityName = typeof(TEntity).Name;
+                RestLibLogMessages.BatchPatchItemNotFound(context.Logger, index, entityName, id!);
                 results[index] = new BatchItemResult
                 {
                     Index = index,
@@ -160,6 +166,7 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
                 var validationResult = EntityValidator.Validate(preview, context.JsonOptions.PropertyNamingPolicy);
                 if (!validationResult.IsValid)
                 {
+                    RestLibLogMessages.BatchPatchItemValidationFailed(context.Logger, index);
                     results[index] = new BatchItemResult
                     {
                         Index = index,
@@ -177,6 +184,7 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
         if (patched is null)
         {
             var entityName = typeof(TEntity).Name;
+            RestLibLogMessages.BatchPatchItemNotFound(context.Logger, index, entityName, id!);
             results[index] = new BatchItemResult
             {
                 Index = index,

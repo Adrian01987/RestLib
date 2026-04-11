@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Testing;
+using NSubstitute;
 using RestLib.Abstractions;
 using RestLib.Batch;
 using RestLib.Hooks;
@@ -747,6 +748,743 @@ public class LogCategoryTests : IAsyncLifetime
         responseLog.Should().NotBeNull();
         responseLog!.Message.Should().MatchRegex(@"\d+ items");
         responseLog.Message.Should().Contain("has next page:");
+    }
+}
+
+/// <summary>
+/// Tests verifying ETag-related log messages (GetByIdNotModified, ETagPreconditionFailed).
+/// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Logging")]
+public class ETagLoggingTests : IAsyncLifetime
+{
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private FakeLogCollector _logCollector = null!;
+    private ProductEntityRepository _repository = null!;
+
+    public async Task InitializeAsync()
+    {
+        _repository = new ProductEntityRepository();
+
+        (_host, _client, _logCollector) = await new TestHostBuilder<ProductEntity, Guid>(_repository, "/api/products")
+            .WithOptions(options => options.EnableETagSupport = true)
+            .WithEndpoint(config => config.AllowAnonymous())
+            .BuildWithLoggingAsync();
+    }
+
+    public async Task DisposeAsync()
+    {
+        _client.Dispose();
+        await _host.StopAsync();
+        _host.Dispose();
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  GetByIdNotModified (EventId 1011) — ETag match → 304
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Logging")]
+    public async Task GetById_MatchingIfNoneMatch_LogsGetByIdNotModified()
+    {
+        // Arrange
+        var id = Guid.NewGuid();
+        _repository.Seed(new ProductEntity
+        {
+            Id = id, ProductName = "Widget", UnitPrice = 10m, StockQuantity = 5,
+            CreatedAt = DateTime.UtcNow, IsActive = true,
+        });
+
+        var firstResponse = await _client.GetAsync($"/api/products/{id}");
+        var etag = firstResponse.Headers.ETag!.Tag;
+
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/api/products/{id}");
+        request.Headers.TryAddWithoutValidation("If-None-Match", etag);
+
+        // Act
+        var response = await _client.SendAsync(request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotModified);
+
+        var logs = _logCollector.GetSnapshot();
+        var entry = logs.FirstOrDefault(r => r.Id.Id == 1011 && r.Category == "RestLib.GetById");
+        entry.Should().NotBeNull();
+        entry!.Level.Should().Be(LogLevel.Debug);
+        entry.Message.Should().Contain(id.ToString());
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  ETagPreconditionFailed (EventId 1347) — stale If-Match → 412
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Logging")]
+    public async Task Update_StaleIfMatch_LogsETagPreconditionFailed()
+    {
+        // Arrange
+        var id = Guid.NewGuid();
+        _repository.Seed(new ProductEntity
+        {
+            Id = id, ProductName = "Widget", UnitPrice = 10m, StockQuantity = 5,
+            CreatedAt = DateTime.UtcNow, IsActive = true,
+        });
+
+        // GET to obtain original ETag
+        var firstResponse = await _client.GetAsync($"/api/products/{id}");
+        var etag = firstResponse.Headers.ETag!.Tag;
+
+        // Update the entity so the ETag changes
+        await _client.PutAsJsonAsync($"/api/products/{id}", new
+        {
+            product_name = "Updated Widget", unit_price = 20m, stock_quantity = 10,
+            is_active = true,
+        });
+
+        // Now try PUT with the stale ETag
+        var request = new HttpRequestMessage(HttpMethod.Put, $"/api/products/{id}");
+        request.Headers.TryAddWithoutValidation("If-Match", etag);
+        request.Content = JsonContent.Create(new
+        {
+            product_name = "Conflict", unit_price = 30m, stock_quantity = 15,
+            is_active = true,
+        });
+
+        // Act
+        var response = await _client.SendAsync(request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
+
+        var logs = _logCollector.GetSnapshot();
+        var entry = logs.FirstOrDefault(r => r.Id.Id == 1347);
+        entry.Should().NotBeNull();
+        entry!.Level.Should().Be(LogLevel.Debug);
+        entry.Message.Should().Contain(id.ToString());
+    }
+}
+
+/// <summary>
+/// Tests verifying EndpointUnhandledException logging (EventId 1090).
+/// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Logging")]
+public class ExceptionLoggingTests : IAsyncLifetime
+{
+    private IHost? _host;
+    private HttpClient? _client;
+    private FakeLogCollector? _logCollector;
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync()
+    {
+        _client?.Dispose();
+        if (_host is not null)
+        {
+            await _host.StopAsync();
+        }
+
+        _host?.Dispose();
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  EndpointUnhandledException (EventId 1090)
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Logging")]
+    public async Task Create_HookThrows_LogsEndpointUnhandledException()
+    {
+        // Arrange — BeforePersist hook throws, causing the endpoint catch block to fire
+        var repository = new InMemoryRepository<TestEntity, Guid>(e => e.Id, Guid.NewGuid);
+
+        (_host, _client, _logCollector) = await new TestHostBuilder<TestEntity, Guid>(repository, "/api/items")
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.UseHooks(hooks =>
+                {
+                    hooks.BeforePersist = _ => throw new InvalidOperationException("Boom in BeforePersist");
+                });
+            })
+            .BuildWithLoggingAsync();
+
+        // Act — the exception propagates through TestServer
+        try
+        {
+            await _client.PostAsJsonAsync("/api/items", new { name = "Crash", price = 1m });
+        }
+        catch (InvalidOperationException)
+        {
+            // Expected
+        }
+
+        // Assert
+        var logs = _logCollector!.GetSnapshot();
+        var entry = logs.FirstOrDefault(r => r.Id.Id == 1090 && r.Category == "RestLib.Create");
+        entry.Should().NotBeNull();
+        entry!.Level.Should().Be(LogLevel.Error);
+        entry.Message.Should().Contain("Create");
+    }
+
+    [Fact]
+    [Trait("Category", "Logging")]
+    public async Task ProblemDetailsServerError_EventId1301_NotReachableFromHandlers()
+    {
+        // This test documents that EventId 1301 (ProblemDetailsServerError) cannot fire
+        // from any handler code path because ProblemDetailsResult.InternalError is never
+        // called with a logger. This serves as a reminder that if a 5xx ProblemDetails
+        // path is added in the future, it should be tested here.
+
+        // Arrange — a simple hook that short-circuits with a 503 status
+        var repository = new InMemoryRepository<TestEntity, Guid>(e => e.Id, Guid.NewGuid);
+
+        (_host, _client, _logCollector) = await new TestHostBuilder<TestEntity, Guid>(repository, "/api/items")
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.UseHooks(hooks =>
+                {
+                    hooks.OnRequestReceived = async ctx =>
+                    {
+                        ctx.ShouldContinue = false;
+                        ctx.EarlyResult = Microsoft.AspNetCore.Http.Results.StatusCode(503);
+                        await Task.CompletedTask;
+                    };
+                });
+            })
+            .BuildWithLoggingAsync();
+
+        // Act
+        await _client.PostAsJsonAsync("/api/items", new { name = "Test", price = 1m });
+
+        // Assert — EventId 1301 is NOT emitted because InternalError is never called from handlers
+        var logs = _logCollector!.GetSnapshot();
+        logs.Should().NotContain(r => r.Id.Id == 1301);
+    }
+}
+
+/// <summary>
+/// Tests verifying batch pipeline error logging (fallback, error hooks, deserialization).
+/// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Logging")]
+public class BatchErrorLoggingTests : IAsyncLifetime
+{
+    private IHost? _host;
+    private HttpClient? _client;
+    private FakeLogCollector? _logCollector;
+    private InMemoryRepository<BatchEntity, Guid>? _repository;
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync()
+    {
+        _client?.Dispose();
+        if (_host is not null)
+        {
+            await _host.StopAsync();
+        }
+
+        _host?.Dispose();
+    }
+
+    private StringContent BatchJson(object payload)
+    {
+        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        });
+        return new StringContent(json, Encoding.UTF8, "application/json");
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  BulkPersistenceFallback (EventId 1110)
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Logging")]
+    public async Task BulkCreate_Throws_LogsBulkPersistenceFallback()
+    {
+        // Arrange — register ThrowingBulkBatchRepository so bulk path throws, individual works
+        _repository = new InMemoryRepository<BatchEntity, Guid>(e => e.Id, Guid.NewGuid);
+
+        (_host, _client, _logCollector) = await new TestHostBuilder<BatchEntity, Guid>(_repository, "/api/items")
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.EnableBatch(BatchAction.Create);
+            })
+            .WithServices(services =>
+            {
+                services.AddSingleton<IBatchRepository<BatchEntity, Guid>>(new ThrowingBulkBatchRepository());
+            })
+            .BuildWithLoggingAsync();
+
+        var payload = new
+        {
+            action = "create",
+            items = new[]
+            {
+                new { name = "A", price = 1m },
+                new { name = "B", price = 2m },
+            },
+        };
+
+        // Act
+        await _client.PostAsync("/api/items/batch", BatchJson(payload));
+
+        // Assert
+        var logs = _logCollector!.GetSnapshot();
+        var entry = logs.FirstOrDefault(r => r.Id.Id == 1110 && r.Category == "RestLib.Batch");
+        entry.Should().NotBeNull();
+        entry!.Level.Should().Be(LogLevel.Warning);
+        entry.Message.Should().Contain("create");
+        entry.Message.Should().Contain("2");
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  BatchErrorHookSwallowed (EventId 1111)
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Logging")]
+    public async Task BatchCreate_ErrorHookThrows_LogsBatchErrorHookSwallowed()
+    {
+        // Arrange — ThrowingBatchRepository causes each item to fail; OnError hook also throws
+        var throwingRepo = new ThrowingBatchRepository();
+
+        (_host, _client, _logCollector) = await new TestHostBuilder<BatchEntity, Guid>(throwingRepo, "/api/items")
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.EnableBatch(BatchAction.Create);
+                config.UseHooks(hooks =>
+                {
+                    hooks.OnError = _ => throw new InvalidOperationException("Error hook explosion");
+                });
+            })
+            .BuildWithLoggingAsync();
+
+        var payload = new
+        {
+            action = "create",
+            items = new[]
+            {
+                new { name = "Item1", price = 1m },
+            },
+        };
+
+        // Act
+        await _client.PostAsync("/api/items/batch", BatchJson(payload));
+
+        // Assert
+        var logs = _logCollector!.GetSnapshot();
+
+        // EventId 1112 fires first (per-item persistence failure)
+        logs.Should().Contain(r => r.Id.Id == 1112 && r.Level == LogLevel.Debug);
+
+        // EventId 1111 fires when the error hook also throws
+        var entry = logs.FirstOrDefault(r => r.Id.Id == 1111 && r.Category == "RestLib.Batch");
+        entry.Should().NotBeNull();
+        entry!.Level.Should().Be(LogLevel.Error);
+        entry.Message.Should().Contain("create");
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  BatchItemPersistenceFailed (EventId 1112)
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Logging")]
+    public async Task BatchCreate_ThrowingRepository_LogsBatchItemPersistenceFailed()
+    {
+        // Arrange — ThrowingBatchRepository causes each item to fail individually
+        var throwingRepo = new ThrowingBatchRepository();
+
+        (_host, _client, _logCollector) = await new TestHostBuilder<BatchEntity, Guid>(throwingRepo, "/api/items")
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.EnableBatch(BatchAction.Create);
+            })
+            .BuildWithLoggingAsync();
+
+        var payload = new
+        {
+            action = "create",
+            items = new[]
+            {
+                new { name = "FailItem", price = 1m },
+            },
+        };
+
+        // Act
+        await _client.PostAsync("/api/items/batch", BatchJson(payload));
+
+        // Assert
+        var logs = _logCollector!.GetSnapshot();
+        var entry = logs.FirstOrDefault(r => r.Id.Id == 1112 && r.Category == "RestLib.Batch");
+        entry.Should().NotBeNull();
+        entry!.Level.Should().Be(LogLevel.Debug);
+        entry.Message.Should().Contain("create");
+        entry.Message.Should().Contain("0"); // item index 0
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  BatchUpdateItemDeserializationFailed (EventId 1140)
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Logging")]
+    public async Task BatchUpdate_InvalidItemBody_LogsDeserializationFailed()
+    {
+        // Arrange
+        _repository = new InMemoryRepository<BatchEntity, Guid>(e => e.Id, Guid.NewGuid);
+        var id = Guid.NewGuid();
+        _repository.Seed([new BatchEntity { Id = id, Name = "Existing", Price = 10m }]);
+
+        (_host, _client, _logCollector) = await new TestHostBuilder<BatchEntity, Guid>(_repository, "/api/items")
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.EnableBatch(BatchAction.Update);
+            })
+            .BuildWithLoggingAsync();
+
+        // Send a batch update where the body has a type mismatch (price as non-numeric string)
+        var rawJson = $$"""
+        {
+            "action": "update",
+            "items": [
+                {
+                    "id": "{{id}}",
+                    "body": { "name": "Valid", "price": "not-a-number", "is_active": true }
+                }
+            ]
+        }
+        """;
+        var content = new StringContent(rawJson, Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await _client.PostAsync("/api/items/batch", content);
+
+        // Assert
+        var logs = _logCollector!.GetSnapshot();
+        var entry = logs.FirstOrDefault(r => r.Id.Id == 1140 && r.Category == "RestLib.Batch");
+        entry.Should().NotBeNull();
+        entry!.Level.Should().Be(LogLevel.Warning);
+        entry.Message.Should().Contain("0"); // item index 0
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  JsonDeserializationFailed (EventId 1330)
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Logging")]
+    public async Task Batch_MalformedItemsArray_LogsJsonDeserializationFailed()
+    {
+        // Arrange
+        _repository = new InMemoryRepository<BatchEntity, Guid>(e => e.Id, Guid.NewGuid);
+
+        (_host, _client, _logCollector) = await new TestHostBuilder<BatchEntity, Guid>(_repository, "/api/items")
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.EnableBatch(BatchAction.Create);
+            })
+            .BuildWithLoggingAsync();
+
+        // The envelope is valid JSON with action + items array, but items contains
+        // elements that cannot be deserialized into BatchRequestItem<TKey>.
+        // We need the array itself to parse as JSON but individual elements to fail deserialization.
+        // The items array expects objects with optional "id", "body" fields. If we put
+        // primitives that cause a JsonException during Deserialize<List<BatchRequestItem>>...
+        var rawJson = """
+        {
+            "action": "create",
+            "items": [1, 2, 3]
+        }
+        """;
+        var content = new StringContent(rawJson, Encoding.UTF8, "application/json");
+
+        // Act
+        var response = await _client.PostAsync("/api/items/batch", content);
+
+        // Assert — the batch pipeline processes this (possibly as 207 or 400), but either way
+        // the JsonDeserializationFailed log should have been emitted
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.MultiStatus, HttpStatusCode.OK);
+
+        var logs = _logCollector!.GetSnapshot();
+        var entry = logs.FirstOrDefault(r => r.Id.Id == 1330);
+        entry.Should().NotBeNull();
+        entry!.Level.Should().Be(LogLevel.Debug);
+    }
+}
+
+/// <summary>
+/// Tests verifying batch patch and batch delete logging (EventIds 1150-1161).
+/// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "Logging")]
+public class BatchPatchDeleteLoggingTests : IAsyncLifetime
+{
+    private IHost? _host;
+    private HttpClient? _client;
+    private FakeLogCollector? _logCollector;
+    private InMemoryRepository<BatchEntity, Guid>? _repository;
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public async Task DisposeAsync()
+    {
+        _client?.Dispose();
+        if (_host is not null)
+        {
+            await _host.StopAsync();
+        }
+
+        _host?.Dispose();
+    }
+
+    private StringContent BatchJson(object payload)
+    {
+        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        });
+        return new StringContent(json, Encoding.UTF8, "application/json");
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  BatchPatchItemNotFound (EventId 1150)
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Logging")]
+    public async Task BatchPatch_NonExistentId_LogsBatchPatchItemNotFound()
+    {
+        // Arrange — The entity exists in IRepository (so ValidateItemAsync passes),
+        // but IBatchRepository.GetByIdsAsync returns an empty dict (simulating a race
+        // condition where the entity was deleted between validation and bulk persistence).
+        // This triggers EventId 1150 in PersistBulkAsync.
+        _repository = new InMemoryRepository<BatchEntity, Guid>(e => e.Id, Guid.NewGuid);
+        var id = Guid.NewGuid();
+        _repository.Seed([new BatchEntity { Id = id, Name = "Existing", Price = 10m }]);
+
+        var mockBatchRepo = Substitute.For<IBatchRepository<BatchEntity, Guid>>();
+        mockBatchRepo.GetByIdsAsync(Arg.Any<IReadOnlyList<Guid>>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyDictionary<Guid, BatchEntity>>(
+                new Dictionary<Guid, BatchEntity>()));
+
+        (_host, _client, _logCollector) = await new TestHostBuilder<BatchEntity, Guid>(_repository, "/api/items")
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.EnableBatch(BatchAction.Patch);
+            })
+            .WithServices(services =>
+            {
+                services.AddSingleton<IBatchRepository<BatchEntity, Guid>>(mockBatchRepo);
+            })
+            .BuildWithLoggingAsync();
+
+        var payload = new
+        {
+            action = "patch",
+            items = new object[]
+            {
+                new { id, body = new { price = 99m } },
+            },
+        };
+
+        // Act
+        await _client.PostAsync("/api/items/batch", BatchJson(payload));
+
+        // Assert
+        var logs = _logCollector!.GetSnapshot();
+        var entry = logs.FirstOrDefault(r => r.Id.Id == 1150 && r.Category == "RestLib.Batch");
+        entry.Should().NotBeNull();
+        entry!.Level.Should().Be(LogLevel.Debug);
+        entry.Message.Should().Contain(id.ToString());
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  BatchPatchItemValidationFailed (EventId 1151)
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Logging")]
+    public async Task BatchPatch_ValidationFails_LogsBatchPatchItemValidationFailed()
+    {
+        // Arrange — BatchEntity has [Required] on Name and [StringLength(100)]
+        _repository = new InMemoryRepository<BatchEntity, Guid>(e => e.Id, Guid.NewGuid);
+        var id = Guid.NewGuid();
+        _repository.Seed([new BatchEntity { Id = id, Name = "Original", Price = 10m }]);
+
+        (_host, _client, _logCollector) = await new TestHostBuilder<BatchEntity, Guid>(_repository, "/api/items")
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.EnableBatch(BatchAction.Patch);
+            })
+            .BuildWithLoggingAsync();
+
+        // Patch name to empty string — violates [Required]
+        var payload = new
+        {
+            action = "patch",
+            items = new object[]
+            {
+                new { id, body = new { name = string.Empty } },
+            },
+        };
+
+        // Act
+        await _client.PostAsync("/api/items/batch", BatchJson(payload));
+
+        // Assert
+        var logs = _logCollector!.GetSnapshot();
+        var entry = logs.FirstOrDefault(r => r.Id.Id == 1151 && r.Category == "RestLib.Batch");
+        entry.Should().NotBeNull();
+        entry!.Level.Should().Be(LogLevel.Debug);
+        entry.Message.Should().Contain("0"); // item index 0
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  BatchPatchCompleted (EventId 1152)
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Logging")]
+    public async Task BatchPatch_BulkSuccess_LogsBatchPatchCompleted()
+    {
+        // Arrange — register IBatchRepository so the bulk path is used
+        _repository = new InMemoryRepository<BatchEntity, Guid>(e => e.Id, Guid.NewGuid);
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+        _repository.Seed([
+            new BatchEntity { Id = id1, Name = "Item1", Price = 10m },
+            new BatchEntity { Id = id2, Name = "Item2", Price = 20m },
+        ]);
+
+        (_host, _client, _logCollector) = await new TestHostBuilder<BatchEntity, Guid>(_repository, "/api/items")
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.EnableBatch(BatchAction.Patch);
+            })
+            .WithServices(services =>
+            {
+                services.AddSingleton<IBatchRepository<BatchEntity, Guid>>(_repository);
+            })
+            .BuildWithLoggingAsync();
+
+        var payload = new
+        {
+            action = "patch",
+            items = new object[]
+            {
+                new { id = id1, body = new { price = 99m } },
+                new { id = id2, body = new { price = 88m } },
+            },
+        };
+
+        // Act
+        await _client.PostAsync("/api/items/batch", BatchJson(payload));
+
+        // Assert
+        var logs = _logCollector!.GetSnapshot();
+        var entry = logs.FirstOrDefault(r => r.Id.Id == 1152 && r.Category == "RestLib.Batch");
+        entry.Should().NotBeNull();
+        entry!.Level.Should().Be(LogLevel.Information);
+        entry.Message.Should().Contain("2"); // patched count
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  BatchDeleteItemNotFound (EventId 1160)
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Logging")]
+    public async Task BatchDelete_NonExistentId_LogsBatchDeleteItemNotFound()
+    {
+        // Arrange
+        _repository = new InMemoryRepository<BatchEntity, Guid>(e => e.Id, Guid.NewGuid);
+
+        (_host, _client, _logCollector) = await new TestHostBuilder<BatchEntity, Guid>(_repository, "/api/items")
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.EnableBatch(BatchAction.Delete);
+            })
+            .BuildWithLoggingAsync();
+
+        var nonExistentId = Guid.NewGuid();
+        var payload = new
+        {
+            action = "delete",
+            items = new[] { nonExistentId },
+        };
+
+        // Act
+        await _client.PostAsync("/api/items/batch", BatchJson(payload));
+
+        // Assert
+        var logs = _logCollector!.GetSnapshot();
+        var entry = logs.FirstOrDefault(r => r.Id.Id == 1160 && r.Category == "RestLib.Batch");
+        entry.Should().NotBeNull();
+        entry!.Level.Should().Be(LogLevel.Debug);
+        entry.Message.Should().Contain(nonExistentId.ToString());
+    }
+
+    // ──────────────────────────────────────────────────────────────
+    //  BatchDeleteCompleted (EventId 1161)
+    // ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    [Trait("Category", "Logging")]
+    public async Task BatchDelete_BulkSuccess_LogsBatchDeleteCompleted()
+    {
+        // Arrange — register IBatchRepository so the bulk path is used
+        _repository = new InMemoryRepository<BatchEntity, Guid>(e => e.Id, Guid.NewGuid);
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+        _repository.Seed([
+            new BatchEntity { Id = id1, Name = "Item1", Price = 10m },
+            new BatchEntity { Id = id2, Name = "Item2", Price = 20m },
+        ]);
+
+        (_host, _client, _logCollector) = await new TestHostBuilder<BatchEntity, Guid>(_repository, "/api/items")
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.EnableBatch(BatchAction.Delete);
+            })
+            .WithServices(services =>
+            {
+                services.AddSingleton<IBatchRepository<BatchEntity, Guid>>(_repository);
+            })
+            .BuildWithLoggingAsync();
+
+        var payload = new
+        {
+            action = "delete",
+            items = new[] { id1, id2 },
+        };
+
+        // Act
+        await _client.PostAsync("/api/items/batch", BatchJson(payload));
+
+        // Assert
+        var logs = _logCollector!.GetSnapshot();
+        var entry = logs.FirstOrDefault(r => r.Id.Id == 1161 && r.Category == "RestLib.Batch");
+        entry.Should().NotBeNull();
+        entry!.Level.Should().Be(LogLevel.Information);
+        entry.Message.Should().Contain("2"); // deleted count
     }
 }
 

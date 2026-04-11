@@ -86,4 +86,52 @@ internal static partial class RestLibLogMessages
         Message = "Batch update item deserialization failed (item index: {ItemIndex})")]
     internal static partial void BatchUpdateItemDeserializationFailed(
         ILogger logger, int itemIndex, Exception exception);
+
+    // ──────────────────────────────────────────────────────────────
+    //  BatchPatchPipeline (1150–1159)
+    // ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Logs that a batch patch item was not found during persistence.
+    /// </summary>
+    [LoggerMessage(EventId = 1150, Level = LogLevel.Debug,
+        Message = "Batch patch item not found (item index: {ItemIndex}, entity: {EntityName}, id: {ResourceId})")]
+    internal static partial void BatchPatchItemNotFound(
+        ILogger logger, int itemIndex, string entityName, object resourceId);
+
+    /// <summary>
+    /// Logs that a batch patch item failed pre-persist validation.
+    /// </summary>
+    [LoggerMessage(EventId = 1151, Level = LogLevel.Debug,
+        Message = "Batch patch item validation failed (item index: {ItemIndex})")]
+    internal static partial void BatchPatchItemValidationFailed(
+        ILogger logger, int itemIndex);
+
+    /// <summary>
+    /// Logs the count of entities patched in a batch patch operation via bulk persistence.
+    /// </summary>
+    [LoggerMessage(EventId = 1152, Level = LogLevel.Information,
+        Message = "Batch patch completed (patched: {PatchedCount})")]
+    internal static partial void BatchPatchCompleted(
+        ILogger logger, int patchedCount);
+
+    // ──────────────────────────────────────────────────────────────
+    //  BatchDeletePipeline (1160–1169)
+    // ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Logs that a batch delete item was not found during persistence.
+    /// </summary>
+    [LoggerMessage(EventId = 1160, Level = LogLevel.Debug,
+        Message = "Batch delete item not found (item index: {ItemIndex}, entity: {EntityName}, id: {ResourceId})")]
+    internal static partial void BatchDeleteItemNotFound(
+        ILogger logger, int itemIndex, string entityName, object resourceId);
+
+    /// <summary>
+    /// Logs the count of entities deleted in a batch delete operation via bulk persistence.
+    /// </summary>
+    [LoggerMessage(EventId = 1161, Level = LogLevel.Information,
+        Message = "Batch delete completed (deleted: {DeletedCount})")]
+    internal static partial void BatchDeleteCompleted(
+        ILogger logger, int deletedCount);
 }

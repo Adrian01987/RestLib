@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using RestLib.Abstractions;
+using RestLib.Logging;
 using RestLib.Responses;
 
 namespace RestLib.Batch;
@@ -79,6 +80,7 @@ internal sealed class BatchDeletePipeline<TEntity, TKey>
         {
             if (!existingEntities.ContainsKey(key))
             {
+                RestLibLogMessages.BatchDeleteItemNotFound(context.Logger, index, entityName, key!);
                 results[index] = new BatchItemResult
                 {
                     Index = index,
@@ -98,6 +100,8 @@ internal sealed class BatchDeletePipeline<TEntity, TKey>
 
         var keysToDelete = itemsToDelete.Select(v => v.Key).ToList();
         await context.BatchRepository!.DeleteManyAsync(keysToDelete, context.CancellationToken);
+
+        RestLibLogMessages.BatchDeleteCompleted(context.Logger, keysToDelete.Count);
 
         // Run AfterPersist hooks and build 204 results for each deleted item.
         foreach (var (index, key) in itemsToDelete)
@@ -133,6 +137,7 @@ internal sealed class BatchDeletePipeline<TEntity, TKey>
         if (!deleted)
         {
             var entityName = typeof(TEntity).Name;
+            RestLibLogMessages.BatchDeleteItemNotFound(context.Logger, index, entityName, key!);
             results[index] = new BatchItemResult
             {
                 Index = index,
