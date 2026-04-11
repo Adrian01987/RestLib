@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using RestLib.Hooks;
+using RestLib.Logging;
 
 namespace RestLib.Endpoints;
 
@@ -123,6 +125,7 @@ internal static class HookHelper
     /// <param name="exception">The exception that occurred.</param>
     /// <param name="resourceId">The optional resource identifier.</param>
     /// <param name="entity">The optional entity being processed.</param>
+    /// <param name="logger">Optional logger; when provided, swallowed hook exceptions are logged.</param>
     /// <returns>An error result if the hook handled the error; otherwise <c>null</c>.</returns>
     internal static async Task<IResult?> HandleErrorHookAsync<TEntity, TKey>(
         HookPipeline<TEntity, TKey>? pipeline,
@@ -130,7 +133,8 @@ internal static class HookHelper
         RestLibOperation operation,
         Exception exception,
         TKey? resourceId = default,
-        TEntity? entity = default)
+        TEntity? entity = default,
+        ILogger? logger = null)
         where TEntity : class
         where TKey : notnull
     {
@@ -143,10 +147,15 @@ internal static class HookHelper
 
             return handled && errorResult is not null ? errorResult : null;
         }
-        catch (Exception)
+        catch (Exception hookException)
         {
             // If the error hook itself throws, swallow the hook exception so the
             // original exception (which the caller is about to rethrow) is preserved.
+            if (logger is not null)
+            {
+                RestLibLogMessages.ErrorHookSwallowed(logger, operation.ToString(), hookException);
+            }
+
             return null;
         }
     }
