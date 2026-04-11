@@ -35,13 +35,12 @@ internal static class HateoasHelper
         where TEntity : class
         where TKey : notnull
     {
-        var json = JsonSerializer.Serialize(entity, jsonOptions);
-        using var doc = JsonDocument.Parse(json);
+        var element = JsonSerializer.SerializeToElement(entity, jsonOptions);
 
         var result = new Dictionary<string, JsonElement>();
-        foreach (var property in doc.RootElement.EnumerateObject())
+        foreach (var property in element.EnumerateObject())
         {
-            result[property.Name] = property.Value.Clone();
+            result[property.Name] = property.Value;
         }
 
         result[LinksPropertyName] = JsonSerializer.SerializeToElement(links, jsonOptions);

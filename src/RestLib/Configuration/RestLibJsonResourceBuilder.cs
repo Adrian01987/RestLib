@@ -196,6 +196,7 @@ internal static class RestLibJsonResourceBuilder
             "lte" => [Filtering.FilterOperator.Lte],
             "contains" => [Filtering.FilterOperator.Contains],
             "starts_with" => [Filtering.FilterOperator.StartsWith],
+            "ends_with" => [Filtering.FilterOperator.EndsWith],
             "in" => [Filtering.FilterOperator.In],
             "equality" => Filtering.FilterOperators.Equality,
             "comparison" => Filtering.FilterOperators.Comparison,
@@ -203,7 +204,7 @@ internal static class RestLibJsonResourceBuilder
             "all" => Filtering.FilterOperators.All,
             _ => throw new InvalidOperationException(
                 $"'{operatorName}' is not a valid filter operator or preset. " +
-                $"Valid operators: eq, neq, gt, lt, gte, lte, contains, starts_with, in. " +
+                $"Valid operators: eq, neq, gt, lt, gte, lte, contains, starts_with, ends_with, in. " +
                 $"Valid presets: equality, comparison, string, all.")
         };
     }

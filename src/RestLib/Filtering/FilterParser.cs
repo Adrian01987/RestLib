@@ -32,6 +32,7 @@ public static partial class FilterParser
         ["lte"] = FilterOperator.Lte,
         ["contains"] = FilterOperator.Contains,
         ["starts_with"] = FilterOperator.StartsWith,
+        ["ends_with"] = FilterOperator.EndsWith,
         ["in"] = FilterOperator.In,
     };
 
@@ -53,6 +54,7 @@ public static partial class FilterParser
     [
         FilterOperator.Contains,
         FilterOperator.StartsWith,
+        FilterOperator.EndsWith,
     ];
 
     /// <summary>
@@ -235,6 +237,7 @@ public static partial class FilterParser
             FilterOperator.Lte => "lte",
             FilterOperator.Contains => "contains",
             FilterOperator.StartsWith => "starts_with",
+            FilterOperator.EndsWith => "ends_with",
             FilterOperator.In => "in",
             _ => op.ToString().ToLowerInvariant(),
         };

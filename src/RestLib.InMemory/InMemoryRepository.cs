@@ -460,6 +460,16 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
         return entityStr.StartsWith(filterStr, StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool EndsWithString(object? entityValue, object? filterValue)
+    {
+        if (entityValue is not string entityStr || filterValue is not string filterStr)
+        {
+            return false;
+        }
+
+        return entityStr.EndsWith(filterStr, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static bool InValues(object? entityValue, IReadOnlyList<object?>? typedValues)
     {
         if (typedValues is null || typedValues.Count == 0)
@@ -542,6 +552,7 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
             FilterOperator.Lte => CompareValues(entityValue, filterValue) <= 0,
             FilterOperator.Contains => ContainsString(entityValue, filterValue),
             FilterOperator.StartsWith => StartsWithString(entityValue, filterValue),
+            FilterOperator.EndsWith => EndsWithString(entityValue, filterValue),
             FilterOperator.In => InValues(entityValue, filter.TypedValues),
             _ => Equals(entityValue, filterValue),
         };

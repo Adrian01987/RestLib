@@ -3,9 +3,9 @@
 # filter-operator-tests.sh — E2E tests for filter operators (bracket syntax)
 # =============================================================================
 # Products: Price  — comparison operators (eq, neq, gt, lt, gte, lte)
-#           Name   — string operators (eq, neq, contains, starts_with)
+#           Name   — string operators (eq, neq, contains, starts_with, ends_with)
 # Orders:   Total  — comparison operators
-#           CustomerEmail — string operators (contains, starts_with)
+#           CustomerEmail — string operators (contains, starts_with, ends_with)
 #           Status — equality only (default)
 # =============================================================================
 
@@ -292,6 +292,40 @@ test_status_in_operator() {
 }
 
 # =============================================================================
+# TEST 17: name[ends_with] — suffix match
+# =============================================================================
+test_name_ends_with() {
+  http_get "${BASE_URL}/api/products?name[ends_with]=Keyboard"
+
+  assert_http_status "200"                               || return 1
+
+  local count
+  count=$(jq_len ".items")
+  assert_eq "name ends_with 'Keyboard' count" "$count" "1" || return 1
+
+  local name
+  name=$(jq_val ".items[0].name")
+  assert_eq "product name" "$name" "Mechanical Keyboard"  || return 1
+}
+
+# =============================================================================
+# TEST 18: name[ends_with] — case-insensitive
+# =============================================================================
+test_name_ends_with_case_insensitive() {
+  http_get "${BASE_URL}/api/products?name[ends_with]=code"
+
+  assert_http_status "200"                               || return 1
+
+  local count
+  count=$(jq_len ".items")
+  assert_eq "name ends_with 'code' count" "$count" "1"  || return 1
+
+  local name
+  name=$(jq_val ".items[0].name")
+  assert_eq "product name" "$name" "Clean Code"          || return 1
+}
+
+# =============================================================================
 # Run all tests
 # =============================================================================
 
@@ -300,7 +334,9 @@ run_test "price[lt] — less than"                                   test_price_
 run_test "price range (gt + lte)"                                  test_price_range
 run_test "name[contains] — substring match"                        test_name_contains
 run_test "name[starts_with] — prefix match"                        test_name_starts_with
+run_test "name[ends_with] — suffix match"                          test_name_ends_with
 run_test "name[contains] — case-insensitive"                       test_name_contains_case_insensitive
+run_test "name[ends_with] — case-insensitive"                      test_name_ends_with_case_insensitive
 run_test "Bare equality backward compat"                           test_bare_equality_still_works
 run_test "Explicit [eq] operator"                                  test_explicit_eq_operator
 run_test "price[neq] — not equal"                                  test_price_neq

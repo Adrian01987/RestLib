@@ -29,6 +29,9 @@ public enum FilterOperator
     /// <summary>Case-insensitive prefix match. Query syntax: <c>?field[starts_with]=value</c>. Valid for strings only.</summary>
     StartsWith,
 
+    /// <summary>Case-insensitive suffix match. Query syntax: <c>?field[ends_with]=value</c>. Valid for strings only.</summary>
+    EndsWith,
+
     /// <summary>Value is one of a comma-separated list. Query syntax: <c>?field[in]=a,b,c</c>.</summary>
     In,
 }

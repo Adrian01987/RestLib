@@ -32,8 +32,8 @@ Without these, clients must over-fetch and filter locally, which defeats the pur
 | Option | Operators | Pros | Cons |
 | --- | --- | --- | --- |
 | Minimal | eq, neq, gt, lt, gte, lte | Covers ranges and exclusion | No string search |
-| **Selected** | eq, neq, gt, lt, gte, lte, contains, starts_with, in | Covers ranges, exclusion, string search, set membership | Slightly larger API surface |
-| Full | Above + ends_with, between, regex, not_in, is_null | Maximum flexibility | Large attack surface; regex is dangerous; complex to validate |
+| **Selected** | eq, neq, gt, lt, gte, lte, contains, starts_with, ends_with, in | Covers ranges, exclusion, string search, set membership | Slightly larger API surface |
+| Full | Above + between, regex, not_in, is_null | Maximum flexibility | Large attack surface; regex is dangerous; complex to validate |
 
 ## Decision
 
@@ -47,7 +47,7 @@ GET /api/products?price[gte]=10&price[lte]=100&name[contains]=widget
 
 Bare equality (`?price=42`) remains valid as shorthand for `?price[eq]=42`, preserving full backward compatibility with ADR-011.
 
-### 2. Nine operators
+### 2. Ten operators
 
 | Operator | Meaning | Type Constraint | Example |
 | --- | --- | --- | --- |
@@ -59,6 +59,7 @@ Bare equality (`?price=42`) remains valid as shorthand for `?price[eq]=42`, pres
 | `lte` | Less than or equal | `IComparable` | `?price[lte]=100` |
 | `contains` | Substring match (case-insensitive) | `string` | `?name[contains]=widget` |
 | `starts_with` | Prefix match (case-insensitive) | `string` | `?name[starts_with]=wire` |
+| `ends_with` | Suffix match (case-insensitive) | `string` | `?name[ends_with]=phone` |
 | `in` | Set membership | Any | `?status[in]=active,pending` |
 
 ### 3. Per-property operator allow-list
@@ -75,8 +76,8 @@ Preset arrays are provided for common combinations:
 
 - `FilterOperators.Equality` — `Eq`, `Neq`, `In`
 - `FilterOperators.Comparison` — `Eq`, `Neq`, `Gt`, `Lt`, `Gte`, `Lte`, `In`
-- `FilterOperators.String` — `Eq`, `Neq`, `Contains`, `StartsWith`, `In`
-- `FilterOperators.All` — all nine operators
+- `FilterOperators.String` — `Eq`, `Neq`, `Contains`, `StartsWith`, `EndsWith`, `In`
+- `FilterOperators.All` — all ten operators
 
 Using an operator not in the property's allow-list returns a 400 Problem Details response.
 
@@ -84,7 +85,7 @@ Using an operator not in the property's allow-list returns a 400 Problem Details
 
 The parser validates operator compatibility at request time:
 - Comparison operators (`gt`, `lt`, `gte`, `lte`) require the property's CLR type to implement `IComparable`.
-- String operators (`contains`, `starts_with`) require the property's CLR type to be `string`.
+- String operators (`contains`, `starts_with`, `ends_with`) require the property's CLR type to be `string`.
 - Type mismatches return a 400 Problem Details response with type `/problems/invalid-filter`.
 
 ### 5. `in` operator constraints
@@ -104,7 +105,7 @@ Operators can be configured declaratively alongside filter properties:
   "Filtering": ["CategoryId", "IsActive"],
   "FilteringOperators": {
     "Price": ["comparison"],
-    "Name": ["contains", "starts_with"]
+    "Name": ["contains", "starts_with", "ends_with"]
   }
 }
 ```
@@ -121,7 +122,7 @@ Properties in `FilteringOperators` are automatically added to the filtering allo
 
 ## Consequences
 
-- Repository implementations must handle all nine operators in their filter logic. The `InMemoryRepository` reference implementation is updated accordingly.
+- Repository implementations must handle all ten operators in their filter logic. The `InMemoryRepository` reference implementation is updated accordingly.
 - The `FilterValue` model now carries an `Operator` property (`FilterOperator` enum) and a `TypedValues` list (for `in` operator support), in addition to the existing `Value`.
 - The bracket pattern is parsed using a `GeneratedRegex` for performance.
 - Curl clients must use the `-g` (globoff) flag or URL-encode brackets (`%5B`, `%5D`) when testing bracket syntax from the command line.

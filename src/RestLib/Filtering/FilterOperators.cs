@@ -27,12 +27,13 @@ public static class FilterOperators
     /// <summary>
     /// String operators:
     /// <see cref="FilterOperator.Eq"/>, <see cref="FilterOperator.Neq"/>,
-    /// <see cref="FilterOperator.Contains"/>, <see cref="FilterOperator.StartsWith"/>.
+    /// <see cref="FilterOperator.Contains"/>, <see cref="FilterOperator.StartsWith"/>,
+    /// <see cref="FilterOperator.EndsWith"/>.
     /// </summary>
     public static readonly IReadOnlyList<FilterOperator> String = Array.AsReadOnly(new[]
     {
         FilterOperator.Eq, FilterOperator.Neq,
-        FilterOperator.Contains, FilterOperator.StartsWith,
+        FilterOperator.Contains, FilterOperator.StartsWith, FilterOperator.EndsWith,
     });
 
     /// <summary>

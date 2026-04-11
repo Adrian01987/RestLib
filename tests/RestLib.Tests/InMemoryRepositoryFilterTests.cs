@@ -597,6 +597,62 @@ public partial class InMemoryRepositoryTests
     }
 
     [Fact]
+    public async Task GetAllAsync_WithEndsWithFilter_FiltersCorrectly()
+    {
+        // Arrange
+        var repository = CreateRepository();
+        await repository.CreateAsync(CreateEntity("Alice Smith", 100));
+        await repository.CreateAsync(CreateEntity("Alice Jones", 200));
+        await repository.CreateAsync(CreateEntity("Bob Smith", 300));
+
+        var filters = new List<FilterValue> { CreateOperatorFilter("Name", "Smith", FilterOperator.EndsWith) };
+        var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+        // Act
+        var result = await repository.GetAllAsync(request);
+
+        // Assert
+        result.Items.Should().HaveCount(2);
+        result.Items.Should().OnlyContain(e => e.Name.EndsWith("Smith", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task GetAllAsync_EndsWithFilter_CaseInsensitive()
+    {
+        // Arrange
+        var repository = CreateRepository();
+        await repository.CreateAsync(CreateEntity("Alice Smith", 100));
+        await repository.CreateAsync(CreateEntity("Bob Jones", 200));
+
+        var filters = new List<FilterValue> { CreateOperatorFilter("Name", "smith", FilterOperator.EndsWith) };
+        var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+        // Act
+        var result = await repository.GetAllAsync(request);
+
+        // Assert — case-insensitive, so "smith" matches "Smith"
+        result.Items.Should().HaveCount(1);
+        result.Items[0].Name.Should().Be("Alice Smith");
+    }
+
+    [Fact]
+    public async Task GetAllAsync_EndsWithFilter_NonStringProperty_ReturnsFalse()
+    {
+        // Arrange — EndsWith on a non-string property should not match anything
+        var repository = CreateRepository();
+        await repository.CreateAsync(CreateEntity("Alice", 100));
+
+        var filters = new List<FilterValue> { CreateOperatorFilter("Value", 100, FilterOperator.EndsWith) };
+        var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+        // Act
+        var result = await repository.GetAllAsync(request);
+
+        // Assert — EndsWith requires strings; int won't match
+        result.Items.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task GetAllAsync_WithDateTimeFilter_NonUsCulture_FiltersCorrectly()
     {
         // Arrange — set a culture where date format differs from ISO 8601

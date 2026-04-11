@@ -951,6 +951,7 @@ public class FilterParserOperatorTests
     [InlineData("price[lt]", "price", "lt")]
     [InlineData("name[contains]", "name", "contains")]
     [InlineData("name[starts_with]", "name", "starts_with")]
+    [InlineData("name[ends_with]", "name", "ends_with")]
     [InlineData("status[in]", "status", "in")]
     [InlineData("status[neq]", "status", "neq")]
     public void ParseQueryParameterKey_ParsesBracketSyntax(string key, string expectedName, string? expectedOp)
@@ -973,6 +974,7 @@ public class FilterParserOperatorTests
     [InlineData("lte")]
     [InlineData("contains")]
     [InlineData("starts_with")]
+    [InlineData("ends_with")]
     [InlineData("in")]
     public void GetOperatorName_ReturnsCorrectString(string expected)
     {
@@ -981,6 +983,10 @@ public class FilterParserOperatorTests
         if (expected == "starts_with")
         {
             op = FilterOperator.StartsWith;
+        }
+        else if (expected == "ends_with")
+        {
+            op = FilterOperator.EndsWith;
         }
         else
         {
@@ -1513,6 +1519,7 @@ public class FilterConfigurationOperatorTests
         config.Properties[0].AllowedOperators.Should().Contain(FilterOperator.Neq);
         config.Properties[0].AllowedOperators.Should().Contain(FilterOperator.Contains);
         config.Properties[0].AllowedOperators.Should().Contain(FilterOperator.StartsWith);
+        config.Properties[0].AllowedOperators.Should().Contain(FilterOperator.EndsWith);
     }
 
     [Fact]
@@ -1750,6 +1757,34 @@ public class FilterOperatorIntegrationTests : IAsyncLifetime
     {
         // Act — name starts_with "sprocket" (lowercase)
         var response = await _client.GetAsync("/api/items?name[starts_with]=sprocket");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items");
+        items.GetArrayLength().Should().Be(1); // Sprocket Epsilon
+    }
+
+    [Fact]
+    [Trait("Category", "Story4.3.Operators")]
+    public async Task GetAll_EndsWithOperator_FiltersCorrectly()
+    {
+        // Act — name ends_with "Alpha"
+        var response = await _client.GetAsync("/api/items?name[ends_with]=Alpha");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items");
+        items.GetArrayLength().Should().Be(1); // Widget Alpha
+    }
+
+    [Fact]
+    [Trait("Category", "Story4.3.Operators")]
+    public async Task GetAll_EndsWithOperator_CaseInsensitive()
+    {
+        // Act — name ends_with "epsilon" (lowercase, should match "Sprocket Epsilon")
+        var response = await _client.GetAsync("/api/items?name[ends_with]=epsilon");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);

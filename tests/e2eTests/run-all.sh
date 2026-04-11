@@ -143,6 +143,7 @@ ALL_SUITES=(
   "batch-tests.sh"
   "versioning-tests.sh"
   "hateoas-tests.sh"
+  "etag-tests.sh"
 )
 
 # ---------------------------------------------------------------------------
