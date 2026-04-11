@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using RestLib.Abstractions;
+using RestLib.Logging;
 
 namespace RestLib.Batch;
 
@@ -40,8 +41,9 @@ internal sealed class BatchUpdatePipeline<TEntity, TKey>
         {
             entity = item.Body.Deserialize<TEntity>(context.JsonOptions);
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
+            RestLibLogMessages.BatchUpdateItemDeserializationFailed(context.Logger, index, ex);
             return (BadRequestResult(index, $"Item at index {index} has an invalid body.", context.HttpContext.Request.Path), default);
         }
 

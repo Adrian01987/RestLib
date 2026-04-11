@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Structured logging via `Microsoft.Extensions.Logging` across all endpoints, batch pipelines, hook execution, and error paths
+- `[LoggerMessage]` source-generated log methods for zero-allocation structured logging (EventId 1000–1349)
+- Diagnostic logging for all 9 previously silent exception catch blocks
+- ADR-020: Structured logging design decisions — source generators, request-time resolution, log level policy, no entity payloads
+
+### Changed
+
+- `ProblemDetailsResult` now logs all error responses at appropriate levels (Information for 4xx, Error for 5xx)
+- `BatchContext` carries `ILogger` for consistent logging through batch pipeline
+- `HookPipeline` emits Trace-level entry/exit events and Debug-level short-circuit events for all hook stages
+
 ## [2.0.0] - 2026-04-10
 
 ### Breaking Changes

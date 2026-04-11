@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using RestLib.Abstractions;
+using RestLib.Logging;
 
 namespace RestLib.Batch;
 
@@ -73,6 +74,8 @@ internal sealed class BatchCreatePipeline<TEntity, TKey>
         var created = await context.BatchRepository!.CreateManyAsync(entities, context.CancellationToken);
 
         await ProcessBulkResultsAsync(validItems, created, results, context);
+
+        RestLibLogMessages.BatchCreateCompleted(context.Logger, created.Count);
     }
 
     /// <inheritdoc/>

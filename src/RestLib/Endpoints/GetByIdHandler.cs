@@ -7,6 +7,7 @@ using RestLib.Configuration;
 using RestLib.FieldSelection;
 using RestLib.Hooks;
 using RestLib.Hypermedia;
+using RestLib.Logging;
 
 namespace RestLib.Endpoints;
 
@@ -37,10 +38,13 @@ internal static class GetByIdHandler
             CancellationToken ct) =>
         {
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
+            var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.GetById");
+
+            RestLibLogMessages.GetByIdRequestReceived(logger, entityName, id!.ToString()!);
 
             // Initialize hook pipeline and run OnRequestReceived
             var (pipeline, hookContext, pipelineEarlyResult) = await HookHelper.InitializePipelineAsync<TEntity, TKey>(
-                config.Hooks, httpContext, RestLibOperation.GetById, id);
+                config.Hooks, httpContext, RestLibOperation.GetById, id, logger: logger);
             if (pipelineEarlyResult is not null) return pipelineEarlyResult;
 
             try
@@ -58,7 +62,8 @@ internal static class GetByIdHandler
                             return Responses.ProblemDetailsResult.InvalidFields(
                                 fieldsResult.Errors,
                                 httpContext.Request.Path,
-                                jsonOptions);
+                                jsonOptions,
+                                logger);
                         }
 
                         selectedFields = fieldsResult.Fields;
@@ -73,7 +78,8 @@ internal static class GetByIdHandler
                         entityName,
                         id!,
                         httpContext.Request.Path,
-                        jsonOptions);
+                        jsonOptions,
+                        logger);
                 }
 
                 // Update hook context with entity
@@ -97,6 +103,7 @@ internal static class GetByIdHandler
                     if (!ETagComparer.IfNoneMatchSucceeds(ifNoneMatch, etag))
                     {
                         // ETag matches - return 304 Not Modified
+                        RestLibLogMessages.GetByIdNotModified(logger, entityName, id!.ToString()!);
                         httpContext.Response.Headers.ETag = etag;
                         return Results.StatusCode(StatusCodes.Status304NotModified);
                     }
@@ -143,7 +150,8 @@ internal static class GetByIdHandler
             }
             catch (Exception ex)
             {
-                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.GetById, ex, id);
+                RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.GetById), ex);
+                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.GetById, ex, id, logger: logger);
                 if (errorResult is not null) return errorResult;
                 throw;
             }

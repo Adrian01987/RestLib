@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using RestLib.Logging;
 
 namespace RestLib.Hooks;
 
@@ -7,15 +9,23 @@ namespace RestLib.Hooks;
 /// </summary>
 /// <typeparam name="TEntity">The entity type being processed.</typeparam>
 /// <typeparam name="TKey">The key type of the entity.</typeparam>
-/// <remarks>
-/// Initializes a new instance of the <see cref="HookPipeline{TEntity, TKey}"/> class
-/// with the specified hook definitions.
-/// </remarks>
-/// <param name="hooks">The hook definitions to execute during request processing.</param>
-internal sealed class HookPipeline<TEntity, TKey>(RestLibHooks<TEntity, TKey> hooks) where TEntity : class where TKey : notnull
+internal sealed class HookPipeline<TEntity, TKey> where TEntity : class where TKey : notnull
 {
-    private readonly RestLibHooks<TEntity, TKey> _hooks = hooks;
+    private readonly RestLibHooks<TEntity, TKey> _hooks;
     private readonly IDictionary<string, object?> _sharedItems = new Dictionary<string, object?>();
+    private readonly ILogger? _logger;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="HookPipeline{TEntity, TKey}"/> class
+    /// with the specified hook definitions and optional logger.
+    /// </summary>
+    /// <param name="hooks">The hook definitions to execute during request processing.</param>
+    /// <param name="logger">Optional logger for tracing hook stage entry/exit and short-circuits.</param>
+    internal HookPipeline(RestLibHooks<TEntity, TKey> hooks, ILogger? logger = null)
+    {
+        _hooks = hooks;
+        _logger = logger;
+    }
 
     /// <summary>
     /// Creates a new hook context for the current request.
@@ -70,31 +80,31 @@ internal sealed class HookPipeline<TEntity, TKey>(RestLibHooks<TEntity, TKey> ho
     /// Executes the OnRequestReceived hook if configured.
     /// </summary>
     public Task<bool> ExecuteOnRequestReceivedAsync(HookContext<TEntity, TKey> context) =>
-      ExecuteStageAsync(_hooks.OnRequestReceived, context, isFirstStage: true);
+      ExecuteStageAsync(_hooks.OnRequestReceived, context, "OnRequestReceived", isFirstStage: true);
 
     /// <summary>
     /// Executes the OnRequestValidated hook if configured.
     /// </summary>
     public Task<bool> ExecuteOnRequestValidatedAsync(HookContext<TEntity, TKey> context) =>
-      ExecuteStageAsync(_hooks.OnRequestValidated, context);
+      ExecuteStageAsync(_hooks.OnRequestValidated, context, "OnRequestValidated");
 
     /// <summary>
     /// Executes the BeforePersist hook if configured.
     /// </summary>
     public Task<bool> ExecuteBeforePersistAsync(HookContext<TEntity, TKey> context) =>
-      ExecuteStageAsync(_hooks.BeforePersist, context);
+      ExecuteStageAsync(_hooks.BeforePersist, context, "BeforePersist");
 
     /// <summary>
     /// Executes the AfterPersist hook if configured.
     /// </summary>
     public Task<bool> ExecuteAfterPersistAsync(HookContext<TEntity, TKey> context) =>
-      ExecuteStageAsync(_hooks.AfterPersist, context);
+      ExecuteStageAsync(_hooks.AfterPersist, context, "AfterPersist");
 
     /// <summary>
     /// Executes the BeforeResponse hook if configured.
     /// </summary>
     public Task<bool> ExecuteBeforeResponseAsync(HookContext<TEntity, TKey> context) =>
-      ExecuteStageAsync(_hooks.BeforeResponse, context);
+      ExecuteStageAsync(_hooks.BeforeResponse, context, "BeforeResponse");
 
     /// <summary>
     /// Executes the OnError hook if configured.
@@ -120,6 +130,7 @@ internal sealed class HookPipeline<TEntity, TKey>(RestLibHooks<TEntity, TKey> ho
     /// </summary>
     /// <param name="hookDelegate">The hook delegate to invoke, or null if the stage is not configured.</param>
     /// <param name="context">The hook context for the current request.</param>
+    /// <param name="stageName">The name of the hook stage (for logging).</param>
     /// <param name="isFirstStage">
     /// When true (OnRequestReceived), shared items overwrite context items unconditionally.
     /// When false (subsequent stages), shared items are only copied if the key is not already present.
@@ -128,11 +139,19 @@ internal sealed class HookPipeline<TEntity, TKey>(RestLibHooks<TEntity, TKey> ho
     private async Task<bool> ExecuteStageAsync(
         RestLibHookDelegate<TEntity, TKey>? hookDelegate,
         HookContext<TEntity, TKey> context,
+        string stageName,
         bool isFirstStage = false)
     {
         if (hookDelegate is null)
         {
             return true;
+        }
+
+        var operationName = context.Operation.ToString();
+
+        if (_logger is not null)
+        {
+            RestLibLogMessages.HookStageEntry(_logger, stageName, operationName);
         }
 
         // Copy shared items to context
@@ -157,6 +176,16 @@ internal sealed class HookPipeline<TEntity, TKey>(RestLibHooks<TEntity, TKey> ho
         if (context.ShouldContinue)
         {
             context.EarlyResult = null;
+        }
+
+        if (_logger is not null)
+        {
+            RestLibLogMessages.HookStageExit(_logger, stageName, operationName, context.ShouldContinue);
+
+            if (!context.ShouldContinue)
+            {
+                RestLibLogMessages.HookStageShortCircuit(_logger, stageName, operationName);
+            }
         }
 
         return context.ShouldContinue;

@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Testing;
 using RestLib.Abstractions;
 using RestLib.Configuration;
 
@@ -142,6 +144,52 @@ public sealed class TestHostBuilder<TEntity, TKey>
 
         await host.StartAsync();
         return (host, host.GetTestClient());
+    }
+
+    /// <summary>
+    /// Builds and starts the test host with fake logging enabled,
+    /// returning the host, HTTP client, and <see cref="FakeLogCollector"/> for asserting log output.
+    /// </summary>
+    /// <returns>A tuple of the started host, HTTP client, and log collector.</returns>
+    public async Task<(IHost Host, HttpClient Client, FakeLogCollector LogCollector)> BuildWithLoggingAsync()
+    {
+        var host = new HostBuilder()
+            .ConfigureLogging(logging =>
+            {
+                logging.SetMinimumLevel(LogLevel.Trace);
+            })
+            .ConfigureWebHost(webBuilder =>
+            {
+                webBuilder
+                    .UseTestServer()
+                    .ConfigureServices(services =>
+                    {
+                        if (!_skipRestLib)
+                        {
+                            services.AddRestLib(_configureOptions ?? (_ => { }));
+                        }
+
+                        services.AddSingleton<IRepository<TEntity, TKey>>(_repository);
+                        services.AddRouting();
+                        services.AddFakeLogging();
+                        _configureServices?.Invoke(services);
+                    })
+                    .Configure(app =>
+                    {
+                        app.UseRouting();
+                        _configureMiddleware?.Invoke(app);
+                        app.UseEndpoints(endpoints =>
+                        {
+                            _configureAdditionalEndpoints?.Invoke(endpoints);
+                            endpoints.MapRestLib<TEntity, TKey>(_route, _configureEndpoint ?? (_ => { }));
+                        });
+                    });
+            })
+            .Build();
+
+        await host.StartAsync();
+        var collector = host.Services.GetFakeLogCollector();
+        return (host, host.GetTestClient(), collector);
     }
 }
 

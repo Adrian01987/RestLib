@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.Hypermedia;
+using RestLib.Logging;
 
 namespace RestLib.Endpoints;
 
@@ -30,10 +31,13 @@ internal static class CreateHandler
             CancellationToken ct) =>
         {
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
+            var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.Create");
+
+            RestLibLogMessages.CreateRequestReceived(logger);
 
             // Initialize hook pipeline and run OnRequestReceived
             var (pipeline, hookContext, pipelineEarlyResult) = await HookHelper.InitializePipelineAsync<TEntity, TKey>(
-                config.Hooks, httpContext, RestLibOperation.Create, entity: entity);
+                config.Hooks, httpContext, RestLibOperation.Create, entity: entity, logger: logger);
             if (pipelineEarlyResult is not null) return pipelineEarlyResult;
             // Entity might have been modified by hook
             if (hookContext is not null) entity = hookContext.Entity ?? entity;
@@ -49,7 +53,8 @@ internal static class CreateHandler
                         return Responses.ProblemDetailsResult.ValidationFailed(
                             validationResult.Errors,
                             httpContext.Request.Path,
-                            jsonOptions);
+                            jsonOptions,
+                            logger);
                     }
                 }
 
@@ -77,6 +82,8 @@ internal static class CreateHandler
                 var location = $"{httpContext.Request.Path}/{createdId}";
                 httpContext.Response.Headers.Location = location;
 
+                RestLibLogMessages.EntityCreated(logger, createdId?.ToString() ?? string.Empty, location);
+
                 // Add ETag header when enabled
                 if (options.EnableETagSupport)
                 {
@@ -103,7 +110,8 @@ internal static class CreateHandler
             }
             catch (Exception ex)
             {
-                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Create, ex, entity: entity);
+                RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.Create), ex);
+                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Create, ex, entity: entity, logger: logger);
                 if (errorResult is not null) return errorResult;
                 throw;
             }

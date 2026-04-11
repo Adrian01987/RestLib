@@ -1,5 +1,7 @@
 using System.Buffers;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using RestLib.Logging;
 
 namespace RestLib.Endpoints;
 
@@ -17,11 +19,13 @@ internal static class PatchHelper
     /// <param name="original">The current entity from the repository.</param>
     /// <param name="patchDocument">The JSON patch document.</param>
     /// <param name="jsonOptions">The JSON serializer options.</param>
+    /// <param name="logger">Optional logger for recording deserialization failures.</param>
     /// <returns>The merged entity, or <c>null</c> if deserialization fails.</returns>
     internal static TEntity? PreviewPatch<TEntity>(
         TEntity original,
         JsonElement patchDocument,
-        JsonSerializerOptions jsonOptions)
+        JsonSerializerOptions jsonOptions,
+        ILogger? logger = null)
         where TEntity : class
     {
         // Serialize original entity to a JSON document
@@ -60,6 +64,13 @@ internal static class PatchHelper
         }
 
         // Deserialize the merged JSON back to the entity type
-        return JsonSerializer.Deserialize<TEntity>(buffer.WrittenSpan, jsonOptions);
+        var result = JsonSerializer.Deserialize<TEntity>(buffer.WrittenSpan, jsonOptions);
+
+        if (result is null && logger is not null)
+        {
+            RestLibLogMessages.PatchPreviewDeserializationNull(logger);
+        }
+
+        return result;
     }
 }

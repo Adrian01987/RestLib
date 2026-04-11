@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.Hypermedia;
+using RestLib.Logging;
 
 namespace RestLib.Endpoints;
 
@@ -35,10 +36,13 @@ internal static class PatchHandler
             CancellationToken ct) =>
         {
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
+            var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.Patch");
+
+            RestLibLogMessages.PatchRequestReceived(logger, entityName, id!.ToString()!);
 
             // Initialize hook pipeline and run OnRequestReceived
             var (pipeline, hookContext, pipelineEarlyResult) = await HookHelper.InitializePipelineAsync<TEntity, TKey>(
-                config.Hooks, httpContext, RestLibOperation.Patch, id);
+                config.Hooks, httpContext, RestLibOperation.Patch, id, logger: logger);
             if (pipelineEarlyResult is not null) return pipelineEarlyResult;
             TEntity? originalEntity = null;
 
@@ -50,7 +54,7 @@ internal static class PatchHandler
 
                 // Check for ETag precondition (If-Match header)
                 var (etagEntity, etagError) = await ETagHelper.CheckIfMatchPreconditionAsync(
-                    httpContext, repository, id, entityName, options, jsonOptions, ct);
+                    httpContext, repository, id, entityName, options, jsonOptions, ct, logger);
                 if (etagError is not null) return etagError;
                 if (etagEntity is not null) originalEntity = etagEntity;
 
@@ -64,7 +68,8 @@ internal static class PatchHandler
                             entityName,
                             id!,
                             httpContext.Request.Path,
-                            jsonOptions);
+                            jsonOptions,
+                            logger);
                     }
                 }
 
@@ -80,7 +85,8 @@ internal static class PatchHandler
                             return Responses.ProblemDetailsResult.ValidationFailed(
                                 validationResult.Errors,
                                 httpContext.Request.Path,
-                                jsonOptions);
+                                jsonOptions,
+                                logger);
                         }
                     }
                 }
@@ -103,7 +109,8 @@ internal static class PatchHandler
                         entityName,
                         id!,
                         httpContext.Request.Path,
-                        jsonOptions);
+                        jsonOptions,
+                        logger);
                 }
 
                 // AfterPersist hook
@@ -137,7 +144,8 @@ internal static class PatchHandler
             }
             catch (Exception ex)
             {
-                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Patch, ex, id, originalEntity);
+                RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.Patch), ex);
+                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Patch, ex, id, originalEntity, logger);
                 if (errorResult is not null) return errorResult;
                 throw;
             }

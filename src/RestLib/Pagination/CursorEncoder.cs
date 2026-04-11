@@ -1,5 +1,7 @@
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using RestLib.Logging;
 
 namespace RestLib.Pagination;
 
@@ -28,8 +30,9 @@ public static class CursorEncoder
     /// <typeparam name="T">The expected type of the cursor value.</typeparam>
     /// <param name="cursor">The base64url encoded cursor.</param>
     /// <param name="value">The decoded value if successful.</param>
+    /// <param name="logger">Optional logger for recording decode failures.</param>
     /// <returns>True if decoding succeeded; otherwise, false.</returns>
-    public static bool TryDecode<T>(string cursor, out T? value)
+    public static bool TryDecode<T>(string cursor, out T? value, ILogger? logger = null)
     {
         value = default;
 
@@ -54,6 +57,11 @@ public static class CursorEncoder
         catch (Exception ex) when (ex is FormatException or JsonException or ArgumentException
             or InvalidOperationException or NotSupportedException)
         {
+            if (logger is not null)
+            {
+                RestLibLogMessages.CursorDecodeFailed(logger, cursor.Length, ex);
+            }
+
             return false;
         }
     }
@@ -62,8 +70,9 @@ public static class CursorEncoder
     /// Validates whether a cursor string is a valid base64url encoded cursor.
     /// </summary>
     /// <param name="cursor">The cursor to validate.</param>
+    /// <param name="logger">Optional logger for recording validation failures.</param>
     /// <returns>True if the cursor is valid; otherwise, false.</returns>
-    public static bool IsValid(string? cursor)
+    public static bool IsValid(string? cursor, ILogger? logger = null)
     {
         if (string.IsNullOrEmpty(cursor))
             return true; // null/empty is valid (means first page)
@@ -81,6 +90,11 @@ public static class CursorEncoder
         catch (Exception ex) when (ex is FormatException or JsonException or ArgumentException
             or InvalidOperationException or NotSupportedException)
         {
+            if (logger is not null)
+            {
+                RestLibLogMessages.CursorValidationFailed(logger, cursor.Length, ex);
+            }
+
             return false;
         }
     }

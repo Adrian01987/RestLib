@@ -1,7 +1,9 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using RestLib.Configuration;
+using RestLib.Logging;
 using RestLib.Serialization;
 
 namespace RestLib.Endpoints;
@@ -21,8 +23,19 @@ internal static class OptionsResolver
     {
         var jsonOptions = httpContext.RequestServices.GetService<JsonSerializerOptions>()
                           ?? RestLibJsonOptions.CreateDefault();
-        var options = httpContext.RequestServices.GetService<RestLibOptions>()
-                      ?? new RestLibOptions();
+
+        var registeredOptions = httpContext.RequestServices.GetService<RestLibOptions>();
+        if (registeredOptions is null)
+        {
+            var logger = httpContext.RequestServices.GetService<ILoggerFactory>()
+                ?.CreateLogger("RestLib.OptionsResolver");
+            if (logger is not null)
+            {
+                RestLibLogMessages.OptionsNotRegistered(logger);
+            }
+        }
+
+        var options = registeredOptions ?? new RestLibOptions();
         return (jsonOptions, options);
     }
 }

@@ -5,6 +5,7 @@ using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.Hooks;
 using RestLib.Hypermedia;
+using RestLib.Logging;
 
 namespace RestLib.Endpoints;
 
@@ -36,10 +37,13 @@ internal static class UpdateHandler
             CancellationToken ct) =>
         {
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
+            var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.Update");
+
+            RestLibLogMessages.UpdateRequestReceived(logger, entityName, id!.ToString()!);
 
             // Initialize hook pipeline and run OnRequestReceived
             var (pipeline, hookContext, pipelineEarlyResult) = await HookHelper.InitializePipelineAsync<TEntity, TKey>(
-                config.Hooks, httpContext, RestLibOperation.Update, id, entity);
+                config.Hooks, httpContext, RestLibOperation.Update, id, entity, logger: logger);
             if (pipelineEarlyResult is not null) return pipelineEarlyResult;
             // Entity might have been modified by hook
             if (hookContext is not null) entity = hookContext.Entity ?? entity;
@@ -56,7 +60,8 @@ internal static class UpdateHandler
                         return Responses.ProblemDetailsResult.ValidationFailed(
                             validationResult.Errors,
                             httpContext.Request.Path,
-                            jsonOptions);
+                            jsonOptions,
+                            logger);
                     }
                 }
 
@@ -68,7 +73,7 @@ internal static class UpdateHandler
 
                 // Check for ETag precondition (If-Match header)
                 var (etagEntity, etagError) = await ETagHelper.CheckIfMatchPreconditionAsync(
-                    httpContext, repository, id, entityName, options, jsonOptions, ct);
+                    httpContext, repository, id, entityName, options, jsonOptions, ct, logger);
                 if (etagError is not null) return etagError;
                 if (etagEntity is not null) originalEntity = etagEntity;
 
@@ -97,7 +102,8 @@ internal static class UpdateHandler
                         entityName,
                         id!,
                         httpContext.Request.Path,
-                        jsonOptions);
+                        jsonOptions,
+                        logger);
                 }
 
                 // AfterPersist hook
@@ -131,7 +137,8 @@ internal static class UpdateHandler
             }
             catch (Exception ex)
             {
-                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Update, ex, id, entity);
+                RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.Update), ex);
+                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Update, ex, id, entity, logger);
                 if (errorResult is not null) return errorResult;
                 throw;
             }

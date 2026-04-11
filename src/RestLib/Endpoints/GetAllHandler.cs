@@ -7,6 +7,7 @@ using RestLib.FieldSelection;
 using RestLib.Filtering;
 using RestLib.Hooks;
 using RestLib.Hypermedia;
+using RestLib.Logging;
 using RestLib.Pagination;
 using RestLib.Sorting;
 
@@ -37,10 +38,13 @@ internal static class GetAllHandler
             ct) =>
         {
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
+            var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.GetAll");
+
+            RestLibLogMessages.GetAllRequestReceived(logger, cursor?.Length ?? 0, limit);
 
             // Initialize hook pipeline and run OnRequestReceived
             var (pipeline, hookContext, pipelineEarlyResult) = await HookHelper.InitializePipelineAsync<TEntity, TKey>(
-                config.Hooks, httpContext, RestLibOperation.GetAll);
+                config.Hooks, httpContext, RestLibOperation.GetAll, logger: logger);
             if (pipelineEarlyResult is not null) return pipelineEarlyResult;
 
             try
@@ -54,7 +58,8 @@ internal static class GetAllHandler
                             cursor,
                             httpContext.Request.Path,
                             jsonOptions,
-                            $"The cursor exceeds the maximum allowed length of {options.MaxCursorLength} characters.");
+                            $"The cursor exceeds the maximum allowed length of {options.MaxCursorLength} characters.",
+                            logger);
                     }
 
                     if (!CursorEncoder.IsValid(cursor))
@@ -62,7 +67,8 @@ internal static class GetAllHandler
                         return Responses.ProblemDetailsResult.InvalidCursor(
                             cursor,
                             httpContext.Request.Path,
-                            jsonOptions);
+                            jsonOptions,
+                            logger: logger);
                     }
                 }
 
@@ -74,7 +80,8 @@ internal static class GetAllHandler
                         1,
                         options.MaxPageSize,
                         httpContext.Request.Path,
-                        jsonOptions);
+                        jsonOptions,
+                        logger);
                 }
 
                 // Parse and validate filters
@@ -87,7 +94,8 @@ internal static class GetAllHandler
                         return Responses.ProblemDetailsResult.InvalidFilters(
                             filterResult.Errors,
                             httpContext.Request.Path,
-                            jsonOptions);
+                            jsonOptions,
+                            logger);
                     }
 
                     filterValues = filterResult.Filters;
@@ -106,7 +114,8 @@ internal static class GetAllHandler
                             return Responses.ProblemDetailsResult.InvalidSort(
                                 sortResult.Errors,
                                 httpContext.Request.Path,
-                                jsonOptions);
+                                jsonOptions,
+                                logger);
                         }
 
                         sortFields = sortResult.Fields;
@@ -130,7 +139,8 @@ internal static class GetAllHandler
                             return Responses.ProblemDetailsResult.InvalidFields(
                                 fieldsResult.Errors,
                                 httpContext.Request.Path,
-                                jsonOptions);
+                                jsonOptions,
+                                logger);
                         }
 
                         selectedFields = fieldsResult.Fields;
@@ -160,6 +170,8 @@ internal static class GetAllHandler
                 }
 
                 var response = PaginationHelper.BuildCollectionResponse(result, httpContext.Request, cursor, effectiveLimit, options, totalCount);
+
+                RestLibLogMessages.GetAllResponse(logger, response.Items.Count, response.Next is not null);
 
                 // BeforeResponse hook
                 var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
@@ -214,7 +226,8 @@ internal static class GetAllHandler
             }
             catch (Exception ex)
             {
-                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.GetAll, ex);
+                RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.GetAll), ex);
+                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.GetAll, ex, logger: logger);
                 if (errorResult is not null) return errorResult;
                 throw;
             }

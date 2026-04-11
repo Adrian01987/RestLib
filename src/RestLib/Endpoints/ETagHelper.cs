@@ -1,9 +1,11 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using RestLib.Abstractions;
 using RestLib.Caching;
 using RestLib.Configuration;
+using RestLib.Logging;
 
 namespace RestLib.Endpoints;
 
@@ -37,6 +39,7 @@ internal static class ETagHelper
     /// <param name="options">The RestLib options (checked for ETag support).</param>
     /// <param name="jsonOptions">The JSON serializer options.</param>
     /// <param name="ct">The cancellation token.</param>
+    /// <param name="logger">Optional logger for recording precondition failures.</param>
     /// <returns>
     /// A tuple where <c>Entity</c> is the fetched entity (if the If-Match header was present
     /// and the precondition succeeded), and <c>Error</c> is an error result if the precondition
@@ -50,7 +53,8 @@ internal static class ETagHelper
         string entityName,
         RestLibOptions options,
         JsonSerializerOptions jsonOptions,
-        CancellationToken ct)
+        CancellationToken ct,
+        ILogger? logger = null)
         where TEntity : class
         where TKey : notnull
     {
@@ -73,7 +77,8 @@ internal static class ETagHelper
                 entityName,
                 id!,
                 httpContext.Request.Path,
-                jsonOptions);
+                jsonOptions,
+                logger: logger);
             return (null, notFoundResult);
         }
 
@@ -82,10 +87,16 @@ internal static class ETagHelper
 
         if (!ETagComparer.IfMatchSucceeds(ifMatchHeader, currentETag))
         {
+            if (logger is not null)
+            {
+                RestLibLogMessages.ETagPreconditionFailed(logger, entityName, id!.ToString()!);
+            }
+
             var preconditionResult = Responses.ProblemDetailsResult.PreconditionFailed(
                 "The resource has been modified since you last retrieved it.",
                 httpContext.Request.Path,
-                jsonOptions);
+                jsonOptions,
+                logger: logger);
             return (null, preconditionResult);
         }
 

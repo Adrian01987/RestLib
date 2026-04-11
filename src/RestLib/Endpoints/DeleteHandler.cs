@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.Hooks;
+using RestLib.Logging;
 
 namespace RestLib.Endpoints;
 
@@ -32,10 +33,13 @@ internal static class DeleteHandler
             CancellationToken ct) =>
         {
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
+            var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.Delete");
+
+            RestLibLogMessages.DeleteRequestReceived(logger, entityName, id!.ToString()!);
 
             // Initialize hook pipeline and run OnRequestReceived
             var (pipeline, hookContext, pipelineEarlyResult) = await HookHelper.InitializePipelineAsync<TEntity, TKey>(
-                config.Hooks, httpContext, RestLibOperation.Delete, id);
+                config.Hooks, httpContext, RestLibOperation.Delete, id, logger: logger);
             if (pipelineEarlyResult is not null) return pipelineEarlyResult;
             TEntity? entityToDelete = null;
 
@@ -47,7 +51,7 @@ internal static class DeleteHandler
 
                 // Check for ETag precondition (If-Match header)
                 var (etagEntity, etagError) = await ETagHelper.CheckIfMatchPreconditionAsync(
-                    httpContext, repository, id, entityName, options, jsonOptions, ct);
+                    httpContext, repository, id, entityName, options, jsonOptions, ct, logger);
                 if (etagError is not null) return etagError;
                 if (etagEntity is not null) entityToDelete = etagEntity;
 
@@ -70,8 +74,11 @@ internal static class DeleteHandler
                         entityName,
                         id!,
                         httpContext.Request.Path,
-                        jsonOptions);
+                        jsonOptions,
+                        logger);
                 }
+
+                RestLibLogMessages.EntityDeleted(logger, entityName, id!.ToString()!);
 
                 // AfterPersist hook
                 var afterPersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
@@ -85,7 +92,8 @@ internal static class DeleteHandler
             }
             catch (Exception ex)
             {
-                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Delete, ex, id, entityToDelete);
+                RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.Delete), ex);
+                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Delete, ex, id, entityToDelete, logger);
                 if (errorResult is not null) return errorResult;
                 throw;
             }

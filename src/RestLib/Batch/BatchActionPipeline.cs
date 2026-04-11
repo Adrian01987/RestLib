@@ -6,6 +6,7 @@ using RestLib.Configuration;
 using RestLib.Endpoints;
 using RestLib.Hooks;
 using RestLib.Hypermedia;
+using RestLib.Logging;
 using RestLib.Responses;
 using RestLib.Serialization;
 using RestLib.Validation;
@@ -62,7 +63,7 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
         JsonElement itemsElement,
         BatchContext<TEntity, TKey> context)
     {
-        var items = JsonDeserializationHelper.DeserializeArray<TRawItem>(itemsElement, context.JsonOptions);
+        var items = JsonDeserializationHelper.DeserializeArray<TRawItem>(itemsElement, context.JsonOptions, context.Logger);
         if (items is null)
         {
             return SingleErrorResponse(0, StatusCodes.Status400BadRequest,
@@ -486,12 +487,16 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
             {
                 await PersistBulkAsync(validItems, results, context);
             }
-            catch (Exception)
+            catch (Exception bulkException)
             {
                 // Bulk path failed — fall back to individual persistence for items that
                 // don't already have a result. Some subclasses (e.g. BatchPatchPipeline)
                 // may populate results during pre-validation inside PersistBulkAsync,
                 // so we only retry items whose result slot is still empty.
+                var actionName = Operation.ToString().ToLowerInvariant();
+                RestLibLogMessages.BulkPersistenceFallback(
+                    context.Logger, actionName, validItems.Count, bulkException);
+
                 var remainingItems = validItems
                     .Where(item => results[GetIndex(item)] is null)
                     .ToList();
@@ -522,6 +527,9 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
             }
             catch (Exception ex)
             {
+                var actionName = Operation.ToString().ToLowerInvariant();
+                RestLibLogMessages.BatchItemPersistenceFailed(context.Logger, actionName, index, ex);
+
                 results[index] = await HandleItemErrorAsync(
                     index, ex, context, GetResourceId(item), GetEntity(item));
             }
@@ -569,10 +577,13 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
                     };
                 }
             }
-            catch (Exception)
+            catch (Exception hookException)
             {
                 // If the error hook itself throws, swallow the hook exception and fall
                 // through to the default ExceptionResult so the original error is reported.
+                var actionName = Operation.ToString().ToLowerInvariant();
+                RestLibLogMessages.BatchErrorHookSwallowed(
+                    context.Logger, actionName, index, hookException);
             }
         }
 

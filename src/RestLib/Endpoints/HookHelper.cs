@@ -37,6 +37,7 @@ internal static class HookHelper
     /// <param name="operation">The REST operation being performed.</param>
     /// <param name="resourceId">The optional resource identifier.</param>
     /// <param name="entity">The optional entity being processed.</param>
+    /// <param name="logger">Optional logger for tracing hook stage execution.</param>
     /// <returns>
     /// A <see cref="PipelineInitResult{TEntity, TKey}"/> containing the pipeline, context, and
     /// an early result if the <c>OnRequestReceived</c> hook short-circuited.
@@ -48,7 +49,8 @@ internal static class HookHelper
         HttpContext httpContext,
         RestLibOperation operation,
         TKey? resourceId = default,
-        TEntity? entity = default)
+        TEntity? entity = default,
+        ILogger? logger = null)
         where TEntity : class
         where TKey : notnull
     {
@@ -57,7 +59,7 @@ internal static class HookHelper
             return new PipelineInitResult<TEntity, TKey>(null, null, null);
         }
 
-        var pipeline = new HookPipeline<TEntity, TKey>(hooks);
+        var pipeline = new HookPipeline<TEntity, TKey>(hooks, logger);
         var hookContext = pipeline.CreateContext(httpContext, operation, resourceId, entity);
         var earlyResult = await ExecuteHookAsync(pipeline.ExecuteOnRequestReceivedAsync, hookContext);
 

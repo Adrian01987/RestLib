@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using RestLib.Logging;
 
 namespace RestLib.Filtering;
 
@@ -241,7 +243,8 @@ public static partial class FilterParser
     /// <summary>
     /// Attempts to convert a string value to the target type.
     /// </summary>
-    internal static (bool Success, object? Value, string? ErrorMessage) TryConvertValue(string rawValue, Type targetType)
+    internal static (bool Success, object? Value, string? ErrorMessage) TryConvertValue(
+        string rawValue, Type targetType, ILogger? logger = null, string? parameterName = null)
     {
         try
         {
@@ -332,8 +335,15 @@ public static partial class FilterParser
 
             return (false, null, $"Cannot convert to {GetFriendlyTypeName(targetType)}.");
         }
-        catch (Exception)
+        catch (Exception conversionException)
         {
+            if (logger is not null)
+            {
+                var targetTypeName = GetFriendlyTypeName(targetType);
+                RestLibLogMessages.FilterTypeConversionFailed(
+                    logger, parameterName ?? "(unknown)", rawValue, targetTypeName, conversionException);
+            }
+
             return (false, null, $"Cannot convert '{rawValue}' to {GetFriendlyTypeName(targetType)}.");
         }
     }

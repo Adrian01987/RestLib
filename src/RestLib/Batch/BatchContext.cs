@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.Hooks;
@@ -50,6 +51,11 @@ internal sealed class BatchContext<TEntity, TKey>
     /// Gets the cancellation token.
     /// </summary>
     internal required CancellationToken CancellationToken { get; init; }
+
+    /// <summary>
+    /// Gets the logger for batch pipeline operations.
+    /// </summary>
+    internal required ILogger Logger { get; init; }
 
     /// <summary>
     /// Gets the endpoint configuration. Used for HATEOAS link generation

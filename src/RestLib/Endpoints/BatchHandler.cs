@@ -5,6 +5,7 @@ using RestLib.Abstractions;
 using RestLib.Batch;
 using RestLib.Configuration;
 using RestLib.Hooks;
+using RestLib.Logging;
 
 namespace RestLib.Endpoints;
 
@@ -28,6 +29,7 @@ internal static class BatchHandler
         return async httpContext =>
         {
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
+            var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.Batch");
             var repository = httpContext.RequestServices.GetRequiredService<IRepository<TEntity, TKey>>();
             var ct = httpContext.RequestAborted;
             var instance = httpContext.Request.Path.ToString();
@@ -38,12 +40,14 @@ internal static class BatchHandler
             {
                 envelope = await httpContext.Request.ReadFromJsonAsync<BatchRequestEnvelope>(jsonOptions, ct);
             }
-            catch (JsonException)
+            catch (JsonException ex)
             {
+                RestLibLogMessages.BatchEnvelopeDeserializationFailed(logger, ex);
                 return Responses.ProblemDetailsResult.InvalidBatchRequest(
                     "The request body is not valid JSON.",
                     instance: instance,
-                    jsonOptions: jsonOptions);
+                    jsonOptions: jsonOptions,
+                    logger: logger);
             }
 
             if (envelope is null)
@@ -51,7 +55,8 @@ internal static class BatchHandler
                 return Responses.ProblemDetailsResult.InvalidBatchRequest(
                     "The request body is empty.",
                     instance: instance,
-                    jsonOptions: jsonOptions);
+                    jsonOptions: jsonOptions,
+                    logger: logger);
             }
 
             // Validate action
@@ -66,7 +71,8 @@ internal static class BatchHandler
                         ["action"] = [$"'{envelope.Action}' is not a valid batch action. Allowed actions: {string.Join(", ", allowedActions)}."]
                     },
                     instance: instance,
-                    jsonOptions: jsonOptions);
+                    jsonOptions: jsonOptions,
+                    logger: logger);
             }
 
             // Verify action is enabled
@@ -78,7 +84,8 @@ internal static class BatchHandler
                     action.ToString().ToLowerInvariant(),
                     enabledActions,
                     instance: instance,
-                    jsonOptions: jsonOptions);
+                    jsonOptions: jsonOptions,
+                    logger: logger);
             }
 
             // Validate items array exists
@@ -88,7 +95,8 @@ internal static class BatchHandler
                 return Responses.ProblemDetailsResult.InvalidBatchRequest(
                     "The 'items' array is required.",
                     instance: instance,
-                    jsonOptions: jsonOptions);
+                    jsonOptions: jsonOptions,
+                    logger: logger);
             }
 
             if (envelope.Items.ValueKind != JsonValueKind.Array)
@@ -96,7 +104,8 @@ internal static class BatchHandler
                 return Responses.ProblemDetailsResult.InvalidBatchRequest(
                     "The 'items' property must be an array.",
                     instance: instance,
-                    jsonOptions: jsonOptions);
+                    jsonOptions: jsonOptions,
+                    logger: logger);
             }
 
             var itemCount = envelope.Items.GetArrayLength();
@@ -107,7 +116,8 @@ internal static class BatchHandler
                 return Responses.ProblemDetailsResult.InvalidBatchRequest(
                     "The 'items' array must contain at least one item.",
                     instance: instance,
-                    jsonOptions: jsonOptions);
+                    jsonOptions: jsonOptions,
+                    logger: logger);
             }
 
             // Validate batch size
@@ -117,11 +127,15 @@ internal static class BatchHandler
                     itemCount,
                     options.MaxBatchSize,
                     instance: instance,
-                    jsonOptions: jsonOptions);
+                    jsonOptions: jsonOptions,
+                    logger: logger);
             }
 
             // Create hook pipeline if hooks are configured
-            var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks) : null;
+            var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks, logger) : null;
+
+            var actionName = action.ToString().ToLowerInvariant();
+            RestLibLogMessages.BatchRequestReceived(logger, actionName, itemCount);
 
             // Resolve optional batch repository for bulk-optimized operations
             var batchRepository = httpContext.RequestServices
@@ -138,7 +152,8 @@ internal static class BatchHandler
                 JsonOptions = jsonOptions,
                 CancellationToken = ct,
                 EndpointConfig = config,
-                CollectionPath = GetCollectionPathFromBatchPath(instance)
+                CollectionPath = GetCollectionPathFromBatchPath(instance),
+                Logger = logger
             };
 
             // Dispatch to the appropriate pipeline
@@ -177,6 +192,10 @@ internal static class BatchHandler
             var statusCode = allSucceeded
                 ? StatusCodes.Status200OK
                 : StatusCodes.Status207MultiStatus;
+
+            var succeeded = response.Items.Count(r => r.Status is >= 200 and < 300);
+            var failed = response.Items.Count - succeeded;
+            RestLibLogMessages.BatchCompleted(logger, actionName, response.Items.Count, succeeded, failed, statusCode);
 
             return Results.Json(response, jsonOptions, statusCode: statusCode);
         };
