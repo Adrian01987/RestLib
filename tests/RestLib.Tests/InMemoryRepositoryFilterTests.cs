@@ -761,5 +761,93 @@ public partial class InMemoryRepositoryTests
         }
     }
 
+    [Fact]
+    public async Task GetAllAsync_WithIntEqFilter_ViaRawValue_MatchesCorrectly()
+    {
+        // Arrange — verifies that int-typed filter values from ConvertFilterValue
+        // correctly match entity values even when GetJsonValue boxes them as long.
+        // This was a bug: Equals(long, int) returns false in .NET.
+        var repository = CreateFilterTestRepository();
+        var entity = CreateFilterTestEntity(nullableValue: 42);
+        await repository.CreateAsync(entity);
+        await repository.CreateAsync(CreateFilterTestEntity(nullableValue: 99));
+
+        var filters = new List<FilterValue>
+        {
+            CreateFilterForProperty("Value", "100", typeof(int))
+        };
+        var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+        // Act
+        var result = await repository.GetAllAsync(request);
+
+        // Assert — both entities have Value == 100; the raw string "100" is
+        // converted to int via ConvertFilterValue and must match
+        result.Items.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task GetAllAsync_WithIntGtFilter_ViaRawValue_ComparesCorrectly()
+    {
+        // Arrange — verifies that numeric comparison operators work across
+        // int/long type boundaries after the CompareValues normalization fix.
+        var repository = CreateRepository();
+        await repository.CreateAsync(CreateEntity("Low", 10));
+        await repository.CreateAsync(CreateEntity("Mid", 50));
+        await repository.CreateAsync(CreateEntity("High", 100));
+
+        var filters = new List<FilterValue>
+        {
+            new()
+            {
+                PropertyName = "Value",
+                QueryParameterName = "value",
+                PropertyType = typeof(int),
+                RawValue = "50",
+                TypedValue = null,
+                Operator = FilterOperator.Gt
+            }
+        };
+        var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+        // Act
+        var result = await repository.GetAllAsync(request);
+
+        // Assert
+        result.Items.Should().HaveCount(1);
+        result.Items.Single().Name.Should().Be("High");
+    }
+
+    [Fact]
+    public async Task GetAllAsync_WithIntNeqFilter_ViaRawValue_ExcludesCorrectly()
+    {
+        // Arrange — verifies Neq operator with numeric type normalization
+        var repository = CreateRepository();
+        await repository.CreateAsync(CreateEntity("Alice", 100));
+        await repository.CreateAsync(CreateEntity("Bob", 200));
+        await repository.CreateAsync(CreateEntity("Charlie", 300));
+
+        var filters = new List<FilterValue>
+        {
+            new()
+            {
+                PropertyName = "Value",
+                QueryParameterName = "value",
+                PropertyType = typeof(int),
+                RawValue = "200",
+                TypedValue = null,
+                Operator = FilterOperator.Neq
+            }
+        };
+        var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+        // Act
+        var result = await repository.GetAllAsync(request);
+
+        // Assert
+        result.Items.Should().HaveCount(2);
+        result.Items.Should().OnlyContain(e => e.Value != 200);
+    }
+
     #endregion
 }

@@ -19,6 +19,10 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     where TEntity : class
     where TKey : notnull
 {
+    private static readonly ConcurrentDictionary<string, PropertyInfo?> _propertyCache = new(StringComparer.OrdinalIgnoreCase);
+    private static PropertyInfo? _cachedKeyProperty;
+    private static bool _keyPropertyResolved;
+
     private readonly ConcurrentDictionary<TKey, TEntity> _store = new();
     private readonly Func<TEntity, TKey> _keySelector;
     private readonly Func<TKey> _keyGenerator;
@@ -129,39 +133,61 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     {
         ArgumentNullException.ThrowIfNull(entity);
 
-        if (!_store.ContainsKey(id))
+        // Use TryGetValue + TryUpdate in a loop to avoid the TOCTOU race between
+        // ContainsKey and the subsequent indexer write. If a concurrent thread
+        // deletes the key between the two calls, TryUpdate will return false and
+        // we re-check existence rather than silently re-inserting.
+        while (true)
         {
-            return Task.FromResult<TEntity?>(null);
-        }
+            if (!_store.TryGetValue(id, out var existing))
+            {
+                return Task.FromResult<TEntity?>(null);
+            }
 
-        _store[id] = entity;
-        return Task.FromResult<TEntity?>(entity);
+            if (_store.TryUpdate(id, entity, existing))
+            {
+                return Task.FromResult<TEntity?>(entity);
+            }
+
+            // Another thread changed the value — retry to verify the key still exists.
+        }
     }
 
     /// <inheritdoc />
     public Task<TEntity?> PatchAsync(TKey id, JsonElement patchDocument, CancellationToken cancellationToken = default)
     {
-        if (!_store.TryGetValue(id, out var existing))
+        // Use TryGetValue + TryUpdate in a loop to prevent lost-update races.
+        // If a concurrent thread modifies the entity between our read and write,
+        // TryUpdate detects the stale comparison value and we retry with the
+        // latest snapshot.
+        while (true)
         {
-            return Task.FromResult<TEntity?>(null);
+            if (!_store.TryGetValue(id, out var existing))
+            {
+                return Task.FromResult<TEntity?>(null);
+            }
+
+            // Serialize existing entity to JSON
+            var existingJson = JsonSerializer.Serialize(existing, _jsonOptions);
+
+            // Merge patch document with existing JSON
+            var existingDoc = JsonDocument.Parse(existingJson);
+            var merged = MergeJsonObjects(existingDoc.RootElement, patchDocument);
+
+            // Deserialize merged result back to entity
+            var updated = JsonSerializer.Deserialize<TEntity>(merged, _jsonOptions);
+            if (updated == null)
+            {
+                throw new InvalidOperationException("Failed to deserialize patched entity.");
+            }
+
+            if (_store.TryUpdate(id, updated, existing))
+            {
+                return Task.FromResult<TEntity?>(updated);
+            }
+
+            // Another thread changed the value — retry with the latest snapshot.
         }
-
-        // Serialize existing entity to JSON
-        var existingJson = JsonSerializer.Serialize(existing, _jsonOptions);
-
-        // Merge patch document with existing JSON
-        var existingDoc = JsonDocument.Parse(existingJson);
-        var merged = MergeJsonObjects(existingDoc.RootElement, patchDocument);
-
-        // Deserialize merged result back to entity
-        var updated = JsonSerializer.Deserialize<TEntity>(merged, _jsonOptions);
-        if (updated == null)
-        {
-            throw new InvalidOperationException("Failed to deserialize patched entity.");
-        }
-
-        _store[id] = updated;
-        return Task.FromResult<TEntity?>(updated);
     }
 
     /// <inheritdoc />
@@ -266,23 +292,32 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
         var results = new List<TEntity>(patches.Count);
         foreach (var (id, patchDocument) in patches)
         {
-            if (!_store.TryGetValue(id, out var existing))
+            // Use TryGetValue + TryUpdate in a loop to prevent lost-update races.
+            while (true)
             {
-                throw new KeyNotFoundException($"Entity with key '{id}' not found.");
+                if (!_store.TryGetValue(id, out var existing))
+                {
+                    throw new KeyNotFoundException($"Entity with key '{id}' not found.");
+                }
+
+                var existingJson = JsonSerializer.Serialize(existing, _jsonOptions);
+                var existingDoc = JsonDocument.Parse(existingJson);
+                var merged = MergeJsonObjects(existingDoc.RootElement, patchDocument);
+
+                var updated = JsonSerializer.Deserialize<TEntity>(merged, _jsonOptions);
+                if (updated == null)
+                {
+                    throw new InvalidOperationException($"Failed to deserialize patched entity with key '{id}'.");
+                }
+
+                if (_store.TryUpdate(id, updated, existing))
+                {
+                    results.Add(updated);
+                    break;
+                }
+
+                // Another thread changed the value — retry with the latest snapshot.
             }
-
-            var existingJson = JsonSerializer.Serialize(existing, _jsonOptions);
-            var existingDoc = JsonDocument.Parse(existingJson);
-            var merged = MergeJsonObjects(existingDoc.RootElement, patchDocument);
-
-            var updated = JsonSerializer.Deserialize<TEntity>(merged, _jsonOptions);
-            if (updated == null)
-            {
-                throw new InvalidOperationException($"Failed to deserialize patched entity with key '{id}'.");
-            }
-
-            _store[id] = updated;
-            results.Add(updated);
         }
 
         return Task.FromResult<IReadOnlyList<TEntity>>(results);
@@ -431,14 +466,52 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
         if (entityValue is null) return -1;
         if (filterValue is null) return 1;
 
+        // Normalize mismatched numeric types to a common type so that
+        // comparisons like Equals(long, int) don't fail silently.
+        if (entityValue is IConvertible && filterValue is IConvertible)
+        {
+            var entityCode = Type.GetTypeCode(entityValue.GetType());
+            var filterCode = Type.GetTypeCode(filterValue.GetType());
+
+            if (IsNumericTypeCode(entityCode) && IsNumericTypeCode(filterCode) && entityCode != filterCode)
+            {
+                // If either side is a floating-point type, compare as double.
+                if (IsFloatingPoint(entityCode) || IsFloatingPoint(filterCode))
+                {
+                    var d1 = Convert.ToDouble(entityValue, System.Globalization.CultureInfo.InvariantCulture);
+                    var d2 = Convert.ToDouble(filterValue, System.Globalization.CultureInfo.InvariantCulture);
+                    return d1.CompareTo(d2);
+                }
+
+                // Both are integer types — compare as long.
+                var l1 = Convert.ToInt64(entityValue, System.Globalization.CultureInfo.InvariantCulture);
+                var l2 = Convert.ToInt64(filterValue, System.Globalization.CultureInfo.InvariantCulture);
+                return l1.CompareTo(l2);
+            }
+        }
+
         if (entityValue is IComparable comparable)
         {
-            return comparable.CompareTo(filterValue);
+            try
+            {
+                return comparable.CompareTo(filterValue);
+            }
+            catch (ArgumentException)
+            {
+                // CompareTo throws when types are incompatible (e.g., Guid vs string).
+                // Fall through to the equality fallback.
+            }
         }
 
         // Fallback: equality only
         return Equals(entityValue, filterValue) ? 0 : -1;
     }
+
+    private static bool IsNumericTypeCode(TypeCode code) =>
+        code is >= TypeCode.SByte and <= TypeCode.Decimal;
+
+    private static bool IsFloatingPoint(TypeCode code) =>
+        code is TypeCode.Single or TypeCode.Double or TypeCode.Decimal;
 
     private static bool ContainsString(object? entityValue, object? filterValue)
     {
@@ -477,7 +550,14 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
             return false;
         }
 
-        return typedValues.Any(v => Equals(entityValue, v));
+        return typedValues.Any(v => CompareValues(entityValue, v) == 0);
+    }
+
+    private static PropertyInfo? GetCachedProperty(string propertyName)
+    {
+        return _propertyCache.GetOrAdd(propertyName, name =>
+            typeof(TEntity).GetProperty(name,
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase));
     }
 
     private IEnumerable<TEntity> ApplyFilters(IEnumerable<TEntity> items, IReadOnlyList<FilterValue> filters)
@@ -503,9 +583,7 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
 
         foreach (var field in sortFields)
         {
-            var property = typeof(TEntity).GetProperty(
-                field.PropertyName,
-                BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)!;
+            var property = GetCachedProperty(field.PropertyName)!;
 
             Func<TEntity, object?> selector = e => property.GetValue(e);
 
@@ -529,10 +607,7 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
 
     private bool MatchesFilter(TEntity entity, FilterValue filter)
     {
-        var property = typeof(TEntity).GetProperty(filter.PropertyName,
-            System.Reflection.BindingFlags.Public |
-            System.Reflection.BindingFlags.Instance |
-            System.Reflection.BindingFlags.IgnoreCase);
+        var property = GetCachedProperty(filter.PropertyName);
 
         if (property == null)
         {
@@ -544,8 +619,8 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
 
         return filter.Operator switch
         {
-            FilterOperator.Eq => Equals(entityValue, filterValue),
-            FilterOperator.Neq => !Equals(entityValue, filterValue),
+            FilterOperator.Eq => CompareValues(entityValue, filterValue) == 0,
+            FilterOperator.Neq => CompareValues(entityValue, filterValue) != 0,
             FilterOperator.Gt => CompareValues(entityValue, filterValue) > 0,
             FilterOperator.Lt => CompareValues(entityValue, filterValue) < 0,
             FilterOperator.Gte => CompareValues(entityValue, filterValue) >= 0,
@@ -554,13 +629,21 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
             FilterOperator.StartsWith => StartsWithString(entityValue, filterValue),
             FilterOperator.EndsWith => EndsWithString(entityValue, filterValue),
             FilterOperator.In => InValues(entityValue, filter.TypedValues),
-            _ => Equals(entityValue, filterValue),
+            _ => CompareValues(entityValue, filterValue) == 0,
         };
     }
 
     private TEntity SetKeyOnEntity(TEntity entity, TKey key)
     {
-        // Serialize entity to JSON, set the key property, and deserialize back
+        // Try the fast path: direct reflection-based property set.
+        var keyProp = GetCachedKeyProperty();
+        if (keyProp is not null && keyProp.CanWrite)
+        {
+            keyProp.SetValue(entity, key);
+            return entity;
+        }
+
+        // Fall back to JSON round-trip for entities with init-only key properties.
         var json = JsonSerializer.Serialize(entity, _jsonOptions);
         var doc = JsonDocument.Parse(json);
         var dict = new Dictionary<string, JsonElement>();
@@ -581,6 +664,24 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
 
         var mergedJson = JsonSerializer.Serialize(dict, _jsonOptions);
         return JsonSerializer.Deserialize<TEntity>(mergedJson, _jsonOptions)!;
+    }
+
+    private PropertyInfo? GetCachedKeyProperty()
+    {
+        if (_keyPropertyResolved)
+        {
+            return _cachedKeyProperty;
+        }
+
+        var keyPropertyName = FindKeyPropertyName();
+        if (keyPropertyName is not null)
+        {
+            _cachedKeyProperty = typeof(TEntity).GetProperty(keyPropertyName,
+                BindingFlags.Public | BindingFlags.Instance);
+        }
+
+        _keyPropertyResolved = true;
+        return _cachedKeyProperty;
     }
 
     private string? FindKeyPropertyName()
