@@ -219,6 +219,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     /// <inheritdoc />
     public Task<long> CountAsync(IReadOnlyList<FilterValue> filters, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(filters);
         return GetBaseQuery().LongCountAsync(ct);
     }
 
