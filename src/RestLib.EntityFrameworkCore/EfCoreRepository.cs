@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using RestLib.Abstractions;
 using RestLib.Filtering;
 using RestLib.Pagination;
+using RestLib.Sorting;
 
 namespace RestLib.EntityFrameworkCore;
 
@@ -65,7 +66,15 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             ?? throw new InvalidOperationException(
                 $"No key selector is configured for entity type '{typeof(TEntity).Name}'.");
 
-        var query = GetBaseQuery().OrderBy(keySelector);
+        var query = GetBaseQuery();
+        if (pagination.Filters.Count > 0)
+        {
+            query = ApplyComparisonFilters(query, pagination.Filters);
+            query = ApplyStringFilters(query, pagination.Filters);
+            query = ApplyInFilters(query, pagination.Filters);
+        }
+
+        var orderedQuery = SortBuilder.ApplySorting(query, pagination.SortFields, keySelector);
 
         var startIndex = 0;
         if (!string.IsNullOrEmpty(pagination.Cursor) && CursorEncoder.TryDecode<int>(pagination.Cursor, out var cursorIndex))
@@ -74,7 +83,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         }
 
         var takeCount = pagination.Limit == int.MaxValue ? int.MaxValue : pagination.Limit + 1;
-        var pagedItems = await query
+        var pagedItems = await orderedQuery
             .Skip(startIndex)
             .Take(takeCount)
             .ToListAsync(ct);
@@ -264,7 +273,16 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     public Task<long> CountAsync(IReadOnlyList<FilterValue> filters, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(filters);
-        return GetBaseQuery().LongCountAsync(ct);
+
+        var query = GetBaseQuery();
+        if (filters.Count > 0)
+        {
+            query = ApplyComparisonFilters(query, filters);
+            query = ApplyStringFilters(query, filters);
+            query = ApplyInFilters(query, filters);
+        }
+
+        return query.LongCountAsync(ct);
     }
 
     private static IReadOnlyDictionary<string, PropertyInfo> BuildSnakeCasePropertyMap()
@@ -303,6 +321,82 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             message ?? "A database constraint violation occurred.",
             constraintType,
             ex);
+    }
+
+    private static IQueryable<TEntity> ApplyComparisonFilters(
+        IQueryable<TEntity> query,
+        IReadOnlyList<FilterValue> filters)
+    {
+        foreach (var filter in filters)
+        {
+            if (!IsComparisonOperator(filter.Operator))
+            {
+                continue;
+            }
+
+            var predicate = ComparisonFilterBuilder.BuildPredicate<TEntity>(filter);
+            query = query.Where(predicate);
+        }
+
+        return query;
+    }
+
+    private static bool IsComparisonOperator(FilterOperator op)
+    {
+        return op is FilterOperator.Eq
+            or FilterOperator.Neq
+            or FilterOperator.Gt
+            or FilterOperator.Lt
+            or FilterOperator.Gte
+            or FilterOperator.Lte;
+    }
+
+    private static IQueryable<TEntity> ApplyStringFilters(
+        IQueryable<TEntity> query,
+        IReadOnlyList<FilterValue> filters)
+    {
+        foreach (var filter in filters)
+        {
+            if (!IsStringOperator(filter.Operator))
+            {
+                continue;
+            }
+
+            var predicate = StringFilterBuilder.BuildPredicate<TEntity>(filter);
+            query = query.Where(predicate);
+        }
+
+        return query;
+    }
+
+    private static bool IsStringOperator(FilterOperator op)
+    {
+        return op is FilterOperator.Contains
+            or FilterOperator.StartsWith
+            or FilterOperator.EndsWith;
+    }
+
+    private static IQueryable<TEntity> ApplyInFilters(
+        IQueryable<TEntity> query,
+        IReadOnlyList<FilterValue> filters)
+    {
+        foreach (var filter in filters)
+        {
+            if (!IsInOperator(filter.Operator))
+            {
+                continue;
+            }
+
+            var predicate = InFilterBuilder.BuildPredicate<TEntity>(filter);
+            query = query.Where(predicate);
+        }
+
+        return query;
+    }
+
+    private static bool IsInOperator(FilterOperator op)
+    {
+        return op is FilterOperator.In;
     }
 
     private Expression<Func<TEntity, bool>> BuildKeyEqualsPredicate(TKey id)
