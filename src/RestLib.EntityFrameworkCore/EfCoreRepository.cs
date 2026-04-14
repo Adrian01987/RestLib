@@ -101,8 +101,19 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     {
         ArgumentNullException.ThrowIfNull(entity);
 
-        await _context.Set<TEntity>().AddAsync(entity, ct);
-        await _context.SaveChangesAsync(ct);
+        try
+        {
+            await _context.Set<TEntity>().AddAsync(entity, ct);
+            await _context.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw;
+        }
+        catch (DbUpdateException ex)
+        {
+            throw ClassifyConstraintViolation(ex);
+        }
 
         return entity;
     }
@@ -118,9 +129,20 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             return null;
         }
 
-        CopyPrimaryKeyValues(existing, entity);
-        _context.Entry(existing).CurrentValues.SetValues(entity);
-        await _context.SaveChangesAsync(ct);
+        try
+        {
+            CopyPrimaryKeyValues(existing, entity);
+            _context.Entry(existing).CurrentValues.SetValues(entity);
+            await _context.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return null;
+        }
+        catch (DbUpdateException ex)
+        {
+            throw ClassifyConstraintViolation(ex);
+        }
 
         return existing;
     }
@@ -140,23 +162,34 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             .Select(property => property.Name)
             .ToHashSet(StringComparer.Ordinal);
 
-        foreach (var patchProperty in patchDocument.EnumerateObject())
+        try
         {
-            if (!SnakeCasePropertyMap.TryGetValue(patchProperty.Name, out var propertyInfo) ||
-                keyPropertyNames.Contains(propertyInfo.Name))
+            foreach (var patchProperty in patchDocument.EnumerateObject())
             {
-                continue;
+                if (!SnakeCasePropertyMap.TryGetValue(patchProperty.Name, out var propertyInfo) ||
+                    keyPropertyNames.Contains(propertyInfo.Name))
+                {
+                    continue;
+                }
+
+                var value = JsonSerializer.Deserialize(
+                    patchProperty.Value.GetRawText(),
+                    propertyInfo.PropertyType,
+                    PatchJsonOptions);
+
+                entry.Property(propertyInfo.Name).CurrentValue = value;
             }
 
-            var value = JsonSerializer.Deserialize(
-                patchProperty.Value.GetRawText(),
-                propertyInfo.PropertyType,
-                PatchJsonOptions);
-
-            entry.Property(propertyInfo.Name).CurrentValue = value;
+            await _context.SaveChangesAsync(ct);
         }
-
-        await _context.SaveChangesAsync(ct);
+        catch (DbUpdateConcurrencyException)
+        {
+            return null;
+        }
+        catch (DbUpdateException ex)
+        {
+            throw ClassifyConstraintViolation(ex);
+        }
 
         return existing;
     }
@@ -170,8 +203,19 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             return false;
         }
 
-        _context.Set<TEntity>().Remove(existing);
-        await _context.SaveChangesAsync(ct);
+        try
+        {
+            _context.Set<TEntity>().Remove(existing);
+            await _context.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return false;
+        }
+        catch (DbUpdateException ex)
+        {
+            throw ClassifyConstraintViolation(ex);
+        }
 
         return true;
     }
@@ -232,6 +276,33 @@ public class EfCoreRepository<TContext, TEntity, TKey>
                 property => JsonNamingPolicy.SnakeCaseLower.ConvertName(property.Name),
                 property => property,
                 StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static EfCoreConstraintViolationException ClassifyConstraintViolation(DbUpdateException ex)
+    {
+        ArgumentNullException.ThrowIfNull(ex);
+
+        var message = ex.InnerException?.Message;
+        var constraintType = EfCoreConstraintType.Unknown;
+
+        if (!string.IsNullOrEmpty(message))
+        {
+            if (message.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("PRIMARY KEY", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("DUPLICATE", StringComparison.OrdinalIgnoreCase))
+            {
+                constraintType = EfCoreConstraintType.UniqueConstraint;
+            }
+            else if (message.Contains("FOREIGN KEY", StringComparison.OrdinalIgnoreCase))
+            {
+                constraintType = EfCoreConstraintType.ForeignKeyConstraint;
+            }
+        }
+
+        return new EfCoreConstraintViolationException(
+            message ?? "A database constraint violation occurred.",
+            constraintType,
+            ex);
     }
 
     private Expression<Func<TEntity, bool>> BuildKeyEqualsPredicate(TKey id)
