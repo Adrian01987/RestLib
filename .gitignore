@@ -486,3 +486,6 @@ $RECYCLE.BIN/
 .private/
 test_output.txt
 nupkg/
+
+# Sample app SQLite database
+restlib-sample.db

@@ -73,4 +73,44 @@ public static class SeedData
         ]
       }
     ];
+
+    public static List<Customer> GetCustomers() =>
+    [
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Name = "Alice Johnson",
+            Email = "alice@example.com",
+            City = "New York",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow.AddDays(-30)
+        },
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Name = "Bob Smith",
+            Email = "bob@example.com",
+            City = "London",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow.AddDays(-20)
+        },
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Name = "Carol Williams",
+            Email = "carol@example.com",
+            City = "New York",
+            IsActive = false,
+            CreatedAt = DateTime.UtcNow.AddDays(-10)
+        },
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Name = "David Brown",
+            Email = "david@example.com",
+            City = "Berlin",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow.AddDays(-5)
+        }
+    ];
 }

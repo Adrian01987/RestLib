@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `RestLib.EntityFrameworkCore` — EF Core repository adapter implementing `IRepository`, `IBatchRepository`, and `ICountableRepository` with server-side filtering, sorting, cursor pagination, batch operations, and `AsNoTracking` default
+- ADR-021: EF Core repository adapter design decisions — cursor pagination strategy, `AsNoTracking` default, JSON Merge Patch via change tracking, key auto-detection, scoped lifetime
 - Structured logging via `Microsoft.Extensions.Logging` across all endpoints, batch pipelines, hook execution, and error paths
 - `[LoggerMessage]` source-generated log methods for zero-allocation structured logging (EventId 1000–1349)
 - Diagnostic logging for all 9 previously silent exception catch blocks

@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
 using RestLib;
 using RestLib.Abstractions;
 using RestLib.Batch;
 using RestLib.Configuration;
+using RestLib.EntityFrameworkCore;
 using RestLib.Filtering;
 using RestLib.InMemory;
 using RestLib.Sample;
@@ -26,6 +28,12 @@ builder.Services.AddRestLib(opts =>
 builder.Services.AddRestLibInMemoryWithData(c => c.Id, Guid.NewGuid, SeedData.GetCategories());
 builder.Services.AddRestLibInMemoryWithData(p => p.Id, Guid.NewGuid, SeedData.GetProducts());
 builder.Services.AddRestLibInMemoryWithData(o => o.Id, Guid.NewGuid, SeedData.GetOrders());
+
+// Add EF Core-backed repository for Customers (SQLite)
+builder.Services.AddDbContext<SampleDbContext>(options =>
+    options.UseSqlite("Data Source=restlib-sample.db"));
+builder.Services.AddRestLibEfCore<SampleDbContext, Customer, Guid>();
+
 builder.Services.AddNamedHook<Product, Guid>(HookNames.SetUpdatedAt, ctx =>
 {
     if (ctx.Entity is Product product)
@@ -86,6 +94,19 @@ builder.Services.AddHealthChecks();
 
 var app = builder.Build();
 
+// Ensure the SQLite database exists and seed initial data.
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<SampleDbContext>();
+    db.Database.EnsureCreated();
+
+    if (!db.Customers.Any())
+    {
+        db.Customers.AddRange(SeedData.GetCustomers());
+        db.SaveChanges();
+    }
+}
+
 // OpenAPI document + Scalar API Reference UI
 app.MapOpenApi();
 app.MapScalarApiReference("/", options =>
@@ -100,6 +121,28 @@ app.MapHealthChecks("/health");
 // Map RestLib endpoints from JSON resource configuration (Categories + Products)
 app.UseRateLimiter();
 app.MapJsonResources();
+
+// Map Customer endpoints: EF Core adapter with SQLite.
+// Demonstrates RestLib with a real database alongside the InMemory adapter above.
+app.MapRestLib<Customer, Guid>("/api/customers", cfg =>
+{
+    cfg.AllowAnonymous();
+    cfg.AllowFiltering(c => c.City);
+    cfg.AllowFiltering(c => c.IsActive);
+    cfg.AllowFiltering(c => c.Name, FilterOperators.String);
+    cfg.AllowSorting(c => c.Name, c => c.CreatedAt);
+    cfg.DefaultSort("name:asc");
+    cfg.AllowFieldSelection(c => c.Id, c => c.Name, c => c.Email, c => c.City, c => c.IsActive);
+    cfg.EnableBatch(BatchAction.Create, BatchAction.Delete);
+    cfg.OpenApi.Tag = "Customer";
+    cfg.OpenApi.TagDescription = "Manage customers (EF Core + SQLite)";
+    cfg.OpenApi.Summaries.GetAll = "List customers";
+    cfg.OpenApi.Summaries.GetById = "Get customer by id";
+    cfg.OpenApi.Summaries.Create = "Create a customer";
+    cfg.OpenApi.Summaries.Update = "Replace a customer";
+    cfg.OpenApi.Summaries.Patch = "Patch a customer";
+    cfg.OpenApi.Summaries.Delete = "Delete a customer";
+});
 
 // Map Order endpoints using the fluent C# API — demonstrates features not shown by JSON config above
 app.MapRestLib<Order, Guid>("/api/orders", cfg =>

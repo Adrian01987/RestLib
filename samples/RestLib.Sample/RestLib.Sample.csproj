@@ -3,10 +3,12 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\RestLib\RestLib.csproj" />
     <ProjectReference Include="..\..\src\RestLib.InMemory\RestLib.InMemory.csproj" />
+    <ProjectReference Include="..\..\src\RestLib.EntityFrameworkCore\RestLib.EntityFrameworkCore.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.*" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.*" />
     <PackageReference Include="Scalar.AspNetCore" Version="2.*" />
   </ItemGroup>
 

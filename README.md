@@ -23,6 +23,12 @@ For demos, tests, and quick prototypes, add the optional in-memory adapter:
 dotnet add package RestLib.InMemory
 ```
 
+For production use with Entity Framework Core:
+
+```bash
+dotnet add package RestLib.EntityFrameworkCore
+```
+
 ## Quick Start
 
 Create a new app:
@@ -440,6 +446,32 @@ public class ProductRepository : IRepository<Product, Guid>
 builder.Services.AddRepository<Product, Guid, ProductRepository>();
 ```
 
+### EF Core Adapter
+
+Use the official EF Core adapter instead of writing a custom repository:
+
+```csharp
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite("Data Source=app.db"));
+
+builder.Services.AddRestLibEfCore<AppDbContext, Product, Guid>();
+```
+
+The adapter auto-detects the primary key from EF Core model metadata. To customize
+options:
+
+```csharp
+builder.Services.AddRestLibEfCore<AppDbContext, Product, Guid>(options =>
+{
+    options.KeySelector = p => p.Id;
+    options.UseAsNoTracking = false;
+});
+```
+
+The EF Core adapter supports all RestLib features: filtering, sorting, cursor
+pagination, field selection, batch operations, and hooks, with server-side query
+translation. See [ADR-021](docs/adr/021-ef-core-adapter.md) for design decisions.
+
 ### Versioning
 
 RestLib integrates with any ASP.NET Core versioning strategy via route groups.
@@ -588,6 +620,7 @@ Key decisions are documented as Architecture Decision Records:
 | [ADR-018](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/018-patch-json-element-coupling.md) | PATCH JsonElement coupling acknowledgement |
 | [ADR-019](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/019-hateoas.md) | HATEOAS hypermedia links |
 | [ADR-020](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/020-structured-logging.md) | Structured logging |
+| [ADR-021](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/021-ef-core-adapter.md) | EF Core repository adapter |
 
 ## Packages
 
@@ -595,6 +628,7 @@ Key decisions are documented as Architecture Decision Records:
 | ------- | ----------- | ----- |
 | `RestLib` | Core library | [RestLib](https://www.nuget.org/packages/RestLib/) |
 | `RestLib.InMemory` | In-memory repository for testing and prototyping | [RestLib.InMemory](https://www.nuget.org/packages/RestLib.InMemory/) |
+| `RestLib.EntityFrameworkCore` | EF Core repository adapter for production databases | [RestLib.EntityFrameworkCore](https://www.nuget.org/packages/RestLib.EntityFrameworkCore/) |
 
 ## Requirements
 
