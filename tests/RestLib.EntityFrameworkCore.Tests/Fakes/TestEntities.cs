@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace RestLib.EntityFrameworkCore.Tests.Fakes;
 
 /// <summary>
@@ -14,11 +16,14 @@ public class ProductEntity
     /// <summary>
     /// Gets or sets the product name.
     /// </summary>
+    [Required]
+    [StringLength(100)]
     public string ProductName { get; set; } = string.Empty;
 
     /// <summary>
     /// Gets or sets the unit price.
     /// </summary>
+    [Range(0, double.MaxValue)]
     public decimal UnitPrice { get; set; }
 
     /// <summary>

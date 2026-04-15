@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using RestLib.Abstractions;
 using RestLib.Filtering;
 using RestLib.Pagination;
@@ -173,21 +174,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
 
         try
         {
-            foreach (var patchProperty in patchDocument.EnumerateObject())
-            {
-                if (!SnakeCasePropertyMap.TryGetValue(patchProperty.Name, out var propertyInfo) ||
-                    keyPropertyNames.Contains(propertyInfo.Name))
-                {
-                    continue;
-                }
-
-                var value = JsonSerializer.Deserialize(
-                    patchProperty.Value.GetRawText(),
-                    propertyInfo.PropertyType,
-                    PatchJsonOptions);
-
-                entry.Property(propertyInfo.Name).CurrentValue = value;
-            }
+            ApplyPatch(entry, patchDocument, keyPropertyNames);
 
             await _context.SaveChangesAsync(ct);
         }
@@ -230,43 +217,209 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     }
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<TEntity>> CreateManyAsync(
+    public async Task<IReadOnlyList<TEntity>> CreateManyAsync(
         IReadOnlyList<TEntity> entities,
         CancellationToken ct = default)
     {
-        throw new NotImplementedException();
+        ArgumentNullException.ThrowIfNull(entities);
+
+        if (entities.Count == 0)
+        {
+            return [];
+        }
+
+        try
+        {
+            await _context.Set<TEntity>().AddRangeAsync(entities, ct);
+            await _context.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw;
+        }
+        catch (DbUpdateException ex)
+        {
+            throw ClassifyConstraintViolation(ex);
+        }
+
+        return entities;
     }
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<TEntity>> UpdateManyAsync(
+    public async Task<IReadOnlyList<TEntity>> UpdateManyAsync(
         IReadOnlyList<TEntity> entities,
         CancellationToken ct = default)
     {
-        throw new NotImplementedException();
+        ArgumentNullException.ThrowIfNull(entities);
+
+        if (entities.Count == 0)
+        {
+            return [];
+        }
+
+        var keySelector = _options.KeySelector
+            ?? throw new InvalidOperationException(
+                $"No key selector is configured for entity type '{typeof(TEntity).Name}'.");
+        var getKey = keySelector.Compile();
+        var keys = entities.Select(getKey).ToList();
+        var containsMethod = typeof(Enumerable)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Single(method => method.Name == nameof(Enumerable.Contains) && method.GetParameters().Length == 2)
+            .MakeGenericMethod(typeof(TKey));
+        var containsCall = Expression.Call(
+            containsMethod,
+            Expression.Constant(keys),
+            keySelector.Body);
+        var predicate = Expression.Lambda<Func<TEntity, bool>>(containsCall, keySelector.Parameters);
+        var existingEntities = await _context.Set<TEntity>()
+            .Where(predicate)
+            .ToListAsync(ct);
+        var existingById = existingEntities.ToDictionary(getKey);
+        var results = new List<TEntity>(existingEntities.Count);
+
+        foreach (var entity in entities)
+        {
+            var key = getKey(entity);
+            if (!existingById.TryGetValue(key, out var existing))
+            {
+                continue;
+            }
+
+            CopyPrimaryKeyValues(existing, entity);
+            _context.Entry(existing).CurrentValues.SetValues(entity);
+            results.Add(existing);
+        }
+
+        try
+        {
+            await _context.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return results;
+        }
+        catch (DbUpdateException ex)
+        {
+            throw ClassifyConstraintViolation(ex);
+        }
+
+        return results;
     }
 
     /// <inheritdoc />
-    public Task<IReadOnlyList<TEntity>> PatchManyAsync(
+    public async Task<IReadOnlyList<TEntity>> PatchManyAsync(
         IReadOnlyList<(TKey Id, JsonElement PatchDocument)> patches,
         CancellationToken ct = default)
     {
-        throw new NotImplementedException();
+        ArgumentNullException.ThrowIfNull(patches);
+
+        if (patches.Count == 0)
+        {
+            return [];
+        }
+
+        var ids = patches.Select(patch => patch.Id).ToList();
+        var existingById = await FetchTrackedEntitiesByIdsAsync(ids, ct);
+        var keyPropertyNames = GetPrimaryKey().Properties
+            .Select(property => property.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        var results = new List<TEntity>(existingById.Count);
+
+        foreach (var (id, patchDocument) in patches)
+        {
+            if (!existingById.TryGetValue(id, out var existing))
+            {
+                continue;
+            }
+
+            ApplyPatch(_context.Entry(existing), patchDocument, keyPropertyNames);
+            results.Add(existing);
+        }
+
+        try
+        {
+            await _context.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return results;
+        }
+        catch (DbUpdateException ex)
+        {
+            throw ClassifyConstraintViolation(ex);
+        }
+
+        return results;
     }
 
     /// <inheritdoc />
-    public Task<int> DeleteManyAsync(
+    public async Task<int> DeleteManyAsync(
         IReadOnlyList<TKey> keys,
         CancellationToken ct = default)
     {
-        throw new NotImplementedException();
+        ArgumentNullException.ThrowIfNull(keys);
+
+        if (keys.Count == 0)
+        {
+            return 0;
+        }
+
+        var found = (await FetchTrackedEntitiesByIdsAsync(keys, ct)).Values.ToList();
+        if (found.Count == 0)
+        {
+            return 0;
+        }
+
+        _context.Set<TEntity>().RemoveRange(found);
+
+        try
+        {
+            await _context.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return 0;
+        }
+        catch (DbUpdateException ex)
+        {
+            throw ClassifyConstraintViolation(ex);
+        }
+
+        return found.Count;
     }
 
     /// <inheritdoc />
-    public Task<IReadOnlyDictionary<TKey, TEntity>> GetByIdsAsync(
+    public async Task<IReadOnlyDictionary<TKey, TEntity>> GetByIdsAsync(
         IReadOnlyList<TKey> ids,
         CancellationToken ct = default)
     {
-        throw new NotImplementedException();
+        ArgumentNullException.ThrowIfNull(ids);
+
+        if (ids.Count == 0)
+        {
+            return new Dictionary<TKey, TEntity>();
+        }
+
+        var keySelector = _options.KeySelector
+            ?? throw new InvalidOperationException(
+                $"No key selector is configured for entity type '{typeof(TEntity).Name}'.");
+        var idList = ids.ToList();
+        var containsMethod = typeof(Enumerable)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Single(method => method.Name == nameof(Enumerable.Contains) && method.GetParameters().Length == 2)
+            .MakeGenericMethod(typeof(TKey));
+        var containsCall = Expression.Call(
+            containsMethod,
+            Expression.Constant(idList),
+            keySelector.Body);
+        var predicate = Expression.Lambda<Func<TEntity, bool>>(containsCall, keySelector.Parameters);
+        var getKey = keySelector.Compile();
+
+        var entities = await GetBaseQuery()
+            .Where(predicate)
+            .ToListAsync(ct);
+
+        return entities.ToDictionary(getKey);
     }
 
     /// <inheritdoc />
@@ -399,6 +552,28 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         return op is FilterOperator.In;
     }
 
+    private static void ApplyPatch(
+        EntityEntry<TEntity> entry,
+        JsonElement patchDocument,
+        IReadOnlySet<string> keyPropertyNames)
+    {
+        foreach (var patchProperty in patchDocument.EnumerateObject())
+        {
+            if (!SnakeCasePropertyMap.TryGetValue(patchProperty.Name, out var propertyInfo) ||
+                keyPropertyNames.Contains(propertyInfo.Name))
+            {
+                continue;
+            }
+
+            var value = JsonSerializer.Deserialize(
+                patchProperty.Value.GetRawText(),
+                propertyInfo.PropertyType,
+                PatchJsonOptions);
+
+            entry.Property(propertyInfo.Name).CurrentValue = value;
+        }
+    }
+
     private Expression<Func<TEntity, bool>> BuildKeyEqualsPredicate(TKey id)
     {
         var keySelector = _options.KeySelector
@@ -408,6 +583,31 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         var equals = Expression.Equal(keySelector.Body, constant);
 
         return Expression.Lambda<Func<TEntity, bool>>(equals, keySelector.Parameters);
+    }
+
+    private async Task<Dictionary<TKey, TEntity>> FetchTrackedEntitiesByIdsAsync(
+        IReadOnlyList<TKey> ids,
+        CancellationToken ct)
+    {
+        var keySelector = _options.KeySelector
+            ?? throw new InvalidOperationException(
+                $"No key selector is configured for entity type '{typeof(TEntity).Name}'.");
+        var getKey = keySelector.Compile();
+        var idList = ids.ToList();
+        var containsMethod = typeof(Enumerable)
+            .GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Single(method => method.Name == nameof(Enumerable.Contains) && method.GetParameters().Length == 2)
+            .MakeGenericMethod(typeof(TKey));
+        var containsCall = Expression.Call(
+            containsMethod,
+            Expression.Constant(idList),
+            keySelector.Body);
+        var predicate = Expression.Lambda<Func<TEntity, bool>>(containsCall, keySelector.Parameters);
+        var existingEntities = await _context.Set<TEntity>()
+            .Where(predicate)
+            .ToListAsync(ct);
+
+        return existingEntities.ToDictionary(getKey);
     }
 
     private IQueryable<TEntity> GetBaseQuery()
