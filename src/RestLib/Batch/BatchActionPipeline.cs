@@ -464,6 +464,11 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
         };
     }
 
+    private static bool IsConcurrencyException(Exception exception)
+    {
+        return exception.GetType().FullName == "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException";
+    }
+
     // ── Private instance methods ────────────────────────────────────────
 
     /// <summary>
@@ -489,6 +494,26 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
             }
             catch (Exception bulkException)
             {
+                if (IsConcurrencyException(bulkException))
+                {
+                    var failedItems = validItems
+                        .Where(item => results[GetIndex(item)] is null)
+                        .ToList();
+
+                    foreach (var item in failedItems)
+                    {
+                        var index = GetIndex(item);
+                        results[index] = await HandleItemErrorAsync(
+                            index,
+                            bulkException,
+                            context,
+                            GetResourceId(item),
+                            GetEntity(item));
+                    }
+
+                    return;
+                }
+
                 // Bulk path failed — fall back to individual persistence for items that
                 // don't already have a result. Some subclasses (e.g. BatchPatchPipeline)
                 // may populate results during pre-validation inside PersistBulkAsync,

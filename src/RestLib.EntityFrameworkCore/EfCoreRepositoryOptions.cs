@@ -23,4 +23,11 @@ public class EfCoreRepositoryOptions<TEntity, TKey>
     /// <c>AsNoTracking</c>. Default is <c>true</c>.
     /// </summary>
     public bool UseAsNoTracking { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets how PATCH operations handle unknown or forbidden fields.
+    /// Default is <see cref="EfCorePatchUnknownFieldBehavior.Permissive"/>.
+    /// </summary>
+    public EfCorePatchUnknownFieldBehavior PatchUnknownFieldBehavior { get; set; }
+        = EfCorePatchUnknownFieldBehavior.Permissive;
 }

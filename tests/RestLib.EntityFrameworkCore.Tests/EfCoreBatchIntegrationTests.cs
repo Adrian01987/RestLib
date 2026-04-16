@@ -3,9 +3,17 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using RestLib.Abstractions;
+using RestLib.Batch;
+using RestLib.Configuration;
+using RestLib.EntityFrameworkCore;
 using RestLib.EntityFrameworkCore.Tests.Fakes;
 using RestLib.Responses;
 using Xunit;
@@ -280,6 +288,114 @@ public class EfCoreBatchIntegrationTests : IAsyncLifetime
         }
     }
 
+    [Fact]
+    public async Task BatchUpdate_WhenBulkSaveThrowsConcurrencyException_Returns207WithPerItem500s()
+    {
+        // Arrange
+        var (host, client, db, _) = await BuildConcurrencyBatchHostAsync(options =>
+        {
+            options.KeySelector = product => product.Id;
+        });
+
+        try
+        {
+            var product1 = CreateProduct(name: "Original 1", unitPrice: 10m, stockQuantity: 1);
+            var product2 = CreateProduct(name: "Original 2", unitPrice: 20m, stockQuantity: 2);
+            db.Products.AddRange(product1, product2);
+            await db.SaveChangesAsync();
+
+            var payload = new
+            {
+                action = "update",
+                items = new[]
+                {
+                    new { id = product1.Id, body = new { product_name = "Updated 1", unit_price = 100m, stock_quantity = 10, is_active = true, created_at = product1.CreatedAt.ToString("O") } },
+                    new { id = product2.Id, body = new { product_name = "Updated 2", unit_price = 200m, stock_quantity = 20, is_active = true, created_at = product2.CreatedAt.ToString("O") } }
+                }
+            };
+
+            ConcurrencyTestDbContext.ThrowConcurrencyOnNextSaveGlobally = true;
+
+            // Act
+            var response = await client.PostAsync("/api/products/batch", BatchJson(payload));
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+            var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+            var items = json.GetProperty("items");
+            items.GetArrayLength().Should().Be(2);
+            items[0].GetProperty("status").GetInt32().Should().Be(500);
+            items[0].GetProperty("error").GetProperty("type").GetString().Should().Be(ProblemTypes.InternalError);
+            items[1].GetProperty("status").GetInt32().Should().Be(500);
+            items[1].GetProperty("error").GetProperty("type").GetString().Should().Be(ProblemTypes.InternalError);
+
+            db.ChangeTracker.Clear();
+            var persisted1 = await db.Products.FindAsync(product1.Id);
+            var persisted2 = await db.Products.FindAsync(product2.Id);
+            persisted1!.ProductName.Should().Be("Original 1");
+            persisted2!.ProductName.Should().Be("Original 2");
+        }
+        finally
+        {
+            await host.StopAsync();
+            host.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task BatchPatch_WhenBulkSaveThrowsConcurrencyException_Returns207WithPerItem500s()
+    {
+        // Arrange
+        var (host, client, db, _) = await BuildConcurrencyBatchHostAsync(options =>
+        {
+            options.KeySelector = product => product.Id;
+        });
+
+        try
+        {
+            var product1 = CreateProduct(name: "Original 1", unitPrice: 10m, stockQuantity: 1);
+            var product2 = CreateProduct(name: "Original 2", unitPrice: 20m, stockQuantity: 2);
+            db.Products.AddRange(product1, product2);
+            await db.SaveChangesAsync();
+
+            var payload = new
+            {
+                action = "patch",
+                items = new object[]
+                {
+                    new { id = product1.Id, body = new { product_name = "Patched 1" } },
+                    new { id = product2.Id, body = new { unit_price = 77.77m } }
+                }
+            };
+
+            ConcurrencyTestDbContext.ThrowConcurrencyOnNextSaveGlobally = true;
+
+            // Act
+            var response = await client.PostAsync("/api/products/batch", BatchJson(payload));
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+            var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+            var items = json.GetProperty("items");
+            items.GetArrayLength().Should().Be(2);
+            items[0].GetProperty("status").GetInt32().Should().Be(500);
+            items[0].GetProperty("error").GetProperty("type").GetString().Should().Be(ProblemTypes.InternalError);
+            items[1].GetProperty("status").GetInt32().Should().Be(500);
+            items[1].GetProperty("error").GetProperty("type").GetString().Should().Be(ProblemTypes.InternalError);
+
+            db.ChangeTracker.Clear();
+            var persisted1 = await db.Products.FindAsync(product1.Id);
+            var persisted2 = await db.Products.FindAsync(product2.Id);
+            persisted1!.ProductName.Should().Be("Original 1");
+            persisted2!.UnitPrice.Should().Be(20m);
+        }
+        finally
+        {
+            await host.StopAsync();
+            host.Dispose();
+        }
+    }
+
     private static StringContent BatchJson(object payload)
     {
         var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
@@ -287,6 +403,198 @@ public class EfCoreBatchIntegrationTests : IAsyncLifetime
             PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
         });
         return new StringContent(json, Encoding.UTF8, "application/json");
+    }
+
+    private static ProductEntity CreateProduct(
+        string name = "Test Product",
+        decimal unitPrice = 10.00m,
+        int stockQuantity = 5,
+        bool isActive = true)
+    {
+        return new ProductEntity
+        {
+            Id = Guid.NewGuid(),
+            ProductName = name,
+            UnitPrice = unitPrice,
+            StockQuantity = stockQuantity,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = isActive
+        };
+    }
+
+    private static async Task<(IHost Host, HttpClient Client, ConcurrencyTestDbContext Db, SqliteConnection Connection)> BuildConcurrencyBatchHostAsync(
+        Action<EfCoreRepositoryOptions<ProductEntity, Guid>> configureRepositoryOptions)
+    {
+        var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var host = new HostBuilder()
+            .ConfigureWebHost(webBuilder =>
+            {
+                webBuilder
+                    .UseTestServer()
+                    .ConfigureServices(services =>
+                    {
+                        services.AddRestLib();
+                        services.AddSingleton(connection);
+                        services.AddDbContext<ConcurrencyTestDbContext>(options => options.UseSqlite(connection));
+                        services.AddRestLibEfCore<ConcurrencyTestDbContext, ProductEntity, Guid>(configureRepositoryOptions);
+                        services.AddRouting();
+                    })
+                    .Configure(app =>
+                    {
+                        app.UseRouting();
+                        app.UseEndpoints(endpoints =>
+                        {
+                            endpoints.MapRestLib<ProductEntity, Guid>("/api/products", config =>
+                            {
+                                config.AllowAnonymous();
+                                config.EnableBatch();
+                            });
+                        });
+                    });
+            })
+            .Build();
+
+        await host.StartAsync();
+
+        using (var initializationScope = host.Services.CreateScope())
+        {
+            var initializationContext = initializationScope.ServiceProvider.GetRequiredService<ConcurrencyTestDbContext>();
+            await initializationContext.Database.EnsureCreatedAsync();
+        }
+
+        var scope = host.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ConcurrencyTestDbContext>();
+        return (new ScopedConcurrencyHost(host, scope), host.GetTestClient(), db, connection);
+    }
+
+    private async Task SeedProductsAsync(params ProductEntity[] products)
+    {
+        _db.Products.AddRange(products);
+        await _db.SaveChangesAsync();
+    }
+
+    private async Task ClearProductsAsync()
+    {
+        _db.Products.RemoveRange(_db.Products);
+        await _db.SaveChangesAsync();
+    }
+
+    private sealed class ScopedConcurrencyHost : IHost
+    {
+        private readonly IHost _innerHost;
+        private readonly IServiceScope _scope;
+
+        public ScopedConcurrencyHost(IHost innerHost, IServiceScope scope)
+        {
+            _innerHost = innerHost;
+            _scope = scope;
+        }
+
+        public IServiceProvider Services => _innerHost.Services;
+
+        public async Task StartAsync(CancellationToken cancellationToken = default)
+        {
+            await _innerHost.StartAsync(cancellationToken);
+        }
+
+        public async Task StopAsync(CancellationToken cancellationToken = default)
+        {
+            await _innerHost.StopAsync(cancellationToken);
+        }
+
+        public void Dispose()
+        {
+            _scope.Dispose();
+            _innerHost.Dispose();
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            Dispose();
+            return ValueTask.CompletedTask;
+        }
+    }
+}
+
+/// <summary>
+/// Integration tests for strict batch PATCH unknown-field handling.
+/// </summary>
+[Trait("Category", "Story8")]
+public class EfCoreStrictBatchPatchIntegrationTests : IAsyncLifetime
+{
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private TestDbContext _db = null!;
+
+    public async Task InitializeAsync()
+    {
+        (_host, _client, _db) = await new EfCoreTestHostBuilder<ProductEntity, Guid>("/api/products")
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.EnableBatch(BatchAction.Patch);
+            })
+            .WithRepositoryOptions(options =>
+            {
+                options.PatchUnknownFieldBehavior = EfCorePatchUnknownFieldBehavior.Strict;
+            })
+            .BuildAsync();
+    }
+
+    public async Task DisposeAsync()
+    {
+        _client.Dispose();
+        await _host.StopAsync();
+        _host.Dispose();
+    }
+
+    [Fact]
+    public async Task BatchPatch_StrictUnknownField_Returns207WithPerItem400AndDoesNotPersistInvalidItem()
+    {
+        // Arrange
+        await ClearProductsAsync();
+        var product1 = CreateProduct(name: "Original 1", unitPrice: 10m, stockQuantity: 5);
+        var product2 = CreateProduct(name: "Original 2", unitPrice: 20m, stockQuantity: 10);
+        await SeedProductsAsync(product1, product2);
+
+        var payload = new
+        {
+            action = "patch",
+            items = new object[]
+            {
+                new { id = product1.Id, body = new { product_name = "Patched 1" } },
+                new { id = product2.Id, body = new { unknown_field = "not allowed" } }
+            }
+        };
+
+        // Act
+        var response = await _client.PostAsync("/api/products/batch", BatchJson(payload));
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items");
+        items.GetArrayLength().Should().Be(2);
+
+        items[0].GetProperty("status").GetInt32().Should().Be(200);
+        items[0].GetProperty("entity").GetProperty("product_name").GetString().Should().Be("Patched 1");
+
+        items[1].GetProperty("status").GetInt32().Should().Be(400);
+        items[1].GetProperty("error").GetProperty("type").GetString().Should().Be("/problems/bad-request");
+        items[1].GetProperty("error").GetProperty("detail").GetString().Should().Contain("unknown_field");
+
+        _db.ChangeTracker.Clear();
+        var persisted1 = await _db.Products.FindAsync(product1.Id);
+        var persisted2 = await _db.Products.FindAsync(product2.Id);
+        persisted1!.ProductName.Should().Be("Patched 1");
+        persisted2!.ProductName.Should().Be("Original 2");
+    }
+
+    private static HttpContent BatchJson(object payload)
+    {
+        return JsonContent.Create(payload);
     }
 
     private static ProductEntity CreateProduct(

@@ -32,6 +32,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
 
     private readonly TContext _context;
     private readonly EfCoreRepositoryOptions<TEntity, TKey> _options;
+    private readonly Expression<Func<TEntity, TKey>> _keySelector;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="EfCoreRepository{TContext, TEntity, TKey}"/> class.
@@ -42,6 +43,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _keySelector = _options.KeySelector ?? ResolveKeySelector();
     }
 
     /// <inheritdoc />
@@ -63,10 +65,6 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     {
         ArgumentNullException.ThrowIfNull(pagination);
 
-        var keySelector = _options.KeySelector
-            ?? throw new InvalidOperationException(
-                $"No key selector is configured for entity type '{typeof(TEntity).Name}'.");
-
         var query = GetBaseQuery();
         if (pagination.Filters.Count > 0)
         {
@@ -75,7 +73,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             query = ApplyInFilters(query, pagination.Filters);
         }
 
-        var orderedQuery = SortBuilder.ApplySorting(query, pagination.SortFields, keySelector);
+        var orderedQuery = SortBuilder.ApplySorting(query, pagination.SortFields, _keySelector);
 
         var startIndex = 0;
         if (!string.IsNullOrEmpty(pagination.Cursor) && CursorEncoder.TryDecode<int>(pagination.Cursor, out var cursorIndex))
@@ -174,7 +172,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
 
         try
         {
-            ApplyPatch(entry, patchDocument, keyPropertyNames);
+            ApplyPatch(entry, patchDocument, keyPropertyNames, _options.PatchUnknownFieldBehavior);
 
             await _context.SaveChangesAsync(ct);
         }
@@ -257,10 +255,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             return [];
         }
 
-        var keySelector = _options.KeySelector
-            ?? throw new InvalidOperationException(
-                $"No key selector is configured for entity type '{typeof(TEntity).Name}'.");
-        var getKey = keySelector.Compile();
+        var getKey = _keySelector.Compile();
         var keys = entities.Select(getKey).ToList();
         var containsMethod = typeof(Enumerable)
             .GetMethods(BindingFlags.Public | BindingFlags.Static)
@@ -269,8 +264,8 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         var containsCall = Expression.Call(
             containsMethod,
             Expression.Constant(keys),
-            keySelector.Body);
-        var predicate = Expression.Lambda<Func<TEntity, bool>>(containsCall, keySelector.Parameters);
+            _keySelector.Body);
+        var predicate = Expression.Lambda<Func<TEntity, bool>>(containsCall, _keySelector.Parameters);
         var existingEntities = await _context.Set<TEntity>()
             .Where(predicate)
             .ToListAsync(ct);
@@ -296,14 +291,17 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         }
         catch (DbUpdateConcurrencyException)
         {
-            return results;
+            throw;
         }
         catch (DbUpdateException ex)
         {
             throw ClassifyConstraintViolation(ex);
         }
 
-        return results;
+        return entities
+            .Where(entity => existingById.ContainsKey(getKey(entity)))
+            .Select(entity => existingById[getKey(entity)])
+            .ToList();
     }
 
     /// <inheritdoc />
@@ -332,7 +330,11 @@ public class EfCoreRepository<TContext, TEntity, TKey>
                 continue;
             }
 
-            ApplyPatch(_context.Entry(existing), patchDocument, keyPropertyNames);
+            ApplyPatch(
+                _context.Entry(existing),
+                patchDocument,
+                keyPropertyNames,
+                _options.PatchUnknownFieldBehavior);
             results.Add(existing);
         }
 
@@ -342,14 +344,17 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         }
         catch (DbUpdateConcurrencyException)
         {
-            return results;
+            throw;
         }
         catch (DbUpdateException ex)
         {
             throw ClassifyConstraintViolation(ex);
         }
 
-        return results;
+        return patches
+            .Where(patch => existingById.ContainsKey(patch.Id))
+            .Select(patch => existingById[patch.Id])
+            .ToList();
     }
 
     /// <inheritdoc />
@@ -400,9 +405,6 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             return new Dictionary<TKey, TEntity>();
         }
 
-        var keySelector = _options.KeySelector
-            ?? throw new InvalidOperationException(
-                $"No key selector is configured for entity type '{typeof(TEntity).Name}'.");
         var idList = ids.ToList();
         var containsMethod = typeof(Enumerable)
             .GetMethods(BindingFlags.Public | BindingFlags.Static)
@@ -411,9 +413,9 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         var containsCall = Expression.Call(
             containsMethod,
             Expression.Constant(idList),
-            keySelector.Body);
-        var predicate = Expression.Lambda<Func<TEntity, bool>>(containsCall, keySelector.Parameters);
-        var getKey = keySelector.Compile();
+            _keySelector.Body);
+        var predicate = Expression.Lambda<Func<TEntity, bool>>(containsCall, _keySelector.Parameters);
+        var getKey = _keySelector.Compile();
 
         var entities = await GetBaseQuery()
             .Where(predicate)
@@ -454,21 +456,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         ArgumentNullException.ThrowIfNull(ex);
 
         var message = ex.InnerException?.Message;
-        var constraintType = EfCoreConstraintType.Unknown;
-
-        if (!string.IsNullOrEmpty(message))
-        {
-            if (message.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase) ||
-                message.Contains("PRIMARY KEY", StringComparison.OrdinalIgnoreCase) ||
-                message.Contains("DUPLICATE", StringComparison.OrdinalIgnoreCase))
-            {
-                constraintType = EfCoreConstraintType.UniqueConstraint;
-            }
-            else if (message.Contains("FOREIGN KEY", StringComparison.OrdinalIgnoreCase))
-            {
-                constraintType = EfCoreConstraintType.ForeignKeyConstraint;
-            }
-        }
+        var constraintType = ConstraintViolationClassifier.Classify(ex);
 
         return new EfCoreConstraintViolationException(
             message ?? "A database constraint violation occurred.",
@@ -555,13 +543,20 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     private static void ApplyPatch(
         EntityEntry<TEntity> entry,
         JsonElement patchDocument,
-        IReadOnlySet<string> keyPropertyNames)
+        IReadOnlySet<string> keyPropertyNames,
+        EfCorePatchUnknownFieldBehavior unknownFieldBehavior)
     {
         foreach (var patchProperty in patchDocument.EnumerateObject())
         {
-            if (!SnakeCasePropertyMap.TryGetValue(patchProperty.Name, out var propertyInfo) ||
-                keyPropertyNames.Contains(propertyInfo.Name))
+            if (!SnakeCasePropertyMap.TryGetValue(patchProperty.Name, out var propertyInfo))
             {
+                ThrowIfStrictUnknownField(unknownFieldBehavior, patchProperty.Name, "unknown");
+                continue;
+            }
+
+            if (keyPropertyNames.Contains(propertyInfo.Name))
+            {
+                ThrowIfStrictUnknownField(unknownFieldBehavior, patchProperty.Name, "forbidden");
                 continue;
             }
 
@@ -574,25 +569,31 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         }
     }
 
+    private static void ThrowIfStrictUnknownField(
+        EfCorePatchUnknownFieldBehavior unknownFieldBehavior,
+        string propertyName,
+        string reason)
+    {
+        if (unknownFieldBehavior == EfCorePatchUnknownFieldBehavior.Strict)
+        {
+            throw new EfCorePatchValidationException(
+                $"PATCH field '{propertyName}' is {reason} for this resource.");
+        }
+    }
+
     private Expression<Func<TEntity, bool>> BuildKeyEqualsPredicate(TKey id)
     {
-        var keySelector = _options.KeySelector
-            ?? throw new InvalidOperationException(
-                $"No key selector is configured for entity type '{typeof(TEntity).Name}'.");
         var constant = Expression.Constant(id, typeof(TKey));
-        var equals = Expression.Equal(keySelector.Body, constant);
+        var equals = Expression.Equal(_keySelector.Body, constant);
 
-        return Expression.Lambda<Func<TEntity, bool>>(equals, keySelector.Parameters);
+        return Expression.Lambda<Func<TEntity, bool>>(equals, _keySelector.Parameters);
     }
 
     private async Task<Dictionary<TKey, TEntity>> FetchTrackedEntitiesByIdsAsync(
         IReadOnlyList<TKey> ids,
         CancellationToken ct)
     {
-        var keySelector = _options.KeySelector
-            ?? throw new InvalidOperationException(
-                $"No key selector is configured for entity type '{typeof(TEntity).Name}'.");
-        var getKey = keySelector.Compile();
+        var getKey = _keySelector.Compile();
         var idList = ids.ToList();
         var containsMethod = typeof(Enumerable)
             .GetMethods(BindingFlags.Public | BindingFlags.Static)
@@ -601,8 +602,8 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         var containsCall = Expression.Call(
             containsMethod,
             Expression.Constant(idList),
-            keySelector.Body);
-        var predicate = Expression.Lambda<Func<TEntity, bool>>(containsCall, keySelector.Parameters);
+            _keySelector.Body);
+        var predicate = Expression.Lambda<Func<TEntity, bool>>(containsCall, _keySelector.Parameters);
         var existingEntities = await _context.Set<TEntity>()
             .Where(predicate)
             .ToListAsync(ct);
@@ -641,5 +642,31 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         return entityType.FindPrimaryKey()
             ?? throw new InvalidOperationException(
                 $"Entity type '{typeof(TEntity).Name}' has no primary key configured in the EF Core model.");
+    }
+
+    private Expression<Func<TEntity, TKey>> ResolveKeySelector()
+    {
+        var primaryKey = GetPrimaryKey();
+
+        if (primaryKey.Properties.Count > 1)
+        {
+            var propertyNames = string.Join(", ", primaryKey.Properties.Select(property => property.Name));
+            throw new NotSupportedException(
+                $"Entity type '{typeof(TEntity).Name}' has a composite primary key, which is not supported. Composite keys have {primaryKey.Properties.Count} properties: {propertyNames}. Only single-property primary keys are supported.");
+        }
+
+        var keyProperty = primaryKey.Properties[0];
+        if (keyProperty.ClrType != typeof(TKey))
+        {
+            throw new InvalidOperationException(
+                $"Entity type '{typeof(TEntity).Name}' has primary key property '{keyProperty.Name}' of type '{keyProperty.ClrType.Name}', but the registration specifies TKey as '{typeof(TKey).Name}'.");
+        }
+
+        var parameter = Expression.Parameter(typeof(TEntity), "entity");
+        var propertyAccess = keyProperty.PropertyInfo is not null
+            ? Expression.Property(parameter, keyProperty.PropertyInfo)
+            : Expression.Property(parameter, keyProperty.Name);
+
+        return Expression.Lambda<Func<TEntity, TKey>>(propertyAccess, parameter);
     }
 }

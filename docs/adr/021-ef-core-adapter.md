@@ -36,6 +36,11 @@ and the behavior already established by the InMemory adapter. It keeps the EF Co
 implementation straightforward, requires no new cursor payload shape, and works across
 all ordered queries without introducing provider-specific SQL generation logic.
 
+This is intentionally a statement about the EF Core adapter implementation, not a broader
+claim that every RestLib cursor is a keyset cursor. RestLib's public API exposes an opaque
+cursor contract; the current built-in adapters satisfy that contract with encoded
+offset/index state. See ADR-001 for the library-level pagination contract.
+
 Keyset pagination was considered because it performs better for very deep result sets and
 avoids the skip-scan penalty of large offsets. We did not adopt it here because RestLib's
 current `CursorEncoder` and `PaginationRequest` model are based on integer offsets rather
@@ -83,10 +88,10 @@ semantics.
 
 ### Automatic primary key detection from EF Core model metadata
 The adapter resolves the key selector automatically when the caller does not provide one.
-`EfCoreServiceExtensions.ResolveKeySelector` builds a temporary service provider, resolves
-the `DbContext`, reads the EF Core model metadata for the entity type, finds the primary
-key, verifies that it is a single-property key, checks that the key type matches `TKey`,
-and builds the corresponding `Expression<Func<TEntity, TKey>>`.
+`EfCoreRepository` now resolves the selector from the real scoped `DbContext` during
+repository construction, reads the EF Core model metadata for the entity type, finds the
+primary key, verifies that it is a single-property key, checks that the key type matches
+`TKey`, and builds the corresponding `Expression<Func<TEntity, TKey>>`.
 
 This was chosen to reduce boilerplate for the common case. In most EF Core applications,
 the model already knows the primary key, so forcing every registration to repeat
@@ -94,12 +99,12 @@ the model already knows the primary key, so forcing every registration to repeat
 makes the happy path smaller while still allowing an explicit override when a consumer
 wants full control.
 
-The main trade-off is that building a temporary `ServiceProvider` during registration is a
-known DI anti-pattern. We accepted that cost because it happens once at startup, it keeps
-runtime repository calls simple, and it avoids deferring metadata resolution to the first
-request. Composite keys are rejected with a clear error message because the current
-repository abstraction is built around a single `TKey` value rather than a composite key
-shape.
+Resolving metadata from the real scoped `DbContext` avoids the DI anti-pattern of building
+a temporary `ServiceProvider` during registration and removes startup-order sensitivity.
+The trade-off is that invalid entity-model or key-shape configurations now surface when the
+repository is resolved from DI rather than during service registration. Composite keys are
+still rejected with a clear error message because the current repository abstraction is
+built around a single `TKey` value rather than a composite key shape.
 
 ### Scoped repository lifetime matching DbContext
 The EF Core repository is registered as `Scoped`, and all three repository interfaces
@@ -126,8 +131,8 @@ one another.
   need tracked reads must opt out explicitly.
 - Partial updates integrate cleanly with EF Core and persist only modified properties, but
   patch behavior remains tied to EF Core change tracking.
-- Primary key auto-detection reduces configuration noise for simple entities, but it uses a
-  temporary startup-time service provider and does not support composite keys.
+- Primary key auto-detection reduces configuration noise for simple entities, resolves from
+  the real scoped `DbContext`, and does not support composite keys.
 - Scoped lifetime keeps the repository aligned with `DbContext` semantics and request
   isolation, but it also means repository instances are not suitable for singleton caching
   patterns.

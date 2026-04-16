@@ -3,6 +3,27 @@ using System.ComponentModel.DataAnnotations;
 namespace RestLib.EntityFrameworkCore.Tests.Fakes;
 
 /// <summary>
+/// Status values used in EF Core sorting tests.
+/// </summary>
+public enum ProductLifecycle
+{
+    /// <summary>
+    /// Draft value.
+    /// </summary>
+    Draft,
+
+    /// <summary>
+    /// Active value.
+    /// </summary>
+    Active,
+
+    /// <summary>
+    /// Archived value.
+    /// </summary>
+    Archived,
+}
+
+/// <summary>
 /// Product entity used in EF Core integration tests.
 /// Property shapes match <c>ProductEntity</c> in <c>RestLib.Tests</c>.
 /// </summary>
@@ -60,6 +81,11 @@ public class ProductEntity
     /// Gets or sets the product status.
     /// </summary>
     public string? Status { get; set; }
+
+    /// <summary>
+    /// Gets or sets the lifecycle state used in typed sorting tests.
+    /// </summary>
+    public ProductLifecycle Lifecycle { get; set; }
 }
 
 /// <summary>

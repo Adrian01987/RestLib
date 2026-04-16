@@ -1,5 +1,7 @@
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using RestLib.Abstractions;
@@ -342,6 +344,44 @@ public class EfCoreBatchTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task PatchManyAsync_StrictUnknownField_ThrowsAndDoesNotPersistAnyChanges()
+    {
+        // Arrange
+        var options = new EfCoreRepositoryOptions<ProductEntity, Guid>
+        {
+            KeySelector = product => product.Id,
+            PatchUnknownFieldBehavior = EfCorePatchUnknownFieldBehavior.Strict
+        };
+        var repository = new EfCoreRepository<TestDbContext, ProductEntity, Guid>(_db, options);
+
+        var product1 = CreateProduct(name: "Original 1", unitPrice: 10m, stockQuantity: 1, isActive: true);
+        var product2 = CreateProduct(name: "Original 2", unitPrice: 20m, stockQuantity: 2, isActive: true);
+        await SeedProductsAsync(product1, product2);
+
+        var validPatch = DeserializeJsonElement("""
+            {"product_name":"Updated 1"}
+            """);
+        var invalidPatch = DeserializeJsonElement("""
+            {"unknown_field":"nope"}
+            """);
+
+        // Act
+        var act = () => repository.PatchManyAsync([(product1.Id, validPatch), (product2.Id, invalidPatch)]);
+
+        // Assert
+        var exception = await act.Should().ThrowAsync<EfCorePatchValidationException>();
+        exception.Which.Message.Should().Contain("unknown_field");
+
+        _db.ChangeTracker.Clear();
+        var persisted1 = await _db.Products.FindAsync(product1.Id);
+        var persisted2 = await _db.Products.FindAsync(product2.Id);
+        persisted1.Should().NotBeNull();
+        persisted2.Should().NotBeNull();
+        persisted1!.ProductName.Should().Be("Original 1");
+        persisted2!.ProductName.Should().Be("Original 2");
+    }
+
+    [Fact]
     public async Task DeleteManyAsync_WithExistingKeys_DeletesAllAndReturnsCount()
     {
         // Arrange
@@ -382,6 +422,68 @@ public class EfCoreBatchTests : IAsyncLifetime
         _db.ChangeTracker.Clear();
 
         _db.Products.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task UpdateManyAsync_WhenSaveChangesThrowsConcurrencyException_ThrowsAndDoesNotPersist()
+    {
+        // Arrange
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = CreateConcurrencyContext(connection);
+        var repository = CreateConcurrencyBatchRepository(context);
+
+        var product1 = SeedConcurrencyProduct(context, name: "Original 1", unitPrice: 10m, stockQuantity: 1);
+        var product2 = SeedConcurrencyProduct(context, name: "Original 2", unitPrice: 20m, stockQuantity: 2);
+        var updated1 = CreateUpdatedProduct(product1, name: "Updated 1", unitPrice: 100m, stockQuantity: 10);
+        var updated2 = CreateUpdatedProduct(product2, name: "Updated 2", unitPrice: 200m, stockQuantity: 20);
+        context.ThrowConcurrencyOnNextSave = true;
+
+        // Act
+        var act = () => repository.UpdateManyAsync([updated1, updated2]);
+
+        // Assert
+        await act.Should().ThrowAsync<DbUpdateConcurrencyException>();
+
+        context.ChangeTracker.Clear();
+        var persisted1 = await context.Products.FindAsync(product1.Id);
+        var persisted2 = await context.Products.FindAsync(product2.Id);
+        persisted1!.ProductName.Should().Be("Original 1");
+        persisted1.UnitPrice.Should().Be(10m);
+        persisted2!.ProductName.Should().Be("Original 2");
+        persisted2.UnitPrice.Should().Be(20m);
+    }
+
+    [Fact]
+    public async Task PatchManyAsync_WhenSaveChangesThrowsConcurrencyException_ThrowsAndDoesNotPersist()
+    {
+        // Arrange
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = CreateConcurrencyContext(connection);
+        var repository = CreateConcurrencyBatchRepository(context);
+
+        var product1 = SeedConcurrencyProduct(context, name: "Original 1", unitPrice: 10m, stockQuantity: 1);
+        var product2 = SeedConcurrencyProduct(context, name: "Original 2", unitPrice: 20m, stockQuantity: 2);
+        var patch1 = DeserializeJsonElement("""
+            {"product_name":"Patched 1"}
+            """);
+        var patch2 = DeserializeJsonElement("""
+            {"unit_price":77.77}
+            """);
+        context.ThrowConcurrencyOnNextSave = true;
+
+        // Act
+        var act = () => repository.PatchManyAsync([(product1.Id, patch1), (product2.Id, patch2)]);
+
+        // Assert
+        await act.Should().ThrowAsync<DbUpdateConcurrencyException>();
+
+        context.ChangeTracker.Clear();
+        var persisted1 = await context.Products.FindAsync(product1.Id);
+        var persisted2 = await context.Products.FindAsync(product2.Id);
+        persisted1!.ProductName.Should().Be("Original 1");
+        persisted2!.UnitPrice.Should().Be(20m);
     }
 
     private static ProductEntity CreateProduct(
@@ -425,6 +527,39 @@ public class EfCoreBatchTests : IAsyncLifetime
     private static JsonElement DeserializeJsonElement(string json)
     {
         return JsonSerializer.Deserialize<JsonElement>(json);
+    }
+
+    private static ConcurrencyTestDbContext CreateConcurrencyContext(SqliteConnection connection)
+    {
+        var options = new DbContextOptionsBuilder<ConcurrencyTestDbContext>()
+            .UseSqlite(connection)
+            .Options;
+
+        var context = new ConcurrencyTestDbContext(options);
+        context.Database.EnsureCreated();
+        return context;
+    }
+
+    private static IBatchRepository<ProductEntity, Guid> CreateConcurrencyBatchRepository(ConcurrencyTestDbContext context)
+    {
+        var options = new EfCoreRepositoryOptions<ProductEntity, Guid>
+        {
+            KeySelector = product => product.Id
+        };
+
+        return new EfCoreRepository<ConcurrencyTestDbContext, ProductEntity, Guid>(context, options);
+    }
+
+    private static ProductEntity SeedConcurrencyProduct(
+        ConcurrencyTestDbContext context,
+        string name,
+        decimal unitPrice,
+        int stockQuantity)
+    {
+        var product = CreateProduct(name, unitPrice, stockQuantity);
+        context.Products.Add(product);
+        context.SaveChanges();
+        return product;
     }
 
     private async Task<ProductEntity[]> SeedProductsAsync(params ProductEntity[] products)

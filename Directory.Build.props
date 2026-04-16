@@ -17,8 +17,9 @@
     <RepositoryType>git</RepositoryType>
     <PackageTags>rest;rest-api;api;aspnetcore;crud;scaffolding;minimal-api;dotnet;dotnet10;csharp;openapi;swagger;pagination;problem-details;hateoas;hypermedia;hal</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageVersion>2.0.0</PackageVersion>
-    <PackageReleaseNotes>v2.0.0 — HATEOAS hypermedia links, batch pipeline overhaul, and breaking API changes. New: opt-in HAL-style _links on all entity responses with custom link provider extensibility. Breaking: RestLibProblemDetails.Errors changed to IReadOnlyDictionary; IBatchRepository gained required GetByIdsAsync method. See https://github.com/Adrian01987/RestLib/blob/main/CHANGELOG.md for full release notes.</PackageReleaseNotes>
+    <!-- Default package version for local builds and CI pack artifacts. release.yml overrides this with the Git tag via -p:PackageVersion=... -->
+    <VersionPrefix>2.0.0</VersionPrefix>
+    <!-- Release notes come from CHANGELOG.md in .github/workflows/release.yml. -->
     
     <!-- SourceLink support -->
     <PublishRepositoryUrl>true</PublishRepositoryUrl>

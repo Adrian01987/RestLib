@@ -30,6 +30,29 @@ public class OrphanEntity
 }
 
 /// <summary>
+/// DbContext that configures the entity model in <see cref="DbContext.OnModelCreating(ModelBuilder)"/>
+/// without exposing a public <see cref="DbSet{TEntity}"/> property.
+/// </summary>
+public class ModelOnlyTestDbContext : DbContext
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ModelOnlyTestDbContext"/> class.
+    /// </summary>
+    /// <param name="options">The DbContext options.</param>
+    public ModelOnlyTestDbContext(DbContextOptions<ModelOnlyTestDbContext> options)
+        : base(options)
+    {
+    }
+
+    /// <inheritdoc />
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<RegistrationTestEntity>()
+            .HasKey(entity => entity.Id);
+    }
+}
+
+/// <summary>
 /// Entity type with a composite primary key for key detection tests.
 /// </summary>
 public class CompositeKeyEntity

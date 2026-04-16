@@ -22,13 +22,13 @@ public static class ExpressionBuilder
     /// </param>
     /// <returns>
     /// An expression tree representing <c>entity => entity.PropertyName</c>,
-    /// with value-type properties boxed via a convert expression.
+    /// preserving the property's CLR type for query translation.
     /// </returns>
     /// <exception cref="InvalidOperationException">
     /// Thrown when <paramref name="propertyName"/> does not match any public instance
     /// property on <typeparamref name="TEntity"/>.
     /// </exception>
-    public static Expression<Func<TEntity, object>> BuildPropertyAccess<TEntity>(string propertyName)
+    public static LambdaExpression BuildPropertyAccess<TEntity>(string propertyName)
         where TEntity : class
     {
         var property = typeof(TEntity).GetProperty(
@@ -40,20 +40,16 @@ public static class ExpressionBuilder
         var cacheKey = (typeof(TEntity), property.Name);
         var expression = Cache.GetOrAdd(cacheKey, _ => BuildExpression<TEntity>(property));
 
-        return (Expression<Func<TEntity, object>>)expression;
+        return (LambdaExpression)expression;
     }
 
-    private static Expression<Func<TEntity, object>> BuildExpression<TEntity>(PropertyInfo property)
+    private static LambdaExpression BuildExpression<TEntity>(PropertyInfo property)
         where TEntity : class
     {
         var parameter = Expression.Parameter(typeof(TEntity), "entity");
-        Expression propertyAccess = Expression.Property(parameter, property);
+        var propertyAccess = Expression.Property(parameter, property);
+        var delegateType = typeof(Func<,>).MakeGenericType(typeof(TEntity), property.PropertyType);
 
-        if (property.PropertyType.IsValueType)
-        {
-            propertyAccess = Expression.Convert(propertyAccess, typeof(object));
-        }
-
-        return Expression.Lambda<Func<TEntity, object>>(propertyAccess, parameter);
+        return Expression.Lambda(delegateType, propertyAccess, parameter);
     }
 }

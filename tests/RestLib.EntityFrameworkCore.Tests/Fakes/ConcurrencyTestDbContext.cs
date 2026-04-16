@@ -8,6 +8,12 @@ namespace RestLib.EntityFrameworkCore.Tests.Fakes;
 public class ConcurrencyTestDbContext : DbContext
 {
     /// <summary>
+    /// Gets or sets a value indicating whether the next save operation in any context
+    /// instance should throw a <see cref="DbUpdateConcurrencyException"/>.
+    /// </summary>
+    public static bool ThrowConcurrencyOnNextSaveGlobally { get; set; }
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="ConcurrencyTestDbContext"/> class.
     /// </summary>
     /// <param name="options">The DbContext options.</param>
@@ -38,6 +44,12 @@ public class ConcurrencyTestDbContext : DbContext
         if (ThrowConcurrencyOnNextSave)
         {
             ThrowConcurrencyOnNextSave = false;
+            throw new DbUpdateConcurrencyException("Simulated concurrency conflict.");
+        }
+
+        if (ThrowConcurrencyOnNextSaveGlobally)
+        {
+            ThrowConcurrencyOnNextSaveGlobally = false;
             throw new DbUpdateConcurrencyException("Simulated concurrency conflict.");
         }
 

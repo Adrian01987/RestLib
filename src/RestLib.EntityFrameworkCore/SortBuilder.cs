@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Reflection;
 using RestLib.Sorting;
 
 namespace RestLib.EntityFrameworkCore;
@@ -11,6 +12,11 @@ namespace RestLib.EntityFrameworkCore;
 /// </summary>
 internal static class SortBuilder
 {
+    private static readonly MethodInfo OrderByMethod = GetQueryableMethod(nameof(Queryable.OrderBy));
+    private static readonly MethodInfo OrderByDescendingMethod = GetQueryableMethod(nameof(Queryable.OrderByDescending));
+    private static readonly MethodInfo ThenByMethod = GetQueryableMethod(nameof(Queryable.ThenBy));
+    private static readonly MethodInfo ThenByDescendingMethod = GetQueryableMethod(nameof(Queryable.ThenByDescending));
+
     /// <summary>
     /// Applies sorting to the query based on the provided sort fields and key selector.
     /// </summary>
@@ -44,21 +50,51 @@ internal static class SortBuilder
         foreach (var sortField in sortFields)
         {
             var propertyAccess = ExpressionBuilder.BuildPropertyAccess<TEntity>(sortField.PropertyName);
+            var method = GetSortMethod(sortField.Direction, orderedQuery is null);
 
             if (orderedQuery is null)
             {
-                orderedQuery = sortField.Direction == SortDirection.Asc
-                    ? query.OrderBy(propertyAccess)
-                    : query.OrderByDescending(propertyAccess);
+                orderedQuery = ApplyOrdering<TEntity>(method, query, propertyAccess);
             }
             else
             {
-                orderedQuery = sortField.Direction == SortDirection.Asc
-                    ? orderedQuery.ThenBy(propertyAccess)
-                    : orderedQuery.ThenByDescending(propertyAccess);
+                orderedQuery = ApplyOrdering<TEntity>(method, orderedQuery, propertyAccess);
             }
         }
 
         return orderedQuery!.ThenBy(keySelector);
+    }
+
+    private static IOrderedQueryable<TEntity> ApplyOrdering<TEntity>(
+        MethodInfo method,
+        IQueryable<TEntity> source,
+        LambdaExpression keySelector)
+        where TEntity : class
+    {
+        var genericMethod = method.MakeGenericMethod(typeof(TEntity), keySelector.ReturnType);
+
+        return (IOrderedQueryable<TEntity>)genericMethod.Invoke(null, [source, keySelector])!;
+    }
+
+    private static MethodInfo GetQueryableMethod(string name)
+    {
+        return typeof(Queryable)
+            .GetMethods()
+            .Single(method =>
+                method.Name == name &&
+                method.IsGenericMethodDefinition &&
+                method.GetGenericArguments().Length == 2 &&
+                method.GetParameters().Length == 2);
+    }
+
+    private static MethodInfo GetSortMethod(SortDirection direction, bool isPrimarySort)
+    {
+        return (direction, isPrimarySort) switch
+        {
+            (SortDirection.Asc, true) => OrderByMethod,
+            (SortDirection.Desc, true) => OrderByDescendingMethod,
+            (SortDirection.Asc, false) => ThenByMethod,
+            _ => ThenByDescendingMethod,
+        };
     }
 }

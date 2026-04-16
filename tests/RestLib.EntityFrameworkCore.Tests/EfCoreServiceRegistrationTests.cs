@@ -103,17 +103,21 @@ public class EfCoreServiceRegistrationTests
     }
 
     [Fact]
-    public void AddRestLibEfCore_ThrowsInvalidOperationException_WhenNoDbSet()
+    public void AddRestLibEfCore_ThrowsInvalidOperationException_WhenEntityNotInModel()
     {
         // Arrange
         var services = new ServiceCollection();
+        AddTestDbContext(services);
+        services.AddRestLibEfCore<RegistrationTestDbContext, OrphanEntity, Guid>();
+        var provider = services.BuildServiceProvider();
 
         // Act
-        var act = () => services.AddRestLibEfCore<RegistrationTestDbContext, OrphanEntity, Guid>();
+        using var scope = provider.CreateScope();
+        var act = () => scope.ServiceProvider.GetRequiredService<IRepository<OrphanEntity, Guid>>();
 
         // Assert
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*RegistrationTestDbContext*OrphanEntity*");
+            .WithMessage("*OrphanEntity*not part of the EF Core model*");
     }
 
     [Fact]
@@ -221,17 +225,21 @@ public class EfCoreServiceRegistrationTests
 
     [Fact]
     [Trait("Category", "Story1.2.2")]
-    public void AddRestLibEfCore_WithOptions_ThrowsInvalidOperationException_WhenNoDbSet()
+    public void AddRestLibEfCore_WithOptions_ThrowsInvalidOperationException_WhenEntityNotInModel()
     {
         // Arrange
         var services = new ServiceCollection();
+        AddTestDbContext(services);
+        services.AddRestLibEfCore<RegistrationTestDbContext, OrphanEntity, Guid>(_ => { });
+        var provider = services.BuildServiceProvider();
 
         // Act
-        var act = () => services.AddRestLibEfCore<RegistrationTestDbContext, OrphanEntity, Guid>(_ => { });
+        using var scope = provider.CreateScope();
+        var act = () => scope.ServiceProvider.GetRequiredService<IRepository<OrphanEntity, Guid>>();
 
         // Assert
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*RegistrationTestDbContext*OrphanEntity*");
+            .WithMessage("*OrphanEntity*not part of the EF Core model*");
     }
 
     [Fact]
@@ -283,23 +291,27 @@ public class EfCoreServiceRegistrationTests
 
         // Act
         var options = provider.GetRequiredService<EfCoreRepositoryOptions<RegistrationTestEntity, Guid>>();
-        var repository = provider.GetRequiredService<IRepository<RegistrationTestEntity, Guid>>();
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IRepository<RegistrationTestEntity, Guid>>();
 
         // Assert
         repository.Should().NotBeNull();
-        options.KeySelector.Should().NotBeNull();
+        options.KeySelector.Should().BeNull();
     }
 
     [Fact]
     [Trait("Category", "Story1.2.3")]
-    public void AddRestLibEfCore_WithoutKeySelector_CompositeKey_ThrowsNotSupportedException()
+    public void AddRestLibEfCore_WithoutKeySelector_CompositeKey_ThrowsWhenRepositoryIsResolved()
     {
         // Arrange
         var services = new ServiceCollection();
         AddKeyDetectionDbContext(services);
+        services.AddRestLibEfCore<KeyDetectionTestDbContext, CompositeKeyEntity, Guid>();
+        var provider = services.BuildServiceProvider();
 
         // Act
-        var act = () => services.AddRestLibEfCore<KeyDetectionTestDbContext, CompositeKeyEntity, Guid>();
+        using var scope = provider.CreateScope();
+        var act = () => scope.ServiceProvider.GetRequiredService<IRepository<CompositeKeyEntity, Guid>>();
 
         // Assert
         act.Should().Throw<NotSupportedException>()
@@ -308,14 +320,17 @@ public class EfCoreServiceRegistrationTests
 
     [Fact]
     [Trait("Category", "Story1.2.3")]
-    public void AddRestLibEfCore_WithoutKeySelector_TypeMismatch_ThrowsInvalidOperationException()
+    public void AddRestLibEfCore_WithoutKeySelector_TypeMismatch_ThrowsWhenRepositoryIsResolved()
     {
         // Arrange
         var services = new ServiceCollection();
         AddKeyDetectionDbContext(services);
+        services.AddRestLibEfCore<KeyDetectionTestDbContext, IntKeyEntity, Guid>();
+        var provider = services.BuildServiceProvider();
 
         // Act
-        var act = () => services.AddRestLibEfCore<KeyDetectionTestDbContext, IntKeyEntity, Guid>();
+        using var scope = provider.CreateScope();
+        var act = () => scope.ServiceProvider.GetRequiredService<IRepository<IntKeyEntity, Guid>>();
 
         // Assert
         act.Should().Throw<InvalidOperationException>()
@@ -359,11 +374,89 @@ public class EfCoreServiceRegistrationTests
         };
 
         // Act
-        var options = provider.GetRequiredService<EfCoreRepositoryOptions<RegistrationTestEntity, Guid>>();
-        var key = options.KeySelector!.Compile().Invoke(entity);
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IRepository<RegistrationTestEntity, Guid>>();
+        var keySelector = ((EfCoreRepository<KeyDetectionTestDbContext, RegistrationTestEntity, Guid>)repository)
+            .GetType()
+            .GetField("_keySelector", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var key = ((System.Linq.Expressions.Expression<Func<RegistrationTestEntity, Guid>>)keySelector.GetValue(repository)!)
+            .Compile()
+            .Invoke(entity);
 
         // Assert
         key.Should().Be(entity.Id);
+    }
+
+    [Fact]
+    public void AddRestLibEfCore_WhenRegisteredBeforeDbContext_StillResolvesRepository()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        AddTestDbContext(services);
+        services.AddRestLibEfCore<RegistrationTestDbContext, RegistrationTestEntity, Guid>();
+        var provider = services.BuildServiceProvider();
+
+        // Act
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IRepository<RegistrationTestEntity, Guid>>();
+
+        // Assert
+        repository.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddRestLibEfCore_AllowsEntityConfiguredOnlyInOnModelCreating()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddDbContext<ModelOnlyTestDbContext>(options => options.UseSqlite("DataSource=:memory:"));
+        services.AddRestLibEfCore<ModelOnlyTestDbContext, RegistrationTestEntity, Guid>();
+        var provider = services.BuildServiceProvider();
+
+        // Act
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IRepository<RegistrationTestEntity, Guid>>();
+
+        // Assert
+        repository.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddRestLibEfCore_WithOptions_AllowsEntityConfiguredOnlyInOnModelCreating()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddDbContext<ModelOnlyTestDbContext>(options => options.UseSqlite("DataSource=:memory:"));
+        services.AddRestLibEfCore<ModelOnlyTestDbContext, RegistrationTestEntity, Guid>(options =>
+        {
+            options.UseAsNoTracking = false;
+        });
+        var provider = services.BuildServiceProvider();
+
+        // Act
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IRepository<RegistrationTestEntity, Guid>>();
+
+        // Assert
+        repository.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddRestLibEfCore_ThrowsInvalidOperationException_WhenEntityNotInEfModel()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        AddTestDbContext(services);
+        services.AddRestLibEfCore<RegistrationTestDbContext, OrphanEntity, Guid>();
+        var provider = services.BuildServiceProvider();
+
+        // Act
+        using var scope = provider.CreateScope();
+        var act = () => scope.ServiceProvider.GetRequiredService<IRepository<OrphanEntity, Guid>>();
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*OrphanEntity*not part of the EF Core model*");
     }
 
     private static void AddTestDbContext(IServiceCollection services)

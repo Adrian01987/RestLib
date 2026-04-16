@@ -7,7 +7,7 @@
 [![NuGet](https://img.shields.io/nuget/v/RestLib.svg)](https://www.nuget.org/packages/RestLib/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/Adrian01987/RestLib/blob/main/LICENSE)
 
-RestLib is a .NET 10 library for ASP.NET Core Minimal APIs that generates CRUD endpoints from your model and repository. It bakes in secure defaults, cursor pagination, filtering, sorting, field selection, HATEOAS hypermedia links, OpenAPI metadata, and RFC 9457 Problem Details so you can ship consistent APIs faster.
+RestLib is a .NET 10 library for ASP.NET Core Minimal APIs that generates CRUD endpoints from your model and repository. It bakes in secure defaults, cursor-based pagination APIs, filtering, sorting, field selection, HATEOAS hypermedia links, OpenAPI metadata, and RFC 9457 Problem Details so you can ship consistent APIs faster. Some capabilities depend on the repository adapter and may have implementation-specific limits.
 
 ## Install
 
@@ -90,6 +90,70 @@ That gives you:
 - `PATCH /api/products/{id}` - partially update
 - `DELETE /api/products/{id}` - delete
 
+### EF Core Quick Start
+
+For a database-backed path, define the same model plus a `DbContext`:
+
+```csharp
+using Microsoft.EntityFrameworkCore;
+
+public class Product
+{
+    public Guid Id { get; set; }
+    public required string Name { get; set; }
+    public decimal Price { get; set; }
+}
+
+public class AppDbContext : DbContext
+{
+    public AppDbContext(DbContextOptions<AppDbContext> options)
+        : base(options)
+    {
+    }
+
+    public DbSet<Product> Products => Set<Product>();
+}
+```
+
+Register EF Core, the RestLib adapter, and ensure the database exists at startup:
+
+```csharp
+using Microsoft.EntityFrameworkCore;
+using RestLib;
+using RestLib.EntityFrameworkCore;
+using Scalar.AspNetCore;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddRestLib();
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite("Data Source=app.db"));
+builder.Services.AddRestLibEfCore<AppDbContext, Product, Guid>();
+builder.Services.AddOpenApi();
+
+var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.EnsureCreated();
+}
+
+app.MapOpenApi();
+app.MapScalarApiReference();
+
+app.MapRestLib<Product, Guid>("/api/products", config =>
+{
+    config.AllowAnonymous();
+});
+
+app.Run();
+```
+
+That exposes the same CRUD endpoints as the in-memory quick start, but backed by EF Core
+and SQLite. If your key property follows EF Core conventions, `AddRestLibEfCore` can infer
+it automatically; otherwise provide a `KeySelector` in the options callback.
+
 ## Why RestLib
 
 Every backend project starts the same way: define a model, write CRUD endpoints, add validation, handle errors, set up pagination, wire Swagger, and repeat for every entity.
@@ -122,7 +186,7 @@ app.MapRestLib<Product, Guid>("/api/products", config =>
 RestLib follows the [Zalando REST API Guidelines](https://opensource.zalando.com/restful-api-guidelines/) and uses RFC 9457 Problem Details for error payloads.
 
 - `snake_case` JSON properties
-- Cursor-based pagination (forward-only by design — see [ADR-001](docs/adr/001-cursor-pagination.md))
+- Cursor-based pagination API (forward-only by design; current built-in adapters use opaque encoded offsets/indexes — see [ADR-001](docs/adr/001-cursor-pagination.md))
 - Structured validation and error responses
 - Consistent HTTP status codes
 
@@ -468,9 +532,25 @@ builder.Services.AddRestLibEfCore<AppDbContext, Product, Guid>(options =>
 });
 ```
 
-The EF Core adapter supports all RestLib features: filtering, sorting, cursor
-pagination, field selection, batch operations, and hooks, with server-side query
-translation. See [ADR-021](docs/adr/021-ef-core-adapter.md) for design decisions.
+The EF Core adapter supports RestLib's filtering, sorting, counting, pagination,
+batch operations, and hooks on top of EF Core, with server-side query translation
+for filtering, sorting, and counting. Field selection is supported at the API layer,
+but not pushed down to SQL. Some capabilities have important implementation limits;
+see [Current EF Core Adapter Limitations](#current-ef-core-adapter-limitations)
+and [ADR-021](docs/adr/021-ef-core-adapter.md).
+
+#### Current EF Core Adapter Limitations
+
+- **Single-property keys only** - the adapter auto-detects or accepts a single `TKey` value. Composite EF Core keys are not supported.
+- **Offset-style cursor behavior** - cursors are opaque, but the EF Core adapter currently encodes an index offset and applies `Skip`/`Take`, not keyset pagination.
+- **Field selection is not pushed down to SQL** - sparse fieldsets are applied after entity materialization, so EF Core still loads the full entity.
+- **Top-level properties only** - filtering, sorting, field selection, and PATCH handling operate on direct entity properties. Nested or related-property paths are not supported.
+- **Constraint mapping is provider-limited** - database constraint classification still relies primarily on exception-message inspection and is not yet specialized per provider.
+
+Use the adapter when you want the standard RestLib endpoint surface over a typical
+EF Core model, but expect to write a custom repository if you need composite-key
+resources, true keyset pagination, SQL-level field projection, or deep/navigational
+query semantics.
 
 ### Versioning
 
@@ -638,6 +718,7 @@ Key decisions are documented as Architecture Decision Records:
 ## Known Limitations
 
 - **Forward-only cursor pagination** — cursors support forward traversal only; there is no backward/previous-page navigation.
+- **Cursor contract, adapter-specific implementation** — RestLib exposes an opaque cursor API, but the current built-in adapters use encoded offsets/indexes rather than keyset pagination.
 - **Post-fetch field selection** — field projection is applied after the full entity is retrieved from the repository, not pushed down to the data source.
 - **Flat properties only** — filtering, sorting, and field selection operate on top-level entity properties; nested or related entity paths are not supported.
 - **No built-in search** — full-text or fuzzy search is not included; implement it in your repository if needed.

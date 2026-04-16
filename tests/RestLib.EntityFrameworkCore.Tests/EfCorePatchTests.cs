@@ -174,10 +174,127 @@ public class EfCorePatchTests : IAsyncLifetime
         patched.Status.Should().Be(original.Status);
     }
 
+    [Fact]
+    public async Task Patch_UnknownAndKeyFields_DefaultPermissive_IgnoresThem()
+    {
+        // Arrange
+        var original = _seededProducts[0];
+        var originalId = original.Id;
+        var patch = new
+        {
+            id = Guid.NewGuid(),
+            unknown_field = "ignored",
+            product_name = "Permissive Patch"
+        };
+
+        // Act
+        var response = await _client.PatchAsJsonAsync($"/api/products/{original.Id}", patch);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var patched = await DeserializeProductAsync(response);
+        patched.Should().NotBeNull();
+        patched!.Id.Should().Be(originalId);
+        patched.ProductName.Should().Be("Permissive Patch");
+    }
+
     private static async Task<ProductEntity?> DeserializeProductAsync(HttpResponseMessage response)
     {
         return JsonSerializer.Deserialize<ProductEntity>(
             await response.Content.ReadAsStringAsync(),
             JsonOptions);
+    }
+}
+
+/// <summary>
+/// Integration tests for strict PATCH unknown-field handling in the EF Core adapter.
+/// </summary>
+[Trait("Category", "Story8")]
+public class EfCoreStrictPatchTests : IAsyncLifetime
+{
+    private static readonly JsonSerializerOptions JsonOptions = RestLibJsonOptions.CreateDefault();
+
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private TestDbContext _db = null!;
+    private ProductEntity _product = null!;
+
+    public async Task InitializeAsync()
+    {
+        (_host, _client, _db) = await new EfCoreTestHostBuilder<ProductEntity, Guid>("/api/products")
+            .WithEndpoint(config => config.AllowAnonymous())
+            .WithRepositoryOptions(options =>
+            {
+                options.PatchUnknownFieldBehavior = EfCorePatchUnknownFieldBehavior.Strict;
+            })
+            .BuildAsync();
+
+        _product = SeedData.CreateProducts(1).Single();
+        _db.Products.Add(_product);
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task DisposeAsync()
+    {
+        _client.Dispose();
+        await _host.StopAsync();
+        _host.Dispose();
+    }
+
+    [Fact]
+    public async Task Patch_UnknownField_StrictMode_Returns400AndDoesNotPersist()
+    {
+        // Arrange
+        var patch = new
+        {
+            unknown_field = "not allowed",
+            product_name = "Should Not Persist"
+        };
+
+        // Act
+        var response = await _client.PatchAsJsonAsync($"/api/products/{_product.Id}", patch);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var problem = JsonSerializer.Deserialize<RestLibProblemDetails>(
+            await response.Content.ReadAsStringAsync(),
+            JsonOptions);
+        problem.Should().NotBeNull();
+        problem!.Type.Should().Be(ProblemTypes.BadRequest);
+        problem.Detail.Should().Contain("unknown_field");
+
+        _db.ChangeTracker.Clear();
+        var persisted = await _db.Products.FindAsync(_product.Id);
+        persisted.Should().NotBeNull();
+        persisted!.ProductName.Should().Be(_product.ProductName);
+    }
+
+    [Fact]
+    public async Task Patch_KeyField_StrictMode_Returns400AndDoesNotPersist()
+    {
+        // Arrange
+        var patch = new
+        {
+            id = Guid.NewGuid(),
+            product_name = "Should Not Persist"
+        };
+
+        // Act
+        var response = await _client.PatchAsJsonAsync($"/api/products/{_product.Id}", patch);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var problem = JsonSerializer.Deserialize<RestLibProblemDetails>(
+            await response.Content.ReadAsStringAsync(),
+            JsonOptions);
+        problem.Should().NotBeNull();
+        problem!.Type.Should().Be(ProblemTypes.BadRequest);
+        problem.Detail.Should().Contain("id");
+
+        _db.ChangeTracker.Clear();
+        var persisted = await _db.Products.FindAsync(_product.Id);
+        persisted.Should().NotBeNull();
+        persisted!.ProductName.Should().Be(_product.ProductName);
     }
 }

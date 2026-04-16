@@ -142,6 +142,14 @@ internal static class PatchHandler
 
                 return Results.Json(patched, jsonOptions);
             }
+            catch (Exception ex) when (IsPatchValidationException(ex))
+            {
+                return Responses.ProblemDetailsResult.BadRequest(
+                    ex.Message,
+                    httpContext.Request.Path,
+                    jsonOptions,
+                    logger);
+            }
             catch (Exception ex)
             {
                 RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.Patch), ex);
@@ -150,5 +158,10 @@ internal static class PatchHandler
                 throw;
             }
         };
+    }
+
+    private static bool IsPatchValidationException(Exception exception)
+    {
+        return exception.GetType().FullName == "RestLib.EntityFrameworkCore.EfCorePatchValidationException";
     }
 }

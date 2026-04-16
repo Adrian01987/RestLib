@@ -29,7 +29,10 @@ public class EfCoreSortTests : IAsyncLifetime
                     p => p.UnitPrice,
                     p => p.ProductName,
                     p => p.StockQuantity,
-                    p => p.CreatedAt);
+                    p => p.CreatedAt,
+                    p => p.LastModifiedAt,
+                    p => p.Lifecycle,
+                    p => p.Id);
                 config.AllowFiltering(p => p.IsActive);
             })
             .BuildAsync();
@@ -145,6 +148,79 @@ public class EfCoreSortTests : IAsyncLifetime
             .ToList();
 
         ids.Should().BeInAscendingOrder();
+    }
+
+    [Fact]
+    public async Task GetAll_SortByGuid_ReturnsSortedResults()
+    {
+        // Arrange
+        var id1 = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var id2 = Guid.Parse("00000000-0000-0000-0000-000000000002");
+        var id3 = Guid.Parse("00000000-0000-0000-0000-000000000003");
+
+        await SeedProductsAsync(
+            new ProductEntity { Id = id3, ProductName = "Product C", UnitPrice = 30m, StockQuantity = 3, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = id1, ProductName = "Product A", UnitPrice = 10m, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = id2, ProductName = "Product B", UnitPrice = 20m, StockQuantity = 2, CreatedAt = DateTime.UtcNow, IsActive = true });
+
+        // Act
+        var response = await _client.GetAsync("/api/products?sort=id:asc");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await ReadJsonAsync(response);
+        var items = json.GetProperty("items");
+        var ids = Enumerable.Range(0, items.GetArrayLength())
+            .Select(i => Guid.Parse(items[i].GetProperty("id").GetString()!))
+            .ToList();
+
+        ids.Should().Equal(id1, id2, id3);
+    }
+
+    [Fact]
+    public async Task GetAll_SortByNullableDateTime_ReturnsNullsFirstThenAscendingValues()
+    {
+        // Arrange
+        await SeedProductsAsync(
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "No Modified", UnitPrice = 10m, StockQuantity = 1, CreatedAt = DateTime.UtcNow, LastModifiedAt = null, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Modified Later", UnitPrice = 20m, StockQuantity = 2, CreatedAt = DateTime.UtcNow, LastModifiedAt = new DateTime(2025, 3, 1, 0, 0, 0, DateTimeKind.Utc), IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Modified Earlier", UnitPrice = 30m, StockQuantity = 3, CreatedAt = DateTime.UtcNow, LastModifiedAt = new DateTime(2025, 2, 1, 0, 0, 0, DateTimeKind.Utc), IsActive = true });
+
+        // Act
+        var response = await _client.GetAsync("/api/products?sort=last_modified_at:asc");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await ReadJsonAsync(response);
+        var items = json.GetProperty("items");
+        var names = Enumerable.Range(0, items.GetArrayLength())
+            .Select(i => items[i].GetProperty("product_name").GetString()!)
+            .ToList();
+
+        names.Should().Equal("No Modified", "Modified Earlier", "Modified Later");
+    }
+
+    [Fact]
+    public async Task GetAll_SortByEnum_ReturnsSortedResults()
+    {
+        // Arrange
+        await SeedProductsAsync(
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Archived Product", UnitPrice = 30m, StockQuantity = 3, CreatedAt = DateTime.UtcNow, IsActive = true, Lifecycle = ProductLifecycle.Archived },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Draft Product", UnitPrice = 10m, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true, Lifecycle = ProductLifecycle.Draft },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Active Product", UnitPrice = 20m, StockQuantity = 2, CreatedAt = DateTime.UtcNow, IsActive = true, Lifecycle = ProductLifecycle.Active });
+
+        // Act
+        var response = await _client.GetAsync("/api/products?sort=lifecycle:asc");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await ReadJsonAsync(response);
+        var items = json.GetProperty("items");
+        var names = Enumerable.Range(0, items.GetArrayLength())
+            .Select(i => items[i].GetProperty("product_name").GetString()!)
+            .ToList();
+
+        names.Should().Equal("Draft Product", "Active Product", "Archived Product");
     }
 
     [Fact]

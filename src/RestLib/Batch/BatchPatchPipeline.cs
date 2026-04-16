@@ -180,7 +180,17 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
             }
         }
 
-        var patched = await context.Repository.PatchAsync(id, body, context.CancellationToken);
+        TEntity? patched;
+        try
+        {
+            patched = await context.Repository.PatchAsync(id, body, context.CancellationToken);
+        }
+        catch (Exception ex) when (IsPatchValidationException(ex))
+        {
+            results[index] = BadRequestResult(index, ex.Message, context.HttpContext.Request.Path);
+            return;
+        }
+
         if (patched is null)
         {
             var entityName = typeof(TEntity).Name;
@@ -195,5 +205,10 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
         }
 
         results[index] = await RunAfterPersistAndBuildResultAsync(index, patched, id, context);
+    }
+
+    private static bool IsPatchValidationException(Exception exception)
+    {
+        return exception.GetType().FullName == "RestLib.EntityFrameworkCore.EfCorePatchValidationException";
     }
 }
