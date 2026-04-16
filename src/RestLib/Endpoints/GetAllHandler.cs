@@ -163,7 +163,17 @@ internal static class GetAllHandler
                 PagedResult<TEntity> result;
                 try
                 {
-                    result = await repository.GetAllAsync(paginationRequest, ct);
+                    if (selectedFields.Count > 0 &&
+                        ShouldUseProjectionPushdown(options, config) &&
+                        repository is IFieldSelectionProjectionRepository<TEntity, TKey> projectionRepository)
+                    {
+                        result = await projectionRepository.GetAllProjectedAsync(paginationRequest, selectedFields, ct)
+                            ?? await repository.GetAllAsync(paginationRequest, ct);
+                    }
+                    else
+                    {
+                        result = await repository.GetAllAsync(paginationRequest, ct);
+                    }
                 }
                 catch (Exception ex) when (IsEfCoreInvalidCursorException(ex))
                 {
@@ -250,5 +260,16 @@ internal static class GetAllHandler
     private static bool IsEfCoreInvalidCursorException(Exception exception)
     {
         return exception.GetType().FullName == "RestLib.EntityFrameworkCore.EfCoreInvalidCursorException";
+    }
+
+    private static bool ShouldUseProjectionPushdown<TEntity, TKey>(
+        RestLibOptions options,
+        RestLibEndpointConfiguration<TEntity, TKey> config)
+        where TEntity : class
+        where TKey : notnull
+    {
+        return !options.EnableHateoas &&
+            !options.EnableETagSupport &&
+            config.Hooks is null;
     }
 }

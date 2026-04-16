@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.Logging;
 using RestLib.Abstractions;
+using RestLib.FieldSelection;
 using RestLib.Filtering;
 using RestLib.Pagination;
 using RestLib.Sorting;
@@ -20,7 +21,8 @@ namespace RestLib.EntityFrameworkCore;
 public class EfCoreRepository<TContext, TEntity, TKey>
     : IRepository<TEntity, TKey>,
       IBatchRepository<TEntity, TKey>,
-      ICountableRepository<TEntity, TKey>
+      ICountableRepository<TEntity, TKey>,
+      IFieldSelectionProjectionRepository<TEntity, TKey>
     where TContext : DbContext
     where TEntity : class
     where TKey : notnull
@@ -91,11 +93,119 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     }
 
     /// <inheritdoc />
+    public async Task<TEntity?> GetByIdProjectedAsync(
+        TKey id,
+        IReadOnlyList<SelectedField> selectedFields,
+        IReadOnlyList<FilterValue>? filters = null,
+        IReadOnlyList<SortField>? sortFields = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(selectedFields);
+
+        if (!TryBuildProjectionPlan(selectedFields, filters ?? [], sortFields ?? [], out var projectionPlan))
+        {
+            return null;
+        }
+
+        var predicate = BuildKeyEqualsPredicate(id);
+        var plan = projectionPlan!;
+        return await BuildProjectedQuery(GetBaseProjectionQuery(), plan)
+            .FirstOrDefaultAsync(predicate, ct);
+    }
+
+    /// <inheritdoc />
     public async Task<PagedResult<TEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(pagination);
 
         var query = GetBaseQuery();
+        if (pagination.Filters.Count > 0)
+        {
+            query = ApplyComparisonFilters(query, pagination.Filters);
+            query = ApplyStringFilters(query, pagination.Filters);
+            query = ApplyInFilters(query, pagination.Filters);
+        }
+
+        var effectiveSortFields = GetEffectiveSortFields(pagination.SortFields);
+        IOrderedQueryable<TEntity> orderedQuery;
+        KeysetPlan? keysetPlan;
+        var offsetStartIndex = 0;
+        if (TryBuildKeysetPlan(effectiveSortFields, out var builtKeysetPlan))
+        {
+            var plan = builtKeysetPlan!;
+            keysetPlan = plan;
+            orderedQuery = ApplyKeysetCursorFilter(query, plan, pagination.Cursor);
+        }
+        else
+        {
+            keysetPlan = null;
+            LogKeysetFallback(effectiveSortFields);
+            offsetStartIndex = DecodeOffsetCursor(pagination.Cursor);
+            orderedQuery = SortBuilder.ApplySorting(query, pagination.SortFields, _keySelector);
+        }
+
+        var takeCount = pagination.Limit == int.MaxValue ? int.MaxValue : pagination.Limit + 1;
+        List<TEntity> pagedItems;
+
+        if (keysetPlan is not null)
+        {
+            pagedItems = await orderedQuery
+                .Take(takeCount)
+                .ToListAsync(ct);
+        }
+        else
+        {
+            pagedItems = await orderedQuery
+                .Skip(offsetStartIndex)
+                .Take(takeCount)
+                .ToListAsync(ct);
+        }
+
+        var hasMore = pagedItems.Count > pagination.Limit;
+        if (hasMore)
+        {
+            pagedItems = pagedItems.Take(pagination.Limit).ToList();
+        }
+
+        string? nextCursor;
+        if (!hasMore)
+        {
+            nextCursor = null;
+        }
+        else if (keysetPlan is not null)
+        {
+            nextCursor = EncodeKeysetCursor(keysetPlan, pagedItems[^1]);
+        }
+        else
+        {
+            nextCursor = offsetStartIndex <= int.MaxValue - pagination.Limit
+                ? CursorEncoder.Encode(offsetStartIndex + pagination.Limit)
+                : null;
+        }
+
+        return new PagedResult<TEntity>
+        {
+            Items = pagedItems,
+            NextCursor = nextCursor
+        };
+    }
+
+    /// <inheritdoc />
+    public async Task<PagedResult<TEntity>?> GetAllProjectedAsync(
+        PaginationRequest pagination,
+        IReadOnlyList<SelectedField> selectedFields,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(pagination);
+        ArgumentNullException.ThrowIfNull(selectedFields);
+
+        if (!TryBuildProjectionPlan(selectedFields, pagination.Filters, pagination.SortFields, out var projectionPlan))
+        {
+            return null;
+        }
+
+        var projection = projectionPlan!;
+        var query = BuildProjectedQuery(GetBaseProjectionQuery(), projection);
         if (pagination.Filters.Count > 0)
         {
             query = ApplyComparisonFilters(query, pagination.Filters);
@@ -527,7 +637,73 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             ex);
     }
 
-    private static List<KeysetSortPart> GetEffectiveSortFields(IReadOnlyList<SortField> sortFields)
+    private bool TryBuildProjectionPlan(
+        IReadOnlyList<SelectedField> selectedFields,
+        IReadOnlyList<FilterValue> filters,
+        IReadOnlyList<SortField> sortFields,
+        out ProjectionPlan? projectionPlan)
+    {
+        if (!_options.EnableProjectionPushdown || selectedFields.Count == 0)
+        {
+            projectionPlan = null;
+            return false;
+        }
+
+        var requiredProperties = new HashSet<string>(StringComparer.Ordinal)
+        {
+            GetKeyPropertyName()
+        };
+
+        foreach (var field in selectedFields)
+        {
+            requiredProperties.Add(field.PropertyName);
+        }
+
+        foreach (var filter in filters)
+        {
+            requiredProperties.Add(filter.PropertyName);
+        }
+
+        foreach (var sortField in sortFields)
+        {
+            requiredProperties.Add(sortField.PropertyName);
+        }
+
+        var properties = new List<PropertyInfo>(requiredProperties.Count);
+        foreach (var propertyName in requiredProperties)
+        {
+            var property = typeof(TEntity).GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+            if (property is null || !property.CanRead || !property.CanWrite || !IsProjectableProperty(property))
+            {
+                projectionPlan = null;
+                return false;
+            }
+
+            properties.Add(property);
+        }
+
+        var parameter = Expression.Parameter(typeof(TEntity), "entity");
+        var bindings = properties
+            .Select(property => Expression.Bind(property, Expression.Property(parameter, property)))
+            .ToArray();
+        var body = Expression.MemberInit(Expression.New(typeof(TEntity)), bindings);
+        var selector = Expression.Lambda<Func<TEntity, TEntity>>(body, parameter);
+
+        projectionPlan = new ProjectionPlan(properties, selector);
+        return true;
+    }
+
+    private IQueryable<TEntity> BuildProjectedQuery(IQueryable<TEntity> query, ProjectionPlan projectionPlan)
+    {
+        return query.AsNoTracking().Select(projectionPlan.Selector);
+    }
+
+    private IQueryable<TEntity> GetBaseProjectionQuery()
+    {
+        return _context.Set<TEntity>().AsNoTracking();
+    }
+
+    private List<KeysetSortPart> GetEffectiveSortFields(IReadOnlyList<SortField> sortFields)
     {
         return sortFields
             .Select(sortField => new KeysetSortPart(sortField.PropertyName, sortField.Direction, sortField.QueryParameterName))
@@ -997,9 +1173,28 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             underlyingType == typeof(bool);
     }
 
+    private bool IsProjectableProperty(PropertyInfo property)
+    {
+        var propertyType = property.PropertyType;
+        var underlyingType = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
+
+        return underlyingType.IsEnum ||
+            underlyingType.IsPrimitive ||
+            underlyingType == typeof(string) ||
+            underlyingType == typeof(decimal) ||
+            underlyingType == typeof(Guid) ||
+            underlyingType == typeof(DateTime) ||
+            underlyingType == typeof(DateTimeOffset) ||
+            underlyingType == typeof(TimeSpan);
+    }
+
     private sealed record KeysetSortPart(string PropertyName, SortDirection Direction, string QueryParameterName);
 
     private sealed record KeysetPlan(IReadOnlyList<KeysetPlanPart> Parts);
+
+    private sealed record ProjectionPlan(
+        IReadOnlyList<PropertyInfo> Properties,
+        Expression<Func<TEntity, TEntity>> Selector);
 
     private sealed record KeysetPlanPart(
         string PropertyName,

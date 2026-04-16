@@ -92,6 +92,27 @@ document. Using lower-level bulk update APIs such as `ExecuteUpdate()` would byp
 tracked entity model and complicate parity with hooks, validation, and existing update
 semantics.
 
+### Opt-in projection pushdown for field selection
+Field selection remains a core API-layer feature, but the EF Core adapter now exposes an
+optional projection capability through `IFieldSelectionProjectionRepository<TEntity, TKey>`.
+When `EfCoreRepositoryOptions.EnableProjectionPushdown` is enabled and the request selects
+only direct scalar properties, the adapter builds an `Expression<Func<TEntity, TEntity>>`
+projection, automatically includes the primary key plus any active filter/sort columns, and
+applies `.Select(...)` before materialization.
+
+This was chosen as an opt-in behavior because it changes the SQL shape and can affect how
+much data is available to downstream features. To preserve existing observable semantics,
+the core endpoints only use pushdown when the repository advertises projection support and
+when HATEOAS links, ETag generation, and hooks are not active for the request. If any
+requested field is not safely projectable, the repository returns `null` for the projection
+attempt and the endpoints fall back to the existing post-fetch `FieldProjector` behavior.
+
+The current implementation intentionally limits pushdown to direct scalar CLR properties
+(including strings, numbers, GUIDs, dates, booleans, nullable variants, and enums). That
+keeps the generated `Select` expression straightforward and provider-friendly while still
+covering the common wide-entity scenario that motivated the optimization. Navigation paths,
+blob-like shapes, and other non-projectable members continue to use the previous fallback.
+
 ### Automatic primary key detection from EF Core model metadata
 The adapter resolves the key selector automatically when the caller does not provide one.
 `EfCoreRepository` now resolves the selector from the real scoped `DbContext` during

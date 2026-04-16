@@ -36,4 +36,10 @@ public class EfCoreRepositoryOptions<TEntity, TKey>
     /// Gets or sets an optional logger used for adapter-level fallback warnings.
     /// </summary>
     public ILogger? Logger { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether field-selection projection pushdown is enabled.
+    /// Default is <c>false</c>.
+    /// </summary>
+    public bool EnableProjectionPushdown { get; set; }
 }

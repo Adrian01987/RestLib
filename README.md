@@ -534,8 +534,9 @@ builder.Services.AddRestLibEfCore<AppDbContext, Product, Guid>(options =>
 
 The EF Core adapter supports RestLib's filtering, sorting, counting, pagination,
 batch operations, and hooks on top of EF Core, with server-side query translation
-for filtering, sorting, and counting. Field selection is supported at the API layer,
-but not pushed down to SQL. Some capabilities have important implementation limits;
+for filtering, sorting, and counting. Field selection can also be pushed down to SQL
+when projection pushdown is enabled and the request only uses projectable direct scalar
+properties. Some capabilities have important implementation limits;
 see [Current EF Core Adapter Limitations](#current-ef-core-adapter-limitations)
 and [ADR-021](docs/adr/021-ef-core-adapter.md).
 
@@ -543,14 +544,14 @@ and [ADR-021](docs/adr/021-ef-core-adapter.md).
 
 - **Single-property keys only** - the adapter auto-detects or accepts a single `TKey` value. Composite EF Core keys are not supported.
 - **Keyset pagination with offset fallback** - the EF Core adapter uses last-seen sort values plus the key for supported stable sorts, but falls back to encoded offset cursors for unsupported sort shapes.
-- **Field selection is not pushed down to SQL** - sparse fieldsets are applied after entity materialization, so EF Core still loads the full entity.
+- **Projection pushdown is opt-in and conditional** - when enabled, EF Core pushes down direct scalar field selections and still includes key/filter/sort columns in SQL. Requests fall back to post-fetch field stripping for non-projectable fields or when HATEOAS, ETag, or hooks are active.
 - **Top-level properties only** - filtering, sorting, field selection, and PATCH handling operate on direct entity properties. Nested or related-property paths are not supported.
 - **Constraint mapping is provider-limited** - database constraint classification still relies primarily on exception-message inspection and is not yet specialized per provider.
 
 Use the adapter when you want the standard RestLib endpoint surface over a typical
 EF Core model, but expect to write a custom repository if you need composite-key
-resources, true keyset pagination, SQL-level field projection, or deep/navigational
-query semantics.
+resources, deep/navigational query semantics, or SQL-level projection beyond direct
+scalar property selection.
 
 ### Versioning
 

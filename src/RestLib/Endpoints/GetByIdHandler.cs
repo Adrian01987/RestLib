@@ -70,7 +70,18 @@ internal static class GetByIdHandler
                     }
                 }
 
-                var entity = await repository.GetByIdAsync(id, ct);
+                TEntity? entity;
+                if (selectedFields.Count > 0 &&
+                    ShouldUseProjectionPushdown(options, config) &&
+                    repository is IFieldSelectionProjectionRepository<TEntity, TKey> projectionRepository)
+                {
+                    entity = await projectionRepository.GetByIdProjectedAsync(id, selectedFields, ct: ct)
+                        ?? await repository.GetByIdAsync(id, ct);
+                }
+                else
+                {
+                    entity = await repository.GetByIdAsync(id, ct);
+                }
 
                 if (entity is null)
                 {
@@ -156,5 +167,16 @@ internal static class GetByIdHandler
                 throw;
             }
         };
+    }
+
+    private static bool ShouldUseProjectionPushdown<TEntity, TKey>(
+        RestLibOptions options,
+        RestLibEndpointConfiguration<TEntity, TKey> config)
+        where TEntity : class
+        where TKey : notnull
+    {
+        return !options.EnableHateoas &&
+            !options.EnableETagSupport &&
+            config.Hooks is null;
     }
 }
