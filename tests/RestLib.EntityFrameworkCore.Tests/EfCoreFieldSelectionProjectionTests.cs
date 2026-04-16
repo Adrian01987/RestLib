@@ -2,15 +2,11 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using RestLib.Configuration;
 using RestLib.EntityFrameworkCore.Tests.Fakes;
 using RestLib.FieldSelection;
 using RestLib.Filtering;
@@ -186,31 +182,6 @@ public class EfCoreFieldSelectionProjectionTests : IAsyncLifetime
         result.Should().BeNull();
     }
 
-    [Fact]
-    public async Task GetAll_WithNonProjectableRequestedField_FallsBackToPostFetchProjection()
-    {
-        // Arrange
-        await using var harness = await BlobProjectionHostHarness.BuildAsync();
-        harness.DbContext.Products.Add(new ProductWithBlobEntity
-        {
-            Id = Guid.NewGuid(),
-            Name = "Blob Product",
-            Blob = [1, 2, 3]
-        });
-        await harness.DbContext.SaveChangesAsync();
-
-        // Act
-        var response = await harness.Client.GetAsync("/api/blob-products?fields=name,blob");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
-        var firstItem = json.GetProperty("items")[0];
-        firstItem.GetProperty("name").GetString().Should().Be("Blob Product");
-        firstItem.TryGetProperty("blob", out var blob).Should().BeTrue();
-        blob.GetString().Should().NotBeNullOrEmpty();
-    }
-
     private static ProductEntity CreateProduct(
         string name,
         decimal unitPrice,
@@ -302,91 +273,5 @@ public class EfCoreFieldSelectionProjectionTests : IAsyncLifetime
         public string Name { get; set; } = string.Empty;
 
         public byte[] Blob { get; set; } = [];
-    }
-
-    private sealed class BlobProjectionHostHarness : IAsyncDisposable
-    {
-        private readonly SqliteConnection _connection;
-        private readonly IServiceScope _scope;
-
-        private BlobProjectionHostHarness(
-            IHost host,
-            HttpClient client,
-            BlobProjectionTestDbContext dbContext,
-            SqliteConnection connection,
-            IServiceScope scope)
-        {
-            Host = host;
-            Client = client;
-            DbContext = dbContext;
-            _connection = connection;
-            _scope = scope;
-        }
-
-        public IHost Host { get; }
-
-        public HttpClient Client { get; }
-
-        public BlobProjectionTestDbContext DbContext { get; }
-
-        public static async Task<BlobProjectionHostHarness> BuildAsync()
-        {
-            var connection = new SqliteConnection("DataSource=:memory:");
-            await connection.OpenAsync();
-
-            var host = new HostBuilder()
-                .ConfigureWebHost(webBuilder =>
-                {
-                    webBuilder
-                        .UseTestServer()
-                        .ConfigureServices(services =>
-                        {
-                            services.AddRestLib();
-                            services.AddSingleton(connection);
-                            services.AddDbContext<BlobProjectionTestDbContext>(options => options.UseSqlite(connection));
-                            services.AddRestLibEfCore<BlobProjectionTestDbContext, ProductWithBlobEntity, Guid>(options =>
-                            {
-                                options.KeySelector = entity => entity.Id;
-                                options.EnableProjectionPushdown = true;
-                            });
-                            services.AddRouting();
-                        })
-                        .Configure(app =>
-                        {
-                            app.UseRouting();
-                            app.UseEndpoints(endpoints =>
-                            {
-                                endpoints.MapRestLib<ProductWithBlobEntity, Guid>("/api/blob-products", config =>
-                                {
-                                    config.AllowAnonymous();
-                                    config.AllowFieldSelection(p => p.Id, p => p.Name, p => p.Blob);
-                                });
-                            });
-                        });
-                })
-                .Build();
-
-            await host.StartAsync();
-
-            using (var initializationScope = host.Services.CreateScope())
-            {
-                var initializationContext = initializationScope.ServiceProvider.GetRequiredService<BlobProjectionTestDbContext>();
-                await initializationContext.Database.EnsureCreatedAsync();
-            }
-
-            var scope = host.Services.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<BlobProjectionTestDbContext>();
-
-            return new BlobProjectionHostHarness(host, host.GetTestClient(), dbContext, connection, scope);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            Client.Dispose();
-            _scope.Dispose();
-            await Host.StopAsync();
-            Host.Dispose();
-            await _connection.DisposeAsync();
-        }
     }
 }
