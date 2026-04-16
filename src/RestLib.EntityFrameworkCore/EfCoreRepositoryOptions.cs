@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using Microsoft.Extensions.Logging;
 
 namespace RestLib.EntityFrameworkCore;
 
@@ -30,4 +31,9 @@ public class EfCoreRepositoryOptions<TEntity, TKey>
     /// </summary>
     public EfCorePatchUnknownFieldBehavior PatchUnknownFieldBehavior { get; set; }
         = EfCorePatchUnknownFieldBehavior.Permissive;
+
+    /// <summary>
+    /// Gets or sets an optional logger used for adapter-level fallback warnings.
+    /// </summary>
+    public ILogger? Logger { get; set; }
 }

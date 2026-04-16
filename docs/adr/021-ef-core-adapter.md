@@ -24,29 +24,35 @@ extension methods rather than through changes to endpoint or abstraction layers.
 
 ## Decision
 
-### Index-based cursor pagination over keyset pagination
-The EF Core adapter implements RestLib's cursor pagination contract as an index-based
-offset encoded inside an opaque cursor string. `EfCoreRepository.GetAllAsync` decodes the
-cursor as an integer start index, applies ordering, then uses `Skip(startIndex)` and
-`Take(limit + 1)` to fetch a page and determine whether a next cursor should be emitted.
-The next cursor is simply the encoded index for the next page boundary.
+### Keyset pagination for stable sorts with explicit offset fallback
+The EF Core adapter implements RestLib's cursor pagination contract as true forward-only
+keyset pagination when a stable sortable property set is available. `EfCoreRepository.GetAllAsync`
+builds an ordered sort plan from the effective request sort plus the primary-key tie-breaker,
+encodes the last-seen sort values into an opaque cursor payload, and translates subsequent
+pages into a `WHERE` predicate of the form:
 
-This strategy was chosen because it matches RestLib's existing core pagination contract
-and the behavior already established by the InMemory adapter. It keeps the EF Core
-implementation straightforward, requires no new cursor payload shape, and works across
-all ordered queries without introducing provider-specific SQL generation logic.
+`(Sort1 > last1) OR (Sort1 = last1 AND Sort2 > last2) ...`
+
+For descending sorts the comparison operators are inverted accordingly. The key is always
+included as the final tie-breaker so pages remain deterministic even when many rows share
+the same client-visible sort value.
+
+This strategy was chosen because it improves deep-page performance and makes forward
+pagination stable under inserts between requests for the common case of simple scalar sorts.
+It also preserves RestLib's existing opaque cursor HTTP contract: the public API still uses
+the same `cursor` parameter and `next` link shape, while the EF Core adapter is free to use
+an adapter-specific payload internally.
+
+The adapter still falls back to offset pagination for unsupported sort shapes. In the current
+implementation, keyset pagination is used only when all effective sort fields resolve to direct,
+database-friendly scalar CLR properties (including strings, numbers, GUIDs, dates, booleans,
+nullable variants, and enums). When that condition is not met, the adapter logs a warning and
+continues with encoded offset cursors so the public API remains usable.
 
 This is intentionally a statement about the EF Core adapter implementation, not a broader
 claim that every RestLib cursor is a keyset cursor. RestLib's public API exposes an opaque
-cursor contract; the current built-in adapters satisfy that contract with encoded
-offset/index state. See ADR-001 for the library-level pagination contract.
-
-Keyset pagination was considered because it performs better for very deep result sets and
-avoids the skip-scan penalty of large offsets. We did not adopt it here because RestLib's
-current `CursorEncoder` and `PaginationRequest` model are based on integer offsets rather
-than last-seen sort keys. Moving to keyset pagination would require changing the core
-pagination contract, which is out of scope for the adapter and would violate the product
-goal of keeping RestLib core unchanged.
+cursor contract; adapter implementations can satisfy it with either keyset state or offset
+state. See ADR-001 for the library-level pagination contract.
 
 ### AsNoTracking by default for read operations
 The adapter defaults `EfCoreRepositoryOptions.UseAsNoTracking` to `true` and applies that
@@ -125,8 +131,9 @@ one another.
 ## Consequences
 - The adapter satisfies RestLib's repository contracts without requiring changes to core
   RestLib source code.
-- Cursor pagination remains compatible with the existing opaque cursor contract, but deep
-  pages still inherit the performance trade-offs of `Skip`/`Take` on large offsets.
+- Cursor pagination remains compatible with the existing opaque cursor contract, but EF Core
+  now uses keyset pagination for supported stable sorts and falls back to `Skip`/`Take` only
+  for unsupported sort shapes.
 - Read-heavy API workloads benefit from `AsNoTracking` by default, while applications that
   need tracked reads must opt out explicitly.
 - Partial updates integrate cleanly with EF Core and persist only modified properties, but

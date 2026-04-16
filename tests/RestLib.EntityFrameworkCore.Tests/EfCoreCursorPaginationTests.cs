@@ -162,6 +162,155 @@ public class EfCoreCursorPaginationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetAll_CursorWithDuplicateSortValues_SeesAllEntitiesExactlyOnce()
+    {
+        // Arrange
+        await SeedProductsAsync(
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "A", UnitPrice = 10m, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "B", UnitPrice = 10m, StockQuantity = 2, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "C", UnitPrice = 10m, StockQuantity = 3, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "D", UnitPrice = 20m, StockQuantity = 4, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "E", UnitPrice = 20m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "F", UnitPrice = 30m, StockQuantity = 6, CreatedAt = DateTime.UtcNow, IsActive = true });
+
+        var collectedIds = new List<Guid>();
+        string? cursor = null;
+
+        // Act
+        do
+        {
+            var url = cursor is null
+                ? "/api/products?sort=unit_price:asc&limit=2"
+                : $"/api/products?sort=unit_price:asc&limit=2&cursor={Uri.EscapeDataString(cursor)}";
+            var response = await _client.GetAsync(url);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var page = await DeserializeCollectionResponseAsync(response);
+            collectedIds.AddRange(page.Items.Select(product => product.Id));
+            cursor = GetCursorFromNextLink(page.Next);
+        }
+        while (cursor is not null);
+
+        // Assert
+        collectedIds.Should().HaveCount(6);
+        collectedIds.Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public async Task GetAll_CursorWithDescendingSorting_ReturnsCorrectSubsequentPages()
+    {
+        // Arrange
+        await SeedProductsAsync(
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Product A", UnitPrice = 10m, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Product B", UnitPrice = 20m, StockQuantity = 2, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Product C", UnitPrice = 30m, StockQuantity = 3, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Product D", UnitPrice = 40m, StockQuantity = 4, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Product E", UnitPrice = 50m, StockQuantity = 5, CreatedAt = DateTime.UtcNow, IsActive = true });
+
+        var collectedPrices = new List<decimal>();
+        string? cursor = null;
+
+        // Act
+        do
+        {
+            var url = cursor is null
+                ? "/api/products?sort=unit_price:desc&limit=2"
+                : $"/api/products?sort=unit_price:desc&limit=2&cursor={Uri.EscapeDataString(cursor)}";
+            var response = await _client.GetAsync(url);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var page = await DeserializeCollectionResponseAsync(response);
+            collectedPrices.AddRange(page.Items.Select(product => product.UnitPrice));
+            cursor = GetCursorFromNextLink(page.Next);
+        }
+        while (cursor is not null);
+
+        // Assert
+        collectedPrices.Should().Equal(50m, 40m, 30m, 20m, 10m);
+    }
+
+    [Fact]
+    public async Task GetAll_CursorWithSorting_RemainsStableAfterInsertBetweenPages()
+    {
+        // Arrange
+        await SeedProductsAsync(
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Product A", UnitPrice = 10m, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Product B", UnitPrice = 20m, StockQuantity = 2, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Product C", UnitPrice = 30m, StockQuantity = 3, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Product D", UnitPrice = 40m, StockQuantity = 4, CreatedAt = DateTime.UtcNow, IsActive = true });
+
+        var firstResponse = await _client.GetAsync("/api/products?sort=unit_price:asc&limit=2");
+        var firstPage = await DeserializeCollectionResponseAsync(firstResponse);
+        var cursor = GetCursorFromNextLink(firstPage.Next);
+
+        _db.Products.Add(new ProductEntity
+        {
+            Id = Guid.NewGuid(),
+            ProductName = "Inserted Between Pages",
+            UnitPrice = 15m,
+            StockQuantity = 99,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true
+        });
+        await _db.SaveChangesAsync();
+
+        // Act
+        var secondResponse = await _client.GetAsync($"/api/products?sort=unit_price:asc&limit=2&cursor={Uri.EscapeDataString(cursor!)}");
+
+        // Assert
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var secondPage = await DeserializeCollectionResponseAsync(secondResponse);
+        secondPage.Items.Select(product => product.UnitPrice).Should().Equal(30m, 40m);
+        secondPage.Items.Select(product => product.Id)
+            .Should().NotIntersectWith(firstPage.Items.Select(product => product.Id));
+    }
+
+    [Fact]
+    public async Task GetAll_OldOffsetCursorAgainstSortedKeysetRequest_Returns400WithProblemDetails()
+    {
+        // Arrange
+        var oldOffsetCursor = RestLib.Pagination.CursorEncoder.Encode(2);
+
+        // Act
+        var response = await _client.GetAsync($"/api/products?sort=unit_price:asc&cursor={Uri.EscapeDataString(oldOffsetCursor)}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonSerializer.Deserialize<JsonElement>(content);
+
+        json.GetProperty("type").GetString().Should().Be("/problems/invalid-cursor");
+        json.GetProperty("status").GetInt32().Should().Be(400);
+    }
+
+    [Fact]
+    public async Task GetAll_KeysetCursorAgainstOffsetFallbackSort_Returns400WithProblemDetails()
+    {
+        // Arrange
+        await SeedProductsAsync(
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "A", UnitPrice = 10m, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "B", UnitPrice = 20m, StockQuantity = 2, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "C", UnitPrice = 30m, StockQuantity = 3, CreatedAt = DateTime.UtcNow, IsActive = true });
+
+        var firstResponse = await _client.GetAsync("/api/products?sort=unit_price:asc&limit=2");
+        var firstPage = await DeserializeCollectionResponseAsync(firstResponse);
+        var keysetCursor = GetCursorFromNextLink(firstPage.Next);
+
+        // Act
+        var response = await _client.GetAsync($"/api/products?sort=product_name:asc&limit=2&cursor={Uri.EscapeDataString(keysetCursor!)}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var content = await response.Content.ReadAsStringAsync();
+        var json = JsonSerializer.Deserialize<JsonElement>(content);
+
+        json.GetProperty("type").GetString().Should().Be("/problems/invalid-cursor");
+        json.GetProperty("status").GetInt32().Should().Be(400);
+    }
+
+    [Fact]
     public async Task GetAll_InvalidCursor_Returns400WithProblemDetails()
     {
         // Arrange

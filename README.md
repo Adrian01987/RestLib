@@ -186,7 +186,7 @@ app.MapRestLib<Product, Guid>("/api/products", config =>
 RestLib follows the [Zalando REST API Guidelines](https://opensource.zalando.com/restful-api-guidelines/) and uses RFC 9457 Problem Details for error payloads.
 
 - `snake_case` JSON properties
-- Cursor-based pagination API (forward-only by design; current built-in adapters use opaque encoded offsets/indexes — see [ADR-001](docs/adr/001-cursor-pagination.md))
+- Cursor-based pagination API (forward-only by design; the EF Core adapter uses keyset cursors for supported stable sorts and falls back to encoded offsets otherwise — see [ADR-001](docs/adr/001-cursor-pagination.md))
 - Structured validation and error responses
 - Consistent HTTP status codes
 
@@ -542,7 +542,7 @@ and [ADR-021](docs/adr/021-ef-core-adapter.md).
 #### Current EF Core Adapter Limitations
 
 - **Single-property keys only** - the adapter auto-detects or accepts a single `TKey` value. Composite EF Core keys are not supported.
-- **Offset-style cursor behavior** - cursors are opaque, but the EF Core adapter currently encodes an index offset and applies `Skip`/`Take`, not keyset pagination.
+- **Keyset pagination with offset fallback** - the EF Core adapter uses last-seen sort values plus the key for supported stable sorts, but falls back to encoded offset cursors for unsupported sort shapes.
 - **Field selection is not pushed down to SQL** - sparse fieldsets are applied after entity materialization, so EF Core still loads the full entity.
 - **Top-level properties only** - filtering, sorting, field selection, and PATCH handling operate on direct entity properties. Nested or related-property paths are not supported.
 - **Constraint mapping is provider-limited** - database constraint classification still relies primarily on exception-message inspection and is not yet specialized per provider.
@@ -718,7 +718,7 @@ Key decisions are documented as Architecture Decision Records:
 ## Known Limitations
 
 - **Forward-only cursor pagination** — cursors support forward traversal only; there is no backward/previous-page navigation.
-- **Cursor contract, adapter-specific implementation** — RestLib exposes an opaque cursor API, but the current built-in adapters use encoded offsets/indexes rather than keyset pagination.
+- **Cursor contract, adapter-specific implementation** — RestLib exposes an opaque cursor API. The InMemory adapter still uses encoded offsets/indexes, while the EF Core adapter uses keyset cursors for supported stable sorts and falls back to offsets otherwise.
 - **Post-fetch field selection** — field projection is applied after the full entity is retrieved from the repository, not pushed down to the data source.
 - **Flat properties only** — filtering, sorting, and field selection operate on top-level entity properties; nested or related entity paths are not supported.
 - **No built-in search** — full-text or fuzzy search is not included; implement it in your repository if needed.

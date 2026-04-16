@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.Extensions.Logging;
 using RestLib.Abstractions;
 using RestLib.Filtering;
 using RestLib.Pagination;
@@ -24,6 +25,35 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     where TEntity : class
     where TKey : notnull
 {
+    private const int KeysetCursorVersion = 1;
+    private static readonly MethodInfo OrderByMethod = typeof(Queryable)
+        .GetMethods()
+        .Single(method =>
+            method.Name == nameof(Queryable.OrderBy) &&
+            method.IsGenericMethodDefinition &&
+            method.GetGenericArguments().Length == 2 &&
+            method.GetParameters().Length == 2);
+    private static readonly MethodInfo OrderByDescendingMethod = typeof(Queryable)
+        .GetMethods()
+        .Single(method =>
+            method.Name == nameof(Queryable.OrderByDescending) &&
+            method.IsGenericMethodDefinition &&
+            method.GetGenericArguments().Length == 2 &&
+            method.GetParameters().Length == 2);
+    private static readonly MethodInfo ThenByMethod = typeof(Queryable)
+        .GetMethods()
+        .Single(method =>
+            method.Name == nameof(Queryable.ThenBy) &&
+            method.IsGenericMethodDefinition &&
+            method.GetGenericArguments().Length == 2 &&
+            method.GetParameters().Length == 2);
+    private static readonly MethodInfo ThenByDescendingMethod = typeof(Queryable)
+        .GetMethods()
+        .Single(method =>
+            method.Name == nameof(Queryable.ThenByDescending) &&
+            method.IsGenericMethodDefinition &&
+            method.GetGenericArguments().Length == 2 &&
+            method.GetParameters().Length == 2);
     private static readonly IReadOnlyDictionary<string, PropertyInfo> SnakeCasePropertyMap = BuildSnakeCasePropertyMap();
     private static readonly JsonSerializerOptions PatchJsonOptions = new()
     {
@@ -73,19 +103,40 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             query = ApplyInFilters(query, pagination.Filters);
         }
 
-        var orderedQuery = SortBuilder.ApplySorting(query, pagination.SortFields, _keySelector);
-
-        var startIndex = 0;
-        if (!string.IsNullOrEmpty(pagination.Cursor) && CursorEncoder.TryDecode<int>(pagination.Cursor, out var cursorIndex))
+        var effectiveSortFields = GetEffectiveSortFields(pagination.SortFields);
+        IOrderedQueryable<TEntity> orderedQuery;
+        KeysetPlan? keysetPlan;
+        var offsetStartIndex = 0;
+        if (TryBuildKeysetPlan(effectiveSortFields, out var builtKeysetPlan))
         {
-            startIndex = cursorIndex;
+            var plan = builtKeysetPlan!;
+            keysetPlan = plan;
+            orderedQuery = ApplyKeysetCursorFilter(query, plan, pagination.Cursor);
+        }
+        else
+        {
+            keysetPlan = null;
+            LogKeysetFallback(effectiveSortFields);
+            offsetStartIndex = DecodeOffsetCursor(pagination.Cursor);
+            orderedQuery = SortBuilder.ApplySorting(query, pagination.SortFields, _keySelector);
         }
 
         var takeCount = pagination.Limit == int.MaxValue ? int.MaxValue : pagination.Limit + 1;
-        var pagedItems = await orderedQuery
-            .Skip(startIndex)
-            .Take(takeCount)
-            .ToListAsync(ct);
+        List<TEntity> pagedItems;
+
+        if (keysetPlan is not null)
+        {
+            pagedItems = await orderedQuery
+                .Take(takeCount)
+                .ToListAsync(ct);
+        }
+        else
+        {
+            pagedItems = await orderedQuery
+                .Skip(offsetStartIndex)
+                .Take(takeCount)
+                .ToListAsync(ct);
+        }
 
         var hasMore = pagedItems.Count > pagination.Limit;
         if (hasMore)
@@ -93,9 +144,21 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             pagedItems = pagedItems.Take(pagination.Limit).ToList();
         }
 
-        var nextCursor = hasMore && startIndex <= int.MaxValue - pagination.Limit
-            ? CursorEncoder.Encode(startIndex + pagination.Limit)
-            : null;
+        string? nextCursor;
+        if (!hasMore)
+        {
+            nextCursor = null;
+        }
+        else if (keysetPlan is not null)
+        {
+            nextCursor = EncodeKeysetCursor(keysetPlan, pagedItems[^1]);
+        }
+        else
+        {
+            nextCursor = offsetStartIndex <= int.MaxValue - pagination.Limit
+                ? CursorEncoder.Encode(offsetStartIndex + pagination.Limit)
+                : null;
+        }
 
         return new PagedResult<TEntity>
         {
@@ -464,7 +527,197 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             ex);
     }
 
-    private static IQueryable<TEntity> ApplyComparisonFilters(
+    private static List<KeysetSortPart> GetEffectiveSortFields(IReadOnlyList<SortField> sortFields)
+    {
+        return sortFields
+            .Select(sortField => new KeysetSortPart(sortField.PropertyName, sortField.Direction, sortField.QueryParameterName))
+            .ToList();
+    }
+
+    private int DecodeOffsetCursor(string? cursor)
+    {
+        if (string.IsNullOrEmpty(cursor))
+        {
+            return 0;
+        }
+
+        if (CursorEncoder.TryDecode<int>(cursor, out var cursorIndex))
+        {
+            return cursorIndex;
+        }
+
+        throw new EfCoreInvalidCursorException("The provided cursor is not a valid offset cursor for this result set.");
+    }
+
+    private bool TryBuildKeysetPlan(
+        IReadOnlyList<KeysetSortPart> sortFields,
+        out KeysetPlan? keysetPlan)
+    {
+        var parts = new List<KeysetPlanPart>();
+
+        foreach (var sortField in sortFields)
+        {
+            if (!TryBuildKeysetPlanPart(sortField.PropertyName, sortField.Direction, sortField.QueryParameterName, out var part))
+            {
+                keysetPlan = null;
+                return false;
+            }
+
+            parts.Add(part!);
+        }
+
+        if (!parts.Any(part => string.Equals(part.PropertyName, GetKeyPropertyName(), StringComparison.Ordinal)))
+        {
+            if (!TryBuildKeysetPlanPart(GetKeyPropertyName(), SortDirection.Asc, JsonNamingPolicy.SnakeCaseLower.ConvertName(GetKeyPropertyName()), out var keyPart))
+            {
+                keysetPlan = null;
+                return false;
+            }
+
+            parts.Add(keyPart!);
+        }
+
+        keysetPlan = new KeysetPlan(parts);
+        return true;
+    }
+
+    private bool TryBuildKeysetPlanPart(
+        string propertyName,
+        SortDirection direction,
+        string queryParameterName,
+        out KeysetPlanPart? part)
+    {
+        var property = typeof(TEntity).GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+        if (property is null || !IsKeysetComparableType(property.PropertyType))
+        {
+            part = null;
+            return false;
+        }
+
+        var parameter = Expression.Parameter(typeof(TEntity), "entity");
+        var memberAccess = Expression.Property(parameter, property);
+        var delegateType = typeof(Func<,>).MakeGenericType(typeof(TEntity), property.PropertyType);
+        var selector = Expression.Lambda(delegateType, memberAccess, parameter);
+
+        part = new KeysetPlanPart(property.Name, queryParameterName, property.PropertyType, direction, selector, property);
+        return true;
+    }
+
+    private IOrderedQueryable<TEntity> ApplyKeysetCursorFilter(
+        IQueryable<TEntity> query,
+        KeysetPlan keysetPlan,
+        string? cursor)
+    {
+        var filteredQuery = query;
+        if (!string.IsNullOrEmpty(cursor))
+        {
+            var decodedCursor = DecodeKeysetCursor(cursor, keysetPlan);
+            var predicate = BuildKeysetPredicate(keysetPlan, decodedCursor);
+            filteredQuery = filteredQuery.Where(predicate);
+        }
+
+        return ApplyKeysetOrdering(filteredQuery, keysetPlan);
+    }
+
+    private IOrderedQueryable<TEntity> ApplyKeysetOrdering(IQueryable<TEntity> query, KeysetPlan keysetPlan)
+    {
+        IOrderedQueryable<TEntity>? orderedQuery = null;
+
+        foreach (var part in keysetPlan.Parts)
+        {
+            var method = GetQueryableSortMethod(part.Direction, orderedQuery is null);
+            orderedQuery = ApplyQueryableOrdering(method, orderedQuery ?? query, part.Selector);
+        }
+
+        return orderedQuery!;
+    }
+
+    private Expression<Func<TEntity, bool>> BuildKeysetPredicate(KeysetPlan keysetPlan, EfCoreKeysetCursor cursor)
+    {
+        if (cursor.Version != KeysetCursorVersion)
+        {
+            throw new EfCoreInvalidCursorException("The provided cursor version is not supported.");
+        }
+
+        if (cursor.Values.Count != keysetPlan.Parts.Count)
+        {
+            throw new EfCoreInvalidCursorException("The provided cursor does not match the active sort shape.");
+        }
+
+        var parameter = Expression.Parameter(typeof(TEntity), "entity");
+        Expression? predicate = null;
+
+        for (var i = 0; i < keysetPlan.Parts.Count; i++)
+        {
+            Expression? andChain = null;
+
+            for (var j = 0; j < i; j++)
+            {
+                var equalsExpression = BuildComparisonExpression(parameter, keysetPlan.Parts[j], cursor.Values[j], ExpressionType.Equal);
+                andChain = andChain is null ? equalsExpression : Expression.AndAlso(andChain, equalsExpression);
+            }
+
+            var comparisonType = keysetPlan.Parts[i].Direction == SortDirection.Asc
+                ? ExpressionType.GreaterThan
+                : ExpressionType.LessThan;
+            var comparisonExpression = BuildComparisonExpression(parameter, keysetPlan.Parts[i], cursor.Values[i], comparisonType);
+            var branch = andChain is null ? comparisonExpression : Expression.AndAlso(andChain, comparisonExpression);
+            predicate = predicate is null ? branch : Expression.OrElse(predicate, branch);
+        }
+
+        return Expression.Lambda<Func<TEntity, bool>>(predicate!, parameter);
+    }
+
+    private Expression BuildComparisonExpression(
+        ParameterExpression parameter,
+        KeysetPlanPart part,
+        JsonElement cursorValue,
+        ExpressionType comparisonType)
+    {
+        var left = Expression.Property(parameter, part.Property);
+        var typedValue = JsonSerializer.Deserialize(cursorValue.GetRawText(), part.PropertyType)
+            ?? throw new EfCoreInvalidCursorException($"The provided cursor contains an invalid value for '{part.QueryParameterName}'.");
+        var right = Expression.Constant(typedValue, part.PropertyType);
+
+        return Expression.MakeBinary(comparisonType, left, right);
+    }
+
+    private string EncodeKeysetCursor(KeysetPlan keysetPlan, TEntity entity)
+    {
+        var values = keysetPlan.Parts
+            .Select(part => JsonSerializer.SerializeToElement(part.Property.GetValue(entity), part.PropertyType))
+            .ToList();
+
+        return CursorEncoder.Encode(new EfCoreKeysetCursor
+        {
+            Version = KeysetCursorVersion,
+            SortSignature = BuildSortSignature(keysetPlan),
+            Values = values
+        });
+    }
+
+    private EfCoreKeysetCursor DecodeKeysetCursor(string cursor, KeysetPlan keysetPlan)
+    {
+        if (CursorEncoder.TryDecode<EfCoreKeysetCursor>(cursor, out var decodedCursor))
+        {
+            var keysetCursor = decodedCursor ?? throw new EfCoreInvalidCursorException("The provided cursor could not be decoded.");
+            if (!string.Equals(keysetCursor.SortSignature, BuildSortSignature(keysetPlan), StringComparison.Ordinal))
+            {
+                throw new EfCoreInvalidCursorException("The provided cursor does not match the active sort order.");
+            }
+
+            return keysetCursor;
+        }
+
+        if (CursorEncoder.TryDecode<int>(cursor, out _))
+        {
+            throw new EfCoreInvalidCursorException("Offset cursors are no longer valid for this sorted result set.");
+        }
+
+        throw new EfCoreInvalidCursorException("The provided cursor is not a valid EF Core pagination cursor.");
+    }
+
+    private IQueryable<TEntity> ApplyComparisonFilters(
         IQueryable<TEntity> query,
         IReadOnlyList<FilterValue> filters)
     {
@@ -482,7 +735,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         return query;
     }
 
-    private static bool IsComparisonOperator(FilterOperator op)
+    private bool IsComparisonOperator(FilterOperator op)
     {
         return op is FilterOperator.Eq
             or FilterOperator.Neq
@@ -492,7 +745,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             or FilterOperator.Lte;
     }
 
-    private static IQueryable<TEntity> ApplyStringFilters(
+    private IQueryable<TEntity> ApplyStringFilters(
         IQueryable<TEntity> query,
         IReadOnlyList<FilterValue> filters)
     {
@@ -510,14 +763,14 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         return query;
     }
 
-    private static bool IsStringOperator(FilterOperator op)
+    private bool IsStringOperator(FilterOperator op)
     {
         return op is FilterOperator.Contains
             or FilterOperator.StartsWith
             or FilterOperator.EndsWith;
     }
 
-    private static IQueryable<TEntity> ApplyInFilters(
+    private IQueryable<TEntity> ApplyInFilters(
         IQueryable<TEntity> query,
         IReadOnlyList<FilterValue> filters)
     {
@@ -535,12 +788,32 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         return query;
     }
 
-    private static bool IsInOperator(FilterOperator op)
+    private bool IsInOperator(FilterOperator op)
     {
         return op is FilterOperator.In;
     }
 
-    private static void ApplyPatch(
+    private MethodInfo GetQueryableSortMethod(SortDirection direction, bool isPrimarySort)
+    {
+        return (direction, isPrimarySort) switch
+        {
+            (SortDirection.Asc, true) => OrderByMethod,
+            (SortDirection.Desc, true) => OrderByDescendingMethod,
+            (SortDirection.Asc, false) => ThenByMethod,
+            _ => ThenByDescendingMethod,
+        };
+    }
+
+    private IOrderedQueryable<TEntity> ApplyQueryableOrdering(
+        MethodInfo method,
+        IQueryable<TEntity> source,
+        LambdaExpression keySelector)
+    {
+        var genericMethod = method.MakeGenericMethod(typeof(TEntity), keySelector.ReturnType);
+        return (IOrderedQueryable<TEntity>)genericMethod.Invoke(null, [source, keySelector])!;
+    }
+
+    private void ApplyPatch(
         EntityEntry<TEntity> entry,
         JsonElement patchDocument,
         IReadOnlySet<string> keyPropertyNames,
@@ -569,7 +842,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         }
     }
 
-    private static void ThrowIfStrictUnknownField(
+    private void ThrowIfStrictUnknownField(
         EfCorePatchUnknownFieldBehavior unknownFieldBehavior,
         string propertyName,
         string reason)
@@ -644,6 +917,37 @@ public class EfCoreRepository<TContext, TEntity, TKey>
                 $"Entity type '{typeof(TEntity).Name}' has no primary key configured in the EF Core model.");
     }
 
+    private string GetKeyPropertyName()
+    {
+        if (_keySelector.Body is MemberExpression memberExpression)
+        {
+            return memberExpression.Member.Name;
+        }
+
+        throw new InvalidOperationException("Key selector must resolve to a direct member access for keyset pagination.");
+    }
+
+    private string BuildSortSignature(KeysetPlan keysetPlan)
+    {
+        return string.Join(",", keysetPlan.Parts.Select(part => $"{part.QueryParameterName}:{part.Direction}"));
+    }
+
+    private void LogKeysetFallback(IReadOnlyList<KeysetSortPart> effectiveSortFields)
+    {
+        if (_options.Logger is null)
+        {
+            return;
+        }
+
+        var sortDescription = effectiveSortFields.Count == 0
+            ? "key only"
+            : string.Join(", ", effectiveSortFields.Select(field => $"{field.QueryParameterName}:{field.Direction}"));
+        _options.Logger.LogWarning(
+            "EF Core keyset pagination fallback activated for {EntityType} with sort {SortDescription}; using offset cursor pagination instead.",
+            typeof(TEntity).Name,
+            sortDescription);
+    }
+
     private Expression<Func<TEntity, TKey>> ResolveKeySelector()
     {
         var primaryKey = GetPrimaryKey();
@@ -669,4 +973,39 @@ public class EfCoreRepository<TContext, TEntity, TKey>
 
         return Expression.Lambda<Func<TEntity, TKey>>(propertyAccess, parameter);
     }
+
+    private bool IsKeysetComparableType(Type propertyType)
+    {
+        var underlyingType = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
+
+        return underlyingType.IsEnum ||
+            underlyingType == typeof(string) ||
+            underlyingType == typeof(Guid) ||
+            underlyingType == typeof(DateTime) ||
+            underlyingType == typeof(DateTimeOffset) ||
+            underlyingType == typeof(decimal) ||
+            underlyingType == typeof(double) ||
+            underlyingType == typeof(float) ||
+            underlyingType == typeof(long) ||
+            underlyingType == typeof(int) ||
+            underlyingType == typeof(short) ||
+            underlyingType == typeof(byte) ||
+            underlyingType == typeof(ulong) ||
+            underlyingType == typeof(uint) ||
+            underlyingType == typeof(ushort) ||
+            underlyingType == typeof(sbyte) ||
+            underlyingType == typeof(bool);
+    }
+
+    private sealed record KeysetSortPart(string PropertyName, SortDirection Direction, string QueryParameterName);
+
+    private sealed record KeysetPlan(IReadOnlyList<KeysetPlanPart> Parts);
+
+    private sealed record KeysetPlanPart(
+        string PropertyName,
+        string QueryParameterName,
+        Type PropertyType,
+        SortDirection Direction,
+        LambdaExpression Selector,
+        PropertyInfo Property);
 }

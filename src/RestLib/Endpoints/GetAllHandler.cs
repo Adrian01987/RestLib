@@ -160,7 +160,20 @@ internal static class GetAllHandler
                     SortFields = sortFields
                 };
 
-                var result = await repository.GetAllAsync(paginationRequest, ct);
+                PagedResult<TEntity> result;
+                try
+                {
+                    result = await repository.GetAllAsync(paginationRequest, ct);
+                }
+                catch (Exception ex) when (IsEfCoreInvalidCursorException(ex))
+                {
+                    return Responses.ProblemDetailsResult.InvalidCursor(
+                        cursor ?? string.Empty,
+                        httpContext.Request.Path,
+                        jsonOptions,
+                        ex.Message,
+                        logger);
+                }
 
                 // If the repository supports counting, get the total count
                 long? totalCount = null;
@@ -232,5 +245,10 @@ internal static class GetAllHandler
                 throw;
             }
         };
+    }
+
+    private static bool IsEfCoreInvalidCursorException(Exception exception)
+    {
+        return exception.GetType().FullName == "RestLib.EntityFrameworkCore.EfCoreInvalidCursorException";
     }
 }

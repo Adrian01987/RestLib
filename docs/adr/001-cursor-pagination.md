@@ -39,13 +39,14 @@ Use **cursor-based pagination** as the default.
 - **Response includes navigation links** — `self`, `first`, `next`, `prev` for client convenience
 - **`prev` is structurally present but always null** — simple cursor pagination is forward-only; the `prev` property exists on the response model for future bidirectional cursor support but is not populated in the current implementation
 - **Cursor does not imply keyset pagination** — the HTTP contract is cursor-based, but a repository may still implement that contract with an encoded offset/index rather than last-seen sort keys
-- **Performance and consistency depend on the adapter** — the current built-in InMemory and EF Core adapters use opaque encoded offsets/indexes, so deep pages still inherit `Skip`/`Take`-style trade-offs rather than keyset-pagination guarantees
+- **Performance and consistency depend on the adapter** — the InMemory adapter currently uses opaque encoded offsets/indexes, while the EF Core adapter uses keyset cursors for supported stable sorts and falls back to offsets for unsupported cases
 
 ## Security Considerations
 
 Cursors are base64url-encoded JSON containing adapter-defined resume state. In the current
-built-in adapters that state is an integer offset/index. Cursors are **opaque by convention
-but not by enforcement**:
+built-in adapters that state is either an integer offset/index or an adapter-specific
+keyset payload containing last-seen sort values. Cursors are **opaque by convention but
+not by enforcement**:
 
 - **Not signed or encrypted.** Clients can decode a cursor, modify the key value, and
   re-encode it to resume pagination from an arbitrary position. This is generally

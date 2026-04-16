@@ -23,6 +23,7 @@ namespace RestLib.EntityFrameworkCore.Tests;
 public class EfCoreServerSideEvaluationTests : IAsyncLifetime
 {
     private readonly List<string> _logMessages = [];
+    private readonly List<string> _adapterLogMessages = [];
 
     private SqliteConnection _connection = null!;
     private TestDbContext _context = null!;
@@ -44,7 +45,9 @@ public class EfCoreServerSideEvaluationTests : IAsyncLifetime
 
         var repoOptions = new EfCoreRepositoryOptions<ProductEntity, Guid>
         {
-            KeySelector = entity => entity.Id
+            KeySelector = entity => entity.Id,
+            Logger = LoggerFactory.Create(builder =>
+                builder.AddProvider(new ListLoggerProvider(_adapterLogMessages))).CreateLogger("EfCoreRepositoryTests")
         };
         _repository = new EfCoreRepository<TestDbContext, ProductEntity, Guid>(_context, repoOptions);
     }
@@ -268,6 +271,134 @@ public class EfCoreServerSideEvaluationTests : IAsyncLifetime
         page2.Items.Should().HaveCount(2);
     }
 
+    [Fact]
+    public async Task GetAll_KeysetPaginationAcrossLargeDataset_NoClientSideEvaluation()
+    {
+        // Arrange
+        var products = Enumerable.Range(1, 500)
+            .Select(index => CreateProduct(name: $"Product {index}", unitPrice: index % 25, stockQuantity: index))
+            .ToArray();
+        await SeedProductsAsync(products);
+
+        var sortField = new SortField
+        {
+            PropertyName = "UnitPrice",
+            QueryParameterName = "unit_price",
+            Direction = SortDirection.Asc
+        };
+
+        var seenIds = new HashSet<Guid>();
+        string? cursor = null;
+
+        // Act
+        do
+        {
+            var request = CreatePaginationRequest(sortFields: [sortField], limit: 25, cursor: cursor);
+            var result = await _repository.GetAllAsync(request);
+
+            // Assert during traversal
+            AssertNoClientSideEvaluationWarnings();
+            result.Items.Should().OnlyHaveUniqueItems(product => product.Id);
+            foreach (var item in result.Items)
+            {
+                seenIds.Add(item.Id);
+            }
+
+            _logMessages.Clear();
+            cursor = result.NextCursor;
+        }
+        while (cursor is not null);
+
+        // Assert
+        seenIds.Should().HaveCount(products.Length);
+    }
+
+    [Fact]
+    public async Task GetAll_KeysetPaginationAcrossTenThousandRows_NoClientSideEvaluation()
+    {
+        // Arrange
+        var products = Enumerable.Range(1, 10000)
+            .Select(index => CreateProduct(name: $"Product {index}", unitPrice: index % 50, stockQuantity: index))
+            .ToArray();
+        await SeedProductsAsync(products);
+
+        var sortField = new SortField
+        {
+            PropertyName = "UnitPrice",
+            QueryParameterName = "unit_price",
+            Direction = SortDirection.Asc
+        };
+
+        var seenIds = new HashSet<Guid>();
+        string? cursor = null;
+
+        // Act
+        do
+        {
+            var request = CreatePaginationRequest(sortFields: [sortField], limit: 25, cursor: cursor);
+            var result = await _repository.GetAllAsync(request);
+
+            // Assert during traversal
+            AssertNoClientSideEvaluationWarnings();
+            result.Items.Should().OnlyHaveUniqueItems(product => product.Id);
+            foreach (var item in result.Items)
+            {
+                seenIds.Add(item.Id);
+            }
+
+            _logMessages.Clear();
+            cursor = result.NextCursor;
+        }
+        while (cursor is not null);
+
+        // Assert
+        seenIds.Should().HaveCount(products.Length);
+    }
+
+    [Fact]
+    public async Task GetAll_UnsupportedSortType_FallsBackToOffsetAndLogsWarning()
+    {
+        // Arrange
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<UnsupportedSortTestDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var context = new UnsupportedSortTestDbContext(options);
+        await context.Database.EnsureCreatedAsync();
+
+        context.Entities.AddRange(
+            new UnsupportedSortEntity { Id = Guid.NewGuid(), SortBlob = [1], Name = "A" },
+            new UnsupportedSortEntity { Id = Guid.NewGuid(), SortBlob = [2], Name = "B" },
+            new UnsupportedSortEntity { Id = Guid.NewGuid(), SortBlob = [3], Name = "C" });
+        await context.SaveChangesAsync();
+
+        var repository = new EfCoreRepository<UnsupportedSortTestDbContext, UnsupportedSortEntity, Guid>(
+            context,
+            new EfCoreRepositoryOptions<UnsupportedSortEntity, Guid>
+            {
+                KeySelector = entity => entity.Id,
+                Logger = LoggerFactory.Create(builder =>
+                    builder.AddProvider(new ListLoggerProvider(_adapterLogMessages))).CreateLogger("UnsupportedSortRepository")
+            });
+
+        var sortField = new SortField
+        {
+            PropertyName = "SortBlob",
+            QueryParameterName = "sort_blob",
+            Direction = SortDirection.Asc
+        };
+        var request = CreatePaginationRequest(sortFields: [sortField], limit: 2);
+
+        // Act
+        var result = await repository.GetAllAsync(request);
+
+        // Assert
+        result.Items.Should().HaveCount(2);
+        result.NextCursor.Should().NotBeNull();
+        _adapterLogMessages.Should().ContainSingle(message => message.Contains("keyset pagination fallback", StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>
     /// Creates a <see cref="PaginationRequest"/> with the specified filters and sort fields.
     /// </summary>
@@ -317,6 +448,75 @@ public class EfCoreServerSideEvaluationTests : IAsyncLifetime
             IsActive = isActive,
             Status = status
         };
+    }
+
+    private sealed class ListLoggerProvider : ILoggerProvider
+    {
+        private readonly List<string> _messages;
+
+        public ListLoggerProvider(List<string> messages)
+        {
+            _messages = messages;
+        }
+
+        public ILogger CreateLogger(string categoryName)
+        {
+            return new ListLogger(_messages);
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class ListLogger : ILogger
+    {
+        private readonly List<string> _messages;
+
+        public ListLogger(List<string> messages)
+        {
+            _messages = messages;
+        }
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            return null;
+        }
+
+        public bool IsEnabled(LogLevel logLevel)
+        {
+            return true;
+        }
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            _messages.Add(formatter(state, exception));
+        }
+    }
+
+    private sealed class UnsupportedSortTestDbContext : DbContext
+    {
+        public UnsupportedSortTestDbContext(DbContextOptions<UnsupportedSortTestDbContext> options)
+            : base(options)
+        {
+        }
+
+        public DbSet<UnsupportedSortEntity> Entities => Set<UnsupportedSortEntity>();
+    }
+
+    private sealed class UnsupportedSortEntity
+    {
+        public Guid Id { get; set; }
+
+        public byte[] SortBlob { get; set; } = [];
+
+        public string Name { get; set; } = string.Empty;
     }
 
     /// <summary>
