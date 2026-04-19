@@ -34,9 +34,7 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
         BatchContext<TEntity, TKey> context)
     {
         if (item is null)
-        {
             return (BadRequestResult(index, $"Item at index {index} could not be deserialized.", context.HttpContext.Request.Path), default);
-        }
 
         // Fetch existing entity (needed for 404 check and hook context)
         var existing = await context.Repository.GetByIdAsync(item.Id, context.CancellationToken);
@@ -54,10 +52,7 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
                 resourceId: item.Id, entity: existing, originalEntity: existing);
 
             var hookError = await RunPrePersistHooksAsync(index, context.Pipeline, hookContext);
-            if (hookError is not null)
-            {
-                return (hookError, default);
-            }
+            if (hookError is not null) return (hookError, default);
         }
 
         return (null, (index, item.Id, item.Body));
@@ -207,8 +202,6 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
         results[index] = await RunAfterPersistAndBuildResultAsync(index, patched, id, context);
     }
 
-    private static bool IsPatchValidationException(Exception exception)
-    {
-        return exception.GetType().FullName == "RestLib.EntityFrameworkCore.EfCorePatchValidationException";
-    }
+    private static bool IsPatchValidationException(Exception exception) =>
+        exception.GetType().FullName == "RestLib.EntityFrameworkCore.EfCorePatchValidationException";
 }

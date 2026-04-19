@@ -126,22 +126,13 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
         HookContext<TEntity, TKey> hookContext)
     {
         var received = await pipeline.ExecuteOnRequestReceivedAsync(hookContext);
-        if (!received)
-        {
-            return HookShortCircuitResult(index, hookContext);
-        }
+        if (!received) return HookShortCircuitResult(index, hookContext);
 
         var validated = await pipeline.ExecuteOnRequestValidatedAsync(hookContext);
-        if (!validated)
-        {
-            return HookShortCircuitResult(index, hookContext);
-        }
+        if (!validated) return HookShortCircuitResult(index, hookContext);
 
         var before = await pipeline.ExecuteBeforePersistAsync(hookContext);
-        if (!before)
-        {
-            return HookShortCircuitResult(index, hookContext);
-        }
+        if (!before) return HookShortCircuitResult(index, hookContext);
 
         return null;
     }
@@ -159,16 +150,10 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
         TEntity entity,
         BatchContext<TEntity, TKey> context)
     {
-        if (!context.Options.EnableValidation)
-        {
-            return null;
-        }
+        if (!context.Options.EnableValidation) return null;
 
         var validationResult = EntityValidator.Validate(entity, context.JsonOptions.PropertyNamingPolicy);
-        if (!validationResult.IsValid)
-        {
-            return ValidationFailedResult(index, validationResult, context.HttpContext.Request.Path);
-        }
+        if (!validationResult.IsValid) return ValidationFailedResult(index, validationResult, context.HttpContext.Request.Path);
 
         return null;
     }
@@ -456,6 +441,7 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
         var detail = options.IncludeExceptionDetailsInErrors
             ? $"{ex.GetType().Name}: {ex.Message}"
             : "An internal error occurred while processing this item.";
+
         return new BatchItemResult
         {
             Index = index,
@@ -464,10 +450,8 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
         };
     }
 
-    private static bool IsConcurrencyException(Exception exception)
-    {
-        return exception.GetType().FullName == "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException";
-    }
+    private static bool IsConcurrencyException(Exception exception) =>
+        exception.GetType().FullName == "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException";
 
     // ── Private instance methods ────────────────────────────────────────
 
@@ -481,10 +465,7 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
         BatchItemResult?[] results,
         BatchContext<TEntity, TKey> context)
     {
-        if (validItems.Count == 0)
-        {
-            return;
-        }
+        if (validItems.Count == 0) return;
 
         if (HasBulkPath && context.BatchRepository is not null)
         {

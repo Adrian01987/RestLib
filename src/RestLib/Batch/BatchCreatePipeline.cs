@@ -29,16 +29,11 @@ internal sealed class BatchCreatePipeline<TEntity, TKey>
         BatchContext<TEntity, TKey> context)
     {
         if (entity is null)
-        {
             return (BadRequestResult(index, $"Item at index {index} could not be deserialized.", context.HttpContext.Request.Path), default);
-        }
 
         // Validation
         var validationError = ValidateEntity(index, entity, context);
-        if (validationError is not null)
-        {
-            return (validationError, default);
-        }
+        if (validationError is not null) return (validationError, default);
 
         // Hooks: OnRequestReceived, OnRequestValidated, BeforePersist
         if (context.Pipeline is not null)
@@ -47,10 +42,7 @@ internal sealed class BatchCreatePipeline<TEntity, TKey>
                 context.HttpContext, RestLibOperation.BatchCreate, entity: entity);
 
             var hookError = await RunPrePersistHooksAsync(index, context.Pipeline, hookContext);
-            if (hookError is not null)
-            {
-                return (hookError, default);
-            }
+            if (hookError is not null) return (hookError, default);
 
             entity = hookContext.Entity ?? entity;
         }

@@ -31,9 +31,7 @@ internal sealed class BatchUpdatePipeline<TEntity, TKey>
         BatchContext<TEntity, TKey> context)
     {
         if (item is null)
-        {
             return (BadRequestResult(index, $"Item at index {index} could not be deserialized.", context.HttpContext.Request.Path), default);
-        }
 
         // Deserialize the body as the entity type
         TEntity? entity;
@@ -48,9 +46,7 @@ internal sealed class BatchUpdatePipeline<TEntity, TKey>
         }
 
         if (entity is null)
-        {
             return (BadRequestResult(index, $"Item at index {index} body deserialized to null.", context.HttpContext.Request.Path), default);
-        }
 
         // Fetch existing entity
         var existing = await context.Repository.GetByIdAsync(item.Id, context.CancellationToken);
@@ -62,10 +58,7 @@ internal sealed class BatchUpdatePipeline<TEntity, TKey>
 
         // Validation
         var validationError = ValidateEntity(index, entity, context);
-        if (validationError is not null)
-        {
-            return (validationError, default);
-        }
+        if (validationError is not null) return (validationError, default);
 
         // Hooks
         if (context.Pipeline is not null)
@@ -75,10 +68,7 @@ internal sealed class BatchUpdatePipeline<TEntity, TKey>
                 resourceId: item.Id, entity: entity, originalEntity: existing);
 
             var hookError = await RunPrePersistHooksAsync(index, context.Pipeline, hookContext);
-            if (hookError is not null)
-            {
-                return (hookError, default);
-            }
+            if (hookError is not null) return (hookError, default);
 
             entity = hookContext.Entity ?? entity;
         }

@@ -36,9 +36,7 @@ internal sealed class BatchDeletePipeline<TEntity, TKey>
         BatchContext<TEntity, TKey> context)
     {
         if (key is null)
-        {
             return (BadRequestResult(index, $"Item at index {index} has a null or invalid ID.", context.HttpContext.Request.Path), default);
-        }
 
         // Hooks: OnRequestReceived, OnRequestValidated, BeforePersist
         if (context.Pipeline is not null)
@@ -47,10 +45,7 @@ internal sealed class BatchDeletePipeline<TEntity, TKey>
                 context.HttpContext, RestLibOperation.BatchDelete, resourceId: key);
 
             var hookError = await RunPrePersistHooksAsync(index, context.Pipeline, hookContext);
-            if (hookError is not null)
-            {
-                return (hookError, default);
-            }
+            if (hookError is not null) return (hookError, default);
         }
 
         return (null, (index, key));
@@ -93,10 +88,7 @@ internal sealed class BatchDeletePipeline<TEntity, TKey>
             itemsToDelete.Add((index, key));
         }
 
-        if (itemsToDelete.Count == 0)
-        {
-            return;
-        }
+        if (itemsToDelete.Count == 0) return;
 
         var keysToDelete = itemsToDelete.Select(v => v.Key).ToList();
         await context.BatchRepository!.DeleteManyAsync(keysToDelete, context.CancellationToken);
