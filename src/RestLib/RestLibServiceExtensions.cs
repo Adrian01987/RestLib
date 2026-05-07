@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.OpenApi;
@@ -19,6 +20,15 @@ namespace RestLib;
 /// </summary>
 public static class RestLibServiceExtensions
 {
+    private static readonly MethodInfo AddJsonResourceMethod = typeof(RestLibServiceExtensions)
+        .GetMethods(BindingFlags.Public | BindingFlags.Static)
+        .Single(method =>
+            method.Name == nameof(AddJsonResource)
+            && method.IsGenericMethodDefinition
+            && method.GetGenericArguments().Length == 2
+            && method.GetParameters().Length == 2
+            && method.GetParameters()[1].ParameterType == typeof(RestLibJsonResourceConfiguration));
+
     /// <summary>
     /// Adds RestLib core services to the service collection.
     /// </summary>
@@ -145,6 +155,72 @@ public static class RestLibServiceExtensions
                                 $"Configuration section '{configurationSection.Path}' does not contain a valid RestLib resource definition.");
 
         return services.AddJsonResource<TEntity, TKey>(configuration);
+    }
+
+    /// <summary>
+    /// Loads a root-level JSON resource configuration file and registers a typed RestLib resource.
+    /// </summary>
+    /// <typeparam name="TEntity">The entity type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="path">The JSON file path containing one RestLib resource definition.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddJsonResourceFromFile<TEntity, TKey>(
+        this IServiceCollection services,
+        string path)
+        where TEntity : class
+        where TKey : notnull
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        var configuration = RestLibJsonResourceFileLoader.Load(path);
+        return services.AddJsonResource<TEntity, TKey>(configuration);
+    }
+
+    /// <summary>
+    /// Loads all non-recursive JSON resource files from a folder and registers the resolved RestLib resources.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="path">The folder containing one JSON resource file per resource.</param>
+    /// <param name="configure">Optional folder loading options.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddRestLibFromFolder(
+        this IServiceCollection services,
+        string path,
+        Action<RestLibFolderOptions>? configure = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        var resolvedPath = RestLibJsonResourceFileLoader.ResolvePath(path);
+        if (!Directory.Exists(resolvedPath))
+        {
+            throw new DirectoryNotFoundException(
+                $"RestLib JSON resource folder was not found: '{path}'. Resolved path: '{resolvedPath}'.");
+        }
+
+        var options = new RestLibFolderOptions();
+        configure?.Invoke(options);
+
+        var files = Directory.GetFiles(resolvedPath, "*.json", SearchOption.TopDirectoryOnly)
+            .OrderBy(file => file, StringComparer.Ordinal)
+            .ToList();
+
+        var resolvedResources = files
+            .Select(file =>
+            {
+                var configuration = RestLibJsonResourceFileLoader.Load(file);
+                var (entityType, keyType) = RestLibFolderResourceResolver.Resolve(file, configuration, options);
+                return (EntityType: entityType, KeyType: keyType, Configuration: configuration);
+            })
+            .ToList();
+
+        foreach (var resource in resolvedResources)
+        {
+            AddJsonResource(services, resource.EntityType, resource.KeyType, resource.Configuration);
+        }
+
+        return services;
     }
 
     /// <summary>
@@ -306,6 +382,21 @@ public static class RestLibServiceExtensions
         var registry = new RestLibJsonResourceRegistry();
         services.TryAddSingleton(registry);
         return registry;
+    }
+
+    private static void AddJsonResource(
+        IServiceCollection services,
+        Type entityType,
+        Type keyType,
+        RestLibJsonResourceConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(entityType);
+        ArgumentNullException.ThrowIfNull(keyType);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        var genericMethod = AddJsonResourceMethod.MakeGenericMethod(entityType, keyType);
+        _ = genericMethod.Invoke(null, [services, configuration]);
     }
 
     private static RestLibNamedHookResolver<TEntity, TKey> GetOrCreateNamedHookResolver<TEntity, TKey>(

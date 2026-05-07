@@ -18,6 +18,11 @@ public class RestLibJsonResourceConfiguration
     public required string Route { get; set; }
 
     /// <summary>
+    /// Gets or sets the assembly-qualified CLR entity type name used by folder-based loading.
+    /// </summary>
+    public string? EntityType { get; set; }
+
+    /// <summary>
     /// Gets or sets the property name used as the entity key.
     /// Defaults to <c>Id</c> when omitted.
     /// </summary>
@@ -91,6 +96,63 @@ public class RestLibJsonResourceConfiguration
     /// Gets or sets the named hook configuration.
     /// </summary>
     public RestLibJsonHookConfiguration? Hooks { get; set; }
+
+    /// <summary>
+    /// Gets or sets JSON-declared validation rules keyed by CLR property name.
+    /// </summary>
+    public Dictionary<string, RestLibJsonValidationRuleConfiguration> Validation { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// JSON configuration for validation rules applied to a single property.
+/// </summary>
+public class RestLibJsonValidationRuleConfiguration
+{
+    /// <summary>
+    /// Gets or sets a value indicating whether the property is required.
+    /// </summary>
+    public bool Required { get; set; }
+
+    /// <summary>
+    /// Gets or sets the minimum numeric value allowed for the property.
+    /// </summary>
+    public decimal? Min { get; set; }
+
+    /// <summary>
+    /// Gets or sets the maximum numeric value allowed for the property.
+    /// </summary>
+    public decimal? Max { get; set; }
+
+    /// <summary>
+    /// Gets or sets the string length validation configuration.
+    /// </summary>
+    public RestLibJsonLengthValidationConfiguration? Length { get; set; }
+
+    /// <summary>
+    /// Gets or sets the regular expression pattern the string value must match.
+    /// </summary>
+    public string? Pattern { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the string value must be a valid email address.
+    /// </summary>
+    public bool Email { get; set; }
+}
+
+/// <summary>
+/// JSON configuration for string length validation.
+/// </summary>
+public class RestLibJsonLengthValidationConfiguration
+{
+    /// <summary>
+    /// Gets or sets the minimum allowed string length.
+    /// </summary>
+    public int? Min { get; set; }
+
+    /// <summary>
+    /// Gets or sets the maximum allowed string length.
+    /// </summary>
+    public int? Max { get; set; }
 }
 
 /// <summary>

@@ -11,4 +11,5 @@ internal static class HookNames
     public const string SuffixName = nameof(SuffixName);
     public const string HandleTestError = nameof(HandleTestError);
     public const string ThrowOnPersist = nameof(ThrowOnPersist);
+    public const string CountValidationHook = nameof(CountValidationHook);
 }

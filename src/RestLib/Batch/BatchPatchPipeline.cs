@@ -10,7 +10,7 @@ namespace RestLib.Batch;
 
 /// <summary>
 /// Batch patch pipeline. Deserializes <see cref="BatchUpdateItem{TKey}"/> items,
-/// validates existence, performs pre-persist validation (preview merge), and persists
+/// validates existence, runs request hooks, validates preview merges, then persists
 /// via <see cref="IRepository{TEntity, TKey}.PatchAsync"/> or
 /// <see cref="IBatchRepository{TEntity, TKey}.PatchManyAsync"/>.
 /// </summary>
@@ -44,14 +44,14 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
             return (NotFoundResult(index, entityName, item.Id!, context.HttpContext.Request.Path), default);
         }
 
-        // Hooks: OnRequestReceived, OnRequestValidated, BeforePersist
+        // Hooks: OnRequestReceived, OnRequestValidated
         if (context.Pipeline is not null)
         {
             var hookContext = context.Pipeline.CreateContext(
                 context.HttpContext, RestLibOperation.BatchPatch,
-                resourceId: item.Id, entity: existing, originalEntity: existing);
+                resourceId: item.Id);
 
-            var hookError = await RunPrePersistHooksAsync(index, context.Pipeline, hookContext);
+            var hookError = await RunRequestHooksAsync(index, context.Pipeline, hookContext);
             if (hookError is not null) return (hookError, default);
         }
 
@@ -70,10 +70,10 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
         BatchItemResult?[] results,
         BatchContext<TEntity, TKey> context)
     {
-        // Pre-persist validation: bulk-fetch originals, preview merges, validate before persisting.
-        // Uses GetByIdsAsync for a single bulk fetch instead of N individual GetByIdAsync calls.
+        // Preview validation and BeforePersist: bulk-fetch originals once, validate preview
+        // merges, then run BeforePersist for items that remain valid before persisting.
         var itemsToPersist = validItems;
-        if (context.Options.EnableValidation)
+        if (context.Options.EnableValidation || context.Pipeline is not null)
         {
             var ids = validItems.Select(v => v.Id).ToList();
             var originals = await context.BatchRepository!.GetByIdsAsync(ids, context.CancellationToken);
@@ -94,21 +94,41 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
                     continue;
                 }
 
-                var preview = PatchHelper.PreviewPatch(original, body, context.JsonOptions);
-                if (preview is not null)
+                if (context.Options.EnableValidation)
                 {
-                    var validationResult = EntityValidator.Validate(preview, context.JsonOptions.PropertyNamingPolicy);
-                    if (!validationResult.IsValid)
+                    var preview = PatchHelper.PreviewPatch(original, body, context.JsonOptions);
+                    if (preview is not null)
                     {
-                        RestLibLogMessages.BatchPatchItemValidationFailed(context.Logger, index);
-                        results[index] = new BatchItemResult
+                        var validationResult = RestLibResourceValidator.Validate(preview, context.EndpointConfig, context.JsonOptions.PropertyNamingPolicy);
+                        if (!validationResult.IsValid)
                         {
-                            Index = index,
-                            Status = StatusCodes.Status400BadRequest,
-                            Error = ProblemDetailsFactory.ValidationFailed(
-                                validationResult.Errors,
-                                context.HttpContext.Request.Path)
-                        };
+                            RestLibLogMessages.BatchPatchItemValidationFailed(context.Logger, index);
+                            results[index] = new BatchItemResult
+                            {
+                                Index = index,
+                                Status = StatusCodes.Status400BadRequest,
+                                Error = ProblemDetailsFactory.ValidationFailed(
+                                    validationResult.Errors,
+                                    context.HttpContext.Request.Path)
+                            };
+                            continue;
+                        }
+                    }
+                }
+
+                if (context.Pipeline is not null)
+                {
+                    var hookContext = context.Pipeline.CreateContext(
+                        context.HttpContext,
+                        RestLibOperation.BatchPatch,
+                        resourceId: id,
+                        entity: original,
+                        originalEntity: original);
+
+                    var hookError = await RunBeforePersistHookAsync(index, context.Pipeline, hookContext);
+                    if (hookError is not null)
+                    {
+                        results[index] = hookError;
                         continue;
                     }
                 }
@@ -138,10 +158,12 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
     {
         var (index, id, body) = validItem;
 
-        // Pre-persist validation: fetch original, preview merge, validate before persisting
-        if (context.Options.EnableValidation)
+        // Preview validation and BeforePersist: fetch original, validate the merged preview,
+        // then run BeforePersist before the repository patch executes.
+        TEntity? original = null;
+        if (context.Options.EnableValidation || context.Pipeline is not null)
         {
-            var original = await context.Repository.GetByIdAsync(id, context.CancellationToken);
+            original = await context.Repository.GetByIdAsync(id, context.CancellationToken);
             if (original is null)
             {
                 var entityName = typeof(TEntity).Name;
@@ -154,11 +176,14 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
                 };
                 return;
             }
+        }
 
+        if (context.Options.EnableValidation && original is not null)
+        {
             var preview = PatchHelper.PreviewPatch(original, body, context.JsonOptions);
             if (preview is not null)
             {
-                var validationResult = EntityValidator.Validate(preview, context.JsonOptions.PropertyNamingPolicy);
+                var validationResult = RestLibResourceValidator.Validate(preview, context.EndpointConfig, context.JsonOptions.PropertyNamingPolicy);
                 if (!validationResult.IsValid)
                 {
                     RestLibLogMessages.BatchPatchItemValidationFailed(context.Logger, index);
@@ -172,6 +197,23 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
                     };
                     return;
                 }
+            }
+        }
+
+        if (context.Pipeline is not null && original is not null)
+        {
+            var hookContext = context.Pipeline.CreateContext(
+                context.HttpContext,
+                RestLibOperation.BatchPatch,
+                resourceId: id,
+                entity: original,
+                originalEntity: original);
+
+            var hookError = await RunBeforePersistHookAsync(index, context.Pipeline, hookContext);
+            if (hookError is not null)
+            {
+                results[index] = hookError;
+                return;
             }
         }
 

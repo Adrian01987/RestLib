@@ -113,6 +113,46 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
     }
 
     /// <summary>
+    /// Runs the request hook stages (OnRequestReceived and OnRequestValidated)
+    /// and returns an error result if any stage short-circuits.
+    /// </summary>
+    /// <param name="index">The item index.</param>
+    /// <param name="pipeline">The hook pipeline.</param>
+    /// <param name="hookContext">The hook context.</param>
+    /// <returns>An error result if short-circuited, or <c>null</c>.</returns>
+    protected static async Task<BatchItemResult?> RunRequestHooksAsync(
+        int index,
+        HookPipeline<TEntity, TKey> pipeline,
+        HookContext<TEntity, TKey> hookContext)
+    {
+        var received = await pipeline.ExecuteOnRequestReceivedAsync(hookContext);
+        if (!received) return HookShortCircuitResult(index, hookContext);
+
+        var validated = await pipeline.ExecuteOnRequestValidatedAsync(hookContext);
+        if (!validated) return HookShortCircuitResult(index, hookContext);
+
+        return null;
+    }
+
+    /// <summary>
+    /// Runs the BeforePersist hook stage and returns an error result if it short-circuits.
+    /// </summary>
+    /// <param name="index">The item index.</param>
+    /// <param name="pipeline">The hook pipeline.</param>
+    /// <param name="hookContext">The hook context.</param>
+    /// <returns>An error result if short-circuited, or <c>null</c>.</returns>
+    protected static async Task<BatchItemResult?> RunBeforePersistHookAsync(
+        int index,
+        HookPipeline<TEntity, TKey> pipeline,
+        HookContext<TEntity, TKey> hookContext)
+    {
+        var before = await pipeline.ExecuteBeforePersistAsync(hookContext);
+        if (!before) return HookShortCircuitResult(index, hookContext);
+
+        return null;
+    }
+
+    /// <summary>
     /// Runs the three pre-persist hook stages (OnRequestReceived, OnRequestValidated,
     /// BeforePersist) and returns an error result if any stage short-circuits.
     /// </summary>
@@ -125,16 +165,13 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
         HookPipeline<TEntity, TKey> pipeline,
         HookContext<TEntity, TKey> hookContext)
     {
-        var received = await pipeline.ExecuteOnRequestReceivedAsync(hookContext);
-        if (!received) return HookShortCircuitResult(index, hookContext);
+        var requestHookError = await RunRequestHooksAsync(index, pipeline, hookContext);
+        if (requestHookError is not null)
+        {
+            return requestHookError;
+        }
 
-        var validated = await pipeline.ExecuteOnRequestValidatedAsync(hookContext);
-        if (!validated) return HookShortCircuitResult(index, hookContext);
-
-        var before = await pipeline.ExecuteBeforePersistAsync(hookContext);
-        if (!before) return HookShortCircuitResult(index, hookContext);
-
-        return null;
+        return await RunBeforePersistHookAsync(index, pipeline, hookContext);
     }
 
     /// <summary>
@@ -152,7 +189,7 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
     {
         if (!context.Options.EnableValidation) return null;
 
-        var validationResult = EntityValidator.Validate(entity, context.JsonOptions.PropertyNamingPolicy);
+        var validationResult = RestLibResourceValidator.Validate(entity, context.EndpointConfig, context.JsonOptions.PropertyNamingPolicy);
         if (!validationResult.IsValid) return ValidationFailedResult(index, validationResult, context.HttpContext.Request.Path);
 
         return null;

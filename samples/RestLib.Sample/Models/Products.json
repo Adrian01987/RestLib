@@ -1,0 +1,59 @@
+{
+  "$schema": "../../../schemas/restlib-resource.schema.json",
+  "EntityType": "RestLib.Sample.Models.Product, RestLib.Sample",
+  "Name": "products",
+  "Route": "/api/products",
+  "AllowAnonymousAll": true,
+  "Operations": {
+    "Exclude": ["Delete"]
+  },
+  "Filtering": ["CategoryId", "IsActive"],
+  "FilteringOperators": {
+    "Price": ["eq", "neq", "gt", "lt", "gte", "lte"],
+    "Name": ["eq", "neq", "contains", "starts_with", "ends_with"]
+  },
+  "Sorting": ["Price", "Name", "CreatedAt"],
+  "DefaultSort": "name:asc",
+  "FieldSelection": ["Id", "Name", "Price", "CategoryId", "IsActive"],
+  "Batch": {
+    "Actions": ["Create", "Patch", "Delete"]
+  },
+  "RateLimiting": {
+    "Default": "restlib-read",
+    "ByOperation": {
+      "Create": "restlib-write",
+      "Update": "restlib-write",
+      "Patch": "restlib-write"
+    }
+  },
+  "OpenApi": {
+    "Tag": "Product",
+    "Summaries": {
+      "GetAll": "List products",
+      "GetById": "Get product by id",
+      "Create": "Create product",
+      "Update": "Replace product",
+      "Patch": "Patch product"
+    }
+  },
+  "Hooks": {
+    "BeforePersist": {
+      "ByOperation": {
+        "Create": ["SetUpdatedAt"],
+        "Update": ["SetUpdatedAt"],
+        "Patch": ["SetUpdatedAt"]
+      }
+    }
+  },
+  "Validation": {
+    "Name": {
+      "Required": true,
+      "Length": {
+        "Max": 200
+      }
+    },
+    "Price": {
+      "Min": 0.01
+    }
+  }
+}

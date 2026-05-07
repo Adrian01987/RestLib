@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -106,6 +107,240 @@ public class JsonResourceConfigurationTests
         // Assert
         getAll.StatusCode.Should().Be(HttpStatusCode.OK);
         delete.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed);
+    }
+
+    [Fact]
+    public async Task AddJsonResourceFromFile_WithValidFile_MapsConfiguredResource()
+    {
+        // Arrange
+        var filePath = CreateResourceFile(
+            """
+            {
+              "$schema": "../../schemas/restlib-resource.schema.json",
+              "Name": "items",
+              "Route": "/api/items",
+              "AllowAnonymousAll": true,
+              "Operations": {
+                "Include": ["GetAll", "GetById"]
+              }
+            }
+            """);
+
+        await using var cleanup = new TempPath(filePath);
+
+        using var host = await CreateHost(services =>
+        {
+            services.AddJsonResourceFromFile<TestEntity, Guid>(filePath);
+        });
+
+        var client = host.GetTestClient();
+        var repository = host.Services.GetRequiredService<TestEntityRepository>();
+        repository.Seed(new TestEntity { Id = Guid.NewGuid(), Name = "alpha", Price = 10m });
+
+        // Act
+        var response = await client.GetAsync("/api/items");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public void AddJsonResourceFromFile_WithMissingFile_ThrowsFileNotFoundWithPath()
+    {
+        // Arrange
+        var missingPath = Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}.json");
+        var services = new ServiceCollection();
+        services.AddRestLib();
+
+        // Act
+        var act = () => services.AddJsonResourceFromFile<TestEntity, Guid>(missingPath);
+
+        // Assert
+        act.Should().Throw<FileNotFoundException>()
+            .WithMessage($"*{missingPath}*");
+    }
+
+    [Fact]
+    public void AddJsonResourceFromFile_WithMalformedJson_ThrowsStartupExceptionWithPathAndLocation()
+    {
+        // Arrange
+        var filePath = CreateResourceFile(
+            """
+            {
+              "Name": "items",
+              "Route": "/api/items",
+            """
+        );
+
+        using var cleanup = new TempPath(filePath);
+        var services = new ServiceCollection();
+        services.AddRestLib();
+
+        // Act
+        var act = () => services.AddJsonResourceFromFile<TestEntity, Guid>(filePath);
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .Where(ex => ex.Message.Contains(filePath, StringComparison.Ordinal)
+                && (ex.Message.Contains("line", StringComparison.OrdinalIgnoreCase)
+                    || ex.Message.Contains("byte position", StringComparison.OrdinalIgnoreCase)
+                    || ex.Message.Contains("column", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [Fact]
+    public async Task AddRestLibFromFolder_WithEmptyFolder_RegistersNoResources()
+    {
+        // Arrange
+        var folder = CreateTempDirectory();
+        await using var cleanup = new TempPath(folder);
+
+        using var host = await CreateHost(services =>
+        {
+            services.AddRestLibFromFolder(folder);
+        });
+
+        var client = host.GetTestClient();
+
+        // Act
+        var response = await client.GetAsync("/api/items");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public void AddRestLibFromFolder_WithMixedValidAndInvalidFiles_ThrowsWithInvalidFilePath()
+    {
+        // Arrange
+        var folder = CreateTempDirectory();
+        using var cleanup = new TempPath(folder);
+
+        _ = CreateResourceFileInFolder(folder, "Valid.json",
+            """
+            {
+              "Name": "valid-items",
+              "Route": "/api/valid-items",
+              "EntityType": "RestLib.Tests.Fakes.TestEntity, RestLib.Tests"
+            }
+            """);
+        var invalidPath = CreateResourceFileInFolder(folder, "Invalid.json", "{ \"Name\": \"broken\",");
+
+        var services = new ServiceCollection();
+        services.AddRestLib();
+
+        // Act
+        var act = () => services.AddRestLibFromFolder(folder);
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage($"*{invalidPath}*");
+    }
+
+    [Fact]
+    public void AddRestLibFromFolder_WhenTypeCannotBeResolved_ThrowsClearStartupException()
+    {
+        // Arrange
+        var folder = CreateTempDirectory();
+        using var cleanup = new TempPath(folder);
+        var filePath = CreateResourceFileInFolder(folder, "Unknown.json",
+            """
+            {
+              "Name": "unknown-items",
+              "Route": "/api/unknown-items"
+            }
+            """);
+
+        var services = new ServiceCollection();
+        services.AddRestLib();
+
+        // Act
+        var act = () => services.AddRestLibFromFolder(folder);
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .Where(ex => ex.Message.Contains(filePath, StringComparison.Ordinal)
+                && ex.Message.Contains("Could not resolve a CLR entity type", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AddRestLibFromFolder_WithEntityTypeField_MapsAllResources()
+    {
+        // Arrange
+        var folder = CreateTempDirectory();
+        await using var cleanup = new TempPath(folder);
+
+        _ = CreateResourceFileInFolder(folder, "Items.json",
+            """
+            {
+              "Name": "items",
+              "Route": "/api/items",
+              "EntityType": "RestLib.Tests.Fakes.TestEntity, RestLib.Tests",
+              "AllowAnonymousAll": true
+            }
+            """);
+        _ = CreateResourceFileInFolder(folder, "alt-items.json",
+            """
+            {
+              "Name": "alt-items",
+              "Route": "/api/alt-items",
+              "EntityType": "RestLib.Tests.Fakes.TestEntity, RestLib.Tests",
+              "AllowAnonymousAll": true
+            }
+            """);
+
+        using var host = await CreateHost(services =>
+        {
+            services.AddRestLibFromFolder(folder);
+        });
+
+        var client = host.GetTestClient();
+        var repository = host.Services.GetRequiredService<TestEntityRepository>();
+        var id = Guid.NewGuid();
+        repository.Seed(new TestEntity { Id = id, Name = "alpha", Price = 10m });
+
+        // Act
+        var first = await client.GetAsync($"/api/items/{id}");
+        var second = await client.GetAsync($"/api/alt-items/{id}");
+
+        // Assert
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task AddRestLibFromFolder_WithRegisteredAssemblyAndMatchingFileName_MapsResource()
+    {
+        // Arrange
+        var folder = CreateTempDirectory();
+        await using var cleanup = new TempPath(folder);
+
+        _ = CreateResourceFileInFolder(folder, "TestEntity.json",
+            """
+            {
+              "Name": "items",
+              "Route": "/api/items",
+              "AllowAnonymousAll": true
+            }
+            """);
+
+        using var host = await CreateHost(services =>
+        {
+            services.AddRestLibFromFolder(folder, options =>
+            {
+                options.Assemblies.Add(typeof(TestEntity).Assembly);
+            });
+        });
+
+        var client = host.GetTestClient();
+        var repository = host.Services.GetRequiredService<TestEntityRepository>();
+        var id = Guid.NewGuid();
+        repository.Seed(new TestEntity { Id = id, Name = "alpha", Price = 10m });
+
+        // Act
+        var response = await client.GetAsync($"/api/items/{id}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
@@ -762,5 +997,60 @@ public class JsonResourceConfigurationTests
 
         var (host, _) = await builder.BuildAsync();
         return host;
+    }
+
+    private static string CreateTempDirectory()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"restlib-tests-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        return directory;
+    }
+
+    private static string CreateResourceFile(string json)
+    {
+        var directory = CreateTempDirectory();
+        return CreateResourceFileInFolder(directory, "resource.json", json);
+    }
+
+    private static string CreateResourceFileInFolder(string folder, string fileName, string json)
+    {
+        var path = Path.Combine(folder, fileName);
+        File.WriteAllText(path, json.Replace("\r\n", "\n", StringComparison.Ordinal), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        return path;
+    }
+
+    private sealed class TempPath : IAsyncDisposable, IDisposable
+    {
+        private readonly string _path;
+
+        public TempPath(string path)
+        {
+            _path = path;
+        }
+
+        public void Dispose()
+        {
+            DeletePath();
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            DeletePath();
+            return ValueTask.CompletedTask;
+        }
+
+        private void DeletePath()
+        {
+            if (File.Exists(_path))
+            {
+                File.Delete(_path);
+            }
+
+            var directory = Directory.Exists(_path) ? _path : Path.GetDirectoryName(_path);
+            if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
     }
 }

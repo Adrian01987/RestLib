@@ -26,6 +26,8 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     private readonly Dictionary<RestLibOperation, string> _rateLimitPolicies = [];
     private readonly HashSet<RestLibOperation> _disabledRateLimitOperations = [];
     private readonly RestLibOpenApiConfiguration _openApi = new();
+    private IReadOnlyDictionary<string, RestLibJsonValidationRuleConfiguration> _jsonValidationRules =
+        new Dictionary<string, RestLibJsonValidationRuleConfiguration>(StringComparer.OrdinalIgnoreCase);
     private string? _defaultRateLimitPolicy;
     private RestLibHooks<TEntity, TKey>? _hooks;
     private HashSet<RestLibOperation>? _includedOperations;
@@ -93,6 +95,16 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     /// Gets the configured hooks for the request processing pipeline.
     /// </summary>
     internal RestLibHooks<TEntity, TKey>? Hooks => _hooks;
+
+    /// <summary>
+    /// Gets the configured JSON validation rules for this resource.
+    /// </summary>
+    internal IReadOnlyDictionary<string, RestLibJsonValidationRuleConfiguration> JsonValidationRules => _jsonValidationRules;
+
+    /// <summary>
+    /// Gets a value indicating whether JSON validation rules have been configured.
+    /// </summary>
+    internal bool HasJsonValidationRules => _jsonValidationRules.Count > 0;
 
     /// <summary>
     /// Marks all operations as allowing anonymous access.
@@ -596,6 +608,16 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
         _hooks ??= new RestLibHooks<TEntity, TKey>();
         configure(_hooks);
         return this;
+    }
+
+    /// <summary>
+    /// Stores JSON-declared validation rules for runtime request validation.
+    /// </summary>
+    /// <param name="rules">The resolved JSON validation rules keyed by CLR property name.</param>
+    internal void UseJsonValidationRules(IReadOnlyDictionary<string, RestLibJsonValidationRuleConfiguration> rules)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        _jsonValidationRules = rules;
     }
 
     /// <summary>

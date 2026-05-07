@@ -1,7 +1,9 @@
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.DependencyInjection;
 using RestLib.Hooks;
+using RestLib.Internal;
 
 namespace RestLib.Configuration;
 
@@ -34,6 +36,7 @@ internal static class RestLibJsonResourceBuilder
         ApplyFiltering(endpointConfiguration, jsonConfiguration);
         ApplySorting(endpointConfiguration, jsonConfiguration);
         ApplyFieldSelection(endpointConfiguration, jsonConfiguration);
+        ApplyValidation(endpointConfiguration, jsonConfiguration);
         ApplyBatch(endpointConfiguration, jsonConfiguration);
         ApplyRateLimiting(endpointConfiguration, jsonConfiguration);
         ApplyOpenApi(endpointConfiguration, jsonConfiguration.OpenApi);
@@ -238,6 +241,31 @@ internal static class RestLibJsonResourceBuilder
         endpointConfiguration.AllowFieldSelection([.. jsonConfiguration.FieldSelection]);
     }
 
+    private static void ApplyValidation<TEntity, TKey>(
+        RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
+        RestLibJsonResourceConfiguration jsonConfiguration)
+        where TEntity : class
+        where TKey : notnull
+    {
+        if (jsonConfiguration.Validation.Count == 0)
+        {
+            return;
+        }
+
+        var resolvedRules = new Dictionary<string, RestLibJsonValidationRuleConfiguration>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in jsonConfiguration.Validation)
+        {
+            var property = typeof(TEntity).GetProperty(entry.Key, BindingFlags.Public | BindingFlags.Instance)
+                ?? throw new InvalidOperationException(
+                    $"Resource '{jsonConfiguration.Name}' property '{entry.Key}' was not found on entity type '{typeof(TEntity).Name}'.");
+
+            ValidateValidationRule(jsonConfiguration.Name, property, entry.Value);
+            resolvedRules[property.Name] = entry.Value;
+        }
+
+        endpointConfiguration.UseJsonValidationRules(resolvedRules);
+    }
+
     private static void ApplyBatch<TEntity, TKey>(
         RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
         RestLibJsonResourceConfiguration jsonConfiguration)
@@ -255,6 +283,81 @@ internal static class RestLibJsonResourceBuilder
         else
         {
             endpointConfiguration.EnableBatch([.. batch.Actions]);
+        }
+    }
+
+    private static void ValidateValidationRule(
+        string resourceName,
+        PropertyInfo property,
+        RestLibJsonValidationRuleConfiguration rule)
+    {
+        ArgumentNullException.ThrowIfNull(property);
+        ArgumentNullException.ThrowIfNull(rule);
+
+        var propertyType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
+        var isString = propertyType == typeof(string);
+        var isNumeric = IsNumericType(propertyType);
+
+        if ((rule.Min is not null || rule.Max is not null) && !isNumeric)
+        {
+            throw new InvalidOperationException(
+                $"Resource '{resourceName}' property '{property.Name}' can only use Min/Max JSON validation rules on numeric properties.");
+        }
+
+        if (rule.Length is not null && !isString)
+        {
+            throw new InvalidOperationException(
+                $"Resource '{resourceName}' property '{property.Name}' can only use Length JSON validation rules on string properties.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(rule.Pattern) && !isString)
+        {
+            throw new InvalidOperationException(
+                $"Resource '{resourceName}' property '{property.Name}' can only use Pattern JSON validation rules on string properties.");
+        }
+
+        if (rule.Email && !isString)
+        {
+            throw new InvalidOperationException(
+                $"Resource '{resourceName}' property '{property.Name}' can only use Email JSON validation rules on string properties.");
+        }
+
+        if (rule.Length?.Min is int minLength && minLength < 0)
+        {
+            throw new InvalidOperationException(
+                $"Resource '{resourceName}' property '{property.Name}' has an invalid Length.Min JSON validation rule. Values must be non-negative.");
+        }
+
+        if (rule.Length?.Max is int maxLength && maxLength < 0)
+        {
+            throw new InvalidOperationException(
+                $"Resource '{resourceName}' property '{property.Name}' has an invalid Length.Max JSON validation rule. Values must be non-negative.");
+        }
+
+        if (rule.Length?.Min is int minimum && rule.Length?.Max is int maximum && maximum < minimum)
+        {
+            throw new InvalidOperationException(
+                $"Resource '{resourceName}' property '{property.Name}' has an invalid Length JSON validation rule. Max must not be less than Min.");
+        }
+
+        if (rule.Max is not null && rule.Min is not null && rule.Max.Value < rule.Min.Value)
+        {
+            throw new InvalidOperationException(
+                $"Resource '{resourceName}' property '{property.Name}' has an invalid Min/Max JSON validation rule. Max must not be less than Min.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(rule.Pattern))
+        {
+            try
+            {
+                _ = Regex.IsMatch(string.Empty, rule.Pattern, RegexOptions.CultureInvariant);
+            }
+            catch (ArgumentException ex)
+            {
+                throw new InvalidOperationException(
+                    $"Resource '{resourceName}' property '{property.Name}' has an invalid Pattern JSON validation rule: {ex.Message}",
+                    ex);
+            }
         }
     }
 
@@ -283,6 +386,21 @@ internal static class RestLibJsonResourceBuilder
         {
             endpointConfiguration.DisableRateLimiting([.. rateLimiting.Disabled]);
         }
+    }
+
+    private static bool IsNumericType(Type type)
+    {
+        return type == typeof(byte)
+            || type == typeof(sbyte)
+            || type == typeof(short)
+            || type == typeof(ushort)
+            || type == typeof(int)
+            || type == typeof(uint)
+            || type == typeof(long)
+            || type == typeof(ulong)
+            || type == typeof(float)
+            || type == typeof(double)
+            || type == typeof(decimal);
     }
 
     private static void ApplyOpenApi<TEntity, TKey>(

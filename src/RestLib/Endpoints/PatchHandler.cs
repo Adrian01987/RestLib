@@ -5,6 +5,7 @@ using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.Hypermedia;
 using RestLib.Logging;
+using RestLib.Validation;
 
 namespace RestLib.Endpoints;
 
@@ -79,7 +80,7 @@ internal static class PatchHandler
                     var preview = PatchHelper.PreviewPatch(originalEntity, patchDocument, jsonOptions);
                     if (preview is not null)
                     {
-                        var validationResult = Validation.EntityValidator.Validate(preview, options.JsonNamingPolicy);
+                        var validationResult = RestLibResourceValidator.Validate(preview, config, options.JsonNamingPolicy);
                         if (!validationResult.IsValid)
                         {
                             return Responses.ProblemDetailsResult.ValidationFailed(

@@ -2,9 +2,13 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/Adrian01987/RestLib/main/schemas/restlib-resource.schema.json",
   "title": "RestLib Resource Configuration",
-  "description": "JSON schema for configuring a RestLib REST API resource in appsettings.json.",
+  "description": "JSON schema for configuring a single RestLib REST API resource in a root-level JSON file or appsettings section.",
   "type": "object",
   "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional schema reference for IDE autocomplete when authoring standalone resource files."
+    },
     "Name": {
       "type": "string",
       "description": "Unique resource name used during registration."
@@ -13,6 +17,10 @@
       "type": "string",
       "description": "Route prefix for the resource (e.g. /api/products).",
       "pattern": "^/"
+    },
+    "EntityType": {
+      "type": "string",
+      "description": "Assembly-qualified CLR entity type name used by AddRestLibFromFolder."
     },
     "KeyProperty": {
       "type": "string",
@@ -88,6 +96,13 @@
     },
     "Hooks": {
       "$ref": "#/$defs/hookConfiguration"
+    },
+    "Validation": {
+      "type": "object",
+      "description": "JSON-declared validation rules keyed by CLR property name.",
+      "additionalProperties": {
+        "$ref": "#/$defs/validationRule"
+      }
     }
   },
   "required": ["Name", "Route"],
@@ -268,6 +283,53 @@
             "type": "array",
             "items": { "type": "string" }
           }
+        }
+      },
+      "additionalProperties": false
+    },
+    "validationRule": {
+      "type": "object",
+      "description": "Validation rules applied to a single CLR property.",
+      "properties": {
+        "Required": {
+          "type": "boolean",
+          "description": "When true, null and empty-string values are rejected."
+        },
+        "Min": {
+          "type": "number",
+          "description": "Minimum numeric value allowed for the property."
+        },
+        "Max": {
+          "type": "number",
+          "description": "Maximum numeric value allowed for the property."
+        },
+        "Length": {
+          "$ref": "#/$defs/lengthValidation"
+        },
+        "Pattern": {
+          "type": "string",
+          "description": "Regular expression pattern a string value must match."
+        },
+        "Email": {
+          "type": "boolean",
+          "description": "When true, the string value must be a valid email address."
+        }
+      },
+      "additionalProperties": false
+    },
+    "lengthValidation": {
+      "type": "object",
+      "description": "String length validation rules.",
+      "properties": {
+        "Min": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Minimum allowed string length."
+        },
+        "Max": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Maximum allowed string length."
         }
       },
       "additionalProperties": false

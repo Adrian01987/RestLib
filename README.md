@@ -90,6 +90,51 @@ That gives you:
 - `PATCH /api/products/{id}` - partially update
 - `DELETE /api/products/{id}` - delete
 
+### Quick Start (folder convention)
+
+For JSON-driven resources, the recommended path is one file per resource under `Models/`.
+
+`Program.cs`:
+
+```csharp
+using RestLib;
+using RestLib.InMemory;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddRestLib();
+builder.Services.AddRestLibInMemory<Product, Guid>(p => p.Id, Guid.NewGuid);
+builder.Services.AddRestLibFromFolder("Models");
+
+var app = builder.Build();
+app.MapJsonResources();
+app.Run();
+```
+
+Single-file variant:
+
+```csharp
+builder.Services.AddJsonResourceFromFile<Product, Guid>("Models/Products.json");
+```
+
+`Models/Products.json`:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/Adrian01987/RestLib/main/schemas/restlib-resource.schema.json",
+  "EntityType": "Product, MyApi",
+  "Name": "products",
+  "Route": "/api/products",
+  "AllowAnonymousAll": true,
+  "Validation": {
+    "Name": { "Required": true },
+    "Price": { "Min": 0.01 }
+  }
+}
+```
+
+See [docs/guides/json-resources.md](docs/guides/json-resources.md) for the full walkthrough.
+
 ### EF Core Quick Start
 
 For a database-backed path, define the same model plus a `DbContext`:
@@ -396,7 +441,50 @@ app.MapPost("/api/categories", async (Category category, IRepository<Category, G
 });
 ```
 
-You can also move this declarative resource configuration out of `Program.cs` and into JSON while keeping your model, repository, and hooks strongly typed:
+You can also move this declarative resource configuration out of `Program.cs` and into JSON while keeping your model, repository, and hooks strongly typed.
+
+Recommended path: folder-based loading with one file per resource:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/Adrian01987/RestLib/main/schemas/restlib-resource.schema.json",
+  "EntityType": "Product, MyApi",
+  "Name": "products",
+  "Route": "/api/products",
+  "AllowAnonymousAll": true,
+  "Filtering": ["CategoryId", "IsActive"],
+  "Sorting": ["Price", "Name", "CreatedAt"],
+  "DefaultSort": "name:asc",
+  "Validation": {
+    "Name": {
+      "Required": true,
+      "Length": { "Max": 200 }
+    },
+    "Price": {
+      "Min": 0.01
+    }
+  }
+}
+```
+
+```csharp
+builder.Services.AddNamedHook<Product, Guid>(HookNames.SetUpdatedAt, ctx =>
+{
+    if (ctx.Entity is Product product)
+    {
+        product.UpdatedAt = ctx.Operation == RestLibOperation.Create ? null : DateTime.UtcNow;
+    }
+
+    return Task.CompletedTask;
+});
+
+builder.Services.AddRestLibFromFolder("Models");
+
+var app = builder.Build();
+app.MapJsonResources();
+```
+
+Backward-compatible alternative: `appsettings.json` with `IConfigurationSection` binding:
 
 ```json
 {
@@ -434,6 +522,8 @@ builder.Services.AddJsonResource<Product, Guid>(productResource);
 var app = builder.Build();
 app.MapJsonResources();
 ```
+
+Both paths use the same `RestLibJsonResourceConfiguration` model and the same JSON-to-fluent translation pipeline.
 
 ### Extensible via Hooks
 
@@ -670,6 +760,7 @@ Intel Core i3-8130U CPU 2.20GHz (Kaby Lake), 1 CPU, 4 logical and 2 physical cor
 ## Learn More
 
 - [Sample app](https://github.com/Adrian01987/RestLib/blob/main/samples/RestLib.Sample/Program.cs)
+- [JSON resources guide](https://github.com/Adrian01987/RestLib/blob/main/docs/guides/json-resources.md)
 - [Architecture decisions](https://github.com/Adrian01987/RestLib/tree/main/docs/adr)
 - [Benchmarks](https://github.com/Adrian01987/RestLib/blob/main/benchmarks/RestLib.Benchmarks/README.md)
 - [Changelog](https://github.com/Adrian01987/RestLib/blob/main/CHANGELOG.md)
@@ -702,6 +793,8 @@ Key decisions are documented as Architecture Decision Records:
 | [ADR-019](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/019-hateoas.md) | HATEOAS hypermedia links |
 | [ADR-020](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/020-structured-logging.md) | Structured logging |
 | [ADR-021](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/021-ef-core-adapter.md) | EF Core repository adapter |
+| [ADR-022](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/022-per-file-json-resources.md) | Per-file JSON resources |
+| [ADR-023](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/023-json-validation-rules.md) | JSON validation rules |
 
 ## Packages
 

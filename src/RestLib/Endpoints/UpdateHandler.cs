@@ -6,6 +6,7 @@ using RestLib.Configuration;
 using RestLib.Hooks;
 using RestLib.Hypermedia;
 using RestLib.Logging;
+using RestLib.Validation;
 
 namespace RestLib.Endpoints;
 
@@ -54,7 +55,7 @@ internal static class UpdateHandler
                 // Validate entity using Data Annotations
                 if (options.EnableValidation)
                 {
-                    var validationResult = Validation.EntityValidator.Validate(entity, options.JsonNamingPolicy);
+                    var validationResult = RestLibResourceValidator.Validate(entity, config, options.JsonNamingPolicy);
                     if (!validationResult.IsValid)
                     {
                         return Responses.ProblemDetailsResult.ValidationFailed(
