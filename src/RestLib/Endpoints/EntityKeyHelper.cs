@@ -15,6 +15,12 @@ internal static class EntityKeyHelper
     private static readonly ConcurrentDictionary<Type, PropertyInfo?> IdPropertyCache = new();
 
     /// <summary>
+    /// Cache for writable key property lookups used when RestLib needs to assign
+    /// a route key back onto an entity instance.
+    /// </summary>
+    private static readonly ConcurrentDictionary<(Type EntityType, Type KeyType, string? PreferredPropertyName), PropertyInfo?> WritableKeyPropertyCache = new();
+
+    /// <summary>
     /// Validates at registration time that a key can be extracted from <typeparamref name="TEntity"/>.
     /// Throws <see cref="InvalidOperationException"/> when neither a key selector is configured
     /// nor a public <c>Id</c> property of type <typeparamref name="TKey"/> exists.
@@ -69,5 +75,72 @@ internal static class EntityKeyHelper
         }
 
         return default;
+    }
+
+    /// <summary>
+    /// Attempts to assign the key value onto an entity using a configured key
+    /// property, the conventional <c>Id</c> property, or a single writable key-
+    /// typed property when that is unambiguous.
+    /// </summary>
+    /// <typeparam name="TEntity">The entity type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="entity">The entity to update.</param>
+    /// <param name="key">The key value to assign.</param>
+    /// <param name="preferredPropertyName">The preferred key property name, if known.</param>
+    /// <returns><c>true</c> if the key was assigned; otherwise <c>false</c>.</returns>
+    internal static bool TrySetEntityKey<TEntity, TKey>(
+        TEntity entity,
+        TKey key,
+        string? preferredPropertyName = null)
+        where TEntity : class
+        where TKey : notnull
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+
+        var property = WritableKeyPropertyCache.GetOrAdd(
+            (typeof(TEntity), typeof(TKey), preferredPropertyName),
+            static entry => ResolveWritableKeyProperty(entry.EntityType, entry.KeyType, entry.PreferredPropertyName));
+
+        if (property is null)
+        {
+            return false;
+        }
+
+        property.SetValue(entity, key);
+        return true;
+    }
+
+    private static PropertyInfo? ResolveWritableKeyProperty(
+        Type entityType,
+        Type keyType,
+        string? preferredPropertyName)
+    {
+        if (!string.IsNullOrWhiteSpace(preferredPropertyName))
+        {
+            var preferredProperty = entityType.GetProperty(
+                preferredPropertyName,
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+
+            if (preferredProperty is null)
+            {
+                return null;
+            }
+
+            return preferredProperty.CanWrite && preferredProperty.PropertyType == keyType
+                ? preferredProperty
+                : null;
+        }
+
+        var idProperty = entityType.GetProperty("Id", BindingFlags.Public | BindingFlags.Instance);
+        if (idProperty is not null && idProperty.CanWrite && idProperty.PropertyType == keyType)
+        {
+            return idProperty;
+        }
+
+        var candidates = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(property => property.CanWrite && property.PropertyType == keyType)
+            .ToArray();
+
+        return candidates.Length == 1 ? candidates[0] : null;
     }
 }

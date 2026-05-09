@@ -41,6 +41,36 @@ public static class RestLibEndpointExtensions
         ValidateRoutePrefix(prefix);
 
         var group = endpoints.MapGroup(prefix);
+        ConfigureRestLibEndpoints<TEntity, TEntity, TKey>(
+            group,
+            config => configure?.Invoke(config),
+            prefix);
+        return group;
+    }
+
+    /// <summary>
+    /// Maps CRUD endpoints for a resource that exposes an API model while
+    /// persisting a separate DB model.
+    /// </summary>
+    /// <typeparam name="TApiModel">The API model type.</typeparam>
+    /// <typeparam name="TDbModel">The DB model type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="endpoints">The endpoint route builder.</param>
+    /// <param name="prefix">The route prefix (e.g., "/api/products").</param>
+    /// <param name="configure">Optional configuration action.</param>
+    /// <returns>The route group builder for further customization.</returns>
+    public static RouteGroupBuilder MapRestLib<TApiModel, TDbModel, TKey>(
+        this IEndpointRouteBuilder endpoints,
+        string prefix,
+        Action<RestLibEndpointConfiguration<TApiModel, TDbModel, TKey>>? configure = null)
+        where TApiModel : class
+        where TDbModel : class
+        where TKey : notnull
+    {
+        ArgumentNullException.ThrowIfNull(endpoints);
+        ValidateRoutePrefix(prefix);
+
+        var group = endpoints.MapGroup(prefix);
         ConfigureRestLibEndpoints(group, configure, prefix);
         return group;
     }
@@ -62,6 +92,31 @@ public static class RestLibEndpointExtensions
         where TKey : notnull
     {
         ArgumentNullException.ThrowIfNull(group);
+        ConfigureRestLibEndpoints<TEntity, TEntity, TKey>(
+            group,
+            config => configure?.Invoke(config),
+            routePrefix: null);
+        return group;
+    }
+
+    /// <summary>
+    /// Maps RestLib CRUD endpoints for a two-model resource directly onto an
+    /// existing route group.
+    /// </summary>
+    /// <typeparam name="TApiModel">The API model type.</typeparam>
+    /// <typeparam name="TDbModel">The DB model type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="group">The route group builder to attach endpoints to.</param>
+    /// <param name="configure">Optional configuration action.</param>
+    /// <returns>The route group builder for further customization.</returns>
+    public static RouteGroupBuilder MapRestLib<TApiModel, TDbModel, TKey>(
+        this RouteGroupBuilder group,
+        Action<RestLibEndpointConfiguration<TApiModel, TDbModel, TKey>>? configure = null)
+        where TApiModel : class
+        where TDbModel : class
+        where TKey : notnull
+    {
+        ArgumentNullException.ThrowIfNull(group);
         ConfigureRestLibEndpoints(group, configure, routePrefix: null);
         return group;
     }
@@ -69,17 +124,19 @@ public static class RestLibEndpointExtensions
     /// <summary>
     /// Shared implementation that registers all CRUD endpoints on the provided group.
     /// </summary>
-    private static void ConfigureRestLibEndpoints<TEntity, TKey>(
+    private static void ConfigureRestLibEndpoints<TApiModel, TDbModel, TKey>(
         RouteGroupBuilder group,
-        Action<RestLibEndpointConfiguration<TEntity, TKey>>? configure,
+        Action<RestLibEndpointConfiguration<TApiModel, TDbModel, TKey>>? configure,
         string? routePrefix)
-        where TEntity : class
+        where TApiModel : class
+        where TDbModel : class
         where TKey : notnull
     {
-        var config = new RestLibEndpointConfiguration<TEntity, TKey>();
+        var config = new RestLibEndpointConfiguration<TApiModel, TDbModel, TKey>();
         configure?.Invoke(config);
+        ValidateMappedEndpointConfiguration(config);
 
-        var baseEntityName = typeof(TEntity).Name;
+        var baseEntityName = typeof(TApiModel).Name;
 
         // Generate a unique endpoint name prefix for OpenAPI operation IDs.
         // Build a candidate name from the entity type name and (optionally) the sanitized route prefix.
@@ -117,7 +174,9 @@ public static class RestLibEndpointExtensions
         // GET /prefix - Get all (paginated)
         if (config.IsOperationEnabled(RestLibOperation.GetAll))
         {
-            var getAllEndpoint = group.MapGet("", GetAllHandler.CreateDelegate<TEntity, TKey>(config));
+            var getAllEndpoint = typeof(TApiModel) == typeof(TDbModel)
+                ? group.MapGet("", GetAllHandler.CreateDelegate<TApiModel, TKey>(config))
+                : group.MapGet("", GetAllHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config));
             OpenApiEndpointConfiguration.ConfigureGetAllEndpoint(getAllEndpoint, config, baseEntityName, entityName, restLibOptions);
 
             // Add OpenAPI documentation for filter parameters
@@ -188,7 +247,9 @@ public static class RestLibEndpointExtensions
         // GET /prefix/{id} - Get by ID
         if (config.IsOperationEnabled(RestLibOperation.GetById))
         {
-            var getByIdEndpoint = group.MapGet("/{id}", GetByIdHandler.CreateDelegate<TEntity, TKey>(config, baseEntityName));
+            var getByIdEndpoint = typeof(TApiModel) == typeof(TDbModel)
+                ? group.MapGet("/{id}", GetByIdHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
+                : group.MapGet("/{id}", GetByIdHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
             OpenApiEndpointConfiguration.ConfigureGetByIdEndpoint(getByIdEndpoint, config, baseEntityName, entityName);
 
             // Add OpenAPI documentation for fields parameter
@@ -204,39 +265,67 @@ public static class RestLibEndpointExtensions
         {
             // Fail fast if we can't extract a key from the entity — prevents
             // broken Location headers (e.g. "/api/entities/" or "/api/entities/null").
-            EntityKeyHelper.ValidateKeyExtraction<TEntity, TKey>(config.KeySelector);
+            EntityKeyHelper.ValidateKeyExtraction<TApiModel, TKey>(config.KeySelector);
 
-            var createEndpoint = group.MapPost("", CreateHandler.CreateDelegate<TEntity, TKey>(config));
+            var createEndpoint = typeof(TApiModel) == typeof(TDbModel)
+                ? group.MapPost("", CreateHandler.CreateDelegate<TApiModel, TKey>(config))
+                : group.MapPost("", CreateHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config));
             OpenApiEndpointConfiguration.ConfigureCreateEndpoint(createEndpoint, config, baseEntityName, entityName);
         } // end Create
 
         // PUT /prefix/{id} - Full Update
         if (config.IsOperationEnabled(RestLibOperation.Update))
         {
-            var updateEndpoint = group.MapPut("/{id}", UpdateHandler.CreateDelegate<TEntity, TKey>(config, baseEntityName));
+            var updateEndpoint = typeof(TApiModel) == typeof(TDbModel)
+                ? group.MapPut("/{id}", UpdateHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
+                : group.MapPut("/{id}", UpdateHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
             OpenApiEndpointConfiguration.ConfigureUpdateEndpoint(updateEndpoint, config, baseEntityName, entityName);
         } // end Update
 
         // PATCH /prefix/{id} - Partial Update (JSON Merge Patch - RFC 7396)
         if (config.IsOperationEnabled(RestLibOperation.Patch))
         {
-            var patchEndpoint = group.MapPatch("/{id}", PatchHandler.CreateDelegate<TEntity, TKey>(config, baseEntityName));
+            var patchEndpoint = typeof(TApiModel) == typeof(TDbModel)
+                ? group.MapPatch("/{id}", PatchHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
+                : group.MapPatch("/{id}", PatchHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
             OpenApiEndpointConfiguration.ConfigurePatchEndpoint(patchEndpoint, config, baseEntityName, entityName);
         } // end Patch
 
         // DELETE /prefix/{id} - Delete
         if (config.IsOperationEnabled(RestLibOperation.Delete))
         {
-            var deleteEndpoint = group.MapDelete("/{id}", DeleteHandler.CreateDelegate<TEntity, TKey>(config, baseEntityName));
+            var deleteEndpoint = typeof(TApiModel) == typeof(TDbModel)
+                ? group.MapDelete("/{id}", DeleteHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
+                : group.MapDelete("/{id}", DeleteHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
             OpenApiEndpointConfiguration.ConfigureDeleteEndpoint(deleteEndpoint, config, baseEntityName, entityName);
         } // end Delete
 
         // POST /prefix/batch - Batch operations
         if (config.HasBatch)
         {
-            var batchEndpoint = group.MapPost("batch", BatchHandler.CreateDelegate<TEntity, TKey>(config));
+            var batchEndpoint = typeof(TApiModel) == typeof(TDbModel)
+                ? group.MapPost("batch", BatchHandler.CreateDelegate<TApiModel, TKey>(config))
+                : group.MapPost("batch", BatchHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config));
             OpenApiEndpointConfiguration.ConfigureBatchEndpoint(batchEndpoint, config, baseEntityName, entityName);
         } // end Batch
+    }
+
+    private static void ValidateMappedEndpointConfiguration<TApiModel, TDbModel, TKey>(
+        RestLibEndpointConfiguration<TApiModel, TDbModel, TKey> config)
+        where TApiModel : class
+        where TDbModel : class
+        where TKey : notnull
+    {
+        var hasApiHooks = config.Hooks is not null;
+
+        if (config.UsesDbModelHooks && hasApiHooks)
+        {
+            throw new InvalidOperationException(
+                $"RestLib resource '{typeof(TApiModel).Name}' cannot combine API hooks configured with UseHooks(...) " +
+                "and DB hooks selected with UseDbModelHooks(...). Choose one hook model per resource.");
+        }
+
+        MappedQueryConfigurationValidator.Validate(config);
     }
 
     /// <summary>

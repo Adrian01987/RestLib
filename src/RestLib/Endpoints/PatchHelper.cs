@@ -28,49 +28,66 @@ internal static class PatchHelper
         ILogger? logger = null)
         where TEntity : class
     {
+        if (patchDocument.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
         // Serialize original entity to a JSON document
         var originalJson = JsonSerializer.SerializeToUtf8Bytes(original, jsonOptions);
         using var originalDoc = JsonDocument.Parse(originalJson);
 
-        // Collect patch property names for O(1) lookups
-        var patchPropertyNames = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var prop in patchDocument.EnumerateObject())
+        try
         {
-            patchPropertyNames.Add(prop.Name);
-        }
-
-        // Merge original + patch into a single JSON buffer using Utf8JsonWriter
-        var buffer = new ArrayBufferWriter<byte>();
-        using (var writer = new Utf8JsonWriter(buffer))
-        {
-            writer.WriteStartObject();
-
-            // Write original properties not overridden by the patch
-            foreach (var prop in originalDoc.RootElement.EnumerateObject())
+            // Collect patch property names for O(1) lookups
+            var patchPropertyNames = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var prop in patchDocument.EnumerateObject())
             {
-                if (!patchPropertyNames.Contains(prop.Name))
+                patchPropertyNames.Add(prop.Name);
+            }
+
+            // Merge original + patch into a single JSON buffer using Utf8JsonWriter
+            var buffer = new ArrayBufferWriter<byte>();
+            using (var writer = new Utf8JsonWriter(buffer))
+            {
+                writer.WriteStartObject();
+
+                // Write original properties not overridden by the patch
+                foreach (var prop in originalDoc.RootElement.EnumerateObject())
+                {
+                    if (!patchPropertyNames.Contains(prop.Name))
+                    {
+                        prop.WriteTo(writer);
+                    }
+                }
+
+                // Write all patch properties (overrides + additions)
+                foreach (var prop in patchDocument.EnumerateObject())
                 {
                     prop.WriteTo(writer);
                 }
+
+                writer.WriteEndObject();
             }
 
-            // Write all patch properties (overrides + additions)
-            foreach (var prop in patchDocument.EnumerateObject())
+            // Deserialize the merged JSON back to the entity type
+            var result = JsonSerializer.Deserialize<TEntity>(buffer.WrittenSpan, jsonOptions);
+
+            if (result is null && logger is not null)
             {
-                prop.WriteTo(writer);
+                RestLibLogMessages.PatchPreviewDeserializationNull(logger);
             }
 
-            writer.WriteEndObject();
+            return result;
         }
-
-        // Deserialize the merged JSON back to the entity type
-        var result = JsonSerializer.Deserialize<TEntity>(buffer.WrittenSpan, jsonOptions);
-
-        if (result is null && logger is not null)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
-            RestLibLogMessages.PatchPreviewDeserializationNull(logger);
-        }
+            if (logger is not null)
+            {
+                RestLibLogMessages.JsonDeserializationFailed(logger, ex);
+            }
 
-        return result;
+            return null;
+        }
     }
 }

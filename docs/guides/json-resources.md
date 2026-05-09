@@ -178,7 +178,105 @@ app.Run();
 
 That is the recommended JSON-driven startup path.
 
-## 7. Run the app
+## 7. Two-model JSON resources
+
+When you want to expose an API DTO but persist a different DB model, keep `EntityType` as the API model and declare the DB model under `Mapping`.
+
+Create `Models/CustomerDto.cs`:
+
+```csharp
+using System.ComponentModel.DataAnnotations;
+
+public class CustomerDto
+{
+    public Guid Id { get; set; }
+
+    [Required]
+    [StringLength(100)]
+    public required string Name { get; set; }
+
+    [Required]
+    [EmailAddress]
+    [StringLength(200)]
+    public required string Email { get; set; }
+
+    [StringLength(100)]
+    public string? City { get; set; }
+
+    public bool IsActive { get; set; }
+}
+```
+
+Create `Models/CustomerEntity.cs`:
+
+```csharp
+public class CustomerEntity
+{
+    public Guid Id { get; set; }
+    public required string Name { get; set; }
+    public required string Email { get; set; }
+    public string? City { get; set; }
+    public bool IsActive { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+```
+
+Register the repository and mapper in `Program.cs`:
+
+```csharp
+builder.Services.AddRestLibInMemory<CustomerEntity, Guid>(c => c.Id, Guid.NewGuid);
+builder.Services.AddRestLibMapper<CustomerDto, CustomerEntity, CustomerMapper>();
+```
+
+Then declare `Models/Customers.json`:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/Adrian01987/RestLib/main/schemas/restlib-resource.schema.json",
+  "EntityType": "CustomerDto, MyApi",
+  "Name": "customers",
+  "Route": "/api/customers",
+  "AllowAnonymousAll": true,
+  "Mapping": {
+    "DbType": "CustomerEntity, MyApi",
+    "Mapper": "CustomerMapper"
+  },
+  "Filtering": ["City", "IsActive"],
+  "Sorting": ["Name", "City", "Email"],
+  "FieldSelection": ["Id", "Name", "Email", "City", "IsActive"]
+}
+```
+
+JSON filtering and sorting still use API-model property names. In Sprint 002 those properties must also exist on the DB model with the same CLR name and CLR type.
+
+### Auto mapping shortcut
+
+For trivial same-name, same-type models, JSON can opt into the built-in reflection mapper:
+
+```json
+"Mapping": {
+  "DbType": "CustomerEntity, MyApi",
+  "Auto": true
+}
+```
+
+`Auto` is intentionally strict. It only copies public instance properties by exact same CLR name and exact same CLR type in both directions. If you need renamed fields, type conversions, nested mapping, computed values, or preservation logic, use a C# mapper instead.
+
+### Hook model selection
+
+Named JSON hooks run on the API model by default. To run them against the DB model instead:
+
+```json
+"Mapping": {
+  "DbType": "CustomerEntity, MyApi",
+  "Mapper": "CustomerMapper",
+  "HookModel": "Db"
+}
+```
+
+Use that when hooks need access to persistence-only properties.
+
+## 8. Run the app
 
 ```bash
 dotnet build
@@ -226,6 +324,13 @@ Existing appsettings-based registration is still supported:
 ```csharp
 builder.Services.AddJsonResource<Product, Guid>(
     builder.Configuration.GetSection("RestLib:Resources:Products"));
+```
+
+Two-model appsettings registration is also supported:
+
+```csharp
+builder.Services.AddJsonResource<CustomerDto, CustomerEntity, Guid>(
+    builder.Configuration.GetSection("RestLib:Resources:Customers"));
 ```
 
 Use that when you prefer standard ASP.NET Core configuration providers. Use the `Models/` folder convention when you want one file per resource.

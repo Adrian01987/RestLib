@@ -52,6 +52,12 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     public RestLibOpenApiConfiguration OpenApi => _openApi;
 
     /// <summary>
+    /// Gets or sets the configured key property name when one is known from JSON
+    /// configuration.
+    /// </summary>
+    internal string? KeyPropertyName { get; set; }
+
+    /// <summary>
     /// Gets the filter configuration for this entity.
     /// </summary>
     internal FilterConfiguration<TEntity> FilterConfiguration => _filterConfiguration;
@@ -652,4 +658,74 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     /// </summary>
     internal string? GetRateLimitPolicy(RestLibOperation operation) =>
         _rateLimitPolicies.TryGetValue(operation, out var policy) ? policy : _defaultRateLimitPolicy;
+}
+
+/// <summary>
+/// Configuration options for RestLib endpoints that expose an API model while
+/// persisting a separate DB model.
+/// </summary>
+/// <typeparam name="TApiModel">The API model type.</typeparam>
+/// <typeparam name="TDbModel">The DB model type.</typeparam>
+/// <typeparam name="TKey">The key type.</typeparam>
+public class RestLibEndpointConfiguration<TApiModel, TDbModel, TKey>
+    : RestLibEndpointConfiguration<TApiModel, TKey>
+    where TApiModel : class
+    where TDbModel : class
+    where TKey : notnull
+{
+    private RestLibHooks<TDbModel, TKey>? _dbModelHooks;
+
+    /// <summary>
+    /// Gets or sets the optional JSON-selected mapper name.
+    /// </summary>
+    internal string? MapperName { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the JSON configuration selected
+    /// the built-in reflection auto mapper.
+    /// </summary>
+    internal bool UseAutoMapper { get; set; }
+
+    /// <summary>
+    /// Gets or sets the optional JSON resource name used in error messages.
+    /// </summary>
+    internal string? ResourceName { get; set; }
+
+    /// <summary>
+    /// Gets a value indicating whether this resource uses DB-model hooks instead
+    /// of the default API-model hooks.
+    /// </summary>
+    internal bool UsesDbModelHooks { get; private set; }
+
+    /// <summary>
+    /// Gets the configured DB-model hooks when DB hook mode is enabled.
+    /// </summary>
+    internal RestLibHooks<TDbModel, TKey>? DbModelHooks => _dbModelHooks;
+
+    /// <summary>
+    /// Switches mapped endpoint hooks to use the DB model type.
+    /// </summary>
+    /// <returns>This configuration instance for chaining.</returns>
+    public RestLibEndpointConfiguration<TApiModel, TDbModel, TKey> UseDbModelHooks()
+    {
+        UsesDbModelHooks = true;
+        return this;
+    }
+
+    /// <summary>
+    /// Switches mapped endpoint hooks to use the DB model type and configures the
+    /// DB-model hook pipeline.
+    /// </summary>
+    /// <param name="configure">An action to configure the DB-model hooks.</param>
+    /// <returns>This configuration instance for chaining.</returns>
+    public RestLibEndpointConfiguration<TApiModel, TDbModel, TKey> UseDbModelHooks(
+        Action<RestLibHooks<TDbModel, TKey>> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+
+        UsesDbModelHooks = true;
+        _dbModelHooks ??= new RestLibHooks<TDbModel, TKey>();
+        configure(_dbModelHooks);
+        return this;
+    }
 }

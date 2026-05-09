@@ -1,9 +1,13 @@
 {
   "$schema": "../../../schemas/restlib-resource.schema.json",
-  "EntityType": "RestLib.Sample.Models.Customer, RestLib.Sample",
+  "EntityType": "RestLib.Sample.Models.CustomerDto, RestLib.Sample",
   "Name": "customers",
   "Route": "/api/customers",
   "AllowAnonymousAll": true,
+  "Mapping": {
+    "DbType": "RestLib.Sample.Models.Customer, RestLib.Sample",
+    "Mapper": "CustomerMapper"
+  },
   "Filtering": ["City", "IsActive"],
   "FilteringOperators": {
     "Name": ["string"]
@@ -12,7 +16,7 @@
   "DefaultSort": "name:asc",
   "FieldSelection": ["Id", "Name", "Email", "City", "IsActive"],
   "Batch": {
-    "Actions": ["Create", "Delete"]
+    "Actions": ["Create", "Update", "Patch", "Delete"]
   },
   "OpenApi": {
     "Tag": "Customer",

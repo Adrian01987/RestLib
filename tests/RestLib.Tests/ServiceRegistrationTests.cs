@@ -149,6 +149,33 @@ public class ServiceRegistrationTests
     }
 
     [Fact]
+    public void AddRestLibMapper_WithImplementationType_ReturnsServiceCollection_ForChaining()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        var result = services.AddRestLibMapper<ServiceRegistrationDto, ServiceRegistrationEntity, ServiceRegistrationMapper>();
+
+        // Assert
+        result.Should().BeSameAs(services);
+    }
+
+    [Fact]
+    public void AddRestLibMapper_WithFactory_ReturnsServiceCollection_ForChaining()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        var result = services.AddRestLibMapper<ServiceRegistrationDto, ServiceRegistrationEntity>(
+            _ => new ServiceRegistrationMapper());
+
+        // Assert
+        result.Should().BeSameAs(services);
+    }
+
+    [Fact]
     public void AddNamedHook_RegistersResolver()
     {
         // Arrange
@@ -652,4 +679,27 @@ public class AnotherEntity
 public class AnotherRepository : FakeRepositoryBase<AnotherEntity, int>
 {
     protected override int GetId(AnotherEntity entity) => entity.Id;
+}
+
+public class ServiceRegistrationDto
+{
+    public Guid Id { get; set; }
+}
+
+public class ServiceRegistrationEntity
+{
+    public Guid Id { get; set; }
+}
+
+public class ServiceRegistrationMapper : IRestLibMapper<ServiceRegistrationDto, ServiceRegistrationEntity>
+{
+    public ServiceRegistrationDto ToApi(ServiceRegistrationEntity dbModel) => new()
+    {
+        Id = dbModel.Id,
+    };
+
+    public ServiceRegistrationEntity ToDb(ServiceRegistrationDto apiModel) => new()
+    {
+        Id = apiModel.Id,
+    };
 }

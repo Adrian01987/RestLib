@@ -25,7 +25,8 @@ public sealed class RestLibFolderOptions
     public IList<Assembly> Assemblies { get; } = new List<Assembly>();
 
     /// <summary>
-    /// Gets or sets a delegate that resolves entity and key CLR types for a resource file.
+    /// Gets or sets a delegate that resolves API-model and key CLR types for a
+    /// resource file.
     /// </summary>
     public Func<string, RestLibJsonResourceConfiguration, (Type EntityType, Type KeyType)>? TypeResolver { get; set; }
 }

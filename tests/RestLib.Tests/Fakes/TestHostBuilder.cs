@@ -194,6 +194,144 @@ public sealed class TestHostBuilder<TEntity, TKey>
 }
 
 /// <summary>
+/// Shared builder for integration tests that expose an API model while using a
+/// repository over a separate DB model.
+/// </summary>
+/// <typeparam name="TApiModel">The API model type.</typeparam>
+/// <typeparam name="TDbModel">The DB model type.</typeparam>
+/// <typeparam name="TKey">The key type.</typeparam>
+public sealed class TestTwoModelHostBuilder<TApiModel, TDbModel, TKey>
+    where TApiModel : class
+    where TDbModel : class
+    where TKey : notnull
+{
+    private readonly IRepository<TDbModel, TKey> _repository;
+    private readonly string _route;
+    private bool _skipRestLib;
+    private Action<RestLibOptions>? _configureOptions;
+    private Action<RestLibEndpointConfiguration<TApiModel, TDbModel, TKey>>? _configureEndpoint;
+    private Action<IServiceCollection>? _configureServices;
+    private Action<IApplicationBuilder>? _configureMiddleware;
+    private Action<IEndpointRouteBuilder>? _configureAdditionalEndpoints;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="TestTwoModelHostBuilder{TApiModel, TDbModel, TKey}"/> class.
+    /// </summary>
+    /// <param name="repository">The DB-model repository instance to register.</param>
+    /// <param name="route">The route prefix for the REST endpoints.</param>
+    public TestTwoModelHostBuilder(IRepository<TDbModel, TKey> repository, string route)
+    {
+        _repository = repository;
+        _route = route;
+    }
+
+    /// <summary>
+    /// Configures RestLib options.
+    /// </summary>
+    /// <param name="configure">Action to configure <see cref="RestLibOptions"/>.</param>
+    /// <returns>This builder for chaining.</returns>
+    public TestTwoModelHostBuilder<TApiModel, TDbModel, TKey> WithOptions(Action<RestLibOptions> configure)
+    {
+        _configureOptions = configure;
+        return this;
+    }
+
+    /// <summary>
+    /// Configures the mapped endpoint.
+    /// </summary>
+    /// <param name="configure">Action to configure the mapped endpoint.</param>
+    /// <returns>This builder for chaining.</returns>
+    public TestTwoModelHostBuilder<TApiModel, TDbModel, TKey> WithEndpoint(
+        Action<RestLibEndpointConfiguration<TApiModel, TDbModel, TKey>> configure)
+    {
+        _configureEndpoint = configure;
+        return this;
+    }
+
+    /// <summary>
+    /// Registers additional services such as mappers or HATEOAS providers.
+    /// </summary>
+    /// <param name="configure">Action to configure additional services.</param>
+    /// <returns>This builder for chaining.</returns>
+    public TestTwoModelHostBuilder<TApiModel, TDbModel, TKey> WithServices(Action<IServiceCollection> configure)
+    {
+        _configureServices = configure;
+        return this;
+    }
+
+    /// <summary>
+    /// Adds middleware between <c>UseRouting</c> and <c>UseEndpoints</c>.
+    /// </summary>
+    /// <param name="configure">Action to configure middleware.</param>
+    /// <returns>This builder for chaining.</returns>
+    public TestTwoModelHostBuilder<TApiModel, TDbModel, TKey> WithMiddleware(Action<IApplicationBuilder> configure)
+    {
+        _configureMiddleware = configure;
+        return this;
+    }
+
+    /// <summary>
+    /// Registers additional endpoint mappings alongside the RestLib route.
+    /// </summary>
+    /// <param name="configure">Action to configure additional endpoints.</param>
+    /// <returns>This builder for chaining.</returns>
+    public TestTwoModelHostBuilder<TApiModel, TDbModel, TKey> WithAdditionalEndpoints(Action<IEndpointRouteBuilder> configure)
+    {
+        _configureAdditionalEndpoints = configure;
+        return this;
+    }
+
+    /// <summary>
+    /// Skips the automatic <see cref="RestLibServiceExtensions.AddRestLib"/> registration.
+    /// </summary>
+    /// <returns>This builder for chaining.</returns>
+    public TestTwoModelHostBuilder<TApiModel, TDbModel, TKey> SkipRestLibRegistration()
+    {
+        _skipRestLib = true;
+        return this;
+    }
+
+    /// <summary>
+    /// Builds and starts the test host, returning the host and HTTP client.
+    /// </summary>
+    /// <returns>A tuple containing the started host and client.</returns>
+    public async Task<(IHost Host, HttpClient Client)> BuildAsync()
+    {
+        var host = new HostBuilder()
+            .ConfigureWebHost(webBuilder =>
+            {
+                webBuilder
+                    .UseTestServer()
+                    .ConfigureServices(services =>
+                    {
+                        if (!_skipRestLib)
+                        {
+                            services.AddRestLib(_configureOptions ?? (_ => { }));
+                        }
+
+                        services.AddSingleton<IRepository<TDbModel, TKey>>(_repository);
+                        services.AddRouting();
+                        _configureServices?.Invoke(services);
+                    })
+                    .Configure(app =>
+                    {
+                        app.UseRouting();
+                        _configureMiddleware?.Invoke(app);
+                        app.UseEndpoints(endpoints =>
+                        {
+                            _configureAdditionalEndpoints?.Invoke(endpoints);
+                            endpoints.MapRestLib<TApiModel, TDbModel, TKey>(_route, _configureEndpoint ?? (_ => { }));
+                        });
+                    });
+            })
+            .Build();
+
+        await host.StartAsync();
+        return (host, host.GetTestClient());
+    }
+}
+
+/// <summary>
 /// Shared builder for integration tests that use JSON resource configuration
 /// (<see cref="RestLibJsonEndpointExtensions.MapJsonResources"/> /
 /// <see cref="RestLibJsonEndpointExtensions.MapJsonResource"/>)

@@ -6,6 +6,7 @@ using RestLib.Batch;
 using RestLib.Configuration;
 using RestLib.Hooks;
 using RestLib.Logging;
+using RestLib.Mapping;
 
 namespace RestLib.Endpoints;
 
@@ -188,6 +189,215 @@ internal static class BatchHandler
             }
 
             // Determine response status code
+            var allSucceeded = response.Items.All(r => r.Status is >= 200 and < 300);
+            var statusCode = allSucceeded
+                ? StatusCodes.Status200OK
+                : StatusCodes.Status207MultiStatus;
+
+            var succeeded = response.Items.Count(r => r.Status is >= 200 and < 300);
+            var failed = response.Items.Count - succeeded;
+            RestLibLogMessages.BatchCompleted(logger, actionName, response.Items.Count, succeeded, failed, statusCode);
+
+            return Results.Json(response, jsonOptions, statusCode: statusCode);
+        };
+    }
+
+    /// <summary>
+    /// Creates the delegate for a mapped batch endpoint.
+    /// </summary>
+    /// <typeparam name="TApiModel">The API model type.</typeparam>
+    /// <typeparam name="TDbModel">The DB model type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="config">The endpoint configuration.</param>
+    /// <returns>The request delegate.</returns>
+    internal static Func<HttpContext, Task<IResult>>
+        CreateMappedDelegate<TApiModel, TDbModel, TKey>(RestLibEndpointConfiguration<TApiModel, TDbModel, TKey> config)
+        where TApiModel : class
+        where TDbModel : class
+        where TKey : notnull
+    {
+        return async httpContext =>
+        {
+            var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
+            var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.Batch");
+            var repository = httpContext.RequestServices.GetRequiredService<IRepository<TDbModel, TKey>>();
+            var mapper = RestLibMapperResolver.Resolve<TApiModel, TDbModel>(
+                httpContext.RequestServices,
+                config.MapperName,
+                config.UseAutoMapper,
+                config.ResourceName);
+            var ct = httpContext.RequestAborted;
+            var instance = httpContext.Request.Path.ToString();
+
+            BatchRequestEnvelope? envelope;
+            try
+            {
+                envelope = await httpContext.Request.ReadFromJsonAsync<BatchRequestEnvelope>(jsonOptions, ct);
+            }
+            catch (JsonException ex)
+            {
+                RestLibLogMessages.BatchEnvelopeDeserializationFailed(logger, ex);
+                return Responses.ProblemDetailsResult.InvalidBatchRequest(
+                    "The request body is not valid JSON.",
+                    instance: instance,
+                    jsonOptions: jsonOptions,
+                    logger: logger);
+            }
+
+            if (envelope is null)
+            {
+                return Responses.ProblemDetailsResult.InvalidBatchRequest(
+                    "The request body is empty.",
+                    instance: instance,
+                    jsonOptions: jsonOptions,
+                    logger: logger);
+            }
+
+            if (!Enum.TryParse<BatchAction>(envelope.Action, ignoreCase: true, out var action))
+            {
+                var allowedActions = config.EnabledBatchActions
+                    .Select(a => a.ToString().ToLowerInvariant());
+                return Responses.ProblemDetailsResult.InvalidBatchRequest(
+                    $"'{envelope.Action}' is not a valid batch action.",
+                    errors: new Dictionary<string, string[]>
+                    {
+                        ["action"] = [$"'{envelope.Action}' is not a valid batch action. Allowed actions: {string.Join(", ", allowedActions)}."]
+                    },
+                    instance: instance,
+                    jsonOptions: jsonOptions,
+                    logger: logger);
+            }
+
+            if (!config.IsBatchActionEnabled(action))
+            {
+                var enabledActions = config.EnabledBatchActions
+                    .Select(a => a.ToString().ToLowerInvariant());
+                return Responses.ProblemDetailsResult.BatchActionNotEnabled(
+                    action.ToString().ToLowerInvariant(),
+                    enabledActions,
+                    instance: instance,
+                    jsonOptions: jsonOptions,
+                    logger: logger);
+            }
+
+            if (envelope.Items.ValueKind == JsonValueKind.Undefined
+                || envelope.Items.ValueKind == JsonValueKind.Null)
+            {
+                return Responses.ProblemDetailsResult.InvalidBatchRequest(
+                    "The 'items' array is required.",
+                    instance: instance,
+                    jsonOptions: jsonOptions,
+                    logger: logger);
+            }
+
+            if (envelope.Items.ValueKind != JsonValueKind.Array)
+            {
+                return Responses.ProblemDetailsResult.InvalidBatchRequest(
+                    "The 'items' property must be an array.",
+                    instance: instance,
+                    jsonOptions: jsonOptions,
+                    logger: logger);
+            }
+
+            var itemCount = envelope.Items.GetArrayLength();
+            if (itemCount == 0)
+            {
+                return Responses.ProblemDetailsResult.InvalidBatchRequest(
+                    "The 'items' array must contain at least one item.",
+                    instance: instance,
+                    jsonOptions: jsonOptions,
+                    logger: logger);
+            }
+
+            if (options.MaxBatchSize > 0 && itemCount > options.MaxBatchSize)
+            {
+                return Responses.ProblemDetailsResult.BatchSizeExceeded(
+                    itemCount,
+                    options.MaxBatchSize,
+                    instance: instance,
+                    jsonOptions: jsonOptions,
+                    logger: logger);
+            }
+
+            var apiPipeline = config.UsesDbModelHooks || config.Hooks is null
+                ? null
+                : new HookPipeline<TApiModel, TKey>(config.Hooks, logger);
+            var dbPipeline = config.UsesDbModelHooks && config.DbModelHooks is not null
+                ? new HookPipeline<TDbModel, TKey>(config.DbModelHooks, logger)
+                : null;
+
+            var actionName = action.ToString().ToLowerInvariant();
+            RestLibLogMessages.BatchRequestReceived(logger, actionName, itemCount);
+
+            var batchRepository = httpContext.RequestServices.GetService<IBatchRepository<TDbModel, TKey>>();
+            var batchContext = new MappedBatchContext<TApiModel, TDbModel, TKey>
+            {
+                HttpContext = httpContext,
+                Repository = repository,
+                BatchRepository = batchRepository,
+                ApiPipeline = apiPipeline,
+                DbPipeline = dbPipeline,
+                Mapper = mapper,
+                Options = options,
+                JsonOptions = jsonOptions,
+                CancellationToken = ct,
+                EndpointConfig = config,
+                CollectionPath = GetCollectionPathFromBatchPath(instance),
+                Logger = logger
+            };
+
+            var response = action switch
+            {
+                BatchAction.Create => await new MappedBatchCreatePipeline<TApiModel, TDbModel, TKey>()
+                    .ProcessAsync(envelope.Items, batchContext),
+                BatchAction.Update => await new MappedBatchUpdatePipeline<TApiModel, TDbModel, TKey>()
+                    .ProcessAsync(envelope.Items, batchContext),
+                BatchAction.Patch => await new MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>()
+                    .ProcessAsync(envelope.Items, batchContext),
+                BatchAction.Delete => await new MappedBatchDeletePipeline<TApiModel, TDbModel, TKey>()
+                    .ProcessAsync(envelope.Items, batchContext),
+                _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
+            };
+
+            if (dbPipeline is not null)
+            {
+                var batchOperation = action switch
+                {
+                    BatchAction.Create => RestLibOperation.BatchCreate,
+                    BatchAction.Update => RestLibOperation.BatchUpdate,
+                    BatchAction.Patch => RestLibOperation.BatchPatch,
+                    BatchAction.Delete => RestLibOperation.BatchDelete,
+                    _ => RestLibOperation.BatchCreate
+                };
+                var hookContext = dbPipeline.CreateContext(httpContext, batchOperation);
+                var beforeResponseResult = await HookHelper.ExecuteHookAsync(
+                    dbPipeline.ExecuteBeforeResponseAsync,
+                    hookContext);
+                if (beforeResponseResult is not null)
+                {
+                    return beforeResponseResult;
+                }
+            }
+            else if (apiPipeline is not null)
+            {
+                var batchOperation = action switch
+                {
+                    BatchAction.Create => RestLibOperation.BatchCreate,
+                    BatchAction.Update => RestLibOperation.BatchUpdate,
+                    BatchAction.Patch => RestLibOperation.BatchPatch,
+                    BatchAction.Delete => RestLibOperation.BatchDelete,
+                    _ => RestLibOperation.BatchCreate
+                };
+                var hookContext = apiPipeline.CreateContext(httpContext, batchOperation);
+                var beforeResponseResult = await HookHelper.ExecuteHookAsync(
+                    apiPipeline.ExecuteBeforeResponseAsync,
+                    hookContext);
+                if (beforeResponseResult is not null)
+                {
+                    return beforeResponseResult;
+                }
+            }
+
             var allSucceeded = response.Items.All(r => r.Status is >= 200 and < 300);
             var statusCode = allSucceeded
                 ? StatusCodes.Status200OK

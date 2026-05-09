@@ -83,6 +83,90 @@ internal static class RestLibJsonResourceBuilder
         return hooks.HasAnyHooks ? hooks : null;
     }
 
+    /// <summary>
+    /// Applies JSON mapping options onto a two-model endpoint configuration.
+    /// </summary>
+    /// <typeparam name="TApiModel">The API model type.</typeparam>
+    /// <typeparam name="TDbModel">The DB model type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="endpointConfiguration">The endpoint configuration to populate.</param>
+    /// <param name="jsonConfiguration">The JSON-based resource configuration.</param>
+    internal static void ApplyMapping<TApiModel, TDbModel, TKey>(
+        RestLibEndpointConfiguration<TApiModel, TDbModel, TKey> endpointConfiguration,
+        RestLibJsonResourceConfiguration jsonConfiguration)
+        where TApiModel : class
+        where TDbModel : class
+        where TKey : notnull
+    {
+        ArgumentNullException.ThrowIfNull(endpointConfiguration);
+        ArgumentNullException.ThrowIfNull(jsonConfiguration);
+
+        endpointConfiguration.ResourceName = jsonConfiguration.Name;
+
+        var mapping = jsonConfiguration.Mapping;
+        if (mapping is null)
+        {
+            throw new InvalidOperationException(
+                $"Resource '{jsonConfiguration.Name}' must declare a Mapping section when registering a two-model JSON resource.");
+        }
+
+        if (string.IsNullOrWhiteSpace(mapping.DbType))
+        {
+            throw new InvalidOperationException(
+                $"Resource '{jsonConfiguration.Name}' declares a Mapping section but does not set Mapping.DbType.");
+        }
+
+        var resolvedDbType = ResolveConfiguredType(mapping.DbType, typeof(TDbModel).Assembly);
+        if (resolvedDbType is null)
+        {
+            throw new InvalidOperationException(
+                $"Resource '{jsonConfiguration.Name}' configures Mapping.DbType '{mapping.DbType}', but RestLib could not resolve that CLR type.");
+        }
+
+        if (resolvedDbType != typeof(TDbModel))
+        {
+            throw new InvalidOperationException(
+                $"Resource '{jsonConfiguration.Name}' configures Mapping.DbType '{mapping.DbType}', but the typed registration uses DB model '{typeof(TDbModel).AssemblyQualifiedName}'.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(mapping.Mapper) && mapping.Auto)
+        {
+            throw new InvalidOperationException(
+                $"Resource '{jsonConfiguration.Name}' cannot configure both Mapping.Mapper and Mapping.Auto.");
+        }
+
+        _ = UsesDbHookModel(jsonConfiguration);
+
+        endpointConfiguration.MapperName = mapping.Mapper;
+        endpointConfiguration.UseAutoMapper = mapping.Auto;
+    }
+
+    /// <summary>
+    /// Determines whether a JSON resource selects DB-model hooks.
+    /// </summary>
+    /// <param name="jsonConfiguration">The JSON-based resource configuration.</param>
+    /// <returns><c>true</c> when DB hooks are selected; otherwise <c>false</c>.</returns>
+    internal static bool UsesDbHookModel(RestLibJsonResourceConfiguration jsonConfiguration)
+    {
+        ArgumentNullException.ThrowIfNull(jsonConfiguration);
+
+        var hookModel = jsonConfiguration.Mapping?.HookModel;
+        if (string.IsNullOrWhiteSpace(hookModel)
+            || string.Equals(hookModel, "Api", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (string.Equals(hookModel, "Db", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        throw new InvalidOperationException(
+            $"Resource '{jsonConfiguration.Name}' has an invalid Mapping.HookModel value '{hookModel}'. " +
+            "Valid values are 'Api' and 'Db'.");
+    }
+
     private static void ApplyKeySelector<TEntity, TKey>(
         RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
         RestLibJsonResourceConfiguration jsonConfiguration)
@@ -107,6 +191,74 @@ internal static class RestLibJsonResourceBuilder
         var propertyAccess = Expression.Property(entityParameter, property);
         var lambda = Expression.Lambda<Func<TEntity, TKey>>(propertyAccess, entityParameter);
         endpointConfiguration.KeySelector = lambda.Compile();
+        endpointConfiguration.KeyPropertyName = property.Name;
+    }
+
+    private static Type? ResolveConfiguredType(string configuredTypeName, Assembly fallbackAssembly)
+    {
+        var declaredType = Type.GetType(configuredTypeName, throwOnError: false);
+        if (declaredType is not null)
+        {
+            return declaredType;
+        }
+
+        if (TryResolveFromAssembly(fallbackAssembly, configuredTypeName, out var resolvedFromFallback))
+        {
+            return resolvedFromFallback;
+        }
+
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            if (assembly == fallbackAssembly)
+            {
+                continue;
+            }
+
+            if (TryResolveFromAssembly(assembly, configuredTypeName, out var resolved))
+            {
+                return resolved;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryResolveFromAssembly(
+        Assembly assembly,
+        string configuredTypeName,
+        out Type? resolvedType)
+    {
+        resolvedType = assembly.GetType(configuredTypeName, throwOnError: false, ignoreCase: false)
+            ?? assembly.GetTypes().FirstOrDefault(type =>
+                string.Equals(type.FullName, configuredTypeName, StringComparison.Ordinal)
+                || string.Equals(type.Name, configuredTypeName, StringComparison.Ordinal));
+
+        if (resolvedType is not null)
+        {
+            return true;
+        }
+
+        var split = configuredTypeName.Split(
+            ',',
+            2,
+            StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (split.Length != 2 || !MatchesAssemblyName(assembly, split[1]))
+        {
+            return false;
+        }
+
+        resolvedType = assembly.GetType(split[0], throwOnError: false, ignoreCase: false)
+            ?? assembly.GetTypes().FirstOrDefault(type =>
+                string.Equals(type.FullName, split[0], StringComparison.Ordinal)
+                || string.Equals(type.Name, split[0], StringComparison.Ordinal));
+
+        return resolvedType is not null;
+    }
+
+    private static bool MatchesAssemblyName(Assembly assembly, string configuredAssemblyName)
+    {
+        return string.Equals(assembly.FullName, configuredAssemblyName, StringComparison.Ordinal)
+            || string.Equals(assembly.GetName().Name, configuredAssemblyName, StringComparison.Ordinal);
     }
 
     private static void ApplyAuthorization<TEntity, TKey>(

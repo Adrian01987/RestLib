@@ -20,7 +20,10 @@
     },
     "EntityType": {
       "type": "string",
-      "description": "Assembly-qualified CLR entity type name used by AddRestLibFromFolder."
+      "description": "Assembly-qualified CLR API model type name used by AddRestLibFromFolder. For single-model resources, this remains the entity type."
+    },
+    "Mapping": {
+      "$ref": "#/$defs/mappingConfiguration"
     },
     "KeyProperty": {
       "type": "string",
@@ -52,13 +55,13 @@
     },
     "Filtering": {
       "type": "array",
-      "description": "Entity property names that can be filtered on via query parameters (equality only). Names are automatically converted to snake_case in the query string. For operator-based filtering, use FilteringOperators instead.",
+      "description": "API model property names that can be filtered on via query parameters (equality only). Names are automatically converted to snake_case in the query string. For operator-based filtering, use FilteringOperators instead.",
       "items": { "type": "string" },
       "uniqueItems": true
     },
     "FilteringOperators": {
       "type": "object",
-      "description": "Per-property filter operator configuration. Keys are entity property names, values are arrays of allowed operator names or preset names. Valid operators: eq, neq, gt, lt, gte, lte, contains, starts_with, ends_with, in. Valid presets: equality, comparison, string, all.",
+      "description": "Per-property filter operator configuration. Keys are API model property names, values are arrays of allowed operator names or preset names. Valid operators: eq, neq, gt, lt, gte, lte, contains, starts_with, ends_with, in. Valid presets: equality, comparison, string, all.",
       "additionalProperties": {
         "type": "array",
         "items": {
@@ -71,7 +74,7 @@
     },
     "Sorting": {
       "type": "array",
-      "description": "Entity property names that can be sorted on via the sort query parameter. Names are automatically converted to snake_case.",
+      "description": "API model property names that can be sorted on via the sort query parameter. Names are automatically converted to snake_case.",
       "items": { "type": "string" },
       "uniqueItems": true
     },
@@ -81,7 +84,7 @@
     },
     "FieldSelection": {
       "type": "array",
-      "description": "Entity property names that can be selected via the fields query parameter. Names are automatically converted to snake_case in the query string.",
+      "description": "API model property names that can be selected via the fields query parameter. Names are automatically converted to snake_case in the query string.",
       "items": { "type": "string" },
       "uniqueItems": true
     },
@@ -99,7 +102,7 @@
     },
     "Validation": {
       "type": "object",
-      "description": "JSON-declared validation rules keyed by CLR property name.",
+      "description": "JSON-declared validation rules keyed by API-model CLR property name.",
       "additionalProperties": {
         "$ref": "#/$defs/validationRule"
       }
@@ -136,6 +139,38 @@
         "properties": {
           "Include": { "minItems": 1 },
           "Exclude": { "minItems": 1 }
+        }
+      }
+    },
+    "mappingConfiguration": {
+      "type": "object",
+      "description": "Optional API-to-DB model mapping configuration.",
+      "properties": {
+        "DbType": {
+          "type": "string",
+          "description": "Assembly-qualified CLR DB model type name."
+        },
+        "Mapper": {
+          "type": "string",
+          "description": "Mapper implementation type name used to select a registered C# mapper."
+        },
+        "Auto": {
+          "type": "boolean",
+          "description": "When true, RestLib uses the built-in strict reflection mapper for exact same-name, same-type properties.",
+          "default": false
+        },
+        "HookModel": {
+          "type": "string",
+          "description": "Selects whether named JSON hooks run against the API or DB model.",
+          "enum": ["Api", "Db"],
+          "default": "Api"
+        }
+      },
+      "additionalProperties": false,
+      "not": {
+        "required": ["Mapper", "Auto"],
+        "properties": {
+          "Auto": { "const": true }
         }
       }
     },

@@ -33,6 +33,7 @@ builder.Services.AddRestLibInMemoryWithData(o => o.Id, Guid.NewGuid, SeedData.Ge
 builder.Services.AddDbContext<SampleDbContext>(options =>
     options.UseSqlite("Data Source=restlib-sample.db"));
 builder.Services.AddRestLibEfCore<SampleDbContext, Customer, Guid>();
+builder.Services.AddRestLibMapper<CustomerDto, Customer, CustomerMapper>();
 
 builder.Services.AddNamedHook<Product, Guid>(HookNames.SetUpdatedAt, ctx =>
 {
@@ -111,7 +112,7 @@ app.MapScalarApiReference("/", options =>
 // Health check endpoint
 app.MapHealthChecks("/health");
 
-// Map RestLib endpoints from JSON resource configuration (Categories + Products)
+// Map RestLib endpoints from JSON resource configuration (Categories, Products, and Customers)
 app.UseRateLimiter();
 app.MapJsonResources();
 

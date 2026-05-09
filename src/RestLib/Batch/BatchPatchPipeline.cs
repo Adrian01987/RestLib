@@ -70,10 +70,9 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
         BatchItemResult?[] results,
         BatchContext<TEntity, TKey> context)
     {
-        // Preview validation and BeforePersist: bulk-fetch originals once, validate preview
-        // merges, then run BeforePersist for items that remain valid before persisting.
+        // Preview validation and BeforePersist: bulk-fetch originals once so invalid
+        // patch documents can be rejected before repository persistence runs.
         var itemsToPersist = validItems;
-        if (context.Options.EnableValidation || context.Pipeline is not null)
         {
             var ids = validItems.Select(v => v.Id).ToList();
             var originals = await context.BatchRepository!.GetByIdsAsync(ids, context.CancellationToken);
@@ -94,25 +93,31 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
                     continue;
                 }
 
+                var preview = PatchHelper.PreviewPatch(original, body, context.JsonOptions, context.Logger);
+                if (preview is null)
+                {
+                    results[index] = BadRequestResult(
+                        index,
+                        "The patch document could not be applied to the resource.",
+                        context.HttpContext.Request.Path);
+                    continue;
+                }
+
                 if (context.Options.EnableValidation)
                 {
-                    var preview = PatchHelper.PreviewPatch(original, body, context.JsonOptions);
-                    if (preview is not null)
+                    var validationResult = RestLibResourceValidator.Validate(preview, context.EndpointConfig, context.JsonOptions.PropertyNamingPolicy);
+                    if (!validationResult.IsValid)
                     {
-                        var validationResult = RestLibResourceValidator.Validate(preview, context.EndpointConfig, context.JsonOptions.PropertyNamingPolicy);
-                        if (!validationResult.IsValid)
+                        RestLibLogMessages.BatchPatchItemValidationFailed(context.Logger, index);
+                        results[index] = new BatchItemResult
                         {
-                            RestLibLogMessages.BatchPatchItemValidationFailed(context.Logger, index);
-                            results[index] = new BatchItemResult
-                            {
-                                Index = index,
-                                Status = StatusCodes.Status400BadRequest,
-                                Error = ProblemDetailsFactory.ValidationFailed(
-                                    validationResult.Errors,
-                                    context.HttpContext.Request.Path)
-                            };
-                            continue;
-                        }
+                            Index = index,
+                            Status = StatusCodes.Status400BadRequest,
+                            Error = ProblemDetailsFactory.ValidationFailed(
+                                validationResult.Errors,
+                                context.HttpContext.Request.Path)
+                        };
+                        continue;
                     }
                 }
 
@@ -160,43 +165,45 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
 
         // Preview validation and BeforePersist: fetch original, validate the merged preview,
         // then run BeforePersist before the repository patch executes.
-        TEntity? original = null;
-        if (context.Options.EnableValidation || context.Pipeline is not null)
+        TEntity? original = await context.Repository.GetByIdAsync(id, context.CancellationToken);
+        if (original is null)
         {
-            original = await context.Repository.GetByIdAsync(id, context.CancellationToken);
-            if (original is null)
+            var entityName = typeof(TEntity).Name;
+            RestLibLogMessages.BatchPatchItemNotFound(context.Logger, index, entityName, id!);
+            results[index] = new BatchItemResult
             {
-                var entityName = typeof(TEntity).Name;
-                RestLibLogMessages.BatchPatchItemNotFound(context.Logger, index, entityName, id!);
+                Index = index,
+                Status = StatusCodes.Status404NotFound,
+                Error = ProblemDetailsFactory.NotFound(entityName, id!, context.HttpContext.Request.Path)
+            };
+            return;
+        }
+
+        var preview = PatchHelper.PreviewPatch(original, body, context.JsonOptions, context.Logger);
+        if (preview is null)
+        {
+            results[index] = BadRequestResult(
+                index,
+                "The patch document could not be applied to the resource.",
+                context.HttpContext.Request.Path);
+            return;
+        }
+
+        if (context.Options.EnableValidation)
+        {
+            var validationResult = RestLibResourceValidator.Validate(preview, context.EndpointConfig, context.JsonOptions.PropertyNamingPolicy);
+            if (!validationResult.IsValid)
+            {
+                RestLibLogMessages.BatchPatchItemValidationFailed(context.Logger, index);
                 results[index] = new BatchItemResult
                 {
                     Index = index,
-                    Status = StatusCodes.Status404NotFound,
-                    Error = ProblemDetailsFactory.NotFound(entityName, id!, context.HttpContext.Request.Path)
+                    Status = StatusCodes.Status400BadRequest,
+                    Error = ProblemDetailsFactory.ValidationFailed(
+                        validationResult.Errors,
+                        context.HttpContext.Request.Path)
                 };
                 return;
-            }
-        }
-
-        if (context.Options.EnableValidation && original is not null)
-        {
-            var preview = PatchHelper.PreviewPatch(original, body, context.JsonOptions);
-            if (preview is not null)
-            {
-                var validationResult = RestLibResourceValidator.Validate(preview, context.EndpointConfig, context.JsonOptions.PropertyNamingPolicy);
-                if (!validationResult.IsValid)
-                {
-                    RestLibLogMessages.BatchPatchItemValidationFailed(context.Logger, index);
-                    results[index] = new BatchItemResult
-                    {
-                        Index = index,
-                        Status = StatusCodes.Status400BadRequest,
-                        Error = ProblemDetailsFactory.ValidationFailed(
-                            validationResult.Errors,
-                            context.HttpContext.Request.Path)
-                    };
-                    return;
-                }
             }
         }
 

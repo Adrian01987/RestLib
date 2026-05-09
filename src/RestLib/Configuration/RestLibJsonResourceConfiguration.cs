@@ -18,9 +18,17 @@ public class RestLibJsonResourceConfiguration
     public required string Route { get; set; }
 
     /// <summary>
-    /// Gets or sets the assembly-qualified CLR entity type name used by folder-based loading.
+    /// Gets or sets the assembly-qualified CLR API model type name used by
+    /// folder-based loading. For single-model resources, this is the entity
+    /// type exposed and persisted by the resource.
     /// </summary>
     public string? EntityType { get; set; }
+
+    /// <summary>
+    /// Gets or sets the optional API-to-DB model mapping configuration for a
+    /// two-model resource.
+    /// </summary>
+    public RestLibJsonMappingConfiguration? Mapping { get; set; }
 
     /// <summary>
     /// Gets or sets the property name used as the entity key.
@@ -137,6 +145,36 @@ public class RestLibJsonValidationRuleConfiguration
     /// Gets or sets a value indicating whether the string value must be a valid email address.
     /// </summary>
     public bool Email { get; set; }
+}
+
+/// <summary>
+/// JSON configuration for API-to-DB model mapping.
+/// </summary>
+public class RestLibJsonMappingConfiguration
+{
+    /// <summary>
+    /// Gets or sets the assembly-qualified CLR DB model type name used by
+    /// folder-based loading.
+    /// </summary>
+    public string? DbType { get; set; }
+
+    /// <summary>
+    /// Gets or sets the mapper implementation type name used to select a named
+    /// mapper registration.
+    /// </summary>
+    public string? Mapper { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether RestLib should use the built-in
+    /// strict reflection mapper for this resource.
+    /// </summary>
+    public bool Auto { get; set; }
+
+    /// <summary>
+    /// Gets or sets the hook model used by named JSON hooks. Valid values are
+    /// <c>Api</c> and <c>Db</c>.
+    /// </summary>
+    public string? HookModel { get; set; }
 }
 
 /// <summary>

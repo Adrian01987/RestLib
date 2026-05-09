@@ -117,6 +117,12 @@ Single-file variant:
 builder.Services.AddJsonResourceFromFile<Product, Guid>("Models/Products.json");
 ```
 
+Two-model single-file variant:
+
+```csharp
+builder.Services.AddJsonResourceFromFile<ProductDto, ProductEntity, Guid>("Models/Products.json");
+```
+
 `Models/Products.json`:
 
 ```json
@@ -134,6 +140,50 @@ builder.Services.AddJsonResourceFromFile<Product, Guid>("Models/Products.json");
 ```
 
 See [docs/guides/json-resources.md](docs/guides/json-resources.md) for the full walkthrough.
+
+### Separate API and DB models
+
+When you want to expose a DTO but persist a different model, register a mapper and use the three-type overload:
+
+```csharp
+builder.Services.AddRestLibMapper<ProductDto, ProductEntity, ProductMapper>();
+
+app.MapRestLib<ProductDto, ProductEntity, Guid>("/api/products", config =>
+{
+    config.AllowAnonymous();
+    config.AllowFiltering(p => p.CategoryId);
+    config.AllowSorting(p => p.Name, p => p.Price);
+    config.AllowFieldSelection(p => p.Id, p => p.Name, p => p.Price);
+});
+```
+
+JSON resources can declare the same pattern with a `Mapping` section:
+
+```json
+{
+  "EntityType": "ProductDto, MyApi",
+  "Name": "products",
+  "Route": "/api/products",
+  "Mapping": {
+    "DbType": "ProductEntity, MyApi",
+    "Mapper": "ProductMapper"
+  },
+  "Filtering": ["CategoryId"],
+  "Sorting": ["Name", "Price"],
+  "FieldSelection": ["Id", "Name", "Price"]
+}
+```
+
+For trivial same-name, same-type models only, JSON can use the built-in strict reflection mapper instead:
+
+```json
+"Mapping": {
+  "DbType": "ProductEntity, MyApi",
+  "Auto": true
+}
+```
+
+`Auto` does not support renamed properties, type conversions, nested mapping, or computed values. Use a C# mapper for anything beyond direct property copying.
 
 ### EF Core Quick Start
 
@@ -484,6 +534,24 @@ var app = builder.Build();
 app.MapJsonResources();
 ```
 
+Two-model JSON resources use the same folder loading path. Keep `EntityType` as the API model and add a `Mapping` section for the DB model and mapper:
+
+```json
+{
+  "EntityType": "CustomerDto, MyApi",
+  "Name": "customers",
+  "Route": "/api/customers",
+  "Mapping": {
+    "DbType": "CustomerEntity, MyApi",
+    "Mapper": "CustomerMapper",
+    "HookModel": "Db"
+  },
+  "Filtering": ["City", "IsActive"],
+  "Sorting": ["Name", "City", "Email"],
+  "FieldSelection": ["Id", "Name", "Email", "City", "IsActive"]
+}
+```
+
 Backward-compatible alternative: `appsettings.json` with `IConfigurationSection` binding:
 
 ```json
@@ -521,6 +589,13 @@ builder.Services.AddJsonResource<Product, Guid>(productResource);
 
 var app = builder.Build();
 app.MapJsonResources();
+```
+
+The same registration surface supports two-model resources:
+
+```csharp
+builder.Services.AddJsonResource<CustomerDto, CustomerEntity, Guid>(
+    builder.Configuration.GetSection("RestLib:Resources:Customers"));
 ```
 
 Both paths use the same `RestLibJsonResourceConfiguration` model and the same JSON-to-fluent translation pipeline.
@@ -795,6 +870,7 @@ Key decisions are documented as Architecture Decision Records:
 | [ADR-021](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/021-ef-core-adapter.md) | EF Core repository adapter |
 | [ADR-022](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/022-per-file-json-resources.md) | Per-file JSON resources |
 | [ADR-023](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/023-json-validation-rules.md) | JSON validation rules |
+| [ADR-024](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/024-two-model-resources-and-the-mapping-seam.md) | Two-model resources and the mapping seam |
 
 ## Packages
 
