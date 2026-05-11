@@ -80,6 +80,7 @@ full URI that matches the runtime output.
 | 400         | `/problems/invalid-filter`      | Invalid Filter        |                                      |
 | 400         | `/problems/invalid-sort`        | Invalid Sort          |                                      |
 | 400         | `/problems/invalid-fields`      | Invalid Field Selection |                                    |
+| 400         | `/problems/invalid-search`     | Invalid Search Parameter |                                  |
 | 400         | `/problems/invalid-batch-request` | Invalid Batch Request | Invalid envelope structure or action |
 | 400         | `/problems/batch-size-exceeded` | Batch Size Exceeded   | Items exceed `MaxBatchSize` limit    |
 | 400         | `/problems/batch-action-not-enabled` | Batch Action Not Enabled | Requested action not enabled for resource |

@@ -1,6 +1,9 @@
 using Microsoft.AspNetCore.Http;
+using RestLib.Configuration;
+using RestLib.Endpoints;
 using RestLib.FieldSelection;
 using RestLib.Filtering;
+using RestLib.Search;
 using RestLib.Sorting;
 
 namespace RestLib.Responses;
@@ -18,12 +21,17 @@ public static class ProblemDetailsFactory
     /// <param name="instance">The request path.</param>
     public static RestLibProblemDetails NotFound(string entityName, object id, string? instance = null)
     {
+        var detail = id?.GetType().IsGenericType == true
+            && id.GetType().GetGenericTypeDefinition() == typeof(RestLibCompositeKey<,>)
+            ? $"{entityName} with key ({id}) does not exist."
+            : $"{entityName} with ID '{id}' does not exist.";
+
         return new RestLibProblemDetails
         {
             Type = ProblemTypes.Resolve(ProblemTypes.NotFound),
             Title = "Resource Not Found",
             Status = StatusCodes.Status404NotFound,
-            Detail = $"{entityName} with ID '{id}' does not exist.",
+            Detail = detail,
             Instance = instance
         };
     }
@@ -187,6 +195,34 @@ public static class ProblemDetailsFactory
     }
 
     /// <summary>
+    /// Creates a 400 Invalid Search problem details response.
+    /// </summary>
+    /// <param name="errors">The search validation errors.</param>
+    /// <param name="instance">The request path.</param>
+    public static RestLibProblemDetails InvalidSearch(
+        IReadOnlyList<SearchValidationError> errors,
+        string? instance = null)
+    {
+        var errorDict = errors
+            .GroupBy(e => e.ParameterName)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(error => error.Message).ToArray());
+
+        return new RestLibProblemDetails
+        {
+            Type = ProblemTypes.Resolve(ProblemTypes.InvalidSearch),
+            Title = "Invalid Search Parameter",
+            Status = StatusCodes.Status400BadRequest,
+            Detail = errors.Count == 1
+                ? $"The search parameter '{errors[0].ParameterName}' is invalid."
+                : "One or more search parameters are invalid.",
+            Instance = instance,
+            Errors = errorDict
+        };
+    }
+
+    /// <summary>
     /// Creates a 400 Invalid Batch Request problem details response.
     /// </summary>
     /// <param name="detail">Description of the batch validation error.</param>
@@ -316,6 +352,35 @@ public static class ProblemDetailsFactory
             Title = "Hook Short-Circuit",
             Status = statusCode,
             Detail = "The operation was short-circuited by a hook.",
+            Instance = instance
+        };
+    }
+
+    /// <summary>
+    /// Creates a 404 Not Found problem details response using configured key-route metadata.
+    /// </summary>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="entityName">The name of the entity type.</param>
+    /// <param name="id">The requested resource ID.</param>
+    /// <param name="keyRouteParts">The configured key-route metadata.</param>
+    /// <param name="instance">The request path.</param>
+    internal static RestLibProblemDetails NotFound<TKey>(
+        string entityName,
+        TKey id,
+        IReadOnlyList<RestLibKeyRoutePart<TKey>> keyRouteParts,
+        string? instance = null)
+        where TKey : notnull
+    {
+        var detail = keyRouteParts.Count > 1
+            ? $"{entityName} with key ({EntityKeyHelper.FormatKeyForDisplay(id, keyRouteParts)}) does not exist."
+            : $"{entityName} with ID '{id}' does not exist.";
+
+        return new RestLibProblemDetails
+        {
+            Type = ProblemTypes.Resolve(ProblemTypes.NotFound),
+            Title = "Resource Not Found",
+            Status = StatusCodes.Status404NotFound,
+            Detail = detail,
             Instance = instance
         };
     }

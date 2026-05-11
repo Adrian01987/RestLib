@@ -37,17 +37,6 @@ public static class FieldSelectionParser
                 continue; // Skip empty segments (e.g., trailing comma)
             }
 
-            // Reject duplicates
-            if (!seenFields.Add(trimmed))
-            {
-                errors.Add(new FieldSelectionValidationError
-                {
-                    Field = trimmed,
-                    Message = "Duplicate field."
-                });
-                continue;
-            }
-
             var property = configuration.FindByQueryName(trimmed);
             if (property is null)
             {
@@ -57,6 +46,16 @@ public static class FieldSelectionParser
                 {
                     Field = trimmed,
                     Message = $"'{trimmed}' is not a selectable field. Allowed fields: {allowedNames}."
+                });
+                continue;
+            }
+
+            if (!seenFields.Add(property.QueryParameterName))
+            {
+                errors.Add(new FieldSelectionValidationError
+                {
+                    Field = trimmed,
+                    Message = "Duplicate field."
                 });
                 continue;
             }

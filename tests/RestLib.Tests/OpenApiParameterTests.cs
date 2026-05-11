@@ -209,5 +209,44 @@ public partial class OpenApiDocumentationTests
         categoryIdParam.Schema.Format.Should().Be("uuid");
     }
 
+    [Fact]
+    public async Task OpenApi_GetAll_WithSearch_Should_Document_SearchParameter()
+    {
+        // Arrange
+        var nextId = 1;
+        var repository = new InMemoryRepository<OpenApiTestEntity, int>(entity => entity.Id, () => nextId++);
+
+        var (host, client) = await new TestHostBuilder<OpenApiTestEntity, int>(repository, "/api/items")
+            .WithServices(services => services.AddOpenApi())
+            .WithAdditionalEndpoints(endpoints => endpoints.MapOpenApi())
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.KeySelector = entity => entity.Id;
+                config.AllowSearch(options =>
+                {
+                    options.QueryParameterName = "query";
+                    options.CaseSensitive = true;
+                }, entity => entity.Name, entity => entity.Description!);
+            })
+            .BuildAsync();
+
+        using var _ = host;
+
+        // Act
+        var openApiDoc = await GetOpenApiDocument(client);
+        var getAllOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!;
+        var searchParam = getAllOp.Parameters!.FirstOrDefault(parameter => parameter.Name == "query");
+
+        // Assert
+        searchParam.Should().NotBeNull();
+        searchParam!.In.Should().Be(ParameterLocation.Query);
+        searchParam.Required.Should().BeFalse();
+        searchParam.Schema!.Type.Should().Be(JsonSchemaType.String);
+        searchParam.Description.Should().Contain("OR-of-contains");
+        searchParam.Description.Should().Contain("name");
+        searchParam.Description.Should().Contain("description");
+    }
+
     #endregion
 }

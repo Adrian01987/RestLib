@@ -170,6 +170,7 @@ public static class RestLibEndpointExtensions
         // Resolve RestLib options for OpenAPI metadata (pagination limits)
         var restLibOptions = ((IEndpointRouteBuilder)group).ServiceProvider.GetService<RestLibOptions>()
                              ?? new RestLibOptions();
+        var keyRouteTemplate = config.KeyRouteTemplate;
 
         // GET /prefix - Get all (paginated)
         if (config.IsOperationEnabled(RestLibOperation.GetAll))
@@ -242,15 +243,24 @@ public static class RestLibEndpointExtensions
                 OpenApiEndpointConfiguration.AddFieldSelectionTransformer(
                     getAllEndpoint, config.FieldSelectionConfiguration.Properties);
             }
+
+            if (config.HasSearch)
+            {
+                OpenApiEndpointConfiguration.AddSearchTransformer(
+                    getAllEndpoint,
+                    config.SearchConfiguration.QueryParameterName,
+                    config.SearchConfiguration.Properties);
+            }
         } // end GetAll
 
         // GET /prefix/{id} - Get by ID
         if (config.IsOperationEnabled(RestLibOperation.GetById))
         {
             var getByIdEndpoint = typeof(TApiModel) == typeof(TDbModel)
-                ? group.MapGet("/{id}", GetByIdHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
-                : group.MapGet("/{id}", GetByIdHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
+                ? group.MapGet(keyRouteTemplate, GetByIdHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
+                : group.MapGet(keyRouteTemplate, GetByIdHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
             OpenApiEndpointConfiguration.ConfigureGetByIdEndpoint(getByIdEndpoint, config, baseEntityName, entityName);
+            AddCompositeKeyBindingMetadataIfNeeded(getByIdEndpoint, config);
 
             // Add OpenAPI documentation for fields parameter
             if (config.HasFieldSelection)
@@ -277,27 +287,30 @@ public static class RestLibEndpointExtensions
         if (config.IsOperationEnabled(RestLibOperation.Update))
         {
             var updateEndpoint = typeof(TApiModel) == typeof(TDbModel)
-                ? group.MapPut("/{id}", UpdateHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
-                : group.MapPut("/{id}", UpdateHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
+                ? group.MapPut(keyRouteTemplate, UpdateHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
+                : group.MapPut(keyRouteTemplate, UpdateHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
             OpenApiEndpointConfiguration.ConfigureUpdateEndpoint(updateEndpoint, config, baseEntityName, entityName);
+            AddCompositeKeyBindingMetadataIfNeeded(updateEndpoint, config);
         } // end Update
 
         // PATCH /prefix/{id} - Partial Update (JSON Merge Patch - RFC 7396)
         if (config.IsOperationEnabled(RestLibOperation.Patch))
         {
             var patchEndpoint = typeof(TApiModel) == typeof(TDbModel)
-                ? group.MapPatch("/{id}", PatchHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
-                : group.MapPatch("/{id}", PatchHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
+                ? group.MapPatch(keyRouteTemplate, PatchHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
+                : group.MapPatch(keyRouteTemplate, PatchHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
             OpenApiEndpointConfiguration.ConfigurePatchEndpoint(patchEndpoint, config, baseEntityName, entityName);
+            AddCompositeKeyBindingMetadataIfNeeded(patchEndpoint, config);
         } // end Patch
 
         // DELETE /prefix/{id} - Delete
         if (config.IsOperationEnabled(RestLibOperation.Delete))
         {
             var deleteEndpoint = typeof(TApiModel) == typeof(TDbModel)
-                ? group.MapDelete("/{id}", DeleteHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
-                : group.MapDelete("/{id}", DeleteHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
+                ? group.MapDelete(keyRouteTemplate, DeleteHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
+                : group.MapDelete(keyRouteTemplate, DeleteHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
             OpenApiEndpointConfiguration.ConfigureDeleteEndpoint(deleteEndpoint, config, baseEntityName, entityName);
+            AddCompositeKeyBindingMetadataIfNeeded(deleteEndpoint, config);
         } // end Delete
 
         // POST /prefix/batch - Batch operations
@@ -369,5 +382,22 @@ public static class RestLibEndpointExtensions
         }
 
         return sb.ToString();
+    }
+
+    private static void AddCompositeKeyBindingMetadataIfNeeded<TApiModel, TDbModel, TKey>(
+        RouteHandlerBuilder endpoint,
+        RestLibEndpointConfiguration<TApiModel, TDbModel, TKey> config)
+        where TApiModel : class
+        where TDbModel : class
+        where TKey : notnull
+    {
+        if (config.KeyRouteParts.Count != 2)
+        {
+            return;
+        }
+
+        endpoint.WithMetadata(new RestLibCompositeKeyBindingMetadata(
+            config.KeyRouteParts[0].RouteParameterName,
+            config.KeyRouteParts[1].RouteParameterName));
     }
 }

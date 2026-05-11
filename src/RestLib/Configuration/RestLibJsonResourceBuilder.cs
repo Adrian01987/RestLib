@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.DependencyInjection;
 using RestLib.Hooks;
 using RestLib.Internal;
+using RestLib.Search;
 
 namespace RestLib.Configuration;
 
@@ -36,6 +37,7 @@ internal static class RestLibJsonResourceBuilder
         ApplyFiltering(endpointConfiguration, jsonConfiguration);
         ApplySorting(endpointConfiguration, jsonConfiguration);
         ApplyFieldSelection(endpointConfiguration, jsonConfiguration);
+        ApplySearch(endpointConfiguration, jsonConfiguration);
         ApplyValidation(endpointConfiguration, jsonConfiguration);
         ApplyBatch(endpointConfiguration, jsonConfiguration);
         ApplyRateLimiting(endpointConfiguration, jsonConfiguration);
@@ -173,6 +175,18 @@ internal static class RestLibJsonResourceBuilder
         where TEntity : class
         where TKey : notnull
     {
+        if (!string.IsNullOrWhiteSpace(jsonConfiguration.KeyProperty) && jsonConfiguration.Key is not null)
+        {
+            throw new InvalidOperationException(
+                $"Resource '{jsonConfiguration.Name}' cannot configure both KeyProperty and Key.");
+        }
+
+        if (jsonConfiguration.Key is not null)
+        {
+            ApplyCompositeKeySelector(endpointConfiguration, jsonConfiguration);
+            return;
+        }
+
         var keyPropertyName = jsonConfiguration.KeyProperty;
         if (string.IsNullOrWhiteSpace(keyPropertyName))
             return;
@@ -192,6 +206,120 @@ internal static class RestLibJsonResourceBuilder
         var lambda = Expression.Lambda<Func<TEntity, TKey>>(propertyAccess, entityParameter);
         endpointConfiguration.KeySelector = lambda.Compile();
         endpointConfiguration.KeyPropertyName = property.Name;
+    }
+
+    private static void ApplyCompositeKeySelector<TEntity, TKey>(
+        RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
+        RestLibJsonResourceConfiguration jsonConfiguration)
+        where TEntity : class
+        where TKey : notnull
+    {
+        var keyConfiguration = jsonConfiguration.Key
+            ?? throw new InvalidOperationException(
+                $"Resource '{jsonConfiguration.Name}' must configure Key when applying a composite key.");
+
+        if (keyConfiguration.Properties.Count != 2)
+        {
+            throw new InvalidOperationException(
+                $"Resource '{jsonConfiguration.Name}' must configure exactly two Key.Properties values.");
+        }
+
+        if (keyConfiguration.RouteParameters.Count != 2)
+        {
+            throw new InvalidOperationException(
+                $"Resource '{jsonConfiguration.Name}' must configure exactly two Key.RouteParameters values.");
+        }
+
+        ValidateRouteParameterName(keyConfiguration.RouteParameters[0], jsonConfiguration.Name, nameof(keyConfiguration.RouteParameters));
+        ValidateRouteParameterName(keyConfiguration.RouteParameters[1], jsonConfiguration.Name, nameof(keyConfiguration.RouteParameters));
+        if (string.Equals(keyConfiguration.RouteParameters[0], keyConfiguration.RouteParameters[1], StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"Resource '{jsonConfiguration.Name}' must configure unique composite key route parameter names.");
+        }
+
+        if (!typeof(TKey).IsGenericType || typeof(TKey).GetGenericTypeDefinition() != typeof(RestLibCompositeKey<,>))
+        {
+            throw new InvalidOperationException(
+                $"Resource '{jsonConfiguration.Name}' configures a composite Key, but TKey '{typeof(TKey).Name}' is not RestLibCompositeKey<TFirst, TSecond>.");
+        }
+
+        var firstProperty = typeof(TEntity).GetProperty(keyConfiguration.Properties[0], BindingFlags.Public | BindingFlags.Instance)
+            ?? throw new InvalidOperationException(
+                $"Composite key property '{keyConfiguration.Properties[0]}' was not found on entity type '{typeof(TEntity).Name}'.");
+        var secondProperty = typeof(TEntity).GetProperty(keyConfiguration.Properties[1], BindingFlags.Public | BindingFlags.Instance)
+            ?? throw new InvalidOperationException(
+                $"Composite key property '{keyConfiguration.Properties[1]}' was not found on entity type '{typeof(TEntity).Name}'.");
+
+        var keyPartTypes = typeof(TKey).GetGenericArguments();
+        if (firstProperty.PropertyType != keyPartTypes[0] || secondProperty.PropertyType != keyPartTypes[1])
+        {
+            throw new InvalidOperationException(
+                $"Composite key properties on entity type '{typeof(TEntity).Name}' must match the TKey generic arguments '{keyPartTypes[0].Name}' and '{keyPartTypes[1].Name}'.");
+        }
+
+        endpointConfiguration.KeySelector = CreateCompositeKeySelector<TEntity, TKey>(firstProperty, secondProperty);
+        endpointConfiguration.SetKeyRouteParts(
+        [
+            new RestLibKeyRoutePart<TKey>(
+                firstProperty.Name,
+                keyConfiguration.RouteParameters[0],
+                firstProperty.PropertyType,
+                CreateCompositeKeyPartGetter<TKey>(nameof(RestLibCompositeKey<int, int>.First))),
+            new RestLibKeyRoutePart<TKey>(
+                secondProperty.Name,
+                keyConfiguration.RouteParameters[1],
+                secondProperty.PropertyType,
+                CreateCompositeKeyPartGetter<TKey>(nameof(RestLibCompositeKey<int, int>.Second)))
+        ]);
+    }
+
+    private static Func<TEntity, TKey> CreateCompositeKeySelector<TEntity, TKey>(
+        PropertyInfo firstProperty,
+        PropertyInfo secondProperty)
+        where TEntity : class
+        where TKey : notnull
+    {
+        var entityParameter = Expression.Parameter(typeof(TEntity), "entity");
+        var compositeConstructor = typeof(TKey).GetConstructor([firstProperty.PropertyType, secondProperty.PropertyType])
+            ?? throw new InvalidOperationException(
+                $"RestLib could not resolve the composite key constructor for '{typeof(TKey).Name}'.");
+
+        var compositeKey = Expression.New(
+            compositeConstructor,
+            Expression.Property(entityParameter, firstProperty),
+            Expression.Property(entityParameter, secondProperty));
+        return Expression.Lambda<Func<TEntity, TKey>>(compositeKey, entityParameter).Compile();
+    }
+
+    private static Func<TKey, object?> CreateCompositeKeyPartGetter<TKey>(string propertyName)
+        where TKey : notnull
+    {
+        var keyParameter = Expression.Parameter(typeof(TKey), "key");
+        var property = Expression.Property(keyParameter, propertyName);
+        var box = Expression.Convert(property, typeof(object));
+        return Expression.Lambda<Func<TKey, object?>>(box, keyParameter).Compile();
+    }
+
+    private static void ValidateRouteParameterName(string routeParameterName, string resourceName, string parameterName)
+    {
+        if (string.IsNullOrWhiteSpace(routeParameterName))
+        {
+            throw new InvalidOperationException(
+                $"Resource '{resourceName}' has an empty composite key route parameter name in {parameterName}.");
+        }
+
+        if (!char.IsLetter(routeParameterName[0]) && routeParameterName[0] != '_')
+        {
+            throw new InvalidOperationException(
+                $"Resource '{resourceName}' route parameter '{routeParameterName}' must start with a letter or underscore.");
+        }
+
+        if (routeParameterName.Any(ch => !char.IsLetterOrDigit(ch) && ch != '_'))
+        {
+            throw new InvalidOperationException(
+                $"Resource '{resourceName}' route parameter '{routeParameterName}' may only contain letters, digits, or underscores.");
+        }
     }
 
     private static Type? ResolveConfiguredType(string configuredTypeName, Assembly fallbackAssembly)
@@ -391,6 +519,33 @@ internal static class RestLibJsonResourceBuilder
             return;
 
         endpointConfiguration.AllowFieldSelection([.. jsonConfiguration.FieldSelection]);
+    }
+
+    private static void ApplySearch<TEntity, TKey>(
+        RestLibEndpointConfiguration<TEntity, TKey> endpointConfiguration,
+        RestLibJsonResourceConfiguration jsonConfiguration)
+        where TEntity : class
+        where TKey : notnull
+    {
+        if (jsonConfiguration.SearchOptions is not null)
+        {
+            endpointConfiguration.ApplySearchOptions(options =>
+            {
+                if (!string.IsNullOrWhiteSpace(jsonConfiguration.SearchOptions.QueryParameter))
+                {
+                    options.QueryParameterName = jsonConfiguration.SearchOptions.QueryParameter;
+                }
+
+                options.CaseSensitive = jsonConfiguration.SearchOptions.CaseSensitive;
+            });
+        }
+
+        if (jsonConfiguration.Search.Count == 0)
+        {
+            return;
+        }
+
+        endpointConfiguration.AllowSearch([.. jsonConfiguration.Search]);
     }
 
     private static void ApplyValidation<TEntity, TKey>(

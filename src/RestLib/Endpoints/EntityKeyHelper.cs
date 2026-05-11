@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Reflection;
+using RestLib.Configuration;
+using RestLib.Internal;
 
 namespace RestLib.Endpoints;
 
@@ -108,6 +110,98 @@ internal static class EntityKeyHelper
 
         property.SetValue(entity, key);
         return true;
+    }
+
+    /// <summary>
+    /// Attempts to assign each configured key part back onto an entity instance.
+    /// </summary>
+    /// <typeparam name="TEntity">The entity type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="entity">The entity to update.</param>
+    /// <param name="key">The key value to assign.</param>
+    /// <param name="keyRouteParts">The configured key-route parts.</param>
+    /// <returns><c>true</c> if all key parts were assigned; otherwise <c>false</c>.</returns>
+    internal static bool TrySetEntityKeyParts<TEntity, TKey>(
+        TEntity entity,
+        TKey key,
+        IReadOnlyList<RestLibKeyRoutePart<TKey>> keyRouteParts)
+        where TEntity : class
+        where TKey : notnull
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+        ArgumentNullException.ThrowIfNull(keyRouteParts);
+
+        if (keyRouteParts.Count <= 1)
+        {
+            return TrySetEntityKey(entity, key, keyRouteParts.FirstOrDefault()?.PropertyName);
+        }
+
+        var assignedAny = false;
+        foreach (var keyPart in keyRouteParts)
+        {
+            var property = entity.GetType().GetProperty(
+                keyPart.PropertyName,
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+
+            if (property is null || !property.CanWrite || property.PropertyType != keyPart.PropertyType)
+            {
+                return false;
+            }
+
+            property.SetValue(entity, keyPart.GetKeyPartValue(key));
+            assignedAny = true;
+        }
+
+        return assignedAny;
+    }
+
+    /// <summary>
+    /// Formats a key for logs and problem details using configured route-part metadata.
+    /// </summary>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="key">The key value.</param>
+    /// <param name="keyRouteParts">The configured key-route parts.</param>
+    /// <returns>The formatted key string.</returns>
+    internal static string FormatKeyForDisplay<TKey>(TKey key, IReadOnlyList<RestLibKeyRoutePart<TKey>> keyRouteParts)
+        where TKey : notnull
+    {
+        ArgumentNullException.ThrowIfNull(keyRouteParts);
+
+        if (keyRouteParts.Count <= 1)
+        {
+            return RestLibKeyConversion.FormatDisplayValue(key);
+        }
+
+        return string.Join(
+            ", ",
+            keyRouteParts.Select(part =>
+                $"{part.RouteParameterName}='{RestLibKeyConversion.FormatDisplayValue(part.GetKeyPartValue(key))}'"));
+    }
+
+    /// <summary>
+    /// Formats a key as a route suffix suitable for Location headers and HATEOAS links.
+    /// </summary>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="key">The key value.</param>
+    /// <param name="keyRouteParts">The configured key-route parts.</param>
+    /// <returns>The escaped path suffix beginning with '/'.</returns>
+    internal static string FormatKeyPath<TKey>(TKey key, IReadOnlyList<RestLibKeyRoutePart<TKey>> keyRouteParts)
+        where TKey : notnull
+    {
+        ArgumentNullException.ThrowIfNull(keyRouteParts);
+
+        if (keyRouteParts.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        if (keyRouteParts.Count == 1)
+        {
+            return $"/{RestLibKeyConversion.FormatRouteSegment(key)}";
+        }
+
+        return string.Concat(keyRouteParts.Select(part =>
+            $"/{RestLibKeyConversion.FormatRouteSegment(part.GetKeyPartValue(key))}"));
     }
 
     private static PropertyInfo? ResolveWritableKeyProperty(

@@ -58,6 +58,7 @@ internal sealed class MappedBatchUpdatePipeline<TApiModel, TDbModel, TKey>
         if (context.DbPipeline is not null)
         {
             var dbEntity = context.Mapper.ToDb(apiEntity);
+            _ = TrySetDbEntityKey(dbEntity, item.Id, context);
             var hookContext = context.DbPipeline.CreateContext(
                 context.HttpContext,
                 RestLibOperation.BatchUpdate,
@@ -72,6 +73,7 @@ internal sealed class MappedBatchUpdatePipeline<TApiModel, TDbModel, TKey>
             }
 
             dbEntity = hookContext.Entity ?? dbEntity;
+            _ = TrySetDbEntityKey(dbEntity, item.Id, context);
             apiEntity = context.Mapper.ToApi(dbEntity);
 
             var validationError = ValidateApiEntity(index, apiEntity, context);
@@ -88,6 +90,7 @@ internal sealed class MappedBatchUpdatePipeline<TApiModel, TDbModel, TKey>
             }
 
             dbEntity = hookContext.Entity ?? dbEntity;
+            _ = TrySetDbEntityKey(dbEntity, item.Id, context);
             apiEntity = context.Mapper.ToApi(dbEntity);
 
             validationError = ValidateApiEntity(index, apiEntity, context);
@@ -126,6 +129,9 @@ internal sealed class MappedBatchUpdatePipeline<TApiModel, TDbModel, TKey>
             }
 
             apiEntity = hookContext.Entity ?? apiEntity;
+            var dbEntity = context.Mapper.ToDb(apiEntity);
+            _ = TrySetDbEntityKey(dbEntity, item.Id, context);
+            apiEntity = context.Mapper.ToApi(dbEntity);
 
             var validationError = ValidateApiEntity(index, apiEntity, context);
             if (validationError is not null)
@@ -158,10 +164,14 @@ internal sealed class MappedBatchUpdatePipeline<TApiModel, TDbModel, TKey>
             }
 
             apiEntity = hookContext.Entity ?? apiEntity;
-            var dbEntity = context.Mapper.ToDb(apiEntity);
+            dbEntity = context.Mapper.ToDb(apiEntity);
             _ = TrySetDbEntityKey(dbEntity, item.Id, context);
             return (null, (index, item.Id, apiEntity, dbEntity));
         }
+
+        var directDbEntity = context.Mapper.ToDb(apiEntity);
+        _ = TrySetDbEntityKey(directDbEntity, item.Id, context);
+        apiEntity = context.Mapper.ToApi(directDbEntity);
 
         var directValidationError = ValidateApiEntity(index, apiEntity, context);
         if (directValidationError is not null)
@@ -169,8 +179,6 @@ internal sealed class MappedBatchUpdatePipeline<TApiModel, TDbModel, TKey>
             return (directValidationError, default);
         }
 
-        var directDbEntity = context.Mapper.ToDb(apiEntity);
-        _ = TrySetDbEntityKey(directDbEntity, item.Id, context);
         return (null, (index, item.Id, apiEntity, directDbEntity));
     }
 

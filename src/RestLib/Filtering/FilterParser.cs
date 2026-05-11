@@ -373,7 +373,7 @@ public static partial class FilterParser
         };
     }
 
-    [GeneratedRegex(@"^(?<name>[a-z][a-z0-9_]*)\[(?<op>[a-z_]+)\]$", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    [GeneratedRegex(@"^(?<name>[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*)\[(?<op>[a-z_]+)\]$", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex BracketRegex();
 
     private static FilterValidationError? ValidateOperatorTypeCompatibility(

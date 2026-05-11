@@ -36,13 +36,24 @@ internal static class RestLibFolderResourceResolver
         {
             var (entityType, keyType) = options.TypeResolver(fileName, configuration);
             var resolvedDbType = ResolveDbType(fileName, configuration, options) ?? entityType;
-            ValidateDbKeyProperty(fileName, configuration, resolvedDbType, keyType);
+            ValidateDbKeyConfiguration(fileName, configuration, resolvedDbType, keyType);
             return new RestLibResolvedResourceTypes(entityType, resolvedDbType, keyType, entityType != resolvedDbType);
         }
 
         var apiType = ResolveEntityType(fileName, configuration, options);
-        var keyProperty = ResolveKeyProperty(fileName, configuration, apiType);
         var dbType = ResolveDbType(fileName, configuration, options) ?? apiType;
+
+        if (configuration.Key is not null)
+        {
+            var keyProperties = ResolveCompositeKeyProperties(fileName, configuration, apiType);
+            var keyType = typeof(RestLibCompositeKey<,>).MakeGenericType(
+                keyProperties[0].PropertyType,
+                keyProperties[1].PropertyType);
+            ValidateDbCompositeKeyProperties(fileName, configuration, dbType, keyType);
+            return new RestLibResolvedResourceTypes(apiType, dbType, keyType, apiType != dbType);
+        }
+
+        var keyProperty = ResolveKeyProperty(fileName, configuration, apiType);
 
         ValidateDbKeyProperty(fileName, configuration, dbType, keyProperty.Name, keyProperty.PropertyType);
 
@@ -178,6 +189,98 @@ internal static class RestLibFolderResourceResolver
         }
 
         return property;
+    }
+
+    private static PropertyInfo[] ResolveCompositeKeyProperties(
+        string fileName,
+        RestLibJsonResourceConfiguration configuration,
+        Type entityType)
+    {
+        var keyConfiguration = configuration.Key
+            ?? throw new InvalidOperationException(
+                $"Resource '{configuration.Name}' in JSON file '{fileName}' does not configure Key.");
+
+        if (keyConfiguration.Properties.Count != 2)
+        {
+            throw new InvalidOperationException(
+                $"Resource '{configuration.Name}' in JSON file '{fileName}' must configure exactly two Key.Properties values.");
+        }
+
+        if (keyConfiguration.RouteParameters.Count != 2)
+        {
+            throw new InvalidOperationException(
+                $"Resource '{configuration.Name}' in JSON file '{fileName}' must configure exactly two Key.RouteParameters values.");
+        }
+
+        return
+        [
+            ResolveNamedProperty(fileName, configuration, entityType, keyConfiguration.Properties[0]),
+            ResolveNamedProperty(fileName, configuration, entityType, keyConfiguration.Properties[1])
+        ];
+    }
+
+    private static PropertyInfo ResolveNamedProperty(
+        string fileName,
+        RestLibJsonResourceConfiguration configuration,
+        Type entityType,
+        string propertyName)
+    {
+        var property = entityType.GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+        if (property is null)
+        {
+            throw new InvalidOperationException(
+                $"Could not resolve key property '{propertyName}' for resource '{configuration.Name}' in JSON file '{fileName}' on entity type '{entityType.FullName}'.");
+        }
+
+        if (property.GetMethod is null || !property.GetMethod.IsPublic)
+        {
+            throw new InvalidOperationException(
+                $"Key property '{property.Name}' for resource '{configuration.Name}' in JSON file '{fileName}' is not publicly readable on entity type '{entityType.FullName}'.");
+        }
+
+        return property;
+    }
+
+    private static void ValidateDbKeyConfiguration(
+        string fileName,
+        RestLibJsonResourceConfiguration configuration,
+        Type dbType,
+        Type keyType)
+    {
+        if (configuration.Key is not null)
+        {
+            ValidateDbCompositeKeyProperties(fileName, configuration, dbType, keyType);
+            return;
+        }
+
+        ValidateDbKeyProperty(fileName, configuration, dbType, keyType);
+    }
+
+    private static void ValidateDbCompositeKeyProperties(
+        string fileName,
+        RestLibJsonResourceConfiguration configuration,
+        Type dbType,
+        Type keyType)
+    {
+        if (!keyType.IsGenericType || keyType.GetGenericTypeDefinition() != typeof(RestLibCompositeKey<,>))
+        {
+            throw new InvalidOperationException(
+                $"Resource '{configuration.Name}' in JSON file '{fileName}' configures a composite Key, but resolved key type '{keyType.FullName}' is not RestLibCompositeKey<TFirst, TSecond>.");
+        }
+
+        var keyConfiguration = configuration.Key
+            ?? throw new InvalidOperationException(
+                $"Resource '{configuration.Name}' in JSON file '{fileName}' does not configure Key.");
+        var keyPartTypes = keyType.GetGenericArguments();
+        for (var index = 0; index < keyConfiguration.Properties.Count; index++)
+        {
+            ValidateDbKeyProperty(
+                fileName,
+                configuration,
+                dbType,
+                keyConfiguration.Properties[index],
+                keyPartTypes[index]);
+        }
     }
 
     private static void ValidateDbKeyProperty(

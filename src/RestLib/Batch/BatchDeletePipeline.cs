@@ -80,7 +80,7 @@ internal sealed class BatchDeletePipeline<TEntity, TKey>
                 {
                     Index = index,
                     Status = StatusCodes.Status404NotFound,
-                    Error = ProblemDetailsFactory.NotFound(entityName, key!, context.HttpContext.Request.Path)
+                    Error = ProblemDetailsFactory.NotFound(entityName, key, context.EndpointConfig.KeyRouteParts, context.HttpContext.Request.Path)
                 };
                 continue;
             }
@@ -134,7 +134,7 @@ internal sealed class BatchDeletePipeline<TEntity, TKey>
             {
                 Index = index,
                 Status = StatusCodes.Status404NotFound,
-                Error = ProblemDetailsFactory.NotFound(entityName, key!, context.HttpContext.Request.Path)
+                Error = ProblemDetailsFactory.NotFound(entityName, key, context.EndpointConfig.KeyRouteParts, context.HttpContext.Request.Path)
             };
             return;
         }

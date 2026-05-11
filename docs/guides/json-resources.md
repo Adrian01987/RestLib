@@ -2,6 +2,9 @@
 
 This guide shows the recommended JSON-driven setup for RestLib: one resource file per entity under a `Models/` folder, loaded with `AddRestLibFromFolder("Models")`.
 
+If those JSON resources sit on top of an EF Core-backed application, see
+[ef-core-migrations.md](ef-core-migrations.md) for the production database migration workflow.
+
 ## 1. Create the app
 
 ```bash
@@ -105,6 +108,7 @@ Create `Models/Products.json`:
   "Sorting": ["Name", "Price"],
   "DefaultSort": "name:asc",
   "FieldSelection": ["Id", "Name", "Price", "CategoryId"],
+  "Search": ["Name"],
   "Validation": {
     "Name": {
       "Required": true,
@@ -124,6 +128,80 @@ Create `Models/Products.json`:
 ```
 
 `EntityType` is optional when you configure `RestLibFolderOptions.TypeResolver` or when the file name matches a public CLR type in a registered assembly. Keeping it in the file is the most explicit path and avoids pluralization guesswork.
+
+### Nested query paths
+
+`Filtering`, `FilteringOperators`, `Sorting`, and `FieldSelection` can use direct CLR
+property names or dot-separated nested reference-property paths.
+
+`Search` follows the same path rules, but only for string properties and only on
+collection endpoints.
+
+- `Customer.Email` becomes query name `customer.email`
+- `Customer.Name` becomes query name `customer.name`
+- collection-valued paths such as `Items.Name` are not supported and fail at startup
+
+Example:
+
+```json
+{
+  "Name": "orders",
+  "Route": "/api/orders",
+  "FilteringOperators": {
+    "Customer.Email": ["contains"]
+  },
+  "Sorting": ["Customer.Name", "OrderNumber"],
+  "DefaultSort": "customer.name:asc",
+  "FieldSelection": ["OrderNumber", "Customer.Email"],
+  "Search": ["OrderNumber", "Customer.Email"]
+}
+```
+
+Requests then look like:
+
+```text
+GET /api/orders?customer.email[contains]=example.com
+GET /api/orders?sort=customer.name:asc
+GET /api/orders?fields=order_number,customer.email
+GET /api/orders?q=adam@example.com
+```
+
+Nested sparse field selection returns dotted keys in the response instead of rebuilt
+nested objects:
+
+```json
+{
+  "order_number": "A-100",
+  "customer.email": "adam@example.com"
+}
+```
+
+### Collection search
+
+JSON resources can opt into simple OR-of-contains search across configured string
+properties:
+
+```json
+{
+  "Name": "products",
+  "Route": "/api/products",
+  "Search": ["Name", "Description"],
+  "SearchOptions": {
+    "QueryParameter": "query",
+    "CaseSensitive": false
+  }
+}
+```
+
+Requests then look like:
+
+```text
+GET /api/products?q=widget
+GET /api/products?query=widget
+```
+
+Search is intentionally limited to OR-of-contains matching across configured string
+fields. It is not full-text indexing, ranking, fuzzy matching, or a general search engine.
 
 ## 5. Register named hooks when behavior belongs in C#
 
@@ -247,7 +325,7 @@ Then declare `Models/Customers.json`:
 }
 ```
 
-JSON filtering and sorting still use API-model property names. In Sprint 002 those properties must also exist on the DB model with the same CLR name and CLR type.
+JSON filtering, sorting, and field selection still use API-model CLR property names in the configuration file. Query names are derived automatically using snake_case per segment, including dotted nested paths.
 
 ### Auto mapping shortcut
 
@@ -276,7 +354,62 @@ Named JSON hooks run on the API model by default. To run them against the DB mod
 
 Use that when hooks need access to persistence-only properties.
 
-## 8. Run the app
+## 8. Composite-key JSON resources
+
+Two-part composite keys use `RestLibCompositeKey<TFirst, TSecond>` in C# and a `Key` object in JSON.
+
+Create `Models/TenantProduct.cs`:
+
+```csharp
+using System.ComponentModel.DataAnnotations;
+
+public class TenantProduct
+{
+    public Guid TenantId { get; set; }
+
+    [Required]
+    [StringLength(64)]
+    public required string Sku { get; set; }
+
+    [Required]
+    [StringLength(200)]
+    public required string ProductName { get; set; }
+
+    [Range(0.01, (double)decimal.MaxValue)]
+    public decimal Price { get; set; }
+}
+```
+
+Register the repository in `Program.cs`:
+
+```csharp
+builder.Services.AddRestLibInMemory<TenantProduct, RestLibCompositeKey<Guid, string>>(
+    p => new RestLibCompositeKey<Guid, string>(p.TenantId, p.Sku),
+    () => new RestLibCompositeKey<Guid, string>(Guid.NewGuid(), $"generated-{Guid.NewGuid():N}"));
+```
+
+Then declare `Models/TenantProducts.json`:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/Adrian01987/RestLib/main/schemas/restlib-resource.schema.json",
+  "EntityType": "TenantProduct, MyApi",
+  "Name": "tenant-products",
+  "Route": "/api/tenant-products",
+  "AllowAnonymousAll": true,
+  "Key": {
+    "Properties": ["TenantId", "Sku"],
+    "RouteParameters": ["tenantId", "sku"]
+  },
+  "Sorting": ["ProductName", "Price"]
+}
+```
+
+That produces item routes like `/api/tenant-products/{tenantId}/{sku}`.
+
+Use `KeyProperty` for single-key resources and `Key` for two-part composite-key resources. Do not configure both on the same resource.
+
+## 9. Run the app
 
 ```bash
 dotnet build

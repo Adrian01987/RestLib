@@ -41,7 +41,7 @@ internal static class UpdateHandler
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
             var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.Update");
 
-            RestLibLogMessages.UpdateRequestReceived(logger, entityName, id!.ToString()!);
+            RestLibLogMessages.UpdateRequestReceived(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
             // Initialize hook pipeline and run OnRequestReceived
             var (pipeline, hookContext, pipelineEarlyResult) = await HookHelper.InitializePipelineAsync<TEntity, TKey>(
@@ -53,6 +53,8 @@ internal static class UpdateHandler
 
             try
             {
+                _ = EntityKeyHelper.TrySetEntityKeyParts(entity, id, config.KeyRouteParts);
+
                 // Validate entity using Data Annotations
                 if (options.EnableValidation)
                 {
@@ -103,6 +105,7 @@ internal static class UpdateHandler
                     return Responses.ProblemDetailsResult.NotFound(
                         entityName,
                         id!,
+                        config.KeyRouteParts,
                         httpContext.Request.Path,
                         jsonOptions,
                         logger);
@@ -127,7 +130,7 @@ internal static class UpdateHandler
                 // Inject HATEOAS links into updated entity response
                 if (options.EnableHateoas)
                 {
-                    var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false);
+                    var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false, config.KeyRouteParts.Count);
                     var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TEntity, TKey>>();
                     var customLinks = customLinksProvider?.GetLinks(updated, id);
                     var links = HateoasLinkBuilder.BuildEntityLinks(httpContext.Request, collectionPath, id, config, customLinks);
@@ -179,7 +182,7 @@ internal static class UpdateHandler
                 config.UseAutoMapper,
                 config.ResourceName);
 
-            RestLibLogMessages.UpdateRequestReceived(logger, entityName, id!.ToString()!);
+            RestLibLogMessages.UpdateRequestReceived(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
             if (config.UsesDbModelHooks)
             {
@@ -303,6 +306,9 @@ internal static class UpdateHandler
         TDbModel? originalDb = null;
         TApiModel? originalApi = null;
 
+        _ = EntityKeyHelper.TrySetEntityKeyParts(dbEntity, id, config.KeyRouteParts);
+        apiEntity = mapper.ToApi(dbEntity);
+
         if (options.EnableValidation)
         {
             var validationResult = RestLibResourceValidator.Validate(apiEntity, config, options.JsonNamingPolicy);
@@ -331,12 +337,15 @@ internal static class UpdateHandler
             if (typeof(THookModel) == typeof(TDbModel))
             {
                 dbEntity = (TDbModel)(object)(hookContext.Entity ?? (THookModel)(object)dbEntity);
+                _ = EntityKeyHelper.TrySetEntityKeyParts(dbEntity, id, config.KeyRouteParts);
                 apiEntity = mapper.ToApi(dbEntity);
             }
             else
             {
                 apiEntity = (TApiModel)(object)(hookContext.Entity ?? (THookModel)(object)apiEntity);
                 dbEntity = mapper.ToDb(apiEntity);
+                _ = EntityKeyHelper.TrySetEntityKeyParts(dbEntity, id, config.KeyRouteParts);
+                apiEntity = mapper.ToApi(dbEntity);
             }
         }
 
@@ -403,7 +412,7 @@ internal static class UpdateHandler
             }
         }
 
-        _ = EntityKeyHelper.TrySetEntityKey(dbEntity, id, config.KeyPropertyName);
+        _ = EntityKeyHelper.TrySetEntityKeyParts(dbEntity, id, config.KeyRouteParts);
 
         var updatedDb = await repository.UpdateAsync(id, dbEntity, ct);
         if (updatedDb is null)
@@ -411,6 +420,7 @@ internal static class UpdateHandler
             return Responses.ProblemDetailsResult.NotFound(
                 entityName,
                 id!,
+                config.KeyRouteParts,
                 httpContext.Request.Path,
                 jsonOptions,
                 logger);
@@ -472,7 +482,7 @@ internal static class UpdateHandler
 
         if (options.EnableHateoas)
         {
-            var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false);
+            var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false, config.KeyRouteParts.Count);
             var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TApiModel, TKey>>();
             var customLinks = customLinksProvider?.GetLinks(updatedApi, id);
             var links = HateoasLinkBuilder.BuildEntityLinks(httpContext.Request, collectionPath, id, config, customLinks);

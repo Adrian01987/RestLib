@@ -10,6 +10,7 @@ using RestLib.Hypermedia;
 using RestLib.Logging;
 using RestLib.Mapping;
 using RestLib.Pagination;
+using RestLib.Search;
 using RestLib.Sorting;
 
 namespace RestLib.Endpoints;
@@ -148,6 +149,22 @@ internal static class GetAllHandler
                     }
                 }
 
+                SearchRequest? search = null;
+                if (config.HasSearch)
+                {
+                    var searchResult = SearchParser.Parse(httpContext.Request.Query, config.SearchConfiguration);
+                    if (!searchResult.IsValid)
+                    {
+                        return Responses.ProblemDetailsResult.InvalidSearch(
+                            searchResult.Errors,
+                            httpContext.Request.Path,
+                            jsonOptions,
+                            logger);
+                    }
+
+                    search = searchResult.Search;
+                }
+
                 // OnRequestValidated hook
                 var onValidatedResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
                 if (onValidatedResult is not null) return onValidatedResult;
@@ -158,7 +175,8 @@ internal static class GetAllHandler
                     Cursor = cursor,
                     Limit = effectiveLimit,
                     Filters = filterValues,
-                    SortFields = sortFields
+                    SortFields = sortFields,
+                    Search = search
                 };
 
                 PagedResult<TEntity> result;
@@ -188,7 +206,11 @@ internal static class GetAllHandler
 
                 // If the repository supports counting, get the total count
                 long? totalCount = null;
-                if (repository is ICountableRepository<TEntity, TKey> countable)
+                if (repository is IQueryCountableRepository<TEntity, TKey> queryCountable)
+                {
+                    totalCount = await queryCountable.CountAsync(paginationRequest, ct);
+                }
+                else if (search is null && repository is ICountableRepository<TEntity, TKey> countable)
                 {
                     totalCount = await countable.CountAsync(filterValues, ct);
                 }
@@ -478,6 +500,22 @@ internal static class GetAllHandler
             }
         }
 
+        SearchRequest? search = null;
+        if (config.HasSearch)
+        {
+            var searchResult = SearchParser.Parse(httpContext.Request.Query, config.SearchConfiguration);
+            if (!searchResult.IsValid)
+            {
+                return Responses.ProblemDetailsResult.InvalidSearch(
+                    searchResult.Errors,
+                    httpContext.Request.Path,
+                    jsonOptions,
+                    logger);
+            }
+
+            search = searchResult.Search;
+        }
+
         var onValidatedResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
         if (onValidatedResult is not null) return onValidatedResult;
 
@@ -487,7 +525,8 @@ internal static class GetAllHandler
             Cursor = cursor,
             Limit = effectiveLimit,
             Filters = filterValues,
-            SortFields = sortFields
+            SortFields = sortFields,
+            Search = search
         };
 
         PagedResult<TDbModel> dbResult;
@@ -506,7 +545,11 @@ internal static class GetAllHandler
         }
 
         long? totalCount = null;
-        if (repository is ICountableRepository<TDbModel, TKey> countable)
+        if (repository is IQueryCountableRepository<TDbModel, TKey> queryCountable)
+        {
+            totalCount = await queryCountable.CountAsync(paginationRequest, ct);
+        }
+        else if (search is null && repository is ICountableRepository<TDbModel, TKey> countable)
         {
             totalCount = await countable.CountAsync(filterValues, ct);
         }
@@ -596,6 +639,8 @@ internal static class GetAllHandler
         where TEntity : class
         where TKey : notnull
     {
+        // Search can still use the projection-aware repository path because repositories
+        // may need to eagerly load navigations for nested sparse field selections.
         return !options.EnableHateoas &&
             !options.EnableETagSupport &&
             config.Hooks is null;

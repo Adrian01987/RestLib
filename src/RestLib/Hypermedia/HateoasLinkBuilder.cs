@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using RestLib.Configuration;
+using RestLib.Endpoints;
 
 namespace RestLib.Hypermedia;
 
@@ -32,7 +33,7 @@ internal static class HateoasLinkBuilder
         where TKey : notnull
     {
         var baseUrl = $"{request.Scheme}://{request.Host}";
-        var entityUrl = $"{baseUrl}{collectionPath}/{entityKey}";
+        var entityUrl = $"{baseUrl}{collectionPath}{EntityKeyHelper.FormatKeyPath(entityKey, config.KeyRouteParts)}";
         var collectionUrl = $"{baseUrl}{collectionPath}";
 
         var links = new Dictionary<string, HateoasLink>
@@ -82,16 +83,22 @@ internal static class HateoasLinkBuilder
     /// </summary>
     /// <param name="requestPath">The full request path.</param>
     /// <param name="isCollectionEndpoint">Whether this is a collection-level endpoint (GetAll, Create).</param>
+    /// <param name="keySegmentCount">The number of trailing key path segments to remove.</param>
     /// <returns>The collection path.</returns>
-    internal static string GetCollectionPath(string requestPath, bool isCollectionEndpoint)
+    internal static string GetCollectionPath(string requestPath, bool isCollectionEndpoint, int keySegmentCount = 1)
     {
         if (isCollectionEndpoint)
         {
             return requestPath;
         }
 
-        // Strip the last segment (the entity ID) to get the collection path
-        var lastSlash = requestPath.LastIndexOf('/');
-        return lastSlash > 0 ? requestPath[..lastSlash] : requestPath;
+        var collectionPath = requestPath;
+        for (var i = 0; i < keySegmentCount; i++)
+        {
+            var lastSlash = collectionPath.LastIndexOf('/');
+            collectionPath = lastSlash > 0 ? collectionPath[..lastSlash] : collectionPath;
+        }
+
+        return collectionPath;
     }
 }

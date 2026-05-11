@@ -37,7 +37,7 @@ internal static class DeleteHandler
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
             var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.Delete");
 
-            RestLibLogMessages.DeleteRequestReceived(logger, entityName, id!.ToString()!);
+            RestLibLogMessages.DeleteRequestReceived(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
             // Initialize hook pipeline and run OnRequestReceived
             var (pipeline, hookContext, pipelineEarlyResult) = await HookHelper.InitializePipelineAsync<TEntity, TKey>(
@@ -75,12 +75,13 @@ internal static class DeleteHandler
                     return Responses.ProblemDetailsResult.NotFound(
                         entityName,
                         id!,
+                        config.KeyRouteParts,
                         httpContext.Request.Path,
                         jsonOptions,
                         logger);
                 }
 
-                RestLibLogMessages.EntityDeleted(logger, entityName, id!.ToString()!);
+                RestLibLogMessages.EntityDeleted(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
                 // AfterPersist hook
                 var afterPersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
@@ -133,7 +134,7 @@ internal static class DeleteHandler
                 config.UseAutoMapper,
                 config.ResourceName);
 
-            RestLibLogMessages.DeleteRequestReceived(logger, entityName, id!.ToString()!);
+            RestLibLogMessages.DeleteRequestReceived(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
             if (config.UsesDbModelHooks)
             {
@@ -292,12 +293,13 @@ internal static class DeleteHandler
             return Responses.ProblemDetailsResult.NotFound(
                 entityName,
                 id!,
+                config.KeyRouteParts,
                 httpContext.Request.Path,
                 jsonOptions,
                 logger);
         }
 
-        RestLibLogMessages.EntityDeleted(logger, entityName, id!.ToString()!);
+        RestLibLogMessages.EntityDeleted(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
         if (hookContext is not null)
         {

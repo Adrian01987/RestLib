@@ -5,6 +5,7 @@ using RestLib.Abstractions;
 using RestLib.Batch;
 using RestLib.Configuration;
 using RestLib.Hooks;
+using RestLib.Internal;
 using RestLib.Logging;
 using RestLib.Mapping;
 
@@ -157,19 +158,31 @@ internal static class BatchHandler
                 Logger = logger
             };
 
-            // Dispatch to the appropriate pipeline
-            var response = action switch
+            BatchResponse response;
+            try
             {
-                BatchAction.Create => await new BatchCreatePipeline<TEntity, TKey>()
-                    .ProcessAsync(envelope.Items, batchContext),
-                BatchAction.Update => await new BatchUpdatePipeline<TEntity, TKey>()
-                    .ProcessAsync(envelope.Items, batchContext),
-                BatchAction.Patch => await new BatchPatchPipeline<TEntity, TKey>()
-                    .ProcessAsync(envelope.Items, batchContext),
-                BatchAction.Delete => await new BatchDeletePipeline<TEntity, TKey>()
-                    .ProcessAsync(envelope.Items, batchContext),
-                _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
-            };
+                // Dispatch to the appropriate pipeline
+                response = action switch
+                {
+                    BatchAction.Create => await new BatchCreatePipeline<TEntity, TKey>()
+                        .ProcessAsync(envelope.Items, batchContext),
+                    BatchAction.Update => await new BatchUpdatePipeline<TEntity, TKey>()
+                        .ProcessAsync(ParseUpdateItems(envelope.Items, config.KeyRouteParts, jsonOptions), batchContext),
+                    BatchAction.Patch => await new BatchPatchPipeline<TEntity, TKey>()
+                        .ProcessAsync(ParseUpdateItems(envelope.Items, config.KeyRouteParts, jsonOptions), batchContext),
+                    BatchAction.Delete => await new BatchDeletePipeline<TEntity, TKey>()
+                        .ProcessAsync(ParseDeleteItems(envelope.Items, config.KeyRouteParts, jsonOptions), batchContext),
+                    _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
+                };
+            }
+            catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+            {
+                return Responses.ProblemDetailsResult.InvalidBatchRequest(
+                    ex.Message,
+                    instance: instance,
+                    jsonOptions: jsonOptions,
+                    logger: logger);
+            }
 
             // BeforeResponse hook — runs once for the entire batch, after all items are processed.
             if (pipeline is not null)
@@ -346,18 +359,30 @@ internal static class BatchHandler
                 Logger = logger
             };
 
-            var response = action switch
+            BatchResponse response;
+            try
             {
-                BatchAction.Create => await new MappedBatchCreatePipeline<TApiModel, TDbModel, TKey>()
-                    .ProcessAsync(envelope.Items, batchContext),
-                BatchAction.Update => await new MappedBatchUpdatePipeline<TApiModel, TDbModel, TKey>()
-                    .ProcessAsync(envelope.Items, batchContext),
-                BatchAction.Patch => await new MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>()
-                    .ProcessAsync(envelope.Items, batchContext),
-                BatchAction.Delete => await new MappedBatchDeletePipeline<TApiModel, TDbModel, TKey>()
-                    .ProcessAsync(envelope.Items, batchContext),
-                _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
-            };
+                response = action switch
+                {
+                    BatchAction.Create => await new MappedBatchCreatePipeline<TApiModel, TDbModel, TKey>()
+                        .ProcessAsync(envelope.Items, batchContext),
+                    BatchAction.Update => await new MappedBatchUpdatePipeline<TApiModel, TDbModel, TKey>()
+                        .ProcessAsync(ParseUpdateItems(envelope.Items, config.KeyRouteParts, jsonOptions), batchContext),
+                    BatchAction.Patch => await new MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>()
+                        .ProcessAsync(ParseUpdateItems(envelope.Items, config.KeyRouteParts, jsonOptions), batchContext),
+                    BatchAction.Delete => await new MappedBatchDeletePipeline<TApiModel, TDbModel, TKey>()
+                        .ProcessAsync(ParseDeleteItems(envelope.Items, config.KeyRouteParts, jsonOptions), batchContext),
+                    _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
+                };
+            }
+            catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+            {
+                return Responses.ProblemDetailsResult.InvalidBatchRequest(
+                    ex.Message,
+                    instance: instance,
+                    jsonOptions: jsonOptions,
+                    logger: logger);
+            }
 
             if (dbPipeline is not null)
             {
@@ -426,5 +451,159 @@ internal static class BatchHandler
         }
 
         return batchPath;
+    }
+
+    private static JsonElement ParseUpdateItems<TKey>(
+        JsonElement itemsElement,
+        IReadOnlyList<RestLibKeyRoutePart<TKey>> keyRouteParts,
+        JsonSerializerOptions jsonOptions)
+        where TKey : notnull
+    {
+        ArgumentNullException.ThrowIfNull(keyRouteParts);
+        ArgumentNullException.ThrowIfNull(jsonOptions);
+
+        if (keyRouteParts.Count <= 1)
+        {
+            return itemsElement;
+        }
+
+        if (itemsElement.ValueKind != JsonValueKind.Array)
+        {
+            throw new JsonException("The 'items' property must be an array.");
+        }
+
+        var parsedItems = itemsElement.EnumerateArray()
+            .Select(item => ParseUpdateItem(item, keyRouteParts, jsonOptions))
+            .ToList();
+
+        return JsonSerializer.SerializeToElement(parsedItems, jsonOptions);
+    }
+
+    private static JsonElement ParseDeleteItems<TKey>(
+        JsonElement itemsElement,
+        IReadOnlyList<RestLibKeyRoutePart<TKey>> keyRouteParts,
+        JsonSerializerOptions jsonOptions)
+        where TKey : notnull
+    {
+        ArgumentNullException.ThrowIfNull(keyRouteParts);
+        ArgumentNullException.ThrowIfNull(jsonOptions);
+
+        if (keyRouteParts.Count <= 1)
+        {
+            return itemsElement;
+        }
+
+        if (itemsElement.ValueKind != JsonValueKind.Array)
+        {
+            throw new JsonException("The 'items' property must be an array.");
+        }
+
+        var parsedItems = itemsElement.EnumerateArray()
+            .Select(item => ParseCompositeKey(item, keyRouteParts, jsonOptions))
+            .ToList();
+
+        return JsonSerializer.SerializeToElement(parsedItems, jsonOptions);
+    }
+
+    private static BatchUpdateItem<TKey> ParseUpdateItem<TKey>(
+        JsonElement item,
+        IReadOnlyList<RestLibKeyRoutePart<TKey>> keyRouteParts,
+        JsonSerializerOptions jsonOptions)
+        where TKey : notnull
+    {
+        if (item.ValueKind != JsonValueKind.Object)
+        {
+            throw new JsonException("Batch update and patch items must be objects with 'id' and 'body' properties.");
+        }
+
+        if (!TryGetObjectProperty(item, "id", out var idElement))
+        {
+            throw new JsonException("Batch update and patch items must include an 'id' property.");
+        }
+
+        if (!TryGetObjectProperty(item, "body", out var bodyElement))
+        {
+            throw new JsonException("Batch update and patch items must include a 'body' property.");
+        }
+
+        return new BatchUpdateItem<TKey>
+        {
+            Id = ParseCompositeKey(idElement, keyRouteParts, jsonOptions),
+            Body = bodyElement.Clone()
+        };
+    }
+
+    private static TKey ParseCompositeKey<TKey>(
+        JsonElement keyElement,
+        IReadOnlyList<RestLibKeyRoutePart<TKey>> keyRouteParts,
+        JsonSerializerOptions jsonOptions)
+        where TKey : notnull
+    {
+        if (keyRouteParts.Count <= 1)
+        {
+            return (TKey)RestLibKeyConversion.DeserializeJsonValue(keyElement, typeof(TKey), jsonOptions);
+        }
+
+        if (keyElement.ValueKind != JsonValueKind.Object)
+        {
+            throw new JsonException("Composite batch keys must be JSON objects.");
+        }
+
+        var keyType = typeof(TKey);
+        if (!keyType.IsGenericType || keyType.GetGenericTypeDefinition() != typeof(RestLibCompositeKey<,>))
+        {
+            throw new JsonException(
+                $"Composite batch keys require TKey '{typeof(TKey).Name}' to be RestLibCompositeKey<TFirst, TSecond>.");
+        }
+
+        var genericArguments = keyType.GetGenericArguments();
+        var firstValue = GetCompositeKeyPartValue(keyElement, keyRouteParts[0], genericArguments[0], jsonOptions);
+        var secondValue = GetCompositeKeyPartValue(keyElement, keyRouteParts[1], genericArguments[1], jsonOptions);
+        var constructor = keyType.GetConstructor([genericArguments[0], genericArguments[1]])
+            ?? throw new JsonException($"RestLib could not resolve the composite key constructor for '{keyType.Name}'.");
+
+        return (TKey)constructor.Invoke([firstValue, secondValue]);
+    }
+
+    private static object GetCompositeKeyPartValue<TKey>(
+        JsonElement keyElement,
+        RestLibKeyRoutePart<TKey> keyRoutePart,
+        Type targetType,
+        JsonSerializerOptions jsonOptions)
+        where TKey : notnull
+    {
+        foreach (var propertyName in GetCompositeKeyPropertyNames(keyRoutePart))
+        {
+            if (TryGetObjectProperty(keyElement, propertyName, out var valueElement))
+            {
+                return RestLibKeyConversion.DeserializeJsonValue(valueElement, targetType, jsonOptions);
+            }
+        }
+
+        throw new JsonException(
+            $"Composite batch key is missing required property '{JsonNamingPolicy.SnakeCaseLower.ConvertName(keyRoutePart.PropertyName)}'.");
+    }
+
+    private static IEnumerable<string> GetCompositeKeyPropertyNames<TKey>(RestLibKeyRoutePart<TKey> keyRoutePart)
+        where TKey : notnull
+    {
+        yield return JsonNamingPolicy.SnakeCaseLower.ConvertName(keyRoutePart.PropertyName);
+        yield return keyRoutePart.PropertyName;
+        yield return keyRoutePart.RouteParameterName;
+    }
+
+    private static bool TryGetObjectProperty(JsonElement element, string propertyName, out JsonElement value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
     }
 }

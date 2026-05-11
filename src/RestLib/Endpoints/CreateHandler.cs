@@ -83,7 +83,7 @@ internal static class CreateHandler
 
                 // Extract ID from created entity and set Location header
                 var createdId = EntityKeyHelper.GetEntityKey(created, config.KeySelector);
-                var location = $"{httpContext.Request.Path}/{createdId}";
+                var location = $"{httpContext.Request.Path}{EntityKeyHelper.FormatKeyPath(createdId!, config.KeyRouteParts)}";
                 httpContext.Response.Headers.Location = location;
 
                 RestLibLogMessages.EntityCreated(logger, createdId?.ToString() ?? string.Empty, location);
@@ -356,7 +356,7 @@ internal static class CreateHandler
         }
 
         var createdId = EntityKeyHelper.GetEntityKey(createdApi, config.KeySelector);
-        var location = $"{httpContext.Request.Path}/{createdId}";
+        var location = $"{httpContext.Request.Path}{EntityKeyHelper.FormatKeyPath(createdId!, config.KeyRouteParts)}";
         httpContext.Response.Headers.Location = location;
 
         RestLibLogMessages.EntityCreated(logger, createdId?.ToString() ?? string.Empty, location);

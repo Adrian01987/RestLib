@@ -29,6 +29,9 @@
       "type": "string",
       "description": "Entity property name used as the primary key. Defaults to 'Id' when omitted."
     },
+    "Key": {
+      "$ref": "#/$defs/keyConfiguration"
+    },
     "AllowAnonymous": {
       "type": "array",
       "description": "Operations that allow anonymous (unauthenticated) access.",
@@ -55,13 +58,13 @@
     },
     "Filtering": {
       "type": "array",
-      "description": "API model property names that can be filtered on via query parameters (equality only). Names are automatically converted to snake_case in the query string. For operator-based filtering, use FilteringOperators instead.",
+      "description": "API model property names or dot-separated nested reference-property paths that can be filtered on via query parameters (equality only). Names are converted to snake_case per segment in the query string, joined with dots (for example, Customer.Email -> customer.email). Collection-valued paths are not supported. For operator-based filtering, use FilteringOperators instead.",
       "items": { "type": "string" },
       "uniqueItems": true
     },
     "FilteringOperators": {
       "type": "object",
-      "description": "Per-property filter operator configuration. Keys are API model property names, values are arrays of allowed operator names or preset names. Valid operators: eq, neq, gt, lt, gte, lte, contains, starts_with, ends_with, in. Valid presets: equality, comparison, string, all.",
+      "description": "Per-property filter operator configuration. Keys are API model property names or dot-separated nested reference-property paths, values are arrays of allowed operator names or preset names. Query parameter names use snake_case per segment joined with dots. Collection-valued paths are not supported. Valid operators: eq, neq, gt, lt, gte, lte, contains, starts_with, ends_with, in. Valid presets: equality, comparison, string, all.",
       "additionalProperties": {
         "type": "array",
         "items": {
@@ -74,19 +77,28 @@
     },
     "Sorting": {
       "type": "array",
-      "description": "API model property names that can be sorted on via the sort query parameter. Names are automatically converted to snake_case.",
+      "description": "API model property names or dot-separated nested reference-property paths that can be sorted on via the sort query parameter. Names are converted to snake_case per segment and joined with dots (for example, Customer.Name -> customer.name). Collection-valued paths are not supported.",
       "items": { "type": "string" },
       "uniqueItems": true
     },
     "DefaultSort": {
       "type": "string",
-      "description": "Default sort expression applied when the client does not provide a sort parameter (e.g. 'name:asc,price:desc'). All referenced fields must also be listed in Sorting."
+      "description": "Default sort expression applied when the client does not provide a sort parameter (e.g. 'name:asc,price:desc' or 'customer.name:asc'). All referenced fields must also be listed in Sorting."
     },
     "FieldSelection": {
       "type": "array",
-      "description": "API model property names that can be selected via the fields query parameter. Names are automatically converted to snake_case in the query string.",
+      "description": "API model property names or dot-separated nested reference-property paths that can be selected via the fields query parameter. Names are converted to snake_case per segment in the query string, joined with dots. Nested selections serialize back as dotted keys (for example, customer.email). Collection-valued paths are not supported.",
       "items": { "type": "string" },
       "uniqueItems": true
+    },
+    "Search": {
+      "type": "array",
+      "description": "API model string property names or dot-separated nested reference-property paths that participate in OR-of-contains collection search. Search uses the configured query parameter, which defaults to q. Collection-valued paths are not supported.",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "SearchOptions": {
+      "$ref": "#/$defs/searchOptions"
     },
     "Batch": {
       "$ref": "#/$defs/batchConfiguration"
@@ -109,6 +121,13 @@
     }
   },
   "required": ["Name", "Route"],
+  "allOf": [
+    {
+      "not": {
+        "required": ["KeyProperty", "Key"]
+      }
+    }
+  ],
   "additionalProperties": false,
   "$defs": {
     "operation": {
@@ -174,6 +193,32 @@
         }
       }
     },
+    "keyConfiguration": {
+      "type": "object",
+      "description": "Ordered two-part composite key configuration. Use this instead of KeyProperty for composite-key resources.",
+      "properties": {
+        "Properties": {
+          "type": "array",
+          "description": "Exactly two CLR property names that make up the key, in route order.",
+          "items": { "type": "string" },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "RouteParameters": {
+          "type": "array",
+          "description": "Exactly two route parameter names used by the resource route, in route order.",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true
+        }
+      },
+      "required": ["Properties", "RouteParameters"],
+      "additionalProperties": false
+    },
     "openApi": {
       "type": "object",
       "description": "OpenAPI (Swagger) metadata for the resource.",
@@ -206,6 +251,22 @@
           "description": "Detailed description text for each operation in the OpenAPI document.",
           "propertyNames": { "$ref": "#/$defs/operation" },
           "additionalProperties": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "searchOptions": {
+      "type": "object",
+      "description": "Optional collection search behavior overrides.",
+      "properties": {
+        "QueryParameter": {
+          "type": "string",
+          "description": "Query parameter name used for search. Defaults to 'q'."
+        },
+        "CaseSensitive": {
+          "type": "boolean",
+          "description": "When true, search uses case-sensitive string matching.",
+          "default": false
         }
       },
       "additionalProperties": false

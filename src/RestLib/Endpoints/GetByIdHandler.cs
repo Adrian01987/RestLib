@@ -41,7 +41,7 @@ internal static class GetByIdHandler
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
             var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.GetById");
 
-            RestLibLogMessages.GetByIdRequestReceived(logger, entityName, id!.ToString()!);
+            RestLibLogMessages.GetByIdRequestReceived(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
             // Initialize hook pipeline and run OnRequestReceived
             var (pipeline, hookContext, pipelineEarlyResult) = await HookHelper.InitializePipelineAsync<TEntity, TKey>(
@@ -89,6 +89,7 @@ internal static class GetByIdHandler
                     return Responses.ProblemDetailsResult.NotFound(
                         entityName,
                         id!,
+                        config.KeyRouteParts,
                         httpContext.Request.Path,
                         jsonOptions,
                         logger);
@@ -115,7 +116,7 @@ internal static class GetByIdHandler
                     if (!ETagComparer.IfNoneMatchSucceeds(ifNoneMatch, etag))
                     {
                         // ETag matches - return 304 Not Modified
-                        RestLibLogMessages.GetByIdNotModified(logger, entityName, id!.ToString()!);
+                        RestLibLogMessages.GetByIdNotModified(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
                         httpContext.Response.Headers.ETag = etag;
                         return Results.StatusCode(StatusCodes.Status304NotModified);
                     }
@@ -136,7 +137,7 @@ internal static class GetByIdHandler
                         // Inject HATEOAS links into projected dictionary
                         if (options.EnableHateoas)
                         {
-                            var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false);
+                            var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false, config.KeyRouteParts.Count);
                             var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TEntity, TKey>>();
                             var customLinks = customLinksProvider?.GetLinks(entity, id);
                             var links = HateoasLinkBuilder.BuildEntityLinks(httpContext.Request, collectionPath, id, config, customLinks);
@@ -150,7 +151,7 @@ internal static class GetByIdHandler
                 // Inject HATEOAS links into full entity response
                 if (options.EnableHateoas)
                 {
-                    var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false);
+                    var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false, config.KeyRouteParts.Count);
                     var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TEntity, TKey>>();
                     var customLinks = customLinksProvider?.GetLinks(entity, id);
                     var links = HateoasLinkBuilder.BuildEntityLinks(httpContext.Request, collectionPath, id, config, customLinks);
@@ -201,7 +202,7 @@ internal static class GetByIdHandler
                 config.UseAutoMapper,
                 config.ResourceName);
 
-            RestLibLogMessages.GetByIdRequestReceived(logger, entityName, id!.ToString()!);
+            RestLibLogMessages.GetByIdRequestReceived(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
             if (config.UsesDbModelHooks)
             {
@@ -328,6 +329,7 @@ internal static class GetByIdHandler
             return Responses.ProblemDetailsResult.NotFound(
                 entityName,
                 id!,
+                config.KeyRouteParts,
                 httpContext.Request.Path,
                 jsonOptions,
                 logger);
@@ -371,7 +373,7 @@ internal static class GetByIdHandler
             var ifNoneMatch = httpContext.Request.Headers.IfNoneMatch;
             if (!ETagComparer.IfNoneMatchSucceeds(ifNoneMatch, etag))
             {
-                RestLibLogMessages.GetByIdNotModified(logger, entityName, id!.ToString()!);
+                RestLibLogMessages.GetByIdNotModified(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
                 httpContext.Response.Headers.ETag = etag;
                 return Results.StatusCode(StatusCodes.Status304NotModified);
             }
@@ -414,7 +416,7 @@ internal static class GetByIdHandler
             {
                 if (options.EnableHateoas)
                 {
-                    var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false);
+                    var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false, config.KeyRouteParts.Count);
                     var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TApiModel, TKey>>();
                     var customLinks = customLinksProvider?.GetLinks(apiEntity, id);
                     var links = HateoasLinkBuilder.BuildEntityLinks(httpContext.Request, collectionPath, id, config, customLinks);
@@ -427,7 +429,7 @@ internal static class GetByIdHandler
 
         if (options.EnableHateoas)
         {
-            var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false);
+            var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false, config.KeyRouteParts.Count);
             var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TApiModel, TKey>>();
             var customLinks = customLinksProvider?.GetLinks(apiEntity, id);
             var links = HateoasLinkBuilder.BuildEntityLinks(httpContext.Request, collectionPath, id, config, customLinks);

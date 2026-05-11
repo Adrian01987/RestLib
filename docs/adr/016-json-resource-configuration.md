@@ -74,7 +74,7 @@ The JSON schema covers all configurable aspects:
 | Feature | JSON Property | Type |
 | --- | --- | --- |
 | Route | `Route` | `string` |
-| Key property | `KeyProperty` | `string?` |
+| Key | `KeyProperty` or `Key` | `string?` or object |
 | Operations | `Operations.Include` / `Operations.Exclude` | `RestLibOperation[]` |
 | Auth | `AllowAnonymous`, `AllowAnonymousAll`, `Policies` | Various |
 | Filtering | `Filtering`, `FilteringOperators` | `string[]`, `Dictionary` |
@@ -123,6 +123,7 @@ Since JSON configuration cannot use C# expressions, property names are specified
 ## Consequences
 
 - JSON-configured resources use string-based property names, which are not refactoring-safe. Renaming an entity property requires updating the JSON configuration.
+- Composite-key resources use a `Key` object with two ordered CLR property names and two ordered route parameter names. `KeyProperty` remains the single-key path.
 - The two-phase model requires two explicit calls (`AddJsonResource` + `MapJsonResources`), which is slightly more ceremony than a single `MapRestLib` call.
 - Hook references in JSON are resolved by name from DI. If a named hook is not registered, the error surfaces at endpoint mapping time (application startup), not at compile time.
 - The JSON Schema must be updated whenever new configuration properties are added.

@@ -220,14 +220,21 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
     /// <param name="entityName">The entity type name.</param>
     /// <param name="id">The entity ID.</param>
     /// <param name="instance">The request path.</param>
+    /// <param name="keyRouteParts">The configured key-route metadata.</param>
     /// <returns>A not found batch item result.</returns>
-    protected static BatchItemResult NotFoundResult<TId>(int index, string entityName, TId id, string? instance)
+    protected static BatchItemResult NotFoundResult<TId>(
+        int index,
+        string entityName,
+        TId id,
+        string? instance,
+        IReadOnlyList<RestLib.Configuration.RestLibKeyRoutePart<TId>> keyRouteParts)
+        where TId : notnull
     {
         return new BatchItemResult
         {
             Index = index,
             Status = StatusCodes.Status404NotFound,
-            Error = ProblemDetailsFactory.NotFound(entityName, id!, instance)
+            Error = ProblemDetailsFactory.NotFound(entityName, id, keyRouteParts, instance)
         };
     }
 

@@ -154,6 +154,7 @@ app.MapRestLib<ProductDto, ProductEntity, Guid>("/api/products", config =>
     config.AllowFiltering(p => p.CategoryId);
     config.AllowSorting(p => p.Name, p => p.Price);
     config.AllowFieldSelection(p => p.Id, p => p.Name, p => p.Price);
+    config.AllowSearch(p => p.Name, p => p.Description);
 });
 ```
 
@@ -170,9 +171,54 @@ JSON resources can declare the same pattern with a `Mapping` section:
   },
   "Filtering": ["CategoryId"],
   "Sorting": ["Name", "Price"],
-  "FieldSelection": ["Id", "Name", "Price"]
+  "FieldSelection": ["Id", "Name", "Price"],
+  "Search": ["Name", "Description"]
 }
 ```
+
+### Collection Search
+
+Resources can opt into simple collection search that performs an OR-of-contains
+match across configured string properties:
+
+```csharp
+app.MapRestLib<Product, Guid>("/api/products", config =>
+{
+    config.AllowAnonymous();
+    config.AllowSearch(p => p.Name, p => p.Description);
+});
+```
+
+Use `?q=widget` by default, or customize the parameter name and case sensitivity:
+
+```csharp
+app.MapRestLib<Product, Guid>("/api/products", config =>
+{
+    config.AllowAnonymous();
+    config.AllowSearch(options =>
+    {
+        options.QueryParameterName = "query";
+        options.CaseSensitive = true;
+    }, p => p.Name, p => p.Description);
+});
+```
+
+JSON resources support the same feature:
+
+```json
+{
+  "Name": "products",
+  "Route": "/api/products",
+  "Search": ["Name", "Description"],
+  "SearchOptions": {
+    "QueryParameter": "query",
+    "CaseSensitive": false
+  }
+}
+```
+
+Search is intentionally limited to OR-of-contains matching across configured string
+fields. It is not full-text indexing, ranking, fuzzy matching, or a search engine.
 
 For trivial same-name, same-type models only, JSON can use the built-in strict reflection mapper instead:
 
@@ -184,6 +230,45 @@ For trivial same-name, same-type models only, JSON can use the built-in strict r
 ```
 
 `Auto` does not support renamed properties, type conversions, nested mapping, or computed values. Use a C# mapper for anything beyond direct property copying.
+
+### Composite keys
+
+RestLib supports ordered two-part composite keys through `RestLibCompositeKey<TFirst, TSecond>`.
+
+Fluent registration:
+
+```csharp
+builder.Services.AddRestLibInMemory<TenantProduct, RestLibCompositeKey<Guid, string>>(
+    p => new RestLibCompositeKey<Guid, string>(p.TenantId, p.Sku),
+    () => new RestLibCompositeKey<Guid, string>(Guid.NewGuid(), $"generated-{Guid.NewGuid():N}"));
+
+app.MapRestLib<TenantProduct, RestLibCompositeKey<Guid, string>>("/api/tenant-products", config =>
+{
+    config.AllowAnonymous();
+    config.UseCompositeKey(p => p.TenantId, "tenantId", p => p.Sku, "sku");
+});
+```
+
+That produces item routes like:
+
+```text
+GET /api/tenant-products/{tenantId}/{sku}
+```
+
+JSON-backed resources use a `Key` object instead of `KeyProperty`:
+
+```json
+{
+  "EntityType": "TenantProduct, MyApi",
+  "Name": "tenant-products",
+  "Route": "/api/tenant-products",
+  "AllowAnonymousAll": true,
+  "Key": {
+    "Properties": ["TenantId", "Sku"],
+    "RouteParameters": ["tenantId", "sku"]
+  }
+}
+```
 
 ### EF Core Quick Start
 
@@ -210,7 +295,7 @@ public class AppDbContext : DbContext
 }
 ```
 
-Register EF Core, the RestLib adapter, and ensure the database exists at startup:
+Register EF Core, the RestLib adapter, and create the demo database at startup:
 
 ```csharp
 using Microsoft.EntityFrameworkCore;
@@ -247,7 +332,13 @@ app.Run();
 
 That exposes the same CRUD endpoints as the in-memory quick start, but backed by EF Core
 and SQLite. If your key property follows EF Core conventions, `AddRestLibEfCore` can infer
-it automatically; otherwise provide a `KeySelector` in the options callback.
+it automatically; otherwise provide a `KeySelector` in the options callback. Two-part EF Core
+composite keys are also supported when you register `TKey` as `RestLibCompositeKey<TFirst, TSecond>`
+and configure the endpoint route with `config.UseCompositeKey(...)`.
+
+The `EnsureCreated()` block above is a demo-only shortcut. For production EF Core apps,
+use real migrations and `Database.Migrate()` instead; see
+[docs/guides/ef-core-migrations.md](docs/guides/ef-core-migrations.md).
 
 ## Why RestLib
 
@@ -320,6 +411,7 @@ Operator filters use bracket syntax for ranges, partial matches, and set members
 GET /api/products?price[gte]=20&price[lte]=100
 GET /api/products?name[contains]=widget
 GET /api/products?status[in]=active,pending
+GET /api/orders?customer.email[contains]=example.com
 ```
 
 Ten operators are available: `eq`, `neq`, `gt`, `lt`, `gte`, `lte`, `contains`,
@@ -345,6 +437,8 @@ GET /api/products?sort=price:asc,name:desc&limit=20
 ```
 
 Sort fields use snake_case names and support `asc`/`desc` directions.
+Nested reference-property paths use snake_case per segment joined with dots,
+for example `Customer.Name` becomes `customer.name`.
 Disallowed fields return a 400 Problem Details response.
 
 ### Rate Limiting
@@ -395,6 +489,21 @@ GET /api/products?fields=id,name,price
 Only the selected fields are included in the response. Unknown or disallowed
 fields return a 400 Problem Details response. If no `fields` parameter is sent,
 the full entity is returned.
+
+Nested reference-property selections are also supported. Query names use
+snake_case per segment joined with dots, and nested sparse responses use dotted
+keys instead of rebuilding nested JSON objects:
+
+```http
+GET /api/orders?fields=order_number,customer.email
+```
+
+```json
+{
+  "order_number": "A-100",
+  "customer.email": "adam@example.com"
+}
+```
 
 Field selection works with both GetAll (collection) and GetById (single entity)
 endpoints, and combines with filtering, sorting, and pagination.
@@ -701,22 +810,29 @@ The EF Core adapter supports RestLib's filtering, sorting, counting, pagination,
 batch operations, and hooks on top of EF Core, with server-side query translation
 for filtering, sorting, and counting. Field selection can also be pushed down to SQL
 when projection pushdown is enabled and the request only uses projectable direct scalar
-properties. Some capabilities have important implementation limits;
+properties. Nested filtering and sorting also translate server-side. Nested field
+selection uses a conservative fallback that loads the needed reference navigations and
+applies sparse projection after materialization. Some capabilities have important
+implementation limits;
 see [Current EF Core Adapter Limitations](#current-ef-core-adapter-limitations)
 and [ADR-021](docs/adr/021-ef-core-adapter.md).
 
+RestLib uses your EF Core model but does not create or manage migrations. Keep schema
+ownership in your application and use the normal EF Core tooling and startup migration
+patterns described in [docs/guides/ef-core-migrations.md](docs/guides/ef-core-migrations.md).
+
 #### Current EF Core Adapter Limitations
 
-- **Single-property keys only** - the adapter auto-detects or accepts a single `TKey` value. Composite EF Core keys are not supported.
+- **At most two key parts** - the adapter supports scalar keys and ordered two-part composite keys via `RestLibCompositeKey<TFirst, TSecond>`. Keys with more than two parts are not supported.
 - **Keyset pagination with offset fallback** - the EF Core adapter uses last-seen sort values plus the key for supported stable sorts, but falls back to encoded offset cursors for unsupported sort shapes.
-- **Projection pushdown is opt-in and conditional** - when enabled, EF Core pushes down direct scalar field selections and still includes key/filter/sort columns in SQL. Requests fall back to post-fetch field stripping for non-projectable fields or when HATEOAS, ETag, or hooks are active.
-- **Top-level properties only** - filtering, sorting, field selection, and PATCH handling operate on direct entity properties. Nested or related-property paths are not supported.
+- **Projection pushdown is opt-in and conditional** - when enabled, EF Core pushes down direct scalar field selections and still includes key/filter/sort columns in SQL. Nested field selections currently fall back to post-fetch projection, and any non-projectable selection still falls back when HATEOAS, ETag, or hooks are active.
+- **Nested query paths are reference-only** - filtering, sorting, and field selection support dot-separated nested reference-property paths such as `customer.email`. Collection-valued paths are not supported, nested sparse responses use dotted output keys, and PATCH handling still operates on direct entity properties.
 - **Constraint mapping is provider-limited** - database constraint classification still relies primarily on exception-message inspection and is not yet specialized per provider.
 
 Use the adapter when you want the standard RestLib endpoint surface over a typical
-EF Core model, but expect to write a custom repository if you need composite-key
-resources, deep/navigational query semantics, or SQL-level projection beyond direct
-scalar property selection.
+EF Core model, including two-part composite-key resources. Expect to write a custom
+repository if you need keys with more than two parts, deep/navigational query semantics,
+or SQL-level projection beyond direct scalar property selection.
 
 ### Versioning
 
@@ -835,6 +951,7 @@ Intel Core i3-8130U CPU 2.20GHz (Kaby Lake), 1 CPU, 4 logical and 2 physical cor
 ## Learn More
 
 - [Sample app](https://github.com/Adrian01987/RestLib/blob/main/samples/RestLib.Sample/Program.cs)
+- [EF Core migrations guide](https://github.com/Adrian01987/RestLib/blob/main/docs/guides/ef-core-migrations.md)
 - [JSON resources guide](https://github.com/Adrian01987/RestLib/blob/main/docs/guides/json-resources.md)
 - [Architecture decisions](https://github.com/Adrian01987/RestLib/tree/main/docs/adr)
 - [Benchmarks](https://github.com/Adrian01987/RestLib/blob/main/benchmarks/RestLib.Benchmarks/README.md)
@@ -871,6 +988,7 @@ Key decisions are documented as Architecture Decision Records:
 | [ADR-022](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/022-per-file-json-resources.md) | Per-file JSON resources |
 | [ADR-023](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/023-json-validation-rules.md) | JSON validation rules |
 | [ADR-024](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/024-two-model-resources-and-the-mapping-seam.md) | Two-model resources and the mapping seam |
+| [ADR-025](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/025-composite-key-support.md) | Two-part composite key support |
 
 ## Packages
 
@@ -890,8 +1008,8 @@ Key decisions are documented as Architecture Decision Records:
 - **Forward-only cursor pagination** — cursors support forward traversal only; there is no backward/previous-page navigation.
 - **Cursor contract, adapter-specific implementation** — RestLib exposes an opaque cursor API. The InMemory adapter still uses encoded offsets/indexes, while the EF Core adapter uses keyset cursors for supported stable sorts and falls back to offsets otherwise.
 - **Post-fetch field selection** — field projection is applied after the full entity is retrieved from the repository, not pushed down to the data source.
-- **Flat properties only** — filtering, sorting, and field selection operate on top-level entity properties; nested or related entity paths are not supported.
-- **No built-in search** — full-text or fuzzy search is not included; implement it in your repository if needed.
+- **Nested query paths are reference-only** — filtering, sorting, and field selection support dotted nested reference-property paths such as `customer.email`, but collection-valued paths are not supported and sparse nested responses use dotted output keys rather than nested objects.
+- **Built-in search is intentionally limited** — RestLib supports configured OR-of-contains search across string fields, but it does not provide full-text indexing, ranking, fuzzy matching, or provider-specific search features.
 - **No CORS configuration** — RestLib does not configure CORS. If your API is consumed by browsers, add ASP.NET Core's built-in CORS middleware:
 
   ```csharp

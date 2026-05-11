@@ -1,6 +1,5 @@
 using System.Collections;
 using System.Linq.Expressions;
-using System.Reflection;
 using RestLib.Filtering;
 
 namespace RestLib.EntityFrameworkCore;
@@ -46,30 +45,24 @@ internal static class InFilterBuilder
                 $"Filter operator '{filter.Operator}' is not supported by InFilterBuilder. Only the In operator is supported.");
         }
 
-        var property = typeof(TEntity).GetProperty(
-            filter.PropertyName,
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)
-            ?? throw new InvalidOperationException(
-                $"Property '{filter.PropertyName}' was not found on entity type '{typeof(TEntity).Name}'.");
-
         if (filter.TypedValues is null || filter.TypedValues.Count == 0)
         {
             throw new InvalidOperationException("FilterValue.TypedValues must be non-null and non-empty for the In operator.");
         }
 
-        var list = CreateTypedList(filter.TypedValues, property.PropertyType);
-        var parameter = Expression.Parameter(typeof(TEntity), "entity");
-        var propertyAccess = Expression.Property(parameter, property);
+        var propertyAccess = ExpressionBuilder.BuildPropertyAccess<TEntity>(filter.PropertyName);
+        var parameter = propertyAccess.Parameters[0];
+        var list = CreateTypedList(filter.TypedValues, propertyAccess.ReturnType);
         var listType = list.GetType();
         var elementType = listType.GetGenericArguments()[0];
         var containsMethod = listType.GetMethod(nameof(List<object>.Contains), [elementType])
             ?? throw new InvalidOperationException(
                 $"Method 'Contains({elementType.Name})' was not found on type '{listType.Name}'.");
 
-        Expression valueExpression = propertyAccess;
-        if (propertyAccess.Type != elementType)
+        Expression valueExpression = propertyAccess.Body;
+        if (propertyAccess.Body.Type != elementType)
         {
-            valueExpression = Expression.Convert(propertyAccess, elementType);
+            valueExpression = Expression.Convert(propertyAccess.Body, elementType);
         }
 
         var containsCall = Expression.Call(Expression.Constant(list, listType), containsMethod, valueExpression);

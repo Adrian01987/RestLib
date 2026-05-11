@@ -41,7 +41,7 @@ internal static class PatchHandler
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
             var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.Patch");
 
-            RestLibLogMessages.PatchRequestReceived(logger, entityName, id!.ToString()!);
+            RestLibLogMessages.PatchRequestReceived(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
             // Initialize hook pipeline and run OnRequestReceived
             var (pipeline, hookContext, pipelineEarlyResult) = await HookHelper.InitializePipelineAsync<TEntity, TKey>(
@@ -72,6 +72,7 @@ internal static class PatchHandler
                         return Responses.ProblemDetailsResult.NotFound(
                             entityName,
                             id!,
+                            config.KeyRouteParts,
                             httpContext.Request.Path,
                             jsonOptions,
                             logger);
@@ -119,6 +120,7 @@ internal static class PatchHandler
                     return Responses.ProblemDetailsResult.NotFound(
                         entityName,
                         id!,
+                        config.KeyRouteParts,
                         httpContext.Request.Path,
                         jsonOptions,
                         logger);
@@ -143,7 +145,7 @@ internal static class PatchHandler
                 // Inject HATEOAS links into patched entity response
                 if (options.EnableHateoas)
                 {
-                    var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false);
+                    var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false, config.KeyRouteParts.Count);
                     var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TEntity, TKey>>();
                     var customLinks = customLinksProvider?.GetLinks(patched, id);
                     var links = HateoasLinkBuilder.BuildEntityLinks(httpContext.Request, collectionPath, id, config, customLinks);
@@ -203,7 +205,7 @@ internal static class PatchHandler
                 config.UseAutoMapper,
                 config.ResourceName);
 
-            RestLibLogMessages.PatchRequestReceived(logger, entityName, id!.ToString()!);
+            RestLibLogMessages.PatchRequestReceived(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
             if (config.UsesDbModelHooks)
             {
@@ -351,6 +353,7 @@ internal static class PatchHandler
                 return Responses.ProblemDetailsResult.NotFound(
                     entityName,
                     id!,
+                    config.KeyRouteParts,
                     httpContext.Request.Path,
                     jsonOptions,
                     logger);
@@ -367,6 +370,7 @@ internal static class PatchHandler
                 return Responses.ProblemDetailsResult.NotFound(
                     entityName,
                     id!,
+                    config.KeyRouteParts,
                     httpContext.Request.Path,
                     jsonOptions,
                     logger);
@@ -480,7 +484,7 @@ internal static class PatchHandler
             persistedDb = mapper.ToDb(patchedApi);
         }
 
-        _ = EntityKeyHelper.TrySetEntityKey(persistedDb, id, config.KeyPropertyName);
+        _ = EntityKeyHelper.TrySetEntityKeyParts(persistedDb, id, config.KeyRouteParts);
 
         var updatedDb = await repository.UpdateAsync(id, persistedDb, ct);
         if (updatedDb is null)
@@ -488,6 +492,7 @@ internal static class PatchHandler
             return Responses.ProblemDetailsResult.NotFound(
                 entityName,
                 id!,
+                config.KeyRouteParts,
                 httpContext.Request.Path,
                 jsonOptions,
                 logger);
@@ -549,7 +554,7 @@ internal static class PatchHandler
 
         if (options.EnableHateoas)
         {
-            var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false);
+            var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false, config.KeyRouteParts.Count);
             var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TApiModel, TKey>>();
             var customLinks = customLinksProvider?.GetLinks(updatedApi, id);
             var links = HateoasLinkBuilder.BuildEntityLinks(httpContext.Request, collectionPath, id, config, customLinks);

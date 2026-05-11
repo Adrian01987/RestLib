@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
+using RestLib.Internal;
 
 namespace RestLib.EntityFrameworkCore;
 
@@ -11,7 +12,7 @@ namespace RestLib.EntityFrameworkCore;
 /// </summary>
 public static class ExpressionBuilder
 {
-    private static readonly ConcurrentDictionary<(Type EntityType, string PropertyName), Expression> Cache = new();
+    private static readonly ConcurrentDictionary<(Type EntityType, string PropertyPath), Expression> Cache = new();
 
     /// <summary>
     /// Builds a property access expression for the specified property on the entity type.
@@ -31,24 +32,42 @@ public static class ExpressionBuilder
     public static LambdaExpression BuildPropertyAccess<TEntity>(string propertyName)
         where TEntity : class
     {
-        var property = typeof(TEntity).GetProperty(
-            propertyName,
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)
-            ?? throw new InvalidOperationException(
-                $"Property '{propertyName}' was not found on entity type '{typeof(TEntity).Name}'.");
+        PropertyPath propertyPath;
+        try
+        {
+            propertyPath = NamingUtils.ResolvePropertyPath<TEntity>(propertyName, nameof(propertyName));
+        }
+        catch (ArgumentException ex)
+        {
+            throw new InvalidOperationException(ex.Message, ex);
+        }
 
-        var cacheKey = (typeof(TEntity), property.Name);
-        var expression = Cache.GetOrAdd(cacheKey, _ => BuildExpression<TEntity>(property));
+        var cacheKey = (typeof(TEntity), propertyPath.ClrPath);
+        var expression = Cache.GetOrAdd(cacheKey, _ => BuildExpression<TEntity>(propertyPath.ClrSegments));
 
         return (LambdaExpression)expression;
     }
 
-    private static LambdaExpression BuildExpression<TEntity>(PropertyInfo property)
+    private static LambdaExpression BuildExpression<TEntity>(IReadOnlyList<string> clrSegments)
         where TEntity : class
     {
         var parameter = Expression.Parameter(typeof(TEntity), "entity");
-        var propertyAccess = Expression.Property(parameter, property);
-        var delegateType = typeof(Func<,>).MakeGenericType(typeof(TEntity), property.PropertyType);
+        Expression propertyAccess = parameter;
+        var currentType = typeof(TEntity);
+
+        foreach (var segment in clrSegments)
+        {
+            var property = currentType.GetProperty(
+                segment,
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)
+                ?? throw new InvalidOperationException(
+                    $"Property path '{string.Join('.', clrSegments)}' was not found on entity type '{typeof(TEntity).Name}'. Segment '{segment}' could not be resolved on '{currentType.Name}'.");
+
+            propertyAccess = Expression.Property(propertyAccess, property);
+            currentType = property.PropertyType;
+        }
+
+        var delegateType = typeof(Func<,>).MakeGenericType(typeof(TEntity), propertyAccess.Type);
 
         return Expression.Lambda(delegateType, propertyAccess, parameter);
     }

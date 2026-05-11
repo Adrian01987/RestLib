@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using RestLib.Abstractions;
+using RestLib.Endpoints;
 using RestLib.Logging;
 
 namespace RestLib.Batch;
@@ -53,8 +54,10 @@ internal sealed class BatchUpdatePipeline<TEntity, TKey>
         if (existing is null)
         {
             var entityName = typeof(TEntity).Name;
-            return (NotFoundResult(index, entityName, item.Id!, context.HttpContext.Request.Path), default);
+            return (NotFoundResult(index, entityName, item.Id!, context.HttpContext.Request.Path, context.EndpointConfig.KeyRouteParts), default);
         }
+
+        _ = EntityKeyHelper.TrySetEntityKeyParts(entity, item.Id, context.EndpointConfig.KeyRouteParts);
 
         // Validation
         var validationError = ValidateEntity(index, entity, context);
@@ -72,6 +75,8 @@ internal sealed class BatchUpdatePipeline<TEntity, TKey>
 
             entity = hookContext.Entity ?? entity;
         }
+
+        _ = EntityKeyHelper.TrySetEntityKeyParts(entity, item.Id, context.EndpointConfig.KeyRouteParts);
 
         return (null, (index, item.Id, entity));
     }
@@ -112,7 +117,11 @@ internal sealed class BatchUpdatePipeline<TEntity, TKey>
             {
                 Index = index,
                 Status = StatusCodes.Status404NotFound,
-                Error = Responses.ProblemDetailsFactory.NotFound(entityName, id!, context.HttpContext.Request.Path)
+                Error = Responses.ProblemDetailsFactory.NotFound(
+                    entityName,
+                    id!,
+                    context.EndpointConfig.KeyRouteParts,
+                    context.HttpContext.Request.Path)
             };
             return;
         }

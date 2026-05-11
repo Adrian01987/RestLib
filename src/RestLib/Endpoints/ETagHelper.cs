@@ -76,6 +76,7 @@ internal static class ETagHelper
             var notFoundResult = Responses.ProblemDetailsResult.NotFound(
                 entityName,
                 id!,
+                [new RestLib.Configuration.RestLibKeyRoutePart<TKey>(string.Empty, "id", typeof(TKey), static key => key)],
                 httpContext.Request.Path,
                 jsonOptions,
                 logger: logger);
@@ -154,6 +155,7 @@ internal static class ETagHelper
             var notFoundResult = Responses.ProblemDetailsResult.NotFound(
                 entityName,
                 id!,
+                [new RestLib.Configuration.RestLibKeyRoutePart<TKey>(string.Empty, "id", typeof(TKey), static key => key)],
                 httpContext.Request.Path,
                 jsonOptions,
                 logger: logger);

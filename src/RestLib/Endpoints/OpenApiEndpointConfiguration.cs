@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.OpenApi;
 using RestLib.Configuration;
 using RestLib.FieldSelection;
+using RestLib.Search;
 
 namespace RestLib.Endpoints;
 
@@ -193,10 +194,7 @@ internal static class OpenApiEndpointConfiguration
 
         endpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
         {
-            // Document id parameter
-            AddOrUpdateParameter(operation, "id", ParameterLocation.Path, true,
-                $"The unique identifier of the {entityName}",
-                GetOpenApiSchema(typeof(TKey)));
+            AddKeyPathParameters(operation, config, entityName, actionDescription: null);
 
             // Document If-None-Match header
             AddOrUpdateParameter(operation, "If-None-Match", ParameterLocation.Header, false,
@@ -334,10 +332,7 @@ internal static class OpenApiEndpointConfiguration
 
         endpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
         {
-            // Document id parameter
-            AddOrUpdateParameter(operation, "id", ParameterLocation.Path, true,
-                $"The unique identifier of the {entityName} to update",
-                GetOpenApiSchema(typeof(TKey)));
+            AddKeyPathParameters(operation, config, entityName, "to update");
 
             // Document If-Match header
             AddOrUpdateParameter(operation, "If-Match", ParameterLocation.Header, false,
@@ -416,10 +411,7 @@ internal static class OpenApiEndpointConfiguration
 
         endpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
         {
-            // Document id parameter
-            AddOrUpdateParameter(operation, "id", ParameterLocation.Path, true,
-                $"The unique identifier of the {entityName} to patch",
-                GetOpenApiSchema(typeof(TKey)));
+            AddKeyPathParameters(operation, config, entityName, "to patch");
 
             // Document If-Match header
             AddOrUpdateParameter(operation, "If-Match", ParameterLocation.Header, false,
@@ -503,10 +495,7 @@ internal static class OpenApiEndpointConfiguration
 
         endpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
         {
-            // Document id parameter
-            AddOrUpdateParameter(operation, "id", ParameterLocation.Path, true,
-                $"The unique identifier of the {entityName} to delete",
-                GetOpenApiSchema(typeof(TKey)));
+            AddKeyPathParameters(operation, config, entityName, "to delete");
 
             // Document If-Match header
             AddOrUpdateParameter(operation, "If-Match", ParameterLocation.Header, false,
@@ -590,6 +579,33 @@ internal static class OpenApiEndpointConfiguration
                     $"Allowed fields: {allowedFields}.",
                 Schema = new OpenApiSchema { Type = JsonSchemaType.String }
             });
+
+            return Task.CompletedTask;
+        });
+    }
+
+    /// <summary>
+    /// Adds an OpenAPI operation transformer that documents the configured search query parameter.
+    /// </summary>
+    /// <param name="endpoint">The endpoint builder to attach the transformer to.</param>
+    /// <param name="queryParameterName">The configured search query parameter name.</param>
+    /// <param name="properties">The configured searchable properties.</param>
+    internal static void AddSearchTransformer(
+        RouteHandlerBuilder endpoint,
+        string queryParameterName,
+        IReadOnlyList<SearchPropertyConfiguration> properties)
+    {
+        var allowedFields = string.Join(", ", properties.Select(p => p.QueryParameterName));
+
+        endpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
+        {
+            AddOrUpdateParameter(
+                operation,
+                queryParameterName,
+                ParameterLocation.Query,
+                required: false,
+                $"OR-of-contains search across configured fields. Searchable fields: {allowedFields}.",
+                new OpenApiSchema { Type = JsonSchemaType.String });
 
             return Task.CompletedTask;
         });
@@ -685,6 +701,37 @@ internal static class OpenApiEndpointConfiguration
             Description = description,
             Schema = schema
         });
+    }
+
+    private static void AddKeyPathParameters<TEntity, TKey>(
+        OpenApiOperation operation,
+        RestLibEndpointConfiguration<TEntity, TKey> config,
+        string entityName,
+        string? actionDescription)
+        where TEntity : class
+        where TKey : notnull
+    {
+        foreach (var keyPart in config.KeyRouteParts)
+        {
+            var description = config.KeyRouteParts.Count == 1
+                ? $"The unique identifier of the {entityName}{BuildActionSuffix(actionDescription)}"
+                : $"The '{keyPart.RouteParameterName}' key segment of the {entityName}{BuildActionSuffix(actionDescription)}";
+
+            AddOrUpdateParameter(
+                operation,
+                keyPart.RouteParameterName,
+                ParameterLocation.Path,
+                required: true,
+                description,
+                GetOpenApiSchema(keyPart.PropertyType));
+        }
+    }
+
+    private static string BuildActionSuffix(string? actionDescription)
+    {
+        return string.IsNullOrWhiteSpace(actionDescription)
+            ? string.Empty
+            : $" {actionDescription}";
     }
 
     /// <summary>

@@ -26,4 +26,31 @@ public class TestDbContext : DbContext
     /// Gets or sets the categories table.
     /// </summary>
     public DbSet<CategoryEntity> Categories { get; set; } = null!;
+
+    /// <summary>
+    /// Gets or sets the tenant products table.
+    /// </summary>
+    public DbSet<TenantProductEntity> TenantProducts { get; set; } = null!;
+
+    /// <summary>
+    /// Gets or sets the customers table.
+    /// </summary>
+    public DbSet<OrderCustomerEntity> Customers { get; set; } = null!;
+
+    /// <summary>
+    /// Gets or sets the orders table.
+    /// </summary>
+    public DbSet<OrderEntity> Orders { get; set; } = null!;
+
+    /// <inheritdoc />
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<TenantProductEntity>()
+            .HasKey(entity => new { entity.TenantId, entity.Sku });
+
+        modelBuilder.Entity<OrderEntity>()
+            .HasOne(order => order.Customer)
+            .WithMany()
+            .HasForeignKey(order => order.CustomerId);
+    }
 }

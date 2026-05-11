@@ -1,7 +1,7 @@
 # ADR-007: Field Selection / Sparse Fieldsets
 
 **Status:** Amended
-**Date:** 2026-03-30 (amended 2026-04-03)
+**Date:** 2026-03-30 (amended 2026-04-03, 2026-05-10)
 
 ## Context
 
@@ -27,7 +27,7 @@ Two key design decisions arise from this:
 
 | Option | Pros | Cons |
 | --- | --- | --- |
-| Support dotted paths (`address.city`) | More flexible for deeply nested models | Significant parser complexity; security risk (traversal into unintended structures); allow-list becomes a tree instead of a flat list |
+| Support dotted paths (`address.city`) with a flat allow-list of validated scalar paths | More flexible for nested reference data while preserving explicit opt-in | Must reject collection-valued paths and define output shape clearly |
 | Top-level properties only | Simple, predictable, easy to secure | Cannot select within nested objects |
 
 ## Decision
@@ -59,9 +59,24 @@ The accessor cache (`ConcurrentDictionary<Type, PropertyAccessorMap>`) is built 
 - `[JsonIgnore]` filtering
 - Class-level `[JsonConverter]` detection
 
-### 2. Top-level properties only
+### 2. Dotted nested reference-property paths with dotted output keys
 
-Nested property paths like `?fields=address.city` are not supported. Requesting such a path returns a 400 Problem Details response because `address.city` will not match any entry in the flat allow-list.
+Nested property paths like `?fields=address.city` are supported when they are explicitly
+registered and every intermediate segment is a reference property. Collection-valued paths
+such as `items.name` are rejected at configuration time.
+
+Configured query names use `snake_case` per segment joined with dots. For example,
+`Customer.Email` becomes `customer.email`.
+
+Nested sparse responses use dotted keys instead of rebuilding nested objects:
+
+```json
+{
+  "customer.email": "customer@example.com"
+}
+```
+
+If an intermediate reference is `null`, the dotted field is returned as JSON `null`.
 
 ## Rationale
 
@@ -92,17 +107,18 @@ Key observations:
 - Dense selections correctly fall back to serialize-then-pick with no regression
 - The 50% threshold provides a clean crossover point between the two strategies
 
-### Top-level only
+### Why dotted nested paths were added
 
-1. **Security.** A flat allow-list is easy to reason about and audit. Nested paths would require tree-structured allow-lists with potential for traversal into unintended object graphs.
-2. **Simplicity.** The parser, validator, and projector all operate on a simple string list. No recursive descent, no path splitting, no ambiguity about array indexing.
-3. **Sufficient for common use cases.** Most REST API field selection (JSON:API, Google API, Stripe) uses top-level fields. Nested selection can be added in a future version if demand materializes.
+1. **Common practical need.** Clients often need a small field from a related reference object such as `customer.email` without wanting the full nested object.
+2. **Still explicit and safe.** RestLib keeps a flat allow-list of validated scalar paths rather than exposing arbitrary traversal. Unsupported collection-valued paths fail at configuration time.
+3. **Simple response contract.** Returning dotted keys avoids rebuilding partial nested objects and keeps sparse field selection compatible with the existing projection pipeline.
 
 ## Consequences
 
 - **Field projection uses a hybrid strategy.** Sparse selections use per-property reflection with compiled getters; dense selections serialize the full entity. The 50% threshold may be tuned based on future profiling.
 - **Accessor cache grows per entity type.** Each entity type registered with field selection adds one entry to a `ConcurrentDictionary`. This is bounded by the number of entity types and is negligible in practice.
 - **Types with class-level `[JsonConverter]` always use serialize-then-pick.** This is correct because the converter may produce JSON that doesn't correspond to individual properties.
-- **Clients cannot select within nested objects.** If an entity has an `Address` property, clients can include or exclude the entire `Address` object but cannot request only `Address.City`.
+- **Clients can select nested reference-property paths.** If an entity has an `Address` property, clients can request `Address.City` when it is explicitly allow-listed. The serialized sparse response uses the dotted key `address.city` instead of a rebuilt nested object.
+- **Collection-valued paths remain unsupported.** A path such as `Items.Name` is rejected during configuration rather than deferred to request time.
 - **ETag is computed from the full entity before projection.** Two requests with different `?fields=` values for the same entity return the same ETag, which is correct — the ETag represents the resource state, not the representation.
 - **Write operations are unaffected.** Create, Update, Patch, and Delete always return the full entity (or appropriate status code). Field selection applies only to GetAll and GetById.

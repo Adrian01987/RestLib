@@ -279,7 +279,7 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
         ArgumentNullException.ThrowIfNull(dbEntity);
         ArgumentNullException.ThrowIfNull(context);
 
-        return EntityKeyHelper.TrySetEntityKey(dbEntity, id, context.EndpointConfig.KeyPropertyName);
+        return EntityKeyHelper.TrySetEntityKeyParts(dbEntity, id, context.EndpointConfig.KeyRouteParts);
     }
 
     /// <summary>

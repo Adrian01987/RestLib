@@ -20,6 +20,18 @@ public class SortableEntity
     public string Category { get; set; } = string.Empty;
     public int Quantity { get; set; }
     public DateTime CreatedAt { get; set; }
+    public SortCustomer? Customer { get; set; }
+}
+
+/// <summary>
+/// Nested customer entity used in nested sorting tests.
+/// </summary>
+public class SortCustomer
+{
+    /// <summary>
+    /// Gets or sets the customer name.
+    /// </summary>
+    public string Name { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -387,5 +399,48 @@ public class SortingNoConfigTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
         json.GetProperty("items").GetArrayLength().Should().Be(2);
+    }
+}
+
+/// <summary>
+/// Unit tests for nested sort parser behavior.
+/// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "Sorting")]
+public class NestedSortParserTests
+{
+    [Fact]
+    [Trait("Category", "Story5.1")]
+    public void SortConfiguration_NestedExpression_StoresDottedQueryName()
+    {
+        // Arrange
+        var config = new RestLib.Sorting.SortConfiguration<SortableEntity>();
+
+        // Act
+        config.AddProperty(entity => entity.Customer!.Name);
+
+        // Assert
+        config.Properties.Should().ContainSingle();
+        config.Properties[0].PropertyName.Should().Be("Customer.Name");
+        config.Properties[0].QueryParameterName.Should().Be("customer.name");
+    }
+
+    [Fact]
+    [Trait("Category", "Story5.1")]
+    public void SortParser_DottedField_ParsesSort()
+    {
+        // Arrange
+        var config = new RestLib.Sorting.SortConfiguration<SortableEntity>();
+        config.AddProperty(entity => entity.Customer!.Name);
+
+        // Act
+        var result = RestLib.Sorting.SortParser.Parse("customer.name:desc", config);
+
+        // Assert
+        result.IsValid.Should().BeTrue();
+        result.Fields.Should().ContainSingle();
+        result.Fields[0].PropertyName.Should().Be("Customer.Name");
+        result.Fields[0].QueryParameterName.Should().Be("customer.name");
+        result.Fields[0].Direction.Should().Be(RestLib.Sorting.SortDirection.Desc);
     }
 }

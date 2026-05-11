@@ -41,7 +41,7 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
         if (existing is null)
         {
             var entityName = typeof(TEntity).Name;
-            return (NotFoundResult(index, entityName, item.Id!, context.HttpContext.Request.Path), default);
+            return (NotFoundResult(index, entityName, item.Id!, context.HttpContext.Request.Path, context.EndpointConfig.KeyRouteParts), default);
         }
 
         // Hooks: OnRequestReceived, OnRequestValidated
@@ -88,7 +88,7 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
                     {
                         Index = index,
                         Status = StatusCodes.Status404NotFound,
-                        Error = ProblemDetailsFactory.NotFound(entityName, id!, context.HttpContext.Request.Path)
+                        Error = ProblemDetailsFactory.NotFound(entityName, id, context.EndpointConfig.KeyRouteParts, context.HttpContext.Request.Path)
                     };
                     continue;
                 }
@@ -174,7 +174,7 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
             {
                 Index = index,
                 Status = StatusCodes.Status404NotFound,
-                Error = ProblemDetailsFactory.NotFound(entityName, id!, context.HttpContext.Request.Path)
+                Error = ProblemDetailsFactory.NotFound(entityName, id, context.EndpointConfig.KeyRouteParts, context.HttpContext.Request.Path)
             };
             return;
         }
@@ -243,7 +243,7 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
             {
                 Index = index,
                 Status = StatusCodes.Status404NotFound,
-                Error = ProblemDetailsFactory.NotFound(entityName, id!, context.HttpContext.Request.Path)
+                Error = ProblemDetailsFactory.NotFound(entityName, id, context.EndpointConfig.KeyRouteParts, context.HttpContext.Request.Path)
             };
             return;
         }

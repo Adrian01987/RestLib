@@ -25,6 +25,18 @@ public class FieldSelectableEntity
     public string Category { get; set; } = string.Empty;
     public string InternalNotes { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
+    public FieldSelectionCustomer? Customer { get; set; }
+}
+
+/// <summary>
+/// Nested customer entity used in field selection tests.
+/// </summary>
+public class FieldSelectionCustomer
+{
+    /// <summary>
+    /// Gets or sets the customer email.
+    /// </summary>
+    public string Email { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -777,5 +789,99 @@ public class FieldProjectorCacheTests
         resultB["name"].GetString().Should().Be("Widget");
         resultA["price"].GetDecimal().Should().Be(9.99m);
         resultB["price"].GetDecimal().Should().Be(9.99m);
+    }
+
+    [Fact]
+    [Trait("Category", "Story7.1")]
+    public void Project_WithNestedField_ProjectsDottedJsonField()
+    {
+        // Arrange
+        var entity = new FieldSelectableEntity
+        {
+            Id = Guid.NewGuid(),
+            Name = "Widget",
+            Customer = new FieldSelectionCustomer { Email = "customer@example.com" }
+        };
+
+        var selectedFields = new List<SelectedField>
+        {
+            new() { PropertyName = "Customer.Email", QueryParameterName = "customer.email" }
+        };
+
+        // Act
+        var result = FieldProjector.Project(entity, selectedFields, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Should().ContainKey("customer.email");
+        result["customer.email"].GetString().Should().Be("customer@example.com");
+    }
+
+    [Fact]
+    [Trait("Category", "Story7.1")]
+    public void Project_WithNullIntermediate_ProjectsNullValue()
+    {
+        // Arrange
+        var entity = new FieldSelectableEntity
+        {
+            Id = Guid.NewGuid(),
+            Name = "Widget",
+            Customer = null
+        };
+
+        var selectedFields = new List<SelectedField>
+        {
+            new() { PropertyName = "Customer.Email", QueryParameterName = "customer.email" }
+        };
+
+        // Act
+        var result = FieldProjector.Project(entity, selectedFields, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Should().ContainKey("customer.email");
+        result["customer.email"].ValueKind.Should().Be(JsonValueKind.Null);
+    }
+}
+
+/// <summary>
+/// Unit tests for nested field selection parser behavior.
+/// </summary>
+[Trait("Type", "Unit")]
+[Trait("Feature", "FieldSelection")]
+public class NestedFieldSelectionParserTests
+{
+    [Fact]
+    [Trait("Category", "Story7.1")]
+    public void FieldSelectionConfiguration_NestedExpression_StoresDottedQueryName()
+    {
+        // Arrange
+        var config = new FieldSelectionConfiguration<FieldSelectableEntity>();
+
+        // Act
+        config.AddProperty(entity => entity.Customer!.Email);
+
+        // Assert
+        config.Properties.Should().ContainSingle();
+        config.Properties[0].PropertyName.Should().Be("Customer.Email");
+        config.Properties[0].QueryParameterName.Should().Be("customer.email");
+    }
+
+    [Fact]
+    [Trait("Category", "Story7.1")]
+    public void Parse_DottedField_ReturnsSelectedField()
+    {
+        // Arrange
+        var config = new FieldSelectionConfiguration<FieldSelectableEntity>();
+        config.AddProperty(entity => entity.Customer!.Email);
+
+        // Act
+        var result = FieldSelectionParser.Parse("customer.email", config);
+
+        // Assert
+        result.IsValid.Should().BeTrue();
+        result.Fields.Should().ContainSingle();
+        result.Fields[0].PropertyName.Should().Be("Customer.Email");
+        result.Fields[0].QueryParameterName.Should().Be("customer.email");
     }
 }

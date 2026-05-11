@@ -1,4 +1,4 @@
-using System.Reflection;
+using RestLib.Internal;
 
 namespace RestLib.Configuration;
 
@@ -37,6 +37,11 @@ internal static class MappedQueryConfigurationValidator
         {
             ValidateProperty<TApiModel, TDbModel>(sort.PropertyName, sort.PropertyType, "sorting");
         }
+
+        foreach (var search in configuration.SearchConfiguration.Properties)
+        {
+            ValidateProperty<TApiModel, TDbModel>(search.PropertyName, typeof(string), "search");
+        }
     }
 
     private static void ValidateProperty<TApiModel, TDbModel>(
@@ -46,23 +51,24 @@ internal static class MappedQueryConfigurationValidator
         where TApiModel : class
         where TDbModel : class
     {
-        var dbProperty = typeof(TDbModel).GetProperty(
-            propertyName,
-            BindingFlags.Public | BindingFlags.Instance);
-
-        if (dbProperty is null)
+        PropertyPath dbPropertyPath;
+        try
+        {
+            dbPropertyPath = NamingUtils.ResolvePropertyPath<TDbModel>(propertyName, nameof(propertyName));
+        }
+        catch (ArgumentException)
         {
             throw new InvalidOperationException(
                 $"Mapped {usage} property '{propertyName}' is configured on API model " +
                 $"'{typeof(TApiModel).FullName}' but does not exist on DB model '{typeof(TDbModel).FullName}'.");
         }
 
-        if (dbProperty.PropertyType != apiPropertyType)
+        if (dbPropertyPath.LeafPropertyType != apiPropertyType)
         {
             throw new InvalidOperationException(
                 $"Mapped {usage} property '{propertyName}' is configured on API model " +
                 $"'{typeof(TApiModel).FullName}' with CLR type '{apiPropertyType.FullName}', but DB model " +
-                $"'{typeof(TDbModel).FullName}' exposes '{dbProperty.PropertyType.FullName}'. " +
+                $"'{typeof(TDbModel).FullName}' exposes '{dbPropertyPath.LeafPropertyType.FullName}' for that path. " +
                 "Sprint 002 requires the same CLR property name and type for mapped filtering and sorting.");
         }
     }

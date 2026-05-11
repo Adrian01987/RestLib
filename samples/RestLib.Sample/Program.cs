@@ -13,6 +13,7 @@ using RestLib.Sample.Models;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
+var useMigrations = builder.Configuration.GetValue<bool>("RestLibSample:UseMigrations");
 
 // Add RestLib services with in-memory repositories (pre-seeded)
 // EnableETagSupport is a global option — applies to all resources (Categories, Products, and Orders)
@@ -87,17 +88,29 @@ builder.Services.AddHealthChecks();
 
 var app = builder.Build();
 
-// Demo path: use EnsureCreated for the sample SQLite database.
-// Production apps should prefer migrations and Database.Migrate() instead.
+// Demo path: keep EnsureCreated as the default for the sample SQLite database so the
+// sample and E2E flow stay zero-setup.
+//
+// Production path: prefer EF Core migrations instead. Set RestLibSample:UseMigrations=true
+// and apply migrations from startup, or run `dotnet ef database update` as part of deployment.
+// See docs/guides/ef-core-migrations.md for the recommended production workflow.
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<SampleDbContext>();
-    db.Database.EnsureCreated();
+
+    if (useMigrations)
+    {
+        await db.Database.MigrateAsync();
+    }
+    else
+    {
+        db.Database.EnsureCreated();
+    }
 
     if (!db.Customers.Any())
     {
         db.Customers.AddRange(SeedData.GetCustomers());
-        db.SaveChanges();
+        await db.SaveChangesAsync();
     }
 }
 
