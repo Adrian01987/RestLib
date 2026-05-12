@@ -56,7 +56,7 @@ jobs:
           /p:CollectCoverage=true
           /p:CoverletOutputFormat=json
           /p:CoverletOutput=../../TestResults/coverage.json
-          /p:Exclude="[RestLib.InMemory]*%2c[RestLib]Microsoft.AspNetCore.OpenApi.Generated.*%2c[RestLib]System.Runtime.CompilerServices.*"
+          /p:Exclude="[RestLib.InMemory]*%2c[*]Microsoft.AspNetCore.OpenApi.Generated.*%2c[*]System.Runtime.CompilerServices.*"
 
       - name: Test RestLib.EntityFrameworkCore with coverage
         run: >
@@ -68,7 +68,7 @@ jobs:
           /p:CoverletOutputFormat=cobertura
           /p:CoverletOutput=../../TestResults/coverage.cobertura.xml
           /p:MergeWith=../../TestResults/coverage.json
-          /p:Exclude="[RestLib.InMemory]*%2c[RestLib]Microsoft.AspNetCore.OpenApi.Generated.*%2c[RestLib]System.Runtime.CompilerServices.*"
+          /p:Exclude="[RestLib.InMemory]*%2c[*]Microsoft.AspNetCore.OpenApi.Generated.*%2c[*]System.Runtime.CompilerServices.*"
 
       - name: Upload test results
         uses: actions/upload-artifact@v7
