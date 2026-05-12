@@ -101,6 +101,119 @@ public class JsonTwoModelResourceTests
     }
 
     [Fact]
+    [Trait("Feature", "FolderUnifiedResolver")]
+    public async Task AddRestLibFromFolder_WithUnifiedResolverReturningTwoModelTypes_RegistersTwoModelResource()
+    {
+        // Arrange
+        var folder = CreateTempDirectory();
+        await using var cleanup = new TempPath(folder);
+        _ = CreateResourceFileInFolder(folder, "items.json",
+            $$"""
+            {
+              "Name": "items",
+              "Route": "/api/items",
+              "AllowAnonymousAll": true,
+              "Mapping": {
+                "Mapper": "{{nameof(JsonMappedNamedMapper)}}"
+              }
+            }
+            """);
+
+        var repository = CreateRepository<JsonMappedDbItem>(item => item.Id, Guid.NewGuid);
+        var id = Guid.NewGuid();
+        repository.Seed(
+        [
+            new JsonMappedDbItem
+            {
+                Id = id,
+                Name = "Widget",
+                Price = 12.5m,
+                Category = "hardware",
+                IsActive = true,
+                InternalToken = "db-only"
+            }
+        ]);
+
+        var (host, client) = await CreateHostAsync(services =>
+        {
+            services.AddSingleton(repository);
+            services.AddSingleton<IRepository<JsonMappedDbItem, Guid>>(repository);
+            services.AddRestLibMapper<JsonMappedApiItem, JsonMappedDbItem, JsonMappedNamedMapper>();
+            services.AddRestLibFromFolder(folder, options =>
+            {
+                options.UnifiedTypeResolver = static (_, _) => new RestLibResolvedResourceTypes
+                {
+                    ApiType = typeof(JsonMappedApiItem),
+                    DbType = typeof(JsonMappedDbItem),
+                    KeyType = typeof(Guid),
+                };
+            });
+        });
+        using var hostHandle = host;
+        using var clientHandle = client;
+
+        // Act
+        var response = await client.GetAsync($"/api/items/{id}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        json.GetProperty("name").GetString().Should().Be("Widget");
+        json.GetProperty("category").GetString().Should().Be("hardware");
+        json.TryGetProperty("internal_token", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    [Trait("Feature", "FolderUnifiedResolver")]
+    public async Task AddRestLibFromFolder_WithUnifiedResolverReturningNullDbType_RegistersSingleModelResource()
+    {
+        // Arrange
+        var folder = CreateTempDirectory();
+        await using var cleanup = new TempPath(folder);
+        _ = CreateResourceFileInFolder(folder, "items.json",
+            """
+            {
+              "Name": "items",
+              "Route": "/api/items",
+              "AllowAnonymousAll": true
+            }
+            """);
+
+        var (host, client) = await new TestJsonHostBuilder()
+            .WithServices(services =>
+            {
+                services.AddSingleton<TestEntityRepository>();
+                services.AddSingleton<IRepository<TestEntity, Guid>>(sp => sp.GetRequiredService<TestEntityRepository>());
+                services.AddRestLibFromFolder(folder, options =>
+                {
+                    options.UnifiedTypeResolver = static (_, _) => new RestLibResolvedResourceTypes
+                    {
+                        ApiType = typeof(TestEntity),
+                        DbType = null,
+                        KeyType = typeof(Guid),
+                    };
+                });
+            })
+            .BuildAsync();
+        using var hostHandle = host;
+        using var clientHandle = client;
+
+        var repository = host.Services.GetRequiredService<TestEntityRepository>();
+        var id = Guid.NewGuid();
+        repository.Seed(new TestEntity { Id = id, Name = "single", Price = 9m });
+
+        // Act
+        var response = await client.GetAsync($"/api/items/{id}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        json.GetProperty("name").GetString().Should().Be("single");
+        json.GetProperty("price").GetDecimal().Should().Be(9m);
+    }
+
+    [Fact]
     public async Task AddRestLibFromFolder_WithMissingMapper_ThrowsClearStartupException()
     {
         // Arrange

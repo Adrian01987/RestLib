@@ -28,5 +28,20 @@ public sealed class RestLibFolderOptions
     /// Gets or sets a delegate that resolves API-model and key CLR types for a
     /// resource file.
     /// </summary>
+    /// <remarks>
+    /// When <see cref="UnifiedTypeResolver"/> is set, it takes precedence over this
+    /// legacy resolver.
+    /// </remarks>
     public Func<string, RestLibJsonResourceConfiguration, (Type EntityType, Type KeyType)>? TypeResolver { get; set; }
+
+    /// <summary>
+    /// Gets or sets a delegate that resolves API, DB, and key CLR types for a
+    /// resource file.
+    /// </summary>
+    /// <remarks>
+    /// When set, this resolver takes precedence over <see cref="TypeResolver"/> and
+    /// over JSON <c>Mapping.DbType</c> resolution. Return <c>null</c> to fall back to
+    /// the legacy resolver flow.
+    /// </remarks>
+    public Func<string, RestLibJsonResourceConfiguration, RestLibResolvedResourceTypes?>? UnifiedTypeResolver { get; set; }
 }

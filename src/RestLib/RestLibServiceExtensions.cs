@@ -39,6 +39,15 @@ public static class RestLibServiceExtensions
             && method.GetParameters().Length == 2
             && method.GetParameters()[1].ParameterType == typeof(RestLibJsonResourceConfiguration));
 
+    private static readonly MethodInfo AddJsonResolvedTwoModelResourceMethod = typeof(RestLibServiceExtensions)
+        .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
+        .Single(method =>
+            method.Name == nameof(AddJsonResolvedTwoModelResource)
+            && method.IsGenericMethodDefinition
+            && method.GetGenericArguments().Length == 3
+            && method.GetParameters().Length == 2
+            && method.GetParameters()[1].ParameterType == typeof(RestLibJsonResourceConfiguration));
+
     /// <summary>
     /// Adds RestLib core services to the service collection.
     /// </summary>
@@ -181,9 +190,7 @@ public static class RestLibServiceExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configurationSection);
 
-        var configuration = configurationSection.Get<RestLibJsonResourceConfiguration>()
-                            ?? throw new InvalidOperationException(
-                                $"Configuration section '{configurationSection.Path}' does not contain a valid RestLib resource definition.");
+        var configuration = RestLibJsonResourceConfigurationLoader.LoadFromConfigurationSection(configurationSection);
 
         return services.AddJsonResource<TEntity, TKey>(configuration);
     }
@@ -207,9 +214,7 @@ public static class RestLibServiceExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configurationSection);
 
-        var configuration = configurationSection.Get<RestLibJsonResourceConfiguration>()
-                            ?? throw new InvalidOperationException(
-                                $"Configuration section '{configurationSection.Path}' does not contain a valid RestLib resource definition.");
+        var configuration = RestLibJsonResourceConfigurationLoader.LoadFromConfigurationSection(configurationSection);
 
         return services.AddJsonResource<TApiModel, TDbModel, TKey>(configuration);
     }
@@ -533,9 +538,33 @@ public static class RestLibServiceExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         var genericMethod = resolvedTypes.HasSeparateDbType
-            ? AddJsonTwoModelResourceMethod.MakeGenericMethod(resolvedTypes.ApiType, resolvedTypes.DbType, resolvedTypes.KeyType)
+            ? AddJsonResolvedTwoModelResourceMethod.MakeGenericMethod(resolvedTypes.ApiType, resolvedTypes.DbType!, resolvedTypes.KeyType)
             : AddJsonResourceMethod.MakeGenericMethod(resolvedTypes.ApiType, resolvedTypes.KeyType);
         _ = genericMethod.Invoke(null, [services, configuration]);
+    }
+
+    private static IServiceCollection AddJsonResolvedTwoModelResource<TApiModel, TDbModel, TKey>(
+        IServiceCollection services,
+        RestLibJsonResourceConfiguration configuration)
+        where TApiModel : class
+        where TDbModel : class
+        where TKey : notnull
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        var registry = GetOrCreateJsonResourceRegistry(services);
+        registry.Add(configuration.Name, endpoints =>
+        {
+            endpoints.MapRestLib<TApiModel, TDbModel, TKey>(configuration.Route, config =>
+            {
+                RestLibJsonResourceBuilder.Apply(config, configuration);
+                RestLibJsonResourceBuilder.ApplyResolvedMapping(config, configuration);
+                ApplyMappedHooks(endpoints.ServiceProvider, configuration, config);
+            });
+        });
+
+        return services;
     }
 
     private static void ApplyApiHooks<TEntity, TKey>(

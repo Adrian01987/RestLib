@@ -347,6 +347,167 @@ public class JsonResourceConfigurationTests
     }
 
     [Fact]
+    [Trait("Feature", "FolderUnifiedResolver")]
+    public async Task AddRestLibFromFolder_WithUnifiedResolverReturningNull_FallsBackToLegacyResolver()
+    {
+        // Arrange
+        var folder = CreateTempDirectory();
+        await using var cleanup = new TempPath(folder);
+
+        _ = CreateResourceFileInFolder(folder, "items.json",
+            """
+            {
+              "Name": "items",
+              "Route": "/api/items",
+              "AllowAnonymousAll": true
+            }
+            """);
+
+        using var host = await CreateHost(services =>
+        {
+            services.AddRestLibFromFolder(folder, options =>
+            {
+                options.UnifiedTypeResolver = static (_, _) => null;
+                options.TypeResolver = static (_, _) => (typeof(TestEntity), typeof(Guid));
+            });
+        });
+
+        var client = host.GetTestClient();
+        var repository = host.Services.GetRequiredService<TestEntityRepository>();
+        var id = Guid.NewGuid();
+        repository.Seed(new TestEntity { Id = id, Name = "alpha", Price = 10m });
+
+        // Act
+        var response = await client.GetAsync($"/api/items/{id}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    [Trait("Feature", "FolderUnifiedResolver")]
+    public async Task AddRestLibFromFolder_WithUnifiedResolverAndLegacyResolverSet_PrefersUnifiedResolver()
+    {
+        // Arrange
+        var folder = CreateTempDirectory();
+        await using var cleanup = new TempPath(folder);
+
+        _ = CreateResourceFileInFolder(folder, "items.json",
+            """
+            {
+              "Name": "items",
+              "Route": "/api/items",
+              "KeyProperty": "Code",
+              "AllowAnonymousAll": true
+            }
+            """);
+
+        using var host = await CreateHost(services =>
+        {
+            services.AddSingleton<CustomKeyEntityRepository>();
+            services.AddSingleton<IRepository<CustomKeyEntity, Guid>>(sp => sp.GetRequiredService<CustomKeyEntityRepository>());
+            services.AddRestLibFromFolder(folder, options =>
+            {
+                options.UnifiedTypeResolver = static (_, _) => new RestLibResolvedResourceTypes
+                {
+                    ApiType = typeof(CustomKeyEntity),
+                    KeyType = typeof(Guid),
+                };
+                options.TypeResolver = static (_, _) => (typeof(TestEntity), typeof(Guid));
+            });
+        });
+
+        var client = host.GetTestClient();
+        var repository = host.Services.GetRequiredService<CustomKeyEntityRepository>();
+        var id = Guid.NewGuid();
+        repository.Seed(new CustomKeyEntity { Code = id, Label = "preferred" });
+
+        // Act
+        var response = await client.GetAsync($"/api/items/{id}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("code").GetGuid().Should().Be(id);
+        document.RootElement.GetProperty("label").GetString().Should().Be("preferred");
+    }
+
+    [Fact]
+    [Trait("Feature", "FolderUnifiedResolver")]
+    public void AddRestLibFromFolder_WithUnifiedResolverReturningInvalidApiType_ThrowsClearException()
+    {
+        // Arrange
+        var folder = CreateTempDirectory();
+        using var cleanup = new TempPath(folder);
+        var filePath = CreateResourceFileInFolder(folder, "items.json",
+            """
+            {
+              "Name": "items",
+              "Route": "/api/items",
+              "KeyProperty": "Code",
+              "AllowAnonymousAll": true
+            }
+            """);
+
+        var services = new ServiceCollection();
+        services.AddRestLib();
+
+        // Act
+        var act = () => services.AddRestLibFromFolder(folder, options =>
+        {
+            options.UnifiedTypeResolver = static (_, _) => new RestLibResolvedResourceTypes
+            {
+                ApiType = null!,
+                KeyType = typeof(Guid),
+            };
+        });
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .Where(ex => ex.Message.Contains(filePath, StringComparison.Ordinal)
+                && ex.Message.Contains("null API type", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("Feature", "FolderUnifiedResolver")]
+    public void AddRestLibFromFolder_WithUnifiedResolverReturningInvalidDbKeyType_ThrowsClearException()
+    {
+        // Arrange
+        var folder = CreateTempDirectory();
+        using var cleanup = new TempPath(folder);
+        var filePath = CreateResourceFileInFolder(folder, "items.json",
+            """
+            {
+              "Name": "items",
+              "Route": "/api/items",
+              "KeyProperty": "Code",
+              "AllowAnonymousAll": true
+            }
+            """);
+
+        var services = new ServiceCollection();
+        services.AddRestLib();
+
+        // Act
+        var act = () => services.AddRestLibFromFolder(folder, options =>
+        {
+            options.UnifiedTypeResolver = static (_, _) => new RestLibResolvedResourceTypes
+            {
+                ApiType = typeof(CustomKeyEntity),
+                DbType = typeof(CustomKeyEntity),
+                KeyType = typeof(string),
+            };
+        });
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>()
+            .Where(ex => ex.Message.Contains(filePath, StringComparison.Ordinal)
+                && ex.Message.Contains("DB model type", StringComparison.Ordinal)
+                && ex.Message.Contains("Code", StringComparison.Ordinal)
+                && ex.Message.Contains("String", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task AddJsonResource_WithNamedHooks_RunsConfiguredHooksPerOperation()
     {
         // Arrange
@@ -1368,6 +1529,113 @@ public class JsonResourceConfigurationTests
         // Assert
         act.Should().ThrowAsync<ArgumentException>()
             .WithMessage("*must resolve to a string property*");
+    }
+
+    [Fact]
+    public async Task AddJsonResource_WithFieldSelectionResponseNested_LoadsConfiguration()
+    {
+        // Arrange
+        var filePath = CreateResourceFile(
+            """
+            {
+              "Name": "orders",
+              "Route": "/api/orders",
+              "AllowAnonymousAll": true,
+              "FieldSelection": {
+                "Properties": ["OrderNumber", "Customer.Email"],
+                "Response": "Nested"
+              }
+            }
+            """);
+
+        await using var cleanup = new TempPath(filePath);
+
+        using var host = await CreateNestedHost(services =>
+        {
+            services.AddJsonResourceFromFile<JsonNestedOrder, Guid>(filePath);
+        });
+
+        var client = host.GetTestClient();
+        var repository = host.Services.GetRequiredService<InMemoryRepository<JsonNestedOrder, Guid>>();
+        repository.Clear();
+        repository.Seed([CreateNestedOrder("A-100", "Adam", "adam@example.com")]);
+
+        // Act
+        var response = await client.GetAsync("/api/orders?fields=order_number,customer.email");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = document.RootElement.GetProperty("items")[0];
+        item.GetProperty("order_number").GetString().Should().Be("A-100");
+        item.GetProperty("customer").GetProperty("email").GetString().Should().Be("adam@example.com");
+        item.TryGetProperty("customer.email", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void AddJsonResource_WithFieldSelectionResponseInvalid_ThrowsClearConfigurationError()
+    {
+        // Arrange
+        var filePath = CreateResourceFile(
+            """
+            {
+              "Name": "orders",
+              "Route": "/api/orders",
+              "FieldSelection": {
+                "Properties": ["OrderNumber"],
+                "Response": "Diagonal"
+              }
+            }
+            """);
+
+        // Act
+        var act = async () =>
+        {
+            using var cleanup = new TempPath(filePath);
+            using var host = await CreateNestedHost(services =>
+            {
+                services.AddJsonResourceFromFile<JsonNestedOrder, Guid>(filePath);
+            });
+        };
+
+        // Assert
+        act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*FieldSelection.Response*Diagonal*Flat*Nested*");
+    }
+
+    [Fact]
+    public async Task AddJsonResource_WithLegacyFieldSelectionArray_DefaultsToFlatShape()
+    {
+        // Arrange
+        using var host = await CreateNestedHost(services =>
+        {
+            services.AddJsonResource<JsonNestedOrder, Guid>(new RestLibJsonResourceConfiguration
+            {
+                Name = "orders",
+                Route = "/api/orders",
+                AllowAnonymousAll = true,
+                FieldSelection =
+                [
+                    nameof(JsonNestedOrder.OrderNumber),
+                    $"{nameof(JsonNestedOrder.Customer)}.{nameof(JsonNestedCustomer.Email)}"
+                ]
+            });
+        });
+
+        var client = host.GetTestClient();
+        var repository = host.Services.GetRequiredService<InMemoryRepository<JsonNestedOrder, Guid>>();
+        repository.Clear();
+        repository.Seed([CreateNestedOrder("A-100", "Adam", "adam@example.com")]);
+
+        // Act
+        var response = await client.GetAsync("/api/orders?fields=order_number,customer.email");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var item = document.RootElement.GetProperty("items")[0];
+        item.GetProperty("customer.email").GetString().Should().Be("adam@example.com");
+        item.TryGetProperty("customer", out _).Should().BeFalse();
     }
 
     private static async Task<IHost> CreateHost(

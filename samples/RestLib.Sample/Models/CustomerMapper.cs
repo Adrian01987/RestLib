@@ -16,8 +16,7 @@ public sealed class CustomerMapper : IRestLibMapper<CustomerDto, Customer>
             Name = dbModel.Name,
             Email = dbModel.Email,
             City = dbModel.City,
-            IsActive = dbModel.IsActive,
-            CreatedAt = dbModel.CreatedAt
+            IsActive = dbModel.IsActive
         };
     }
 
@@ -31,7 +30,7 @@ public sealed class CustomerMapper : IRestLibMapper<CustomerDto, Customer>
             Email = apiModel.Email,
             City = apiModel.City,
             IsActive = apiModel.IsActive,
-            CreatedAt = apiModel.CreatedAt == default ? DateTime.UtcNow : apiModel.CreatedAt
+            CreatedAt = DateTime.UtcNow
         };
     }
 }

@@ -37,6 +37,22 @@ public class FieldSelectionCustomer
     /// Gets or sets the customer email.
     /// </summary>
     public string Email { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the customer profile.
+    /// </summary>
+    public FieldSelectionCustomerProfile? Profile { get; set; }
+}
+
+/// <summary>
+/// Nested customer profile entity used in field selection tests.
+/// </summary>
+public class FieldSelectionCustomerProfile
+{
+    /// <summary>
+    /// Gets or sets the profile handle.
+    /// </summary>
+    public string Handle { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -629,6 +645,22 @@ public class FieldSelectionConfigurationTests
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*'CreatedAt'*already configured*field selection*");
     }
+
+    [Fact]
+    [Trait("Category", "StoryD.1")]
+    [Trait("Feature", "FieldSelectionNested")]
+    public void AllowFieldSelection_UseNestedObjectsInResponse_SetsConfigurationFlag()
+    {
+        // Arrange
+        var config = new FieldSelectionConfiguration<FieldSelectableEntity>();
+
+        // Act
+        var returned = config.UseNestedObjectsInResponse();
+
+        // Assert
+        returned.Should().BeSameAs(config);
+        config.ResponseShape.Should().Be(FieldSelectionResponseShape.Nested);
+    }
 }
 
 /// <summary>
@@ -841,6 +873,162 @@ public class FieldProjectorCacheTests
         result.Should().NotBeNull();
         result!.Should().ContainKey("customer.email");
         result["customer.email"].ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    [Trait("Category", "StoryD.1")]
+    [Trait("Feature", "FieldSelectionNested")]
+    public void FieldProjector_WithFlatShapeDefault_KeepsDottedKeys()
+    {
+        // Arrange
+        var entity = new FieldSelectableEntity
+        {
+            Customer = new FieldSelectionCustomer { Email = "customer@example.com" }
+        };
+
+        var selectedFields = new List<SelectedField>
+        {
+            new() { PropertyName = "Customer.Email", QueryParameterName = "customer.email" }
+        };
+
+        // Act
+        var result = FieldProjector.Project(entity, selectedFields, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Should().ContainKey("customer.email");
+        result.Should().NotContainKey("customer");
+        result["customer.email"].GetString().Should().Be("customer@example.com");
+    }
+
+    [Fact]
+    [Trait("Category", "StoryD.1")]
+    [Trait("Feature", "FieldSelectionNested")]
+    public void FieldProjector_WithNestedShape_ReturnsNestedObjectForDottedField()
+    {
+        // Arrange
+        var entity = new FieldSelectableEntity
+        {
+            Customer = new FieldSelectionCustomer { Email = "customer@example.com" }
+        };
+
+        var selectedFields = new List<SelectedField>
+        {
+            new() { PropertyName = "Customer.Email", QueryParameterName = "customer.email" }
+        };
+
+        // Act
+        var result = FieldProjector.Project(
+            entity,
+            selectedFields,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web),
+            FieldSelectionResponseShape.Nested);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Should().ContainKey("customer");
+        result.Should().NotContainKey("customer.email");
+        result["customer"].GetProperty("email").GetString().Should().Be("customer@example.com");
+    }
+
+    [Fact]
+    [Trait("Category", "StoryD.1")]
+    [Trait("Feature", "FieldSelectionNested")]
+    public void FieldProjector_WithNestedShape_AndNullIntermediate_RendersNullAtDeepestExistingLevel()
+    {
+        // Arrange
+        var entity = new FieldSelectableEntity
+        {
+            Customer = null
+        };
+
+        var selectedFields = new List<SelectedField>
+        {
+            new() { PropertyName = "Customer.Profile.Handle", QueryParameterName = "customer.profile.handle" }
+        };
+
+        // Act
+        var result = FieldProjector.Project(
+            entity,
+            selectedFields,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web),
+            FieldSelectionResponseShape.Nested);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!["customer"].GetProperty("profile").GetProperty("handle").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    [Trait("Category", "StoryD.1")]
+    [Trait("Feature", "FieldSelectionNested")]
+    public void FieldProjector_WithNestedShape_AndTopLevelFields_KeepsTopLevelKeys()
+    {
+        // Arrange
+        var entity = new FieldSelectableEntity
+        {
+            Name = "Widget",
+            Customer = new FieldSelectionCustomer { Email = "customer@example.com" }
+        };
+
+        var selectedFields = new List<SelectedField>
+        {
+            new() { PropertyName = "Name", QueryParameterName = "name" },
+            new() { PropertyName = "Customer.Email", QueryParameterName = "customer.email" }
+        };
+
+        // Act
+        var result = FieldProjector.Project(
+            entity,
+            selectedFields,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web),
+            FieldSelectionResponseShape.Nested);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Should().ContainKey("name");
+        result.Should().ContainKey("customer");
+        result["name"].GetString().Should().Be("Widget");
+        result["customer"].GetProperty("email").GetString().Should().Be("customer@example.com");
+    }
+
+    [Fact]
+    [Trait("Category", "StoryD.1")]
+    [Trait("Feature", "FieldSelectionNested")]
+    public void FieldProjector_WithNestedShapeAndDenseSelection_FallsBackToFlatOutput()
+    {
+        // Arrange
+        var entity = new FieldSelectableEntity
+        {
+            Id = Guid.NewGuid(),
+            Name = "Widget",
+            Price = 9.99m,
+            Category = "Tools",
+            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            Customer = new FieldSelectionCustomer { Email = "customer@example.com" }
+        };
+
+        var selectedFields = new List<SelectedField>
+        {
+            new() { PropertyName = "Id", QueryParameterName = "id" },
+            new() { PropertyName = "Name", QueryParameterName = "name" },
+            new() { PropertyName = "Price", QueryParameterName = "price" },
+            new() { PropertyName = "Category", QueryParameterName = "category" },
+            new() { PropertyName = "Customer.Email", QueryParameterName = "customer.email" }
+        };
+
+        // Act
+        var result = FieldProjector.Project(
+            entity,
+            selectedFields,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web),
+            FieldSelectionResponseShape.Nested);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Should().ContainKey("customer.email");
+        result.Should().NotContainKey("customer");
+        result["customer.email"].GetString().Should().Be("customer@example.com");
     }
 }
 

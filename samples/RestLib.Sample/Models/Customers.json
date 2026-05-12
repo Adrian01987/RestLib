@@ -12,7 +12,7 @@
   "FilteringOperators": {
     "Name": ["string"]
   },
-  "Sorting": ["Name", "CreatedAt"],
+  "Sorting": ["Name", "Email", "City"],
   "DefaultSort": "name:asc",
   "FieldSelection": ["Id", "Name", "Email", "City", "IsActive"],
   "Batch": {

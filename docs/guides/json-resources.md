@@ -176,6 +176,34 @@ nested objects:
 }
 ```
 
+You can opt sparse responses into nested objects with the additive object form:
+
+```json
+{
+  "Name": "orders",
+  "Route": "/api/orders",
+  "FieldSelection": {
+    "Properties": ["OrderNumber", "Customer.Email"],
+    "Response": "Nested"
+  }
+}
+```
+
+That changes sparse nested output to:
+
+```json
+{
+  "order_number": "A-100",
+  "customer": {
+    "email": "adam@example.com"
+  }
+}
+```
+
+The default remains flat dotted keys for backward compatibility, and dense
+serialize-then-pick fallback responses continue to use the flat shape even when
+`Response` is set to `Nested`.
+
 ### Collection search
 
 JSON resources can opt into simple OR-of-contains search across configured string
@@ -298,6 +326,9 @@ public class CustomerEntity
     public DateTime CreatedAt { get; set; }
 }
 ```
+
+The DTO intentionally hides the persistence-only `CreatedAt` column while the DB
+entity keeps it.
 
 Register the repository and mapper in `Program.cs`:
 
@@ -430,6 +461,7 @@ You now have:
 If `AddRestLibFromFolder("Models")` fails to resolve a CLR type:
 
 - add `EntityType` to the JSON file, or
+- configure `RestLibFolderOptions.UnifiedTypeResolver`, or
 - configure `RestLibFolderOptions.TypeResolver`, or
 - add assemblies explicitly through `options.Assemblies`
 
@@ -441,6 +473,27 @@ builder.Services.AddRestLibFromFolder("Models", options =>
     options.Assemblies.Add(typeof(Product).Assembly);
 });
 ```
+
+For two-model resources, `UnifiedTypeResolver` can resolve the API model, DB model,
+and key type together from code:
+
+```csharp
+builder.Services.AddRestLibFromFolder("Models", options =>
+{
+    options.UnifiedTypeResolver = (file, config) => file.EndsWith("Customers.json", StringComparison.Ordinal)
+        ? new RestLibResolvedResourceTypes
+        {
+            ApiType = typeof(CustomerDto),
+            DbType = typeof(CustomerEntity),
+            KeyType = typeof(Guid),
+        }
+        : null;
+});
+```
+
+Precedence is `UnifiedTypeResolver` > `TypeResolver` > `EntityType` > file-name match.
+When `UnifiedTypeResolver` returns a value, its `DbType` wins over `Mapping.DbType`.
+Set `DbType = null` to register a single-model resource.
 
 ### Invalid validation rule
 

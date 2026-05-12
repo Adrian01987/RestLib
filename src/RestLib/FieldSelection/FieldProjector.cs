@@ -36,11 +36,13 @@ internal static class FieldProjector
     /// <param name="entity">The entity instance to project.</param>
     /// <param name="selectedFields">The fields to include.</param>
     /// <param name="jsonOptions">The JSON serializer options (for naming policy).</param>
+    /// <param name="responseShape">The sparse response shape to use for nested selected fields.</param>
     /// <returns>A dictionary of field name to JSON value, or null if no projection needed.</returns>
     internal static Dictionary<string, JsonElement>? Project<TEntity>(
         TEntity entity,
         IReadOnlyList<SelectedField> selectedFields,
-        JsonSerializerOptions jsonOptions)
+        JsonSerializerOptions jsonOptions,
+        FieldSelectionResponseShape responseShape = FieldSelectionResponseShape.Flat)
     {
         if (selectedFields.Count == 0)
         {
@@ -48,12 +50,12 @@ internal static class FieldProjector
         }
 
         var accessorMap = GetOrBuildAccessorMap(typeof(TEntity), jsonOptions);
-        var hasNestedSelections = selectedFields.Any(field => field.PropertyName.Contains('.', StringComparison.Ordinal));
-
         // Fall back to serialize-then-pick for types with class-level JsonConverter
-        // or when selecting a large fraction of properties (cheaper to serialize once)
+        // or when selecting a large fraction of properties (cheaper to serialize once).
+        // Dense fallback intentionally keeps the flat dotted output shape even when
+        // nested sparse responses are enabled.
         if (accessorMap.RequiresSerializeFallback ||
-            (!hasNestedSelections && ShouldUseSerializeFallback(selectedFields.Count, accessorMap.PropertyCount)))
+            ShouldUseSerializeFallback(selectedFields.Count, accessorMap.PropertyCount))
         {
             return SerializeThenPick(entity, selectedFields, jsonOptions);
         }
@@ -68,7 +70,16 @@ internal static class FieldProjector
                 var element = value is null
                     ? NullElement
                     : JsonSerializer.SerializeToElement(value, accessor.PropertyType, jsonOptions);
-                result[field.QueryParameterName] = element;
+
+                if (responseShape == FieldSelectionResponseShape.Nested
+                    && field.QueryParameterName.Contains('.', StringComparison.Ordinal))
+                {
+                    SetNestedElement(result, field.QueryParameterName, element, jsonOptions);
+                }
+                else
+                {
+                    result[field.QueryParameterName] = element;
+                }
             }
         }
 
@@ -82,11 +93,13 @@ internal static class FieldProjector
     /// <param name="entities">The entities to project.</param>
     /// <param name="selectedFields">The fields to include.</param>
     /// <param name="jsonOptions">The JSON serializer options (for naming policy).</param>
+    /// <param name="responseShape">The sparse response shape to use for nested selected fields.</param>
     /// <returns>A list of projected dictionaries, or null if no projection needed.</returns>
     internal static IReadOnlyList<Dictionary<string, JsonElement>>? ProjectMany<TEntity>(
         IReadOnlyList<TEntity> entities,
         IReadOnlyList<SelectedField> selectedFields,
-        JsonSerializerOptions jsonOptions)
+        JsonSerializerOptions jsonOptions,
+        FieldSelectionResponseShape responseShape = FieldSelectionResponseShape.Flat)
     {
         if (selectedFields.Count == 0)
         {
@@ -97,7 +110,7 @@ internal static class FieldProjector
 
         foreach (var entity in entities)
         {
-            var projected = Project(entity, selectedFields, jsonOptions);
+            var projected = Project(entity, selectedFields, jsonOptions, responseShape);
             if (projected is not null)
             {
                 results.Add(projected);
@@ -238,6 +251,56 @@ internal static class FieldProjector
         }
 
         return true;
+    }
+
+    private static void SetNestedElement(
+        IDictionary<string, JsonElement> result,
+        string queryParameterName,
+        JsonElement value,
+        JsonSerializerOptions jsonOptions)
+    {
+        var segments = queryParameterName.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0)
+        {
+            return;
+        }
+
+        if (segments.Length == 1)
+        {
+            result[segments[0]] = value;
+            return;
+        }
+
+        Dictionary<string, object?> root;
+        if (result.TryGetValue(segments[0], out var existingRoot)
+            && existingRoot.ValueKind == JsonValueKind.Object)
+        {
+            root = JsonSerializer.Deserialize<Dictionary<string, object?>>(existingRoot.GetRawText(), jsonOptions)
+                ?? [];
+        }
+        else
+        {
+            root = [];
+        }
+
+        var current = root;
+        for (var index = 1; index < segments.Length - 1; index++)
+        {
+            var segment = segments[index];
+            if (current.TryGetValue(segment, out var nested)
+                && nested is Dictionary<string, object?> nestedDictionary)
+            {
+                current = nestedDictionary;
+                continue;
+            }
+
+            var next = new Dictionary<string, object?>();
+            current[segment] = next;
+            current = next;
+        }
+
+        current[segments[^1]] = JsonSerializer.Deserialize<object?>(value.GetRawText(), jsonOptions);
+        result[segments[0]] = JsonSerializer.SerializeToElement(root, jsonOptions);
     }
 
     private static JsonElement CreateNullElement()

@@ -5,15 +5,6 @@ namespace RestLib.Configuration;
 /// <summary>
 /// Resolves CLR types for folder-loaded JSON resource files.
 /// </summary>
-internal readonly record struct RestLibResolvedResourceTypes(
-    Type ApiType,
-    Type DbType,
-    Type KeyType,
-    bool HasSeparateDbType);
-
-/// <summary>
-/// Resolves CLR types for folder-loaded JSON resource files.
-/// </summary>
 internal static class RestLibFolderResourceResolver
 {
     /// <summary>
@@ -32,12 +23,26 @@ internal static class RestLibFolderResourceResolver
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(options);
 
+        if (options.UnifiedTypeResolver is not null)
+        {
+            var resolved = options.UnifiedTypeResolver(fileName, configuration);
+            if (resolved is not null)
+            {
+                return ValidateUnifiedResolution(fileName, configuration, resolved);
+            }
+        }
+
         if (options.TypeResolver is not null)
         {
             var (entityType, keyType) = options.TypeResolver(fileName, configuration);
             var resolvedDbType = ResolveDbType(fileName, configuration, options) ?? entityType;
             ValidateDbKeyConfiguration(fileName, configuration, resolvedDbType, keyType);
-            return new RestLibResolvedResourceTypes(entityType, resolvedDbType, keyType, entityType != resolvedDbType);
+            return new RestLibResolvedResourceTypes
+            {
+                ApiType = entityType,
+                DbType = resolvedDbType,
+                KeyType = keyType,
+            };
         }
 
         var apiType = ResolveEntityType(fileName, configuration, options);
@@ -50,14 +55,52 @@ internal static class RestLibFolderResourceResolver
                 keyProperties[0].PropertyType,
                 keyProperties[1].PropertyType);
             ValidateDbCompositeKeyProperties(fileName, configuration, dbType, keyType);
-            return new RestLibResolvedResourceTypes(apiType, dbType, keyType, apiType != dbType);
+            return new RestLibResolvedResourceTypes
+            {
+                ApiType = apiType,
+                DbType = dbType,
+                KeyType = keyType,
+            };
         }
 
         var keyProperty = ResolveKeyProperty(fileName, configuration, apiType);
 
         ValidateDbKeyProperty(fileName, configuration, dbType, keyProperty.Name, keyProperty.PropertyType);
 
-        return new RestLibResolvedResourceTypes(apiType, dbType, keyProperty.PropertyType, apiType != dbType);
+        return new RestLibResolvedResourceTypes
+        {
+            ApiType = apiType,
+            DbType = dbType,
+            KeyType = keyProperty.PropertyType,
+        };
+    }
+
+    private static RestLibResolvedResourceTypes ValidateUnifiedResolution(
+        string fileName,
+        RestLibJsonResourceConfiguration configuration,
+        RestLibResolvedResourceTypes resolved)
+    {
+        if (resolved.ApiType is null)
+        {
+            throw new InvalidOperationException(
+                $"UnifiedTypeResolver returned a null API type for resource '{configuration.Name}' in JSON file '{fileName}'.");
+        }
+
+        if (resolved.KeyType is null)
+        {
+            throw new InvalidOperationException(
+                $"UnifiedTypeResolver returned a null key type for resource '{configuration.Name}' in JSON file '{fileName}'.");
+        }
+
+        var dbType = resolved.DbType ?? resolved.ApiType;
+        ValidateDbKeyConfiguration(fileName, configuration, dbType, resolved.KeyType);
+
+        return new RestLibResolvedResourceTypes
+        {
+            ApiType = resolved.ApiType,
+            DbType = dbType,
+            KeyType = resolved.KeyType,
+        };
     }
 
     private static Type ResolveEntityType(
@@ -108,11 +151,11 @@ internal static class RestLibFolderResourceResolver
         if (matches.Count > 1)
         {
             throw new InvalidOperationException(
-                $"Multiple public CLR types matched file '{fileName}' for resource '{resourceName}': {string.Join(", ", matches.Select(t => t.FullName))}. Configure EntityType or TypeResolver to disambiguate.");
+                $"Multiple public CLR types matched file '{fileName}' for resource '{resourceName}': {string.Join(", ", matches.Select(t => t.FullName))}. Configure EntityType, UnifiedTypeResolver, or TypeResolver to disambiguate.");
         }
 
         throw new InvalidOperationException(
-            $"Could not resolve a CLR entity type for resource '{resourceName}' in JSON file '{fileName}'. Set 'EntityType' or configure RestLibFolderOptions.TypeResolver.");
+            $"Could not resolve a CLR entity type for resource '{resourceName}' in JSON file '{fileName}'. Set 'EntityType' or configure RestLibFolderOptions.UnifiedTypeResolver or RestLibFolderOptions.TypeResolver.");
     }
 
     private static Type? ResolveDbType(

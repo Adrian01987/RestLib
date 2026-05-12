@@ -100,8 +100,8 @@ public class RestLibJsonResourceConfiguration
     /// Entries can be direct CLR property names or dot-separated nested
     /// reference-property paths. Query parameter names use snake_case per
     /// segment joined with dots. Nested selections serialize with dotted output
-     /// keys (for example, <c>customer.email</c>).
-     /// </summary>
+    /// keys (for example, <c>customer.email</c>) by default.
+    /// </summary>
     public List<string> FieldSelection { get; set; } = [];
 
     /// <summary>
@@ -141,6 +141,12 @@ public class RestLibJsonResourceConfiguration
     /// Gets or sets JSON-declared validation rules keyed by CLR property name.
     /// </summary>
     public Dictionary<string, RestLibJsonValidationRuleConfiguration> Validation { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Gets or sets the parsed sparse field-selection response shape from JSON configuration.
+    /// Internal loaders populate this from either the legacy array form or the additive object form.
+    /// </summary>
+    internal string? FieldSelectionResponse { get; set; }
 }
 
 /// <summary>

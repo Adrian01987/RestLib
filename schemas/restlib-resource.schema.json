@@ -86,10 +86,17 @@
       "description": "Default sort expression applied when the client does not provide a sort parameter (e.g. 'name:asc,price:desc' or 'customer.name:asc'). All referenced fields must also be listed in Sorting."
     },
     "FieldSelection": {
-      "type": "array",
-      "description": "API model property names or dot-separated nested reference-property paths that can be selected via the fields query parameter. Names are converted to snake_case per segment in the query string, joined with dots. Nested selections serialize back as dotted keys (for example, customer.email). Collection-valued paths are not supported.",
-      "items": { "type": "string" },
-      "uniqueItems": true
+      "description": "API model property names or dot-separated nested reference-property paths that can be selected via the fields query parameter. Names are converted to snake_case per segment in the query string, joined with dots. The legacy array form uses flat dotted response keys by default. The additive object form can opt sparse responses into rebuilt nested objects. Collection-valued paths are not supported.",
+      "oneOf": [
+        {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        {
+          "$ref": "#/$defs/fieldSelectionConfiguration"
+        }
+      ]
     },
     "Search": {
       "type": "array",
@@ -192,6 +199,25 @@
           "Auto": { "const": true }
         }
       }
+    },
+    "fieldSelectionConfiguration": {
+      "type": "object",
+      "description": "Additive field-selection configuration. Use Properties to declare selectable fields and Response to opt sparse nested selections into rebuilt nested JSON objects.",
+      "properties": {
+        "Properties": {
+          "type": "array",
+          "description": "API model property names or dot-separated nested reference-property paths that can be selected via the fields query parameter.",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "Response": {
+          "type": "string",
+          "description": "Sparse nested response shape. Flat keeps dotted keys. Nested rebuilds nested objects for sparse selections only.",
+          "enum": ["Flat", "Nested", "flat", "nested"]
+        }
+      },
+      "required": ["Properties"],
+      "additionalProperties": false
     },
     "keyConfiguration": {
       "type": "object",

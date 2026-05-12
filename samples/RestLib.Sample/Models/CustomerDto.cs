@@ -37,9 +37,4 @@ public class CustomerDto
     /// Gets or sets a value indicating whether the customer profile is active.
     /// </summary>
     public bool IsActive { get; set; }
-
-    /// <summary>
-    /// Gets or sets when the customer was created.
-    /// </summary>
-    public DateTime CreatedAt { get; set; }
 }

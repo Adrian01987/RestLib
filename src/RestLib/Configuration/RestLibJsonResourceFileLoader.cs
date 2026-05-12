@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace RestLib.Configuration;
 
@@ -8,16 +7,6 @@ namespace RestLib.Configuration;
 /// </summary>
 internal static class RestLibJsonResourceFileLoader
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-    };
-
-    static RestLibJsonResourceFileLoader()
-    {
-        JsonOptions.Converters.Add(new JsonStringEnumConverter());
-    }
-
     /// <summary>
     /// Loads a single root-level <see cref="RestLibJsonResourceConfiguration"/> from a JSON file.
     /// </summary>
@@ -38,9 +27,7 @@ internal static class RestLibJsonResourceFileLoader
         try
         {
             var json = File.ReadAllText(resolvedPath);
-            var configuration = JsonSerializer.Deserialize<RestLibJsonResourceConfiguration>(json, JsonOptions)
-                ?? throw new InvalidOperationException(
-                    $"JSON resource file '{resolvedPath}' does not contain a valid RestLib resource definition.");
+            var configuration = RestLibJsonResourceConfigurationLoader.LoadFromJson(json);
 
             ValidateRequiredProperties(configuration, resolvedPath);
             return configuration;

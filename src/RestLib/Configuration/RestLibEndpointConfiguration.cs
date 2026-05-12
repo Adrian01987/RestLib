@@ -397,6 +397,30 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     }
 
     /// <summary>
+    /// Configures field-selection behavior for the resource.
+    /// </summary>
+    /// <param name="configure">An action to configure field-selection behavior.</param>
+    /// <returns>This configuration instance for chaining.</returns>
+    /// <example>
+    /// <code>
+    /// config.AllowFieldSelection(fields =>
+    /// {
+    ///     fields.UseNestedObjectsInResponse();
+    ///     fields.AddProperty(p => p.Id);
+    ///     fields.AddProperty(p => p.Customer!.Email);
+    /// });
+    /// </code>
+    /// </example>
+    public RestLibEndpointConfiguration<TEntity, TKey> AllowFieldSelection(
+        Action<FieldSelectionConfiguration<TEntity>> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+
+        configure(_fieldSelectionConfiguration);
+        return this;
+    }
+
+    /// <summary>
     /// Configures which properties can be selected via the <c>fields</c> query parameter.
     /// Property names are automatically converted to snake_case in the query string.
     /// </summary>
@@ -404,10 +428,10 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     /// <returns>This configuration instance for chaining.</returns>
     /// <example>
     /// <code>
-    /// config.AllowFieldSelection(p => p.Id, p => p.Name, p => p.Price);
+    /// config.AllowFieldSelection(p =&gt; p.Id, p =&gt; p.Name, p =&gt; p.Price);
     /// // Request: ?fields=id,name,price
     ///
-    /// config.AllowFieldSelection(p => p.Customer.Email);
+    /// config.AllowFieldSelection(p =&gt; p.Customer.Email);
     /// // Request: ?fields=id,customer.email
     /// </code>
     /// </example>

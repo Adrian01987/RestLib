@@ -226,7 +226,11 @@ internal static class GetAllHandler
                 // Apply field selection projection if requested
                 if (selectedFields.Count > 0)
                 {
-                    var projectedItems = FieldProjector.ProjectMany(response.Items, selectedFields, jsonOptions);
+                    var projectedItems = FieldProjector.ProjectMany(
+                        response.Items,
+                        selectedFields,
+                        jsonOptions,
+                        config.FieldSelectionConfiguration.ResponseShape);
 
                     // Inject per-item HATEOAS links into projected dictionaries
                     if (options.EnableHateoas && projectedItems is not null)
@@ -574,7 +578,11 @@ internal static class GetAllHandler
 
         if (selectedFields.Count > 0)
         {
-            var projectedItems = FieldProjector.ProjectMany(response.Items, selectedFields, jsonOptions);
+            var projectedItems = FieldProjector.ProjectMany(
+                response.Items,
+                selectedFields,
+                jsonOptions,
+                config.FieldSelectionConfiguration.ResponseShape);
 
             if (options.EnableHateoas && projectedItems is not null)
             {

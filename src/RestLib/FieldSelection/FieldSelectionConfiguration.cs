@@ -4,6 +4,25 @@ using RestLib.Internal;
 namespace RestLib.FieldSelection;
 
 /// <summary>
+/// Defines how sparse field-selection responses render nested property paths.
+/// </summary>
+public enum FieldSelectionResponseShape
+{
+    /// <summary>
+    /// Nested selections render as flat dotted keys (for example, <c>customer.email</c>).
+    /// This is the default for backward compatibility.
+    /// </summary>
+    Flat,
+
+    /// <summary>
+    /// Nested selections render as rebuilt nested JSON objects (for example,
+    /// <c>{"customer":{"email":"..."}}</c>) when the sparse projector path is used.
+    /// Dense fallback responses continue to render flat dotted keys.
+    /// </summary>
+    Nested,
+}
+
+/// <summary>
 /// Represents configuration for a single selectable field.
 /// </summary>
 public class FieldSelectionPropertyConfiguration
@@ -28,9 +47,30 @@ public class FieldSelectionConfiguration<TEntity> where TEntity : class
     private readonly List<FieldSelectionPropertyConfiguration> _properties = [];
 
     /// <summary>
+    /// Gets or sets how sparse field-selection responses render nested property paths.
+    /// Defaults to <see cref="FieldSelectionResponseShape.Flat"/> for backward compatibility.
+    /// Dense fallback responses continue to use flat dotted output even when
+    /// <see cref="FieldSelectionResponseShape.Nested"/> is selected.
+    /// </summary>
+    public FieldSelectionResponseShape ResponseShape { get; set; } = FieldSelectionResponseShape.Flat;
+
+    /// <summary>
     /// Gets the configured selectable properties.
     /// </summary>
     public IReadOnlyList<FieldSelectionPropertyConfiguration> Properties => _properties;
+
+    /// <summary>
+    /// Configures sparse field-selection responses to render nested property paths as
+    /// nested JSON objects instead of flat dotted keys.
+    /// This opt-in affects only the sparse projection path; dense fallback responses
+    /// continue to use flat dotted output.
+    /// </summary>
+    /// <returns>This configuration instance for chaining.</returns>
+    public FieldSelectionConfiguration<TEntity> UseNestedObjectsInResponse()
+    {
+        ResponseShape = FieldSelectionResponseShape.Nested;
+        return this;
+    }
 
     /// <summary>
     /// Finds a configured property by its snake_case query parameter name.

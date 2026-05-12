@@ -131,7 +131,11 @@ internal static class GetByIdHandler
                 // Apply field selection projection if requested
                 if (selectedFields.Count > 0)
                 {
-                    var projected = FieldProjector.Project(entity, selectedFields, jsonOptions);
+                    var projected = FieldProjector.Project(
+                        entity,
+                        selectedFields,
+                        jsonOptions,
+                        config.FieldSelectionConfiguration.ResponseShape);
                     if (projected is not null)
                     {
                         // Inject HATEOAS links into projected dictionary
@@ -411,7 +415,11 @@ internal static class GetByIdHandler
 
         if (selectedFields.Count > 0)
         {
-            var projected = FieldProjector.Project(apiEntity, selectedFields, jsonOptions);
+            var projected = FieldProjector.Project(
+                apiEntity,
+                selectedFields,
+                jsonOptions,
+                config.FieldSelectionConfiguration.ResponseShape);
             if (projected is not null)
             {
                 if (options.EnableHateoas)

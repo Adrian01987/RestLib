@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.DependencyInjection;
+using RestLib.FieldSelection;
 using RestLib.Hooks;
 using RestLib.Internal;
 using RestLib.Search;
@@ -93,9 +94,14 @@ internal static class RestLibJsonResourceBuilder
     /// <typeparam name="TKey">The key type.</typeparam>
     /// <param name="endpointConfiguration">The endpoint configuration to populate.</param>
     /// <param name="jsonConfiguration">The JSON-based resource configuration.</param>
+    /// <param name="requireDbType">
+    /// <c>true</c> to require <c>Mapping.DbType</c>; <c>false</c> when the DB type
+    /// was already resolved by the folder loader.
+    /// </param>
     internal static void ApplyMapping<TApiModel, TDbModel, TKey>(
         RestLibEndpointConfiguration<TApiModel, TDbModel, TKey> endpointConfiguration,
-        RestLibJsonResourceConfiguration jsonConfiguration)
+        RestLibJsonResourceConfiguration jsonConfiguration,
+        bool requireDbType = true)
         where TApiModel : class
         where TDbModel : class
         where TKey : notnull
@@ -114,6 +120,14 @@ internal static class RestLibJsonResourceBuilder
 
         if (string.IsNullOrWhiteSpace(mapping.DbType))
         {
+            if (!requireDbType)
+            {
+                ValidateMappingOptions(jsonConfiguration, mapping);
+                endpointConfiguration.MapperName = mapping.Mapper;
+                endpointConfiguration.UseAutoMapper = mapping.Auto;
+                return;
+            }
+
             throw new InvalidOperationException(
                 $"Resource '{jsonConfiguration.Name}' declares a Mapping section but does not set Mapping.DbType.");
         }
@@ -131,16 +145,31 @@ internal static class RestLibJsonResourceBuilder
                 $"Resource '{jsonConfiguration.Name}' configures Mapping.DbType '{mapping.DbType}', but the typed registration uses DB model '{typeof(TDbModel).AssemblyQualifiedName}'.");
         }
 
-        if (!string.IsNullOrWhiteSpace(mapping.Mapper) && mapping.Auto)
-        {
-            throw new InvalidOperationException(
-                $"Resource '{jsonConfiguration.Name}' cannot configure both Mapping.Mapper and Mapping.Auto.");
-        }
+        ValidateMappingOptions(jsonConfiguration, mapping);
 
         _ = UsesDbHookModel(jsonConfiguration);
 
         endpointConfiguration.MapperName = mapping.Mapper;
         endpointConfiguration.UseAutoMapper = mapping.Auto;
+    }
+
+    /// <summary>
+    /// Applies JSON mapping options when the folder loader has already resolved the
+    /// DB model type.
+    /// </summary>
+    /// <typeparam name="TApiModel">The API model type.</typeparam>
+    /// <typeparam name="TDbModel">The DB model type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="endpointConfiguration">The endpoint configuration to populate.</param>
+    /// <param name="jsonConfiguration">The JSON-based resource configuration.</param>
+    internal static void ApplyResolvedMapping<TApiModel, TDbModel, TKey>(
+        RestLibEndpointConfiguration<TApiModel, TDbModel, TKey> endpointConfiguration,
+        RestLibJsonResourceConfiguration jsonConfiguration)
+        where TApiModel : class
+        where TDbModel : class
+        where TKey : notnull
+    {
+        ApplyMapping(endpointConfiguration, jsonConfiguration, requireDbType: false);
     }
 
     /// <summary>
@@ -167,6 +196,19 @@ internal static class RestLibJsonResourceBuilder
         throw new InvalidOperationException(
             $"Resource '{jsonConfiguration.Name}' has an invalid Mapping.HookModel value '{hookModel}'. " +
             "Valid values are 'Api' and 'Db'.");
+    }
+
+    private static void ValidateMappingOptions(
+        RestLibJsonResourceConfiguration jsonConfiguration,
+        RestLibJsonMappingConfiguration mapping)
+    {
+        if (!string.IsNullOrWhiteSpace(mapping.Mapper) && mapping.Auto)
+        {
+            throw new InvalidOperationException(
+                $"Resource '{jsonConfiguration.Name}' cannot configure both Mapping.Mapper and Mapping.Auto.");
+        }
+
+        _ = UsesDbHookModel(jsonConfiguration);
     }
 
     private static void ApplyKeySelector<TEntity, TKey>(
@@ -518,7 +560,18 @@ internal static class RestLibJsonResourceBuilder
         if (jsonConfiguration.FieldSelection.Count == 0)
             return;
 
-        endpointConfiguration.AllowFieldSelection([.. jsonConfiguration.FieldSelection]);
+        endpointConfiguration.AllowFieldSelection(configuration =>
+        {
+            configuration.ResponseShape = ParseFieldSelectionResponseShape(
+                jsonConfiguration.FieldSelectionResponse,
+                jsonConfiguration.Name);
+
+            foreach (var propertyName in jsonConfiguration.FieldSelection)
+            {
+                var propertyPath = NamingUtils.ResolvePropertyPath<TEntity>(propertyName, nameof(jsonConfiguration.FieldSelection));
+                configuration.AddProperty(propertyPath.ClrPath, propertyPath.QueryPath);
+            }
+        });
     }
 
     private static void ApplySearch<TEntity, TKey>(
@@ -546,6 +599,24 @@ internal static class RestLibJsonResourceBuilder
         }
 
         endpointConfiguration.AllowSearch([.. jsonConfiguration.Search]);
+    }
+
+    private static FieldSelectionResponseShape ParseFieldSelectionResponseShape(
+        string? response,
+        string resourceName)
+    {
+        if (string.IsNullOrWhiteSpace(response))
+        {
+            return FieldSelectionResponseShape.Flat;
+        }
+
+        if (Enum.TryParse<FieldSelectionResponseShape>(response, ignoreCase: true, out var parsed))
+        {
+            return parsed;
+        }
+
+        throw new InvalidOperationException(
+            $"Resource '{resourceName}' configures FieldSelection.Response as '{response}', but only 'Flat' and 'Nested' are supported.");
     }
 
     private static void ApplyValidation<TEntity, TKey>(
