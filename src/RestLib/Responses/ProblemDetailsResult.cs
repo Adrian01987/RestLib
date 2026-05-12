@@ -1,9 +1,11 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using RestLib.Configuration;
 using RestLib.FieldSelection;
 using RestLib.Filtering;
 using RestLib.Logging;
+using RestLib.Search;
 using RestLib.Sorting;
 
 namespace RestLib.Responses;
@@ -187,6 +189,23 @@ public static class ProblemDetailsResult
     }
 
     /// <summary>
+    /// Creates a 400 Invalid Search result.
+    /// </summary>
+    /// <param name="errors">The search validation errors.</param>
+    /// <param name="instance">The request path.</param>
+    /// <param name="jsonOptions">Optional JSON serializer options.</param>
+    /// <param name="logger">Optional logger; when provided, the response is logged at the appropriate level.</param>
+    public static IResult InvalidSearch(
+        IReadOnlyList<SearchValidationError> errors,
+        string? instance = null,
+        JsonSerializerOptions? jsonOptions = null,
+        ILogger? logger = null)
+    {
+        var problem = ProblemDetailsFactory.InvalidSearch(errors, instance);
+        return Create(problem, jsonOptions, logger);
+    }
+
+    /// <summary>
     /// Creates a 400 Invalid Batch Request result.
     /// </summary>
     /// <param name="detail">Description of the batch validation error.</param>
@@ -308,6 +327,29 @@ public static class ProblemDetailsResult
         ILogger? logger = null)
     {
         var problem = ProblemDetailsFactory.HookShortCircuit(statusCode, instance);
+        return Create(problem, jsonOptions, logger);
+    }
+
+    /// <summary>
+    /// Creates a 404 Not Found result using configured key-route metadata.
+    /// </summary>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="entityName">The entity type name.</param>
+    /// <param name="id">The entity identifier that was not found.</param>
+    /// <param name="keyRouteParts">The configured key-route metadata.</param>
+    /// <param name="instance">The request path.</param>
+    /// <param name="jsonOptions">Optional JSON serializer options.</param>
+    /// <param name="logger">Optional logger; when provided, the response is logged at the appropriate level.</param>
+    internal static IResult NotFound<TKey>(
+        string entityName,
+        TKey id,
+        IReadOnlyList<RestLibKeyRoutePart<TKey>> keyRouteParts,
+        string? instance = null,
+        JsonSerializerOptions? jsonOptions = null,
+        ILogger? logger = null)
+        where TKey : notnull
+    {
+        var problem = ProblemDetailsFactory.NotFound(entityName, id, keyRouteParts, instance);
         return Create(problem, jsonOptions, logger);
     }
 }

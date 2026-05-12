@@ -114,3 +114,107 @@ public class CategoryEntity
     /// </summary>
     public DateTime CreatedAt { get; set; }
 }
+
+/// <summary>
+/// Composite-key entity used in EF Core integration tests.
+/// </summary>
+public class TenantProductEntity
+{
+    /// <summary>
+    /// Gets or sets the tenant identifier.
+    /// </summary>
+    public Guid TenantId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the SKU.
+    /// </summary>
+    [Required]
+    [StringLength(64)]
+    public string Sku { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the product name.
+    /// </summary>
+    [Required]
+    [StringLength(100)]
+    public string ProductName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the unit price.
+    /// </summary>
+    [Range(0, double.MaxValue)]
+    public decimal UnitPrice { get; set; }
+
+    /// <summary>
+    /// Gets or sets the stock quantity.
+    /// </summary>
+    public int StockQuantity { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the product is active.
+    /// </summary>
+    public bool IsActive { get; set; }
+
+    /// <summary>
+    /// Gets or sets the creation timestamp.
+    /// </summary>
+    public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>
+/// Customer entity used for nested EF Core path tests.
+/// </summary>
+public class OrderCustomerEntity
+{
+    /// <summary>
+    /// Gets or sets the customer identifier.
+    /// </summary>
+    public Guid Id { get; set; }
+
+    /// <summary>
+    /// Gets or sets the customer name.
+    /// </summary>
+    [Required]
+    [StringLength(100)]
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the customer email.
+    /// </summary>
+    [Required]
+    [StringLength(200)]
+    public string Email { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Order entity used for nested EF Core path tests.
+/// </summary>
+public class OrderEntity
+{
+    /// <summary>
+    /// Gets or sets the order identifier.
+    /// </summary>
+    public Guid Id { get; set; }
+
+    /// <summary>
+    /// Gets or sets the order number.
+    /// </summary>
+    [Required]
+    [StringLength(64)]
+    public string OrderNumber { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the total amount.
+    /// </summary>
+    public decimal TotalAmount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the customer identifier.
+    /// </summary>
+    public Guid CustomerId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the customer navigation.
+    /// </summary>
+    public OrderCustomerEntity? Customer { get; set; }
+}

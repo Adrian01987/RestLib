@@ -71,13 +71,8 @@ public class FilterConfiguration<TEntity>
         Expression<Func<TEntity, TProperty>> propertyExpression,
         params IReadOnlyList<FilterOperator> allowedOperators)
     {
-        var memberExpression = propertyExpression.Body as MemberExpression
-            ?? throw new ArgumentException("Expression must be a member expression", nameof(propertyExpression));
-
-        var propertyName = memberExpression.Member.Name;
-        var queryParamName = NamingUtils.ConvertToSnakeCase(propertyName);
-
-        AddPropertyInternal(propertyName, queryParamName, typeof(TProperty), allowedOperators);
+        var propertyPath = NamingUtils.ResolvePropertyPath(propertyExpression, nameof(propertyExpression));
+        AddPropertyInternal(propertyPath.ClrPath, propertyPath.QueryPath, propertyPath.LeafPropertyType, allowedOperators);
     }
 
     /// <summary>

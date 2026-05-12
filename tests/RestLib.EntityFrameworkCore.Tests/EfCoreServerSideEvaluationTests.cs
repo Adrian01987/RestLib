@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using RestLib.EntityFrameworkCore.Tests.Fakes;
 using RestLib.Filtering;
 using RestLib.Pagination;
+using RestLib.Search;
 using RestLib.Sorting;
 using Xunit;
 
@@ -200,6 +201,39 @@ public class EfCoreServerSideEvaluationTests : IAsyncLifetime
             typedValue: "Widget",
             @operator: FilterOperator.Contains);
         var request = CreatePaginationRequest(filters: [filter]);
+
+        // Act
+        var result = await _repository.GetAllAsync(request);
+
+        // Assert
+        AssertNoClientSideEvaluationWarnings();
+        result.Items.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task GetAll_Search_NoClientSideEvaluation()
+    {
+        // Arrange
+        await SeedProductsAsync(
+            CreateProduct(name: "Blue Widget"),
+            CreateProduct(name: "Red Widget"),
+            CreateProduct(name: "Green Gadget"));
+
+        var request = CreatePaginationRequest(
+            search: new SearchRequest
+            {
+                Term = "widget",
+                QueryParameterName = "q",
+                CaseSensitive = false,
+                Properties =
+                [
+                    new SearchPropertyConfiguration
+                    {
+                        PropertyName = "ProductName",
+                        QueryParameterName = "product_name"
+                    }
+                ]
+            });
 
         // Act
         var result = await _repository.GetAllAsync(request);
@@ -410,6 +444,7 @@ public class EfCoreServerSideEvaluationTests : IAsyncLifetime
     private static PaginationRequest CreatePaginationRequest(
         IReadOnlyList<FilterValue>? filters = null,
         IReadOnlyList<SortField>? sortFields = null,
+        SearchRequest? search = null,
         int limit = 100,
         string? cursor = null)
     {
@@ -417,6 +452,7 @@ public class EfCoreServerSideEvaluationTests : IAsyncLifetime
         {
             Filters = filters ?? [],
             SortFields = sortFields ?? [],
+            Search = search,
             Limit = limit,
             Cursor = cursor ?? string.Empty
         };

@@ -13,6 +13,7 @@ using RestLib.Sample.Models;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
+var useMigrations = builder.Configuration.GetValue<bool>("RestLibSample:UseMigrations");
 
 // Add RestLib services with in-memory repositories (pre-seeded)
 // EnableETagSupport is a global option — applies to all resources (Categories, Products, and Orders)
@@ -33,6 +34,7 @@ builder.Services.AddRestLibInMemoryWithData(o => o.Id, Guid.NewGuid, SeedData.Ge
 builder.Services.AddDbContext<SampleDbContext>(options =>
     options.UseSqlite("Data Source=restlib-sample.db"));
 builder.Services.AddRestLibEfCore<SampleDbContext, Customer, Guid>();
+builder.Services.AddRestLibMapper<CustomerDto, Customer, CustomerMapper>();
 
 builder.Services.AddNamedHook<Product, Guid>(HookNames.SetUpdatedAt, ctx =>
 {
@@ -44,18 +46,10 @@ builder.Services.AddNamedHook<Product, Guid>(HookNames.SetUpdatedAt, ctx =>
     return Task.CompletedTask;
 });
 
-var categoryResource = builder.Configuration
-    .GetSection("RestLib:Resources:Categories")
-    .Get<RestLibJsonResourceConfiguration>()
-    ?? throw new InvalidOperationException("Missing RestLib category resource configuration.");
+builder.Services.AddRestLibFromFolder("Models");
 
-var productResource = builder.Configuration
-    .GetSection("RestLib:Resources:Products")
-    .Get<RestLibJsonResourceConfiguration>()
-    ?? throw new InvalidOperationException("Missing RestLib product resource configuration.");
-
-builder.Services.AddJsonResource<Category, Guid>(categoryResource);
-builder.Services.AddJsonResource<Product, Guid>(productResource);
+builder.Services.AddJsonResource<Category, Guid>(
+    builder.Configuration.GetSection("RestLib:Resources:AppSettingsCompatibilityExample"));
 
 // Register rate limiting policies
 builder.Services.AddRateLimiter(options =>
@@ -94,16 +88,29 @@ builder.Services.AddHealthChecks();
 
 var app = builder.Build();
 
-// Ensure the SQLite database exists and seed initial data.
+// Demo path: keep EnsureCreated as the default for the sample SQLite database so the
+// sample and E2E flow stay zero-setup.
+//
+// Production path: prefer EF Core migrations instead. Set RestLibSample:UseMigrations=true
+// and apply migrations from startup, or run `dotnet ef database update` as part of deployment.
+// See docs/guides/ef-core-migrations.md for the recommended production workflow.
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<SampleDbContext>();
-    db.Database.EnsureCreated();
+
+    if (useMigrations)
+    {
+        await db.Database.MigrateAsync();
+    }
+    else
+    {
+        db.Database.EnsureCreated();
+    }
 
     if (!db.Customers.Any())
     {
         db.Customers.AddRange(SeedData.GetCustomers());
-        db.SaveChanges();
+        await db.SaveChangesAsync();
     }
 }
 
@@ -118,31 +125,9 @@ app.MapScalarApiReference("/", options =>
 // Health check endpoint
 app.MapHealthChecks("/health");
 
-// Map RestLib endpoints from JSON resource configuration (Categories + Products)
+// Map RestLib endpoints from JSON resource configuration (Categories, Products, and Customers)
 app.UseRateLimiter();
 app.MapJsonResources();
-
-// Map Customer endpoints: EF Core adapter with SQLite.
-// Demonstrates RestLib with a real database alongside the InMemory adapter above.
-app.MapRestLib<Customer, Guid>("/api/customers", cfg =>
-{
-    cfg.AllowAnonymous();
-    cfg.AllowFiltering(c => c.City);
-    cfg.AllowFiltering(c => c.IsActive);
-    cfg.AllowFiltering(c => c.Name, FilterOperators.String);
-    cfg.AllowSorting(c => c.Name, c => c.CreatedAt);
-    cfg.DefaultSort("name:asc");
-    cfg.AllowFieldSelection(c => c.Id, c => c.Name, c => c.Email, c => c.City, c => c.IsActive);
-    cfg.EnableBatch(BatchAction.Create, BatchAction.Delete);
-    cfg.OpenApi.Tag = "Customer";
-    cfg.OpenApi.TagDescription = "Manage customers (EF Core + SQLite)";
-    cfg.OpenApi.Summaries.GetAll = "List customers";
-    cfg.OpenApi.Summaries.GetById = "Get customer by id";
-    cfg.OpenApi.Summaries.Create = "Create a customer";
-    cfg.OpenApi.Summaries.Update = "Replace a customer";
-    cfg.OpenApi.Summaries.Patch = "Patch a customer";
-    cfg.OpenApi.Summaries.Delete = "Delete a customer";
-});
 
 // Map Order endpoints using the fluent C# API — demonstrates features not shown by JSON config above
 app.MapRestLib<Order, Guid>("/api/orders", cfg =>

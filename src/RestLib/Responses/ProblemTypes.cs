@@ -31,6 +31,9 @@ public static class ProblemTypes
     /// <summary>Invalid field selection parameters (400).</summary>
     public const string InvalidFields = "/problems/invalid-fields";
 
+    /// <summary>Invalid search parameter value (400).</summary>
+    public const string InvalidSearch = "/problems/invalid-search";
+
     /// <summary>Invalid batch request structure or action (400).</summary>
     public const string InvalidBatchRequest = "/problems/invalid-batch-request";
 

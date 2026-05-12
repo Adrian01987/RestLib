@@ -3,7 +3,9 @@ using System.Reflection;
 using System.Text.Json;
 using RestLib.Abstractions;
 using RestLib.Filtering;
+using RestLib.Internal;
 using RestLib.Pagination;
+using RestLib.Search;
 using RestLib.Sorting;
 
 namespace RestLib.InMemory;
@@ -15,11 +17,11 @@ namespace RestLib.InMemory;
 /// </summary>
 /// <typeparam name="TEntity">The entity type.</typeparam>
 /// <typeparam name="TKey">The key type.</typeparam>
-public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBatchRepository<TEntity, TKey>, ICountableRepository<TEntity, TKey>
+public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBatchRepository<TEntity, TKey>, ICountableRepository<TEntity, TKey>, IQueryCountableRepository<TEntity, TKey>
     where TEntity : class
     where TKey : notnull
 {
-    private static readonly ConcurrentDictionary<string, PropertyInfo?> _propertyCache = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, PropertyInfo[]> _propertyPathCache = new(StringComparer.OrdinalIgnoreCase);
     private static PropertyInfo? _cachedKeyProperty;
     private static bool _keyPropertyResolved;
 
@@ -69,6 +71,9 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
 
         // Apply filters
         items = ApplyFilters(items, request.Filters);
+
+        // Apply search
+        items = ApplySearch(items, request.Search);
 
         // Apply sorting (dynamic if sort fields provided, otherwise by key)
         var orderedItems = ApplySorting(items, request.SortFields).ToList();
@@ -331,6 +336,17 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
         return Task.FromResult((long)items.Count());
     }
 
+    /// <inheritdoc />
+    public Task<long> CountAsync(PaginationRequest query, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        var items = _store.Values.AsEnumerable();
+        items = ApplyFilters(items, query.Filters);
+        items = ApplySearch(items, query.Search);
+        return Task.FromResult((long)items.Count());
+    }
+
     /// <summary>
     /// Clears all entities from the repository.
     /// </summary>
@@ -553,11 +569,64 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
         return typedValues.Any(v => CompareValues(entityValue, v) == 0);
     }
 
-    private static PropertyInfo? GetCachedProperty(string propertyName)
+    private static PropertyInfo[]? GetCachedPropertyPath(string propertyPath)
     {
-        return _propertyCache.GetOrAdd(propertyName, name =>
-            typeof(TEntity).GetProperty(name,
-                BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase));
+        if (_propertyPathCache.TryGetValue(propertyPath, out var cachedPath))
+        {
+            return cachedPath;
+        }
+
+        try
+        {
+            var resolvedPath = NamingUtils.ResolvePropertyPath(typeof(TEntity), propertyPath, nameof(propertyPath));
+            var properties = new PropertyInfo[resolvedPath.ClrSegments.Count];
+            var currentType = typeof(TEntity);
+
+            for (var i = 0; i < resolvedPath.ClrSegments.Count; i++)
+            {
+                var property = currentType.GetProperty(
+                    resolvedPath.ClrSegments[i],
+                    BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+                if (property is null)
+                {
+                    return null;
+                }
+
+                properties[i] = property;
+                currentType = property.PropertyType;
+            }
+
+            return _propertyPathCache.GetOrAdd(propertyPath, properties);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static bool TryGetPropertyPathValue(TEntity entity, string propertyPath, out object? value)
+    {
+        var properties = GetCachedPropertyPath(propertyPath);
+        if (properties is null)
+        {
+            value = null;
+            return false;
+        }
+
+        object? current = entity;
+        foreach (var property in properties)
+        {
+            if (current is null)
+            {
+                value = null;
+                return true;
+            }
+
+            current = property.GetValue(current);
+        }
+
+        value = current;
+        return true;
     }
 
     private IEnumerable<TEntity> ApplyFilters(IEnumerable<TEntity> items, IReadOnlyList<FilterValue> filters)
@@ -567,6 +636,16 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
             items = items.Where(e => MatchesFilter(e, filter));
         }
         return items;
+    }
+
+    private IEnumerable<TEntity> ApplySearch(IEnumerable<TEntity> items, SearchRequest? search)
+    {
+        if (search is null || search.Properties.Count == 0)
+        {
+            return items;
+        }
+
+        return items.Where(entity => MatchesSearch(entity, search));
     }
 
     private IEnumerable<TEntity> ApplySorting(
@@ -583,9 +662,11 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
 
         foreach (var field in sortFields)
         {
-            var property = GetCachedProperty(field.PropertyName)!;
-
-            Func<TEntity, object?> selector = e => property.GetValue(e);
+            Func<TEntity, object?> selector = e =>
+            {
+                _ = TryGetPropertyPathValue(e, field.PropertyName, out var value);
+                return value;
+            };
 
             if (ordered is null)
             {
@@ -607,15 +688,12 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
 
     private bool MatchesFilter(TEntity entity, FilterValue filter)
     {
-        var property = GetCachedProperty(filter.PropertyName);
-
-        if (property == null)
+        if (!TryGetPropertyPathValue(entity, filter.PropertyName, out var entityValue))
         {
             return true; // Skip unknown properties
         }
 
-        var entityValue = property.GetValue(entity);
-        var filterValue = filter.TypedValue ?? ConvertFilterValue(filter.RawValue, property.PropertyType);
+        var filterValue = filter.TypedValue ?? ConvertFilterValue(filter.RawValue, filter.PropertyType);
 
         return filter.Operator switch
         {
@@ -631,6 +709,26 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
             FilterOperator.In => InValues(entityValue, filter.TypedValues),
             _ => CompareValues(entityValue, filterValue) == 0,
         };
+    }
+
+    private bool MatchesSearch(TEntity entity, SearchRequest search)
+    {
+        var comparison = search.CaseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+
+        foreach (var property in search.Properties)
+        {
+            if (!TryGetPropertyPathValue(entity, property.PropertyName, out var entityValue))
+            {
+                continue;
+            }
+
+            if (entityValue is string stringValue && stringValue.Contains(search.Term, comparison))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private TEntity SetKeyOnEntity(TEntity entity, TKey key)

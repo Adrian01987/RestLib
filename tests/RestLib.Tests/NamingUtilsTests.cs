@@ -256,5 +256,24 @@ public class NamingUtilsTests
         prop.PropertyType.Should().Be(typeof(bool));
     }
 
+    [Fact]
+    [Trait("Category", "Story6.2")]
+    public void ResolvePropertyPath_ByteArrayLeaf_ReturnsDirectPropertyPath()
+    {
+        // Act
+        var propertyPath = NamingUtils.ResolvePropertyPath<ByteArrayEntity>(nameof(ByteArrayEntity.Blob), "propertyPath");
+
+        // Assert
+        propertyPath.ClrPath.Should().Be(nameof(ByteArrayEntity.Blob));
+        propertyPath.QueryPath.Should().Be("blob");
+        propertyPath.IsDirect.Should().BeTrue();
+        propertyPath.LeafPropertyType.Should().Be(typeof(byte[]));
+    }
+
     #endregion
+
+    private sealed class ByteArrayEntity
+    {
+        public byte[] Blob { get; set; } = [];
+    }
 }

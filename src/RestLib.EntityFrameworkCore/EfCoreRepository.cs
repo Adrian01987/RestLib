@@ -7,7 +7,9 @@ using Microsoft.Extensions.Logging;
 using RestLib.Abstractions;
 using RestLib.FieldSelection;
 using RestLib.Filtering;
+using RestLib.Internal;
 using RestLib.Pagination;
+using RestLib.Search;
 using RestLib.Sorting;
 
 namespace RestLib.EntityFrameworkCore;
@@ -22,6 +24,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     : IRepository<TEntity, TKey>,
       IBatchRepository<TEntity, TKey>,
       ICountableRepository<TEntity, TKey>,
+      IQueryCountableRepository<TEntity, TKey>,
       IFieldSelectionProjectionRepository<TEntity, TKey>
     where TContext : DbContext
     where TEntity : class
@@ -56,6 +59,9 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             method.IsGenericMethodDefinition &&
             method.GetGenericArguments().Length == 2 &&
             method.GetParameters().Length == 2);
+    private static readonly MethodInfo StringCompareMethod = typeof(string)
+        .GetMethod(nameof(string.Compare), [typeof(string), typeof(string)])
+        ?? throw new InvalidOperationException("RestLib could not resolve string.Compare(string, string).");
     private static readonly IReadOnlyDictionary<string, PropertyInfo> SnakeCasePropertyMap = BuildSnakeCasePropertyMap();
     private static readonly JsonSerializerOptions PatchJsonOptions = new()
     {
@@ -65,6 +71,8 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     private readonly TContext _context;
     private readonly EfCoreRepositoryOptions<TEntity, TKey> _options;
     private readonly Expression<Func<TEntity, TKey>> _keySelector;
+    private readonly KeyMetadata _keyMetadata;
+    private readonly bool _usesExplicitKeySelector;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="EfCoreRepository{TContext, TEntity, TKey}"/> class.
@@ -75,7 +83,9 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _options = options ?? throw new ArgumentNullException(nameof(options));
-        _keySelector = _options.KeySelector ?? ResolveKeySelector();
+        _usesExplicitKeySelector = _options.KeySelector is not null;
+        _keyMetadata = ResolveKeyMetadata();
+        _keySelector = _keyMetadata.CompositeSelector;
     }
 
     /// <inheritdoc />
@@ -83,7 +93,13 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     {
         if (!_options.UseAsNoTracking)
         {
-            return _context.Set<TEntity>().FindAsync([id], ct).AsTask();
+            if (!_usesExplicitKeySelector)
+            {
+                return _context.Set<TEntity>().FindAsync(GetKeyValues(id), ct).AsTask();
+            }
+
+            return _context.Set<TEntity>()
+                .FirstOrDefaultAsync(BuildKeyEqualsPredicate(id), ct);
         }
 
         var predicate = BuildKeyEqualsPredicate(id);
@@ -102,9 +118,16 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     {
         ArgumentNullException.ThrowIfNull(selectedFields);
 
-        if (!TryBuildProjectionPlan(selectedFields, filters ?? [], sortFields ?? [], out var projectionPlan))
+        if (!TryBuildProjectionPlan(selectedFields, filters ?? [], sortFields ?? [], search: null, out var projectionPlan))
         {
-            return null;
+            if (!TryBuildNavigationLoadPaths(selectedFields, out var includePaths))
+            {
+                return null;
+            }
+
+            var includeQuery = ApplyIncludes(GetBaseProjectionQuery(), includePaths);
+            var includePredicate = BuildKeyEqualsPredicate(id);
+            return await includeQuery.FirstOrDefaultAsync(includePredicate, ct);
         }
 
         var predicate = BuildKeyEqualsPredicate(id);
@@ -119,6 +142,11 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         ArgumentNullException.ThrowIfNull(pagination);
 
         var query = GetBaseQuery();
+        if (pagination.Search is not null)
+        {
+            query = ApplySearch(query, pagination.Search);
+        }
+
         if (pagination.Filters.Count > 0)
         {
             query = ApplyComparisonFilters(query, pagination.Filters);
@@ -141,7 +169,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             keysetPlan = null;
             LogKeysetFallback(effectiveSortFields);
             offsetStartIndex = DecodeOffsetCursor(pagination.Cursor);
-            orderedQuery = SortBuilder.ApplySorting(query, pagination.SortFields, _keySelector);
+            orderedQuery = SortBuilder.ApplySorting(query, pagination.SortFields, _keyMetadata.SortKeyParts);
         }
 
         var takeCount = pagination.Limit == int.MaxValue ? int.MaxValue : pagination.Limit + 1;
@@ -199,13 +227,23 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         ArgumentNullException.ThrowIfNull(pagination);
         ArgumentNullException.ThrowIfNull(selectedFields);
 
-        if (!TryBuildProjectionPlan(selectedFields, pagination.Filters, pagination.SortFields, out var projectionPlan))
+        if (!TryBuildProjectionPlan(selectedFields, pagination.Filters, pagination.SortFields, pagination.Search, out var projectionPlan))
         {
-            return null;
+            if (!TryBuildNavigationLoadPaths(selectedFields, out var includePaths))
+            {
+                return null;
+            }
+
+            return await GetAllWithIncludedNavigationsAsync(pagination, includePaths, ct);
         }
 
         var projection = projectionPlan!;
         var query = BuildProjectedQuery(GetBaseProjectionQuery(), projection);
+        if (pagination.Search is not null)
+        {
+            query = ApplySearch(query, pagination.Search);
+        }
+
         if (pagination.Filters.Count > 0)
         {
             query = ApplyComparisonFilters(query, pagination.Filters);
@@ -228,7 +266,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             keysetPlan = null;
             LogKeysetFallback(effectiveSortFields);
             offsetStartIndex = DecodeOffsetCursor(pagination.Cursor);
-            orderedQuery = SortBuilder.ApplySorting(query, pagination.SortFields, _keySelector);
+            orderedQuery = SortBuilder.ApplySorting(query, pagination.SortFields, _keyMetadata.SortKeyParts);
         }
 
         var takeCount = pagination.Limit == int.MaxValue ? int.MaxValue : pagination.Limit + 1;
@@ -304,7 +342,9 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     {
         ArgumentNullException.ThrowIfNull(entity);
 
-        var existing = await _context.Set<TEntity>().FindAsync([id], ct);
+        var existing = _usesExplicitKeySelector
+            ? await _context.Set<TEntity>().FirstOrDefaultAsync(BuildKeyEqualsPredicate(id), ct)
+            : await _context.Set<TEntity>().FindAsync(GetKeyValues(id), ct);
         if (existing is null)
         {
             return null;
@@ -331,7 +371,9 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     /// <inheritdoc />
     public async Task<TEntity?> PatchAsync(TKey id, JsonElement patchDocument, CancellationToken ct = default)
     {
-        var existing = await _context.Set<TEntity>().FindAsync([id], ct);
+        var existing = _usesExplicitKeySelector
+            ? await _context.Set<TEntity>().FirstOrDefaultAsync(BuildKeyEqualsPredicate(id), ct)
+            : await _context.Set<TEntity>().FindAsync(GetKeyValues(id), ct);
         if (existing is null)
         {
             return null;
@@ -364,7 +406,9 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     /// <inheritdoc />
     public async Task<bool> DeleteAsync(TKey id, CancellationToken ct = default)
     {
-        var existing = await _context.Set<TEntity>().FindAsync([id], ct);
+        var existing = _usesExplicitKeySelector
+            ? await _context.Set<TEntity>().FirstOrDefaultAsync(BuildKeyEqualsPredicate(id), ct)
+            : await _context.Set<TEntity>().FindAsync(GetKeyValues(id), ct);
         if (existing is null)
         {
             return false;
@@ -428,17 +472,9 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             return [];
         }
 
-        var getKey = _keySelector.Compile();
+        var getKey = _keyMetadata.KeyAccessor;
         var keys = entities.Select(getKey).ToList();
-        var containsMethod = typeof(Enumerable)
-            .GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .Single(method => method.Name == nameof(Enumerable.Contains) && method.GetParameters().Length == 2)
-            .MakeGenericMethod(typeof(TKey));
-        var containsCall = Expression.Call(
-            containsMethod,
-            Expression.Constant(keys),
-            _keySelector.Body);
-        var predicate = Expression.Lambda<Func<TEntity, bool>>(containsCall, _keySelector.Parameters);
+        var predicate = BuildKeysContainPredicate(keys);
         var existingEntities = await _context.Set<TEntity>()
             .Where(predicate)
             .ToListAsync(ct);
@@ -578,17 +614,8 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             return new Dictionary<TKey, TEntity>();
         }
 
-        var idList = ids.ToList();
-        var containsMethod = typeof(Enumerable)
-            .GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .Single(method => method.Name == nameof(Enumerable.Contains) && method.GetParameters().Length == 2)
-            .MakeGenericMethod(typeof(TKey));
-        var containsCall = Expression.Call(
-            containsMethod,
-            Expression.Constant(idList),
-            _keySelector.Body);
-        var predicate = Expression.Lambda<Func<TEntity, bool>>(containsCall, _keySelector.Parameters);
-        var getKey = _keySelector.Compile();
+        var predicate = BuildKeysContainPredicate(ids);
+        var getKey = _keyMetadata.KeyAccessor;
 
         var entities = await GetBaseQuery()
             .Where(predicate)
@@ -611,6 +638,27 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         }
 
         return query.LongCountAsync(ct);
+    }
+
+    /// <inheritdoc />
+    public Task<long> CountAsync(PaginationRequest query, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        var countQuery = GetBaseQuery();
+        if (query.Search is not null)
+        {
+            countQuery = ApplySearch(countQuery, query.Search);
+        }
+
+        if (query.Filters.Count > 0)
+        {
+            countQuery = ApplyComparisonFilters(countQuery, query.Filters);
+            countQuery = ApplyStringFilters(countQuery, query.Filters);
+            countQuery = ApplyInFilters(countQuery, query.Filters);
+        }
+
+        return countQuery.LongCountAsync(ct);
     }
 
     private static IReadOnlyDictionary<string, PropertyInfo> BuildSnakeCasePropertyMap()
@@ -637,10 +685,55 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             ex);
     }
 
+    private static bool IsNestedPath(string propertyPath)
+    {
+        return propertyPath.Contains('.', StringComparison.Ordinal);
+    }
+
+    private static Expression BuildPropertyAccess(
+        ParameterExpression parameter,
+        Microsoft.EntityFrameworkCore.Metadata.IProperty property)
+    {
+        return property.PropertyInfo is not null
+            ? Expression.Property(parameter, property.PropertyInfo)
+            : Expression.Property(parameter, property.Name);
+    }
+
+    private static KeyPartMetadata CreateKeyPart(
+        Microsoft.EntityFrameworkCore.Metadata.IProperty property,
+        Expression propertyAccess,
+        Func<TKey, object?> keyValueGetter)
+    {
+        var selector = BuildKeyPartSelector(propertyAccess);
+        return new KeyPartMetadata(property, selector, keyValueGetter);
+    }
+
+    private static LambdaExpression BuildKeyPartSelector(Expression propertyAccess)
+    {
+        var parameter = propertyAccess switch
+        {
+            MemberExpression memberExpression when memberExpression.Expression is ParameterExpression parameterExpression => parameterExpression,
+            _ => throw new InvalidOperationException("Key selector must resolve to a direct member access for sorting and pagination.")
+        };
+
+        var delegateType = typeof(Func<,>).MakeGenericType(typeof(TEntity), propertyAccess.Type);
+        return Expression.Lambda(delegateType, propertyAccess, parameter);
+    }
+
+    private static Func<TCompositeKey, object?> CreateCompositeKeyPartGetter<TCompositeKey>(string propertyName)
+        where TCompositeKey : notnull
+    {
+        var keyParameter = Expression.Parameter(typeof(TCompositeKey), "key");
+        var property = Expression.Property(keyParameter, propertyName);
+        var box = Expression.Convert(property, typeof(object));
+        return Expression.Lambda<Func<TCompositeKey, object?>>(box, keyParameter).Compile();
+    }
+
     private bool TryBuildProjectionPlan(
         IReadOnlyList<SelectedField> selectedFields,
         IReadOnlyList<FilterValue> filters,
         IReadOnlyList<SortField> sortFields,
+        SearchRequest? search,
         out ProjectionPlan? projectionPlan)
     {
         if (!_options.EnableProjectionPushdown || selectedFields.Count == 0)
@@ -649,10 +742,22 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             return false;
         }
 
-        var requiredProperties = new HashSet<string>(StringComparer.Ordinal)
+        if (search is not null
+            || selectedFields.Any(field => IsNestedPath(field.PropertyName))
+            || filters.Any(filter => IsNestedPath(filter.PropertyName))
+            || sortFields.Any(sortField => IsNestedPath(sortField.PropertyName)))
         {
-            GetKeyPropertyName()
-        };
+            projectionPlan = null;
+            return false;
+        }
+
+        var requiredProperties = new HashSet<string>(StringComparer.Ordinal)
+            { };
+
+        foreach (var keyPropertyName in GetKeyPropertyNames())
+        {
+            requiredProperties.Add(keyPropertyName);
+        }
 
         foreach (var field in selectedFields)
         {
@@ -698,9 +803,127 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         return query.AsNoTracking().Select(projectionPlan.Selector);
     }
 
+    private async Task<PagedResult<TEntity>> GetAllWithIncludedNavigationsAsync(
+        PaginationRequest pagination,
+        IReadOnlyList<string> includePaths,
+        CancellationToken ct)
+    {
+        var query = ApplyIncludes(GetBaseProjectionQuery(), includePaths);
+        if (pagination.Search is not null)
+        {
+            query = ApplySearch(query, pagination.Search);
+        }
+
+        if (pagination.Filters.Count > 0)
+        {
+            query = ApplyComparisonFilters(query, pagination.Filters);
+            query = ApplyStringFilters(query, pagination.Filters);
+            query = ApplyInFilters(query, pagination.Filters);
+        }
+
+        var effectiveSortFields = GetEffectiveSortFields(pagination.SortFields);
+        IOrderedQueryable<TEntity> orderedQuery;
+        KeysetPlan? keysetPlan;
+        var offsetStartIndex = 0;
+        if (TryBuildKeysetPlan(effectiveSortFields, out var builtKeysetPlan))
+        {
+            var plan = builtKeysetPlan!;
+            keysetPlan = plan;
+            orderedQuery = ApplyKeysetCursorFilter(query, plan, pagination.Cursor);
+        }
+        else
+        {
+            keysetPlan = null;
+            LogKeysetFallback(effectiveSortFields);
+            offsetStartIndex = DecodeOffsetCursor(pagination.Cursor);
+            orderedQuery = SortBuilder.ApplySorting(query, pagination.SortFields, _keyMetadata.SortKeyParts);
+        }
+
+        var takeCount = pagination.Limit == int.MaxValue ? int.MaxValue : pagination.Limit + 1;
+        List<TEntity> pagedItems;
+
+        if (keysetPlan is not null)
+        {
+            pagedItems = await orderedQuery
+                .Take(takeCount)
+                .ToListAsync(ct);
+        }
+        else
+        {
+            pagedItems = await orderedQuery
+                .Skip(offsetStartIndex)
+                .Take(takeCount)
+                .ToListAsync(ct);
+        }
+
+        var hasMore = pagedItems.Count > pagination.Limit;
+        if (hasMore)
+        {
+            pagedItems = pagedItems.Take(pagination.Limit).ToList();
+        }
+
+        string? nextCursor;
+        if (!hasMore)
+        {
+            nextCursor = null;
+        }
+        else if (keysetPlan is not null)
+        {
+            nextCursor = EncodeKeysetCursor(keysetPlan, pagedItems[^1]);
+        }
+        else
+        {
+            nextCursor = offsetStartIndex <= int.MaxValue - pagination.Limit
+                ? CursorEncoder.Encode(offsetStartIndex + pagination.Limit)
+                : null;
+        }
+
+        return new PagedResult<TEntity>
+        {
+            Items = pagedItems,
+            NextCursor = nextCursor
+        };
+    }
+
     private IQueryable<TEntity> GetBaseProjectionQuery()
     {
         return _context.Set<TEntity>().AsNoTracking();
+    }
+
+    private IQueryable<TEntity> ApplyIncludes(IQueryable<TEntity> query, IReadOnlyList<string> includePaths)
+    {
+        foreach (var includePath in includePaths)
+        {
+            query = query.Include(includePath);
+        }
+
+        return query;
+    }
+
+    private bool TryBuildNavigationLoadPaths(
+        IReadOnlyList<SelectedField> selectedFields,
+        out IReadOnlyList<string> includePaths)
+    {
+        var paths = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var field in selectedFields)
+        {
+            if (!IsNestedPath(field.PropertyName))
+            {
+                continue;
+            }
+
+            var propertyPath = NamingUtils.ResolvePropertyPath<TEntity>(field.PropertyName, nameof(selectedFields));
+            if (propertyPath.ClrSegments.Count < 2)
+            {
+                continue;
+            }
+
+            paths.Add(string.Join('.', propertyPath.ClrSegments.Take(propertyPath.ClrSegments.Count - 1)));
+        }
+
+        includePaths = paths.ToList();
+        return includePaths.Count > 0;
     }
 
     private List<KeysetSortPart> GetEffectiveSortFields(IReadOnlyList<SortField> sortFields)
@@ -742,15 +965,24 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             parts.Add(part!);
         }
 
-        if (!parts.Any(part => string.Equals(part.PropertyName, GetKeyPropertyName(), StringComparison.Ordinal)))
+        foreach (var keyPart in _keyMetadata.KeyParts)
         {
-            if (!TryBuildKeysetPlanPart(GetKeyPropertyName(), SortDirection.Asc, JsonNamingPolicy.SnakeCaseLower.ConvertName(GetKeyPropertyName()), out var keyPart))
+            if (parts.Any(part => string.Equals(part.PropertyName, keyPart.PropertyName, StringComparison.Ordinal)))
+            {
+                continue;
+            }
+
+            if (!TryBuildKeysetPlanPart(
+                keyPart.PropertyName,
+                SortDirection.Asc,
+                JsonNamingPolicy.SnakeCaseLower.ConvertName(keyPart.PropertyName),
+                out var keyPlanPart))
             {
                 keysetPlan = null;
                 return false;
             }
 
-            parts.Add(keyPart!);
+            parts.Add(keyPlanPart!);
         }
 
         keysetPlan = new KeysetPlan(parts);
@@ -854,6 +1086,16 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         var typedValue = JsonSerializer.Deserialize(cursorValue.GetRawText(), part.PropertyType)
             ?? throw new EfCoreInvalidCursorException($"The provided cursor contains an invalid value for '{part.QueryParameterName}'.");
         var right = Expression.Constant(typedValue, part.PropertyType);
+
+        if (part.PropertyType == typeof(string)
+            && comparisonType is ExpressionType.GreaterThan or ExpressionType.LessThan)
+        {
+            var stringCompare = Expression.Call(StringCompareMethod, left, right);
+            var zero = Expression.Constant(0);
+            return comparisonType == ExpressionType.GreaterThan
+                ? Expression.GreaterThan(stringCompare, zero)
+                : Expression.LessThan(stringCompare, zero);
+        }
 
         return Expression.MakeBinary(comparisonType, left, right);
     }
@@ -964,6 +1206,14 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         return query;
     }
 
+    private IQueryable<TEntity> ApplySearch(
+        IQueryable<TEntity> query,
+        SearchRequest search)
+    {
+        var predicate = SearchBuilder.BuildPredicate<TEntity>(search);
+        return query.Where(predicate);
+    }
+
     private bool IsInOperator(FilterOperator op)
     {
         return op is FilterOperator.In;
@@ -1032,27 +1282,21 @@ public class EfCoreRepository<TContext, TEntity, TKey>
 
     private Expression<Func<TEntity, bool>> BuildKeyEqualsPredicate(TKey id)
     {
-        var constant = Expression.Constant(id, typeof(TKey));
-        var equals = Expression.Equal(_keySelector.Body, constant);
+        var parameter = Expression.Parameter(typeof(TEntity), "entity");
+        var comparisons = _keyMetadata.KeyParts
+            .Select(keyPart => BuildEntityKeyPartEqualsExpression(parameter, keyPart, keyPart.GetKeyValue(id)))
+            .ToList();
 
-        return Expression.Lambda<Func<TEntity, bool>>(equals, _keySelector.Parameters);
+        var predicateBody = comparisons.Aggregate(Expression.AndAlso);
+        return Expression.Lambda<Func<TEntity, bool>>(predicateBody, parameter);
     }
 
     private async Task<Dictionary<TKey, TEntity>> FetchTrackedEntitiesByIdsAsync(
         IReadOnlyList<TKey> ids,
         CancellationToken ct)
     {
-        var getKey = _keySelector.Compile();
-        var idList = ids.ToList();
-        var containsMethod = typeof(Enumerable)
-            .GetMethods(BindingFlags.Public | BindingFlags.Static)
-            .Single(method => method.Name == nameof(Enumerable.Contains) && method.GetParameters().Length == 2)
-            .MakeGenericMethod(typeof(TKey));
-        var containsCall = Expression.Call(
-            containsMethod,
-            Expression.Constant(idList),
-            _keySelector.Body);
-        var predicate = Expression.Lambda<Func<TEntity, bool>>(containsCall, _keySelector.Parameters);
+        var getKey = _keyMetadata.KeyAccessor;
+        var predicate = BuildKeysContainPredicate(ids);
         var existingEntities = await _context.Set<TEntity>()
             .Where(predicate)
             .ToListAsync(ct);
@@ -1093,14 +1337,9 @@ public class EfCoreRepository<TContext, TEntity, TKey>
                 $"Entity type '{typeof(TEntity).Name}' has no primary key configured in the EF Core model.");
     }
 
-    private string GetKeyPropertyName()
+    private IReadOnlyList<string> GetKeyPropertyNames()
     {
-        if (_keySelector.Body is MemberExpression memberExpression)
-        {
-            return memberExpression.Member.Name;
-        }
-
-        throw new InvalidOperationException("Key selector must resolve to a direct member access for keyset pagination.");
+        return _keyMetadata.KeyParts.Select(part => part.PropertyName).ToList();
     }
 
     private string BuildSortSignature(KeysetPlan keysetPlan)
@@ -1124,30 +1363,113 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             sortDescription);
     }
 
-    private Expression<Func<TEntity, TKey>> ResolveKeySelector()
+    private KeyMetadata ResolveKeyMetadata()
     {
         var primaryKey = GetPrimaryKey();
 
-        if (primaryKey.Properties.Count > 1)
+        if (primaryKey.Properties.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Entity type '{typeof(TEntity).Name}' has no primary-key properties configured in the EF Core model.");
+        }
+
+        if (primaryKey.Properties.Count > 2)
         {
             var propertyNames = string.Join(", ", primaryKey.Properties.Select(property => property.Name));
             throw new NotSupportedException(
-                $"Entity type '{typeof(TEntity).Name}' has a composite primary key, which is not supported. Composite keys have {primaryKey.Properties.Count} properties: {propertyNames}. Only single-property primary keys are supported.");
-        }
-
-        var keyProperty = primaryKey.Properties[0];
-        if (keyProperty.ClrType != typeof(TKey))
-        {
-            throw new InvalidOperationException(
-                $"Entity type '{typeof(TEntity).Name}' has primary key property '{keyProperty.Name}' of type '{keyProperty.ClrType.Name}', but the registration specifies TKey as '{typeof(TKey).Name}'.");
+                $"Entity type '{typeof(TEntity).Name}' has a {primaryKey.Properties.Count}-part primary key ({propertyNames}), but RestLib currently supports at most two-part keys.");
         }
 
         var parameter = Expression.Parameter(typeof(TEntity), "entity");
-        var propertyAccess = keyProperty.PropertyInfo is not null
-            ? Expression.Property(parameter, keyProperty.PropertyInfo)
-            : Expression.Property(parameter, keyProperty.Name);
+        if (primaryKey.Properties.Count == 1)
+        {
+            var keyProperty = primaryKey.Properties[0];
+            if (keyProperty.ClrType != typeof(TKey))
+            {
+                throw new InvalidOperationException(
+                    $"Entity type '{typeof(TEntity).Name}' has primary key property '{keyProperty.Name}' of type '{keyProperty.ClrType.Name}', but the registration specifies TKey as '{typeof(TKey).Name}'.");
+            }
 
-        return Expression.Lambda<Func<TEntity, TKey>>(propertyAccess, parameter);
+            var propertyAccess = BuildPropertyAccess(parameter, keyProperty);
+            var keySelector = Expression.Lambda<Func<TEntity, TKey>>(propertyAccess, parameter);
+            var keyAccessor = keySelector.Compile();
+
+            return new KeyMetadata(
+                keySelector,
+                keyAccessor,
+                [CreateKeyPart(keyProperty, propertyAccess, static key => key)]);
+        }
+
+        if (!typeof(TKey).IsGenericType || typeof(TKey).GetGenericTypeDefinition() != typeof(RestLibCompositeKey<,>))
+        {
+            var propertyNames = string.Join(", ", primaryKey.Properties.Select(property => property.Name));
+            throw new InvalidOperationException(
+                $"Entity type '{typeof(TEntity).Name}' has a composite primary key ({propertyNames}), but the registration specifies TKey '{typeof(TKey).Name}' instead of RestLibCompositeKey<TFirst, TSecond>.");
+        }
+
+        var keyArguments = typeof(TKey).GetGenericArguments();
+        if (primaryKey.Properties[0].ClrType != keyArguments[0]
+            || primaryKey.Properties[1].ClrType != keyArguments[1])
+        {
+            throw new InvalidOperationException(
+                $"Entity type '{typeof(TEntity).Name}' composite primary key types '{primaryKey.Properties[0].ClrType.Name}' and '{primaryKey.Properties[1].ClrType.Name}' must match TKey generic arguments '{keyArguments[0].Name}' and '{keyArguments[1].Name}'.");
+        }
+
+        var firstAccess = BuildPropertyAccess(parameter, primaryKey.Properties[0]);
+        var secondAccess = BuildPropertyAccess(parameter, primaryKey.Properties[1]);
+        var constructor = typeof(TKey).GetConstructor([primaryKey.Properties[0].ClrType, primaryKey.Properties[1].ClrType])
+            ?? throw new InvalidOperationException(
+                $"RestLib could not resolve the composite key constructor for '{typeof(TKey).Name}'.");
+        var body = Expression.New(constructor, firstAccess, secondAccess);
+        var compositeSelector = Expression.Lambda<Func<TEntity, TKey>>(body, parameter);
+        var compositeAccessor = compositeSelector.Compile();
+
+        return new KeyMetadata(
+            compositeSelector,
+            compositeAccessor,
+            [
+                CreateKeyPart(primaryKey.Properties[0], firstAccess, CreateCompositeKeyPartGetter<TKey>(nameof(RestLibCompositeKey<int, int>.First))),
+                CreateKeyPart(primaryKey.Properties[1], secondAccess, CreateCompositeKeyPartGetter<TKey>(nameof(RestLibCompositeKey<int, int>.Second)))
+            ]);
+    }
+
+    private object?[] GetKeyValues(TKey key)
+    {
+        return _keyMetadata.KeyParts
+            .Select(keyPart => keyPart.GetKeyValue(key))
+            .ToArray();
+    }
+
+    private Expression<Func<TEntity, bool>> BuildKeysContainPredicate(IReadOnlyList<TKey> keys)
+    {
+        ArgumentNullException.ThrowIfNull(keys);
+
+        var parameter = Expression.Parameter(typeof(TEntity), "entity");
+        Expression? predicate = null;
+
+        foreach (var key in keys)
+        {
+            Expression? keyPredicate = null;
+            foreach (var keyPart in _keyMetadata.KeyParts)
+            {
+                var equals = BuildEntityKeyPartEqualsExpression(parameter, keyPart, keyPart.GetKeyValue(key));
+                keyPredicate = keyPredicate is null ? equals : Expression.AndAlso(keyPredicate, equals);
+            }
+
+            predicate = predicate is null ? keyPredicate : Expression.OrElse(predicate, keyPredicate!);
+        }
+
+        return Expression.Lambda<Func<TEntity, bool>>(predicate!, parameter);
+    }
+
+    private Expression BuildEntityKeyPartEqualsExpression(
+        ParameterExpression parameter,
+        KeyPartMetadata keyPart,
+        object? keyValue)
+    {
+        var left = BuildPropertyAccess(parameter, keyPart.Property);
+        var right = Expression.Constant(keyValue, keyPart.Property.ClrType);
+        return Expression.Equal(left, right);
     }
 
     private bool IsKeysetComparableType(Type propertyType)
@@ -1191,6 +1513,24 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     private sealed record KeysetSortPart(string PropertyName, SortDirection Direction, string QueryParameterName);
 
     private sealed record KeysetPlan(IReadOnlyList<KeysetPlanPart> Parts);
+
+    private sealed record KeyMetadata(
+        Expression<Func<TEntity, TKey>> CompositeSelector,
+        Func<TEntity, TKey> KeyAccessor,
+        IReadOnlyList<KeyPartMetadata> KeyParts)
+    {
+        internal IReadOnlyList<SortBuilder.SortKeyPart> SortKeyParts => KeyParts
+            .Select(part => new SortBuilder.SortKeyPart(part.PropertyName, part.Selector))
+            .ToList();
+    }
+
+    private sealed record KeyPartMetadata(
+        Microsoft.EntityFrameworkCore.Metadata.IProperty Property,
+        LambdaExpression Selector,
+        Func<TKey, object?> GetKeyValue)
+    {
+        internal string PropertyName => Property.Name;
+    }
 
     private sealed record ProjectionPlan(
         IReadOnlyList<PropertyInfo> Properties,

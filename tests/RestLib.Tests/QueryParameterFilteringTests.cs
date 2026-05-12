@@ -30,6 +30,39 @@ public class FilterableEntity
     public Guid? CategoryId { get; set; }
     public DateTime CreatedAt { get; set; }
     public ProductStatus Status { get; set; }
+    public FilterCustomer? Customer { get; set; }
+}
+
+/// <summary>
+/// Nested customer entity used in nested-path query tests.
+/// </summary>
+public class FilterCustomer
+{
+    /// <summary>
+    /// Gets or sets the customer email.
+    /// </summary>
+    public string Email { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the customer name.
+    /// </summary>
+    public string Name { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Entity used to validate collection-valued path rejection.
+/// </summary>
+public class CollectionPathFilterEntity
+{
+    /// <summary>
+    /// Gets or sets the identifier.
+    /// </summary>
+    public Guid Id { get; set; }
+
+    /// <summary>
+    /// Gets or sets the tags.
+    /// </summary>
+    public List<string> Tags { get; set; } = [];
 }
 
 public enum ProductStatus
@@ -932,6 +965,38 @@ public class FilterOpenApiTests : IAsyncLifetime
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*'IsActive'*already configured*filtering*");
     }
+
+    [Fact]
+    [Trait("Category", "Story4.3")]
+    public void FilterConfiguration_NestedExpression_UsesDottedSnakeCaseQueryName()
+    {
+        // Arrange
+        var config = new FilterConfiguration<FilterableEntity>();
+
+        // Act
+        config.AddProperty(entity => entity.Customer!.Email, FilterOperator.Contains);
+
+        // Assert
+        config.Properties.Should().ContainSingle();
+        config.Properties[0].PropertyName.Should().Be("Customer.Email");
+        config.Properties[0].QueryParameterName.Should().Be("customer.email");
+        config.Properties[0].PropertyType.Should().Be(typeof(string));
+    }
+
+    [Fact]
+    [Trait("Category", "Story4.3")]
+    public void FilterConfiguration_CollectionPath_ThrowsClearException()
+    {
+        // Arrange
+        var config = new FilterConfiguration<CollectionPathFilterEntity>();
+
+        // Act
+        var act = () => config.AddProperty(entity => entity.Tags.Count);
+
+        // Assert
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*collection-valued navigation paths are not supported*");
+    }
 }
 
 /// <summary>
@@ -1357,6 +1422,32 @@ public class FilterParserOperatorTests
         // Assert — one should succeed, the second should trigger a duplicate error
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain(e => e.Message.Contains("Duplicate"));
+    }
+
+    [Fact]
+    [Trait("Category", "Story4.3.Operators")]
+    public void Parse_DottedBracketOperator_ParsesCorrectly()
+    {
+        // Arrange
+        var config = new FilterConfiguration<FilterableEntity>();
+        config.AddProperty(entity => entity.Customer!.Email, FilterOperator.Contains);
+
+        var query = new Microsoft.AspNetCore.Http.QueryCollection(
+            new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>
+            {
+            { "customer.email[contains]", "example.com" }
+            });
+
+        // Act
+        var result = FilterParser.Parse(query, config);
+
+        // Assert
+        result.IsValid.Should().BeTrue();
+        result.Filters.Should().ContainSingle();
+        result.Filters[0].PropertyName.Should().Be("Customer.Email");
+        result.Filters[0].QueryParameterName.Should().Be("customer.email");
+        result.Filters[0].Operator.Should().Be(FilterOperator.Contains);
+        result.Filters[0].TypedValue.Should().Be("example.com");
     }
 
     [Fact]

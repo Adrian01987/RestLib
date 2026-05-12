@@ -469,6 +469,31 @@ public class DataAnnotationValidationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [Fact]
+    public async Task Patch_WithNonObjectPatchDocument_Returns_BadRequest()
+    {
+        // Arrange
+        await SetupHostAsync();
+        var existingId = Guid.NewGuid();
+        _repository!.Seed(new ValidatedEntity
+        {
+            Id = existingId,
+            Name = "Existing Product",
+            UnitPrice = 10.00m
+        });
+
+        using var patch = new StringContent("[]", System.Text.Encoding.UTF8, "application/merge-patch+json");
+
+        // Act
+        var response = await _client!.PatchAsync($"/api/validated/{existingId}", patch);
+
+        // Assert
+        await response.ShouldBeProblemDetails(
+            HttpStatusCode.BadRequest,
+            ProblemTypes.BadRequest,
+            expectedDetail: "could not be applied");
+    }
+
     #endregion
 
     #region Instance field in validation errors

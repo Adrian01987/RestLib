@@ -49,11 +49,9 @@ public class SortConfiguration<TEntity> where TEntity : class
     /// <param name="propertyExpression">Expression selecting the property.</param>
     public void AddProperty<TProperty>(Expression<Func<TEntity, TProperty>> propertyExpression)
     {
-        var memberExpression = propertyExpression.Body as MemberExpression
-            ?? throw new ArgumentException("Expression must be a member expression", nameof(propertyExpression));
-
-        var propertyName = memberExpression.Member.Name;
-        var queryParamName = NamingUtils.ConvertToSnakeCase(propertyName);
+        var propertyPath = NamingUtils.ResolvePropertyPath(propertyExpression, nameof(propertyExpression));
+        var propertyName = propertyPath.ClrPath;
+        var queryParamName = propertyPath.QueryPath;
 
         if (_properties.Any(p => string.Equals(p.PropertyName, propertyName, StringComparison.Ordinal)))
         {
@@ -65,7 +63,7 @@ public class SortConfiguration<TEntity> where TEntity : class
         {
             PropertyName = propertyName,
             QueryParameterName = queryParamName,
-            PropertyType = typeof(TProperty)
+            PropertyType = propertyPath.LeafPropertyType
         });
     }
 

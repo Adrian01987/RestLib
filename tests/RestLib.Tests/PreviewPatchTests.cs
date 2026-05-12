@@ -117,6 +117,26 @@ public class PreviewPatchTests
         result.Description.Should().Be("A product");
     }
 
+    [Fact]
+    public void PreviewPatch_NonObjectPatchDocument_ReturnsNull()
+    {
+        // Arrange
+        var original = new PatchEntity
+        {
+            Id = 1,
+            Name = "Original",
+            Price = 9.99m,
+            Description = "A product"
+        };
+        var patch = ParsePatch("[]");
+
+        // Act
+        var result = PatchHelper.PreviewPatch(original, patch, JsonOptions);
+
+        // Assert
+        result.Should().BeNull();
+    }
+
     #endregion
 
     #region Null values in patch

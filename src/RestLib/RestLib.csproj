@@ -16,6 +16,8 @@
   <ItemGroup>
     <InternalsVisibleTo Include="RestLib.Tests" />
     <InternalsVisibleTo Include="RestLib.Benchmarks" />
+    <InternalsVisibleTo Include="RestLib.InMemory" />
+    <InternalsVisibleTo Include="RestLib.EntityFrameworkCore" />
   </ItemGroup>
 
   <ItemGroup>

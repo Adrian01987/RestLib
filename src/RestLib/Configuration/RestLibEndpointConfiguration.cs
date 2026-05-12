@@ -4,6 +4,7 @@ using RestLib.FieldSelection;
 using RestLib.Filtering;
 using RestLib.Hooks;
 using RestLib.Internal;
+using RestLib.Search;
 using RestLib.Sorting;
 
 namespace RestLib.Configuration;
@@ -22,10 +23,14 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     private readonly FilterConfiguration<TEntity> _filterConfiguration = new();
     private readonly SortConfiguration<TEntity> _sortConfiguration = new();
     private readonly FieldSelectionConfiguration<TEntity> _fieldSelectionConfiguration = new();
+    private readonly SearchConfiguration<TEntity> _searchConfiguration = new();
     private readonly HashSet<BatchAction> _enabledBatchActions = [];
     private readonly Dictionary<RestLibOperation, string> _rateLimitPolicies = [];
     private readonly HashSet<RestLibOperation> _disabledRateLimitOperations = [];
     private readonly RestLibOpenApiConfiguration _openApi = new();
+    private IReadOnlyDictionary<string, RestLibJsonValidationRuleConfiguration> _jsonValidationRules =
+        new Dictionary<string, RestLibJsonValidationRuleConfiguration>(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<RestLibKeyRoutePart<TKey>>? _keyRouteParts;
     private string? _defaultRateLimitPolicy;
     private RestLibHooks<TEntity, TKey>? _hooks;
     private HashSet<RestLibOperation>? _includedOperations;
@@ -48,6 +53,28 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     /// </code>
     /// </example>
     public RestLibOpenApiConfiguration OpenApi => _openApi;
+
+    /// <summary>
+    /// Gets or sets the configured key property name when one is known from JSON
+    /// configuration.
+    /// </summary>
+    internal string? KeyPropertyName { get; set; }
+
+    /// <summary>
+    /// Gets the ordered route metadata for the resource key.
+    /// </summary>
+    internal IReadOnlyList<RestLibKeyRoutePart<TKey>> KeyRouteParts =>
+        _keyRouteParts ??= BuildDefaultKeyRouteParts();
+
+    /// <summary>
+    /// Gets a value indicating whether explicit key route metadata was configured.
+    /// </summary>
+    internal bool HasExplicitKeyRouteParts => _keyRouteParts is not null;
+
+    /// <summary>
+    /// Gets the route template suffix for keyed item endpoints.
+    /// </summary>
+    internal string KeyRouteTemplate => string.Concat(KeyRouteParts.Select(part => $"/{{{part.RouteParameterName}}}"));
 
     /// <summary>
     /// Gets the filter configuration for this entity.
@@ -80,6 +107,16 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     internal bool HasFieldSelection => _fieldSelectionConfiguration.Properties.Count > 0;
 
     /// <summary>
+    /// Gets the search configuration for this entity.
+    /// </summary>
+    internal SearchConfiguration<TEntity> SearchConfiguration => _searchConfiguration;
+
+    /// <summary>
+    /// Gets a value indicating whether search is configured for this resource.
+    /// </summary>
+    internal bool HasSearch => _searchConfiguration.Properties.Count > 0;
+
+    /// <summary>
     /// Gets the set of enabled batch actions.
     /// </summary>
     internal IReadOnlySet<BatchAction> EnabledBatchActions => _enabledBatchActions;
@@ -93,6 +130,16 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     /// Gets the configured hooks for the request processing pipeline.
     /// </summary>
     internal RestLibHooks<TEntity, TKey>? Hooks => _hooks;
+
+    /// <summary>
+    /// Gets the configured JSON validation rules for this resource.
+    /// </summary>
+    internal IReadOnlyDictionary<string, RestLibJsonValidationRuleConfiguration> JsonValidationRules => _jsonValidationRules;
+
+    /// <summary>
+    /// Gets a value indicating whether JSON validation rules have been configured.
+    /// </summary>
+    internal bool HasJsonValidationRules => _jsonValidationRules.Count > 0;
 
     /// <summary>
     /// Marks all operations as allowing anonymous access.
@@ -158,6 +205,9 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     /// <code>
     /// config.AllowFiltering(p => p.CategoryId, p => p.IsActive);
     /// // Results in query parameters: ?category_id=5&amp;is_active=true
+    ///
+    /// config.AllowFiltering(p => p.Customer.Email, FilterOperators.String);
+    /// // Results in query parameters: ?customer.email[contains]=example.com
     /// </code>
     /// </example>
     public RestLibEndpointConfiguration<TEntity, TKey> AllowFiltering(
@@ -165,13 +215,9 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     {
         foreach (var expression in propertyExpressions)
         {
-            var memberExpression = NamingUtils.GetMemberExpression(expression.Body, nameof(propertyExpressions));
+            var propertyPath = NamingUtils.ResolvePropertyPath(expression, nameof(propertyExpressions));
 
-            var propertyName = memberExpression.Member.Name;
-            var propertyType = memberExpression.Type;
-            var queryParamName = NamingUtils.ConvertToSnakeCase(propertyName);
-
-            _filterConfiguration.AddProperty(propertyName, queryParamName, propertyType);
+            _filterConfiguration.AddProperty(propertyPath.ClrPath, propertyPath.QueryPath, propertyPath.LeafPropertyType);
         }
         return this;
     }
@@ -186,6 +232,9 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     /// <code>
     /// config.AllowFiltering("CategoryId", "IsActive");
     /// // Results in query parameters: ?category_id=5&amp;is_active=true
+    ///
+    /// config.AllowFiltering("Customer.Email");
+    /// // Results in query parameters: ?customer.email=value
     /// </code>
     /// </example>
     public RestLibEndpointConfiguration<TEntity, TKey> AllowFiltering(
@@ -193,10 +242,8 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     {
         foreach (var propertyName in propertyNames)
         {
-            var property = NamingUtils.ResolveProperty<TEntity>(propertyName, nameof(propertyNames));
-
-            var queryParamName = NamingUtils.ConvertToSnakeCase(property.Name);
-            _filterConfiguration.AddProperty(property.Name, queryParamName, property.PropertyType);
+            var propertyPath = NamingUtils.ResolvePropertyPath<TEntity>(propertyName, nameof(propertyNames));
+            _filterConfiguration.AddProperty(propertyPath.ClrPath, propertyPath.QueryPath, propertyPath.LeafPropertyType);
         }
 
         return this;
@@ -220,19 +267,18 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     ///
     /// config.AllowFiltering(p => p.Name, FilterOperators.String);
     /// // Allows: ?name=Widget, ?name[contains]=wid, ?name[starts_with]=Wid
+    ///
+    /// config.AllowFiltering(p => p.Customer.Email, FilterOperators.String);
+    /// // Allows: ?customer.email=a@b.com, ?customer.email[contains]=example.com
     /// </code>
     /// </example>
     public RestLibEndpointConfiguration<TEntity, TKey> AllowFiltering(
         Expression<Func<TEntity, object?>> propertyExpression,
         params IReadOnlyList<FilterOperator> operators)
     {
-        var memberExpression = NamingUtils.GetMemberExpression(propertyExpression.Body, nameof(propertyExpression));
+        var propertyPath = NamingUtils.ResolvePropertyPath(propertyExpression, nameof(propertyExpression));
 
-        var propertyName = memberExpression.Member.Name;
-        var propertyType = memberExpression.Type;
-        var queryParamName = NamingUtils.ConvertToSnakeCase(propertyName);
-
-        _filterConfiguration.AddProperty(propertyName, queryParamName, propertyType, operators);
+        _filterConfiguration.AddProperty(propertyPath.ClrPath, propertyPath.QueryPath, propertyPath.LeafPropertyType, operators);
         return this;
     }
 
@@ -251,16 +297,15 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     /// <code>
     /// config.AllowFiltering("Price", FilterOperators.Comparison);
     /// config.AllowFiltering("Name", FilterOperators.String);
+    /// config.AllowFiltering("Customer.Email", FilterOperators.String);
     /// </code>
     /// </example>
     public RestLibEndpointConfiguration<TEntity, TKey> AllowFiltering(
         string propertyName,
         params IReadOnlyList<FilterOperator> operators)
     {
-        var property = NamingUtils.ResolveProperty<TEntity>(propertyName, nameof(propertyName));
-
-        var queryParamName = NamingUtils.ConvertToSnakeCase(property.Name);
-        _filterConfiguration.AddProperty(property.Name, queryParamName, property.PropertyType, operators);
+        var propertyPath = NamingUtils.ResolvePropertyPath<TEntity>(propertyName, nameof(propertyName));
+        _filterConfiguration.AddProperty(propertyPath.ClrPath, propertyPath.QueryPath, propertyPath.LeafPropertyType, operators);
         return this;
     }
 
@@ -274,6 +319,9 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     /// <code>
     /// config.AllowSorting(p => p.Price, p => p.Name);
     /// // Request: ?sort=price:asc,name:desc
+    ///
+    /// config.AllowSorting(p => p.Customer.Name);
+    /// // Request: ?sort=customer.name:asc
     /// </code>
     /// </example>
     public RestLibEndpointConfiguration<TEntity, TKey> AllowSorting(
@@ -281,13 +329,9 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     {
         foreach (var expression in propertyExpressions)
         {
-            var memberExpression = NamingUtils.GetMemberExpression(expression.Body, nameof(propertyExpressions));
+            var propertyPath = NamingUtils.ResolvePropertyPath(expression, nameof(propertyExpressions));
 
-            var propertyName = memberExpression.Member.Name;
-            var propertyType = memberExpression.Type;
-            var queryParamName = NamingUtils.ConvertToSnakeCase(propertyName);
-
-            _sortConfiguration.AddProperty(propertyName, queryParamName, propertyType);
+            _sortConfiguration.AddProperty(propertyPath.ClrPath, propertyPath.QueryPath, propertyPath.LeafPropertyType);
         }
         return this;
     }
@@ -302,6 +346,9 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     /// <code>
     /// config.AllowSorting("Price", "Name");
     /// // Request: ?sort=price:asc,name:desc
+    ///
+    /// config.AllowSorting("Customer.Name");
+    /// // Request: ?sort=customer.name:asc
     /// </code>
     /// </example>
     public RestLibEndpointConfiguration<TEntity, TKey> AllowSorting(
@@ -309,10 +356,8 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     {
         foreach (var propertyName in propertyNames)
         {
-            var property = NamingUtils.ResolveProperty<TEntity>(propertyName, nameof(propertyNames));
-
-            var queryParamName = NamingUtils.ConvertToSnakeCase(property.Name);
-            _sortConfiguration.AddProperty(property.Name, queryParamName, property.PropertyType);
+            var propertyPath = NamingUtils.ResolvePropertyPath<TEntity>(propertyName, nameof(propertyNames));
+            _sortConfiguration.AddProperty(propertyPath.ClrPath, propertyPath.QueryPath, propertyPath.LeafPropertyType);
         }
         return this;
     }
@@ -352,6 +397,30 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     }
 
     /// <summary>
+    /// Configures field-selection behavior for the resource.
+    /// </summary>
+    /// <param name="configure">An action to configure field-selection behavior.</param>
+    /// <returns>This configuration instance for chaining.</returns>
+    /// <example>
+    /// <code>
+    /// config.AllowFieldSelection(fields =>
+    /// {
+    ///     fields.UseNestedObjectsInResponse();
+    ///     fields.AddProperty(p => p.Id);
+    ///     fields.AddProperty(p => p.Customer!.Email);
+    /// });
+    /// </code>
+    /// </example>
+    public RestLibEndpointConfiguration<TEntity, TKey> AllowFieldSelection(
+        Action<FieldSelectionConfiguration<TEntity>> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+
+        configure(_fieldSelectionConfiguration);
+        return this;
+    }
+
+    /// <summary>
     /// Configures which properties can be selected via the <c>fields</c> query parameter.
     /// Property names are automatically converted to snake_case in the query string.
     /// </summary>
@@ -359,8 +428,11 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     /// <returns>This configuration instance for chaining.</returns>
     /// <example>
     /// <code>
-    /// config.AllowFieldSelection(p => p.Id, p => p.Name, p => p.Price);
+    /// config.AllowFieldSelection(p =&gt; p.Id, p =&gt; p.Name, p =&gt; p.Price);
     /// // Request: ?fields=id,name,price
+    ///
+    /// config.AllowFieldSelection(p =&gt; p.Customer.Email);
+    /// // Request: ?fields=id,customer.email
     /// </code>
     /// </example>
     public RestLibEndpointConfiguration<TEntity, TKey> AllowFieldSelection(
@@ -368,12 +440,9 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     {
         foreach (var expression in propertyExpressions)
         {
-            var memberExpression = NamingUtils.GetMemberExpression(expression.Body, nameof(propertyExpressions));
+            var propertyPath = NamingUtils.ResolvePropertyPath(expression, nameof(propertyExpressions));
 
-            var propertyName = memberExpression.Member.Name;
-            var queryFieldName = NamingUtils.ConvertToSnakeCase(propertyName);
-
-            _fieldSelectionConfiguration.AddProperty(propertyName, queryFieldName);
+            _fieldSelectionConfiguration.AddProperty(propertyPath.ClrPath, propertyPath.QueryPath);
         }
         return this;
     }
@@ -388,6 +457,9 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     /// <code>
     /// config.AllowFieldSelection("Id", "Name", "Price");
     /// // Request: ?fields=id,name,price
+    ///
+    /// config.AllowFieldSelection("Customer.Email");
+    /// // Request: ?fields=id,customer.email
     /// </code>
     /// </example>
     public RestLibEndpointConfiguration<TEntity, TKey> AllowFieldSelection(
@@ -395,10 +467,8 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     {
         foreach (var propertyName in propertyNames)
         {
-            var property = NamingUtils.ResolveProperty<TEntity>(propertyName, nameof(propertyNames));
-
-            var queryFieldName = NamingUtils.ConvertToSnakeCase(property.Name);
-            _fieldSelectionConfiguration.AddProperty(property.Name, queryFieldName);
+            var propertyPath = NamingUtils.ResolvePropertyPath<TEntity>(propertyName, nameof(propertyNames));
+            _fieldSelectionConfiguration.AddProperty(propertyPath.ClrPath, propertyPath.QueryPath);
         }
         return this;
     }
@@ -439,6 +509,86 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
         }
 
         return this;
+    }
+
+    /// <summary>
+    /// Configures which string properties participate in collection search.
+    /// Clients can then search with the configured query parameter, which defaults to <c>q</c>.
+    /// </summary>
+    /// <param name="propertyExpressions">Expressions selecting searchable string properties.</param>
+    /// <returns>This configuration instance for chaining.</returns>
+    /// <example>
+    /// <code>
+    /// config.AllowSearch(p =&gt; p.Name, p =&gt; p.Description);
+    /// // Request: ?q=widget
+    ///
+    /// config.AllowSearch(p =&gt; p.Customer.Email);
+    /// // Request: ?q=example.com
+    /// </code>
+    /// </example>
+    public RestLibEndpointConfiguration<TEntity, TKey> AllowSearch(
+        params Expression<Func<TEntity, string?>>[] propertyExpressions)
+    {
+        foreach (var expression in propertyExpressions)
+        {
+            _searchConfiguration.AddProperty(expression);
+        }
+
+        return this;
+    }
+
+    /// <summary>
+    /// Configures which string properties participate in collection search and customizes search options.
+    /// </summary>
+    /// <param name="configure">An action to configure search options.</param>
+    /// <param name="propertyExpressions">Expressions selecting searchable string properties.</param>
+    /// <returns>This configuration instance for chaining.</returns>
+    /// <example>
+    /// <code>
+    /// config.AllowSearch(options =&gt;
+    /// {
+    ///     options.QueryParameterName = "query";
+    ///     options.CaseSensitive = true;
+    /// }, p =&gt; p.Name, p =&gt; p.Description);
+    /// </code>
+    /// </example>
+    public RestLibEndpointConfiguration<TEntity, TKey> AllowSearch(
+        Action<RestLibSearchOptions<TEntity>> configure,
+        params Expression<Func<TEntity, string?>>[] propertyExpressions)
+    {
+        ApplySearchOptions(configure);
+        return AllowSearch(propertyExpressions);
+    }
+
+    /// <summary>
+    /// Configures which string properties participate in collection search using string property paths.
+    /// </summary>
+    /// <param name="propertyNames">The searchable CLR property paths.</param>
+    /// <returns>This configuration instance for chaining.</returns>
+    public RestLibEndpointConfiguration<TEntity, TKey> AllowSearch(
+        params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            _searchConfiguration.AddProperty(propertyName);
+        }
+
+        return this;
+    }
+
+    /// <summary>
+    /// Configures which string properties participate in collection search using string property paths
+    /// and customizes search options.
+    /// </summary>
+    /// <param name="configure">An action to configure search options.</param>
+    /// <param name="propertyNames">The searchable CLR property paths.</param>
+    /// <returns>This configuration instance for chaining.</returns>
+    public RestLibEndpointConfiguration<TEntity, TKey> AllowSearch(
+        Action<RestLibSearchOptions<TEntity>> configure,
+        params string[] propertyNames)
+    {
+        ApplySearchOptions(configure);
+        return AllowSearch(propertyNames);
     }
 
     /// <summary>
@@ -599,6 +749,34 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     }
 
     /// <summary>
+    /// Stores JSON-declared validation rules for runtime request validation.
+    /// </summary>
+    /// <param name="rules">The resolved JSON validation rules keyed by CLR property name.</param>
+    internal void UseJsonValidationRules(IReadOnlyDictionary<string, RestLibJsonValidationRuleConfiguration> rules)
+    {
+        ArgumentNullException.ThrowIfNull(rules);
+        _jsonValidationRules = rules;
+    }
+
+    /// <summary>
+    /// Applies configured search options without registering additional searchable properties.
+    /// </summary>
+    /// <param name="configure">An action that configures search options.</param>
+    internal void ApplySearchOptions(Action<RestLibSearchOptions<TEntity>> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+
+        var options = new RestLibSearchOptions<TEntity>
+        {
+            QueryParameterName = _searchConfiguration.QueryParameterName,
+            CaseSensitive = _searchConfiguration.CaseSensitive
+        };
+
+        configure(options);
+        _searchConfiguration.ApplyOptions(options);
+    }
+
+    /// <summary>
     /// Checks if an operation allows anonymous access.
     /// </summary>
     internal bool IsAnonymous(RestLibOperation operation) =>
@@ -630,4 +808,102 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     /// </summary>
     internal string? GetRateLimitPolicy(RestLibOperation operation) =>
         _rateLimitPolicies.TryGetValue(operation, out var policy) ? policy : _defaultRateLimitPolicy;
+
+    /// <summary>
+    /// Replaces the default key-route metadata with explicit configured values.
+    /// </summary>
+    /// <param name="keyRouteParts">The ordered key-route parts.</param>
+    internal void SetKeyRouteParts(IReadOnlyList<RestLibKeyRoutePart<TKey>> keyRouteParts)
+    {
+        ArgumentNullException.ThrowIfNull(keyRouteParts);
+
+        if (keyRouteParts.Count == 0)
+        {
+            throw new ArgumentException("At least one key route part must be configured.", nameof(keyRouteParts));
+        }
+
+        _keyRouteParts = keyRouteParts.ToArray();
+    }
+
+    private IReadOnlyList<RestLibKeyRoutePart<TKey>> BuildDefaultKeyRouteParts()
+    {
+        return
+        [
+            new RestLibKeyRoutePart<TKey>(
+                KeyPropertyName ?? string.Empty,
+                "id",
+                typeof(TKey),
+                static key => key)
+        ];
+    }
+}
+
+/// <summary>
+/// Configuration options for RestLib endpoints that expose an API model while
+/// persisting a separate DB model.
+/// </summary>
+/// <typeparam name="TApiModel">The API model type.</typeparam>
+/// <typeparam name="TDbModel">The DB model type.</typeparam>
+/// <typeparam name="TKey">The key type.</typeparam>
+public class RestLibEndpointConfiguration<TApiModel, TDbModel, TKey>
+    : RestLibEndpointConfiguration<TApiModel, TKey>
+    where TApiModel : class
+    where TDbModel : class
+    where TKey : notnull
+{
+    private RestLibHooks<TDbModel, TKey>? _dbModelHooks;
+
+    /// <summary>
+    /// Gets or sets the optional JSON-selected mapper name.
+    /// </summary>
+    internal string? MapperName { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the JSON configuration selected
+    /// the built-in reflection auto mapper.
+    /// </summary>
+    internal bool UseAutoMapper { get; set; }
+
+    /// <summary>
+    /// Gets or sets the optional JSON resource name used in error messages.
+    /// </summary>
+    internal string? ResourceName { get; set; }
+
+    /// <summary>
+    /// Gets a value indicating whether this resource uses DB-model hooks instead
+    /// of the default API-model hooks.
+    /// </summary>
+    internal bool UsesDbModelHooks { get; private set; }
+
+    /// <summary>
+    /// Gets the configured DB-model hooks when DB hook mode is enabled.
+    /// </summary>
+    internal RestLibHooks<TDbModel, TKey>? DbModelHooks => _dbModelHooks;
+
+    /// <summary>
+    /// Switches mapped endpoint hooks to use the DB model type.
+    /// </summary>
+    /// <returns>This configuration instance for chaining.</returns>
+    public RestLibEndpointConfiguration<TApiModel, TDbModel, TKey> UseDbModelHooks()
+    {
+        UsesDbModelHooks = true;
+        return this;
+    }
+
+    /// <summary>
+    /// Switches mapped endpoint hooks to use the DB model type and configures the
+    /// DB-model hook pipeline.
+    /// </summary>
+    /// <param name="configure">An action to configure the DB-model hooks.</param>
+    /// <returns>This configuration instance for chaining.</returns>
+    public RestLibEndpointConfiguration<TApiModel, TDbModel, TKey> UseDbModelHooks(
+        Action<RestLibHooks<TDbModel, TKey>> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+
+        UsesDbModelHooks = true;
+        _dbModelHooks ??= new RestLibHooks<TDbModel, TKey>();
+        configure(_dbModelHooks);
+        return this;
+    }
 }

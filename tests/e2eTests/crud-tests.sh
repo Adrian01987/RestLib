@@ -322,6 +322,19 @@ test_delete_happy_path() {
 }
 
 # =============================================================================
+# TEST 15: Customer DTO hides persistence-only fields
+# =============================================================================
+test_getall_customers_hides_created_at() {
+  http_get "${BASE_URL}/api/customers"
+
+  assert_http_status "200"                               || return 1
+  assert_json_field_exists ".items[0].id"                || return 1
+  assert_json_field_exists ".items[0].name"              || return 1
+  assert_json_field_exists ".items[0].email"             || return 1
+  assert_json_field_null ".items[0].created_at"          || return 1
+}
+
+# =============================================================================
 # Run all tests
 # =============================================================================
 
@@ -339,6 +352,7 @@ run_test "Create with Missing Required Field"             test_create_missing_re
 run_test "Cleanup Test Product (via batch delete)"        test_cleanup_product
 run_test "Create Returns Location Header"                 test_create_returns_location_header
 run_test "Delete Happy Path (204)"                        test_delete_happy_path
+run_test "Customers hide persistence fields"              test_getall_customers_hides_created_at
 
 print_summary
 exit $?

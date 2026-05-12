@@ -1,0 +1,75 @@
+using RestLib.Internal;
+
+namespace RestLib.Configuration;
+
+/// <summary>
+/// Validates mapped query configuration for two-model resources.
+/// </summary>
+internal static class MappedQueryConfigurationValidator
+{
+    /// <summary>
+    /// Validates that filter and sort properties configured on the API model are
+    /// also available on the DB model with compatible types.
+    /// </summary>
+    /// <typeparam name="TApiModel">The API model type.</typeparam>
+    /// <typeparam name="TDbModel">The DB model type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="configuration">The mapped endpoint configuration.</param>
+    internal static void Validate<TApiModel, TDbModel, TKey>(
+        RestLibEndpointConfiguration<TApiModel, TDbModel, TKey> configuration)
+        where TApiModel : class
+        where TDbModel : class
+        where TKey : notnull
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        if (typeof(TApiModel) == typeof(TDbModel))
+        {
+            return;
+        }
+
+        foreach (var filter in configuration.FilterConfiguration.Properties)
+        {
+            ValidateProperty<TApiModel, TDbModel>(filter.PropertyName, filter.PropertyType, "filtering");
+        }
+
+        foreach (var sort in configuration.SortConfiguration.Properties)
+        {
+            ValidateProperty<TApiModel, TDbModel>(sort.PropertyName, sort.PropertyType, "sorting");
+        }
+
+        foreach (var search in configuration.SearchConfiguration.Properties)
+        {
+            ValidateProperty<TApiModel, TDbModel>(search.PropertyName, typeof(string), "search");
+        }
+    }
+
+    private static void ValidateProperty<TApiModel, TDbModel>(
+        string propertyName,
+        Type apiPropertyType,
+        string usage)
+        where TApiModel : class
+        where TDbModel : class
+    {
+        PropertyPath dbPropertyPath;
+        try
+        {
+            dbPropertyPath = NamingUtils.ResolvePropertyPath<TDbModel>(propertyName, nameof(propertyName));
+        }
+        catch (ArgumentException)
+        {
+            throw new InvalidOperationException(
+                $"Mapped {usage} property '{propertyName}' is configured on API model " +
+                $"'{typeof(TApiModel).FullName}' but does not exist on DB model '{typeof(TDbModel).FullName}'.");
+        }
+
+        if (dbPropertyPath.LeafPropertyType != apiPropertyType)
+        {
+            throw new InvalidOperationException(
+                $"Mapped {usage} property '{propertyName}' is configured on API model " +
+                $"'{typeof(TApiModel).FullName}' with CLR type '{apiPropertyType.FullName}', but DB model " +
+                $"'{typeof(TDbModel).FullName}' exposes '{dbPropertyPath.LeafPropertyType.FullName}' for that path. " +
+                "Sprint 002 requires the same CLR property name and type for mapped filtering and sorting.");
+        }
+    }
+}

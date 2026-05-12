@@ -9,6 +9,22 @@
 
 RestLib is a .NET 10 library for ASP.NET Core Minimal APIs that generates CRUD endpoints from your model and repository. It bakes in secure defaults, cursor-based pagination APIs, filtering, sorting, field selection, HATEOAS hypermedia links, OpenAPI metadata, and RFC 9457 Problem Details so you can ship consistent APIs faster. Some capabilities depend on the repository adapter and may have implementation-specific limits.
 
+## Table of Contents
+
+- [Install](#install)
+- [Quick Start](#quick-start)
+- [Why RestLib](#why-restlib)
+- [Features](#features)
+- [Performance](#performance)
+- [Learn More](#learn-more)
+- [Guides](#guides)
+- [Architecture Decisions](#architecture-decisions)
+- [Packages](#packages)
+- [Requirements](#requirements)
+- [Known Limitations](#known-limitations)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## Install
 
 Install the core package:
@@ -90,69 +106,122 @@ That gives you:
 - `PATCH /api/products/{id}` - partially update
 - `DELETE /api/products/{id}` - delete
 
-### EF Core Quick Start
+### Quick Start (folder convention)
 
-For a database-backed path, define the same model plus a `DbContext`:
+For JSON-driven resources, the recommended path is one file per resource under `Models/`.
 
-```csharp
-using Microsoft.EntityFrameworkCore;
-
-public class Product
-{
-    public Guid Id { get; set; }
-    public required string Name { get; set; }
-    public decimal Price { get; set; }
-}
-
-public class AppDbContext : DbContext
-{
-    public AppDbContext(DbContextOptions<AppDbContext> options)
-        : base(options)
-    {
-    }
-
-    public DbSet<Product> Products => Set<Product>();
-}
-```
-
-Register EF Core, the RestLib adapter, and ensure the database exists at startup:
+`Program.cs`:
 
 ```csharp
-using Microsoft.EntityFrameworkCore;
 using RestLib;
-using RestLib.EntityFrameworkCore;
-using Scalar.AspNetCore;
+using RestLib.InMemory;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRestLib();
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite("Data Source=app.db"));
-builder.Services.AddRestLibEfCore<AppDbContext, Product, Guid>();
-builder.Services.AddOpenApi();
+builder.Services.AddRestLibInMemory<Product, Guid>(p => p.Id, Guid.NewGuid);
+builder.Services.AddRestLibFromFolder("Models");
 
 var app = builder.Build();
-
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.EnsureCreated();
-}
-
-app.MapOpenApi();
-app.MapScalarApiReference();
-
-app.MapRestLib<Product, Guid>("/api/products", config =>
-{
-    config.AllowAnonymous();
-});
-
+app.MapJsonResources();
 app.Run();
 ```
 
-That exposes the same CRUD endpoints as the in-memory quick start, but backed by EF Core
-and SQLite. If your key property follows EF Core conventions, `AddRestLibEfCore` can infer
-it automatically; otherwise provide a `KeySelector` in the options callback.
+Single-file variant:
+
+```csharp
+builder.Services.AddJsonResourceFromFile<Product, Guid>("Models/Products.json");
+```
+
+Two-model single-file variant:
+
+```csharp
+builder.Services.AddJsonResourceFromFile<ProductDto, ProductEntity, Guid>("Models/Products.json");
+```
+
+`Models/Products.json`:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/Adrian01987/RestLib/main/schemas/restlib-resource.schema.json",
+  "EntityType": "Product, MyApi",
+  "Name": "products",
+  "Route": "/api/products",
+  "AllowAnonymousAll": true,
+  "Validation": {
+    "Name": { "Required": true },
+    "Price": { "Min": 0.01 }
+  }
+}
+```
+
+See [docs/guides/json-resources.md](docs/guides/json-resources.md) for the full walkthrough.
+
+### Separate API and DB models
+
+When you want to expose a DTO but persist a different model, register a mapper and use the three-type overload:
+
+```csharp
+builder.Services.AddRestLibMapper<ProductDto, ProductEntity, ProductMapper>();
+
+app.MapRestLib<ProductDto, ProductEntity, Guid>("/api/products", config =>
+{
+    config.AllowAnonymous();
+    config.AllowFiltering(p => p.CategoryId);
+    config.AllowSorting(p => p.Name, p => p.Price);
+    config.AllowFieldSelection(p => p.Id, p => p.Name, p => p.Price);
+    config.AllowSearch(p => p.Name, p => p.Description);
+});
+```
+
+JSON resources can declare the same pattern with a `Mapping` section:
+
+```json
+{
+  "EntityType": "ProductDto, MyApi",
+  "Name": "products",
+  "Route": "/api/products",
+  "Mapping": {
+    "DbType": "ProductEntity, MyApi",
+    "Mapper": "ProductMapper"
+  },
+  "Filtering": ["CategoryId"],
+  "Sorting": ["Name", "Price"],
+  "FieldSelection": ["Id", "Name", "Price"],
+  "Search": ["Name", "Description"]
+}
+```
+
+### Collection Search
+
+RestLib can opt resources into a simple OR-of-contains search across configured string
+properties. The default query parameter is `q`, and JSON resources support the same
+feature with configurable search options.
+
+Search is intentionally limited to lightweight collection queries rather than full-text
+indexing, ranking, or fuzzy matching. For full fluent and JSON examples, nested-path
+usage, and the strict `Mapping.Auto` shortcut, see
+[docs/guides/query-features.md](docs/guides/query-features.md).
+
+### Composite keys
+
+RestLib supports ordered two-part composite keys through `RestLibCompositeKey<TFirst, TSecond>`
+for both fluent and JSON-backed resources. Item routes use two path segments such as
+`/api/tenant-products/{tenantId}/{sku}`.
+
+For complete fluent setup, JSON `Key` examples, and related query behavior, see
+[docs/guides/query-features.md](docs/guides/query-features.md).
+
+### EF Core Quick Start
+
+For a database-backed path, register your `DbContext`, call
+`AddRestLibEfCore<AppDbContext, TEntity, TKey>()`, and map the same RestLib endpoints over
+your EF Core model. RestLib handles endpoint wiring and repository behavior, while your
+application continues to own schema creation and migrations.
+
+The sample app uses `EnsureCreated()` as a zero-setup demo path, but production EF Core
+apps should use normal migrations and `Database.Migrate()`. For the full setup and migration
+workflow, see [docs/guides/ef-core-migrations.md](docs/guides/ef-core-migrations.md).
 
 ## Why RestLib
 
@@ -202,55 +271,22 @@ RestLib follows the [Zalando REST API Guidelines](https://opensource.zalando.com
 
 ### Advanced Filtering
 
-Enable query-string filtering with no custom parser code:
+RestLib supports allow-listed query-string filtering for scalar properties and nested
+reference-property paths. Equality filters use direct query parameters, while range,
+string, and membership operators use bracket syntax such as `price[gte]` and
+`name[contains]`.
 
-```csharp
-app.MapRestLib<Product, Guid>("/api/products", config =>
-{
-    config.AllowFiltering(p => p.CategoryId, p => p.IsActive);
-    config.AllowFiltering(p => p.Price, FilterOperators.Comparison);
-    config.AllowFiltering(p => p.Name, FilterOperators.String);
-});
-```
-
-Equality filters use direct query parameters:
-
-```text
-GET /api/products?category_id=5&is_active=true
-```
-
-Operator filters use bracket syntax for ranges, partial matches, and set membership:
-
-```text
-GET /api/products?price[gte]=20&price[lte]=100
-GET /api/products?name[contains]=widget
-GET /api/products?status[in]=active,pending
-```
-
-Ten operators are available: `eq`, `neq`, `gt`, `lt`, `gte`, `lte`, `contains`,
-`starts_with`, `ends_with`, and `in`. Each property declares which operators it supports via
-preset arrays (`FilterOperators.Comparison`, `FilterOperators.String`,
-`FilterOperators.All`) or individual `FilterOperator` values. `Eq` is always
-implicitly allowed. See [ADR-013](docs/adr/013-filter-operators.md) for details.
+For complete fluent setup, operator coverage, nested-path examples, and JSON equivalents,
+see [docs/guides/query-features.md](docs/guides/query-features.md).
 
 ### Sorting
 
-Control result ordering with an allow-list of sortable properties:
+Sorting uses an allow-list of sortable properties with optional default ordering.
+Query names use snake_case, directions are `asc` or `desc`, and nested reference-property
+paths use dotted names such as `customer.name`.
 
-```csharp
-app.MapRestLib<Product, Guid>("/api/products", config =>
-{
-    config.AllowSorting(p => p.Price, p => p.Name);
-    config.DefaultSort("name:asc");
-});
-```
-
-```text
-GET /api/products?sort=price:asc,name:desc&limit=20
-```
-
-Sort fields use snake_case names and support `asc`/`desc` directions.
-Disallowed fields return a 400 Problem Details response.
+For fluent examples, multi-sort patterns, nested-path rules, and JSON configuration,
+see [docs/guides/query-features.md](docs/guides/query-features.md).
 
 ### Rate Limiting
 
@@ -284,337 +320,109 @@ the application defines and registers the actual policies.
 
 ### Field Selection
 
-Return only the fields your client needs with sparse fieldsets:
+Field selection lets clients request sparse fieldsets such as `?fields=id,name,price`
+instead of returning the full entity every time. Unknown or disallowed fields return a
+400 Problem Details response, and nested reference-property paths are supported with
+snake_case dotted query names.
 
-```csharp
-app.MapRestLib<Product, Guid>("/api/products", config =>
-{
-    config.AllowFieldSelection(p => p.Id, p => p.Name, p => p.Price, p => p.CategoryId);
-});
-```
+For full examples, JSON configuration, nested sparse output behavior, and interactions
+with filtering/sorting/pagination, see
+[docs/guides/query-features.md](docs/guides/query-features.md).
 
-```http
-GET /api/products?fields=id,name,price
-```
+#### Nested object responses (opt-in)
 
-Only the selected fields are included in the response. Unknown or disallowed
-fields return a 400 Problem Details response. If no `fields` parameter is sent,
-the full entity is returned.
+Sparse field selection defaults to flat dotted keys for backward compatibility, but
+resources can opt into rebuilt nested objects when that response shape is a better fit
+for clients. The opt-in applies only to sparse responses; dense fallback projection
+continues to use flat output.
 
-Field selection works with both GetAll (collection) and GetById (single entity)
-endpoints, and combines with filtering, sorting, and pagination.
+For the fluent and JSON opt-in shapes plus concrete examples of both response modes,
+see [docs/guides/query-features.md](docs/guides/query-features.md#nested-object-responses-opt-in).
 
 ### Batch Operations
 
-Create, update, patch, or delete multiple resources in a single request:
+Batch endpoints support create, update, patch, and delete actions over multiple
+resources in one request. Responses report per-item status, returning 200 when all
+items succeed and 207 Multi-Status when results are mixed.
 
-```csharp
-app.MapRestLib<Product, Guid>("/api/products", config =>
-{
-    config.EnableBatch(BatchAction.Create, BatchAction.Delete, BatchAction.Patch);
-});
-```
-
-```http
-POST /api/products/batch
-Content-Type: application/json
-
-{
-  "action": "create",
-  "items": [
-    { "name": "Keyboard", "price": 49.99 },
-    { "name": "Mouse", "price": 29.99 }
-  ]
-}
-```
-
-The response reports per-item status. All succeeded returns 200; mixed results
-return 207 Multi-Status with individual status codes per item.
-
-Batch size is limited to 100 items by default (configurable via
-`RestLibOptions.MaxBatchSize`). Hooks fire once per item, and validation runs
-per item with errors reported individually.
+For request examples, batch limits, and hook/validation behavior, see
+[docs/guides/extensibility-and-operations.md](docs/guides/extensibility-and-operations.md).
 
 ### HATEOAS Hypermedia Links
 
-Enable HAL-style `_links` on every entity response for discoverability:
+Enable HATEOAS to add CRUD-aware `_links` metadata to entity responses. RestLib can also
+merge in custom link relations through `IHateoasLinkProvider<TEntity, TKey>` when you want
+to point clients at related resources.
 
-```csharp
-builder.Services.AddRestLib(opts =>
-{
-    opts.EnableHateoas = true;
-});
-```
-
-Responses include contextual navigation links:
-
-```json
-{
-  "id": "a1b2c3d4-...",
-  "name": "Keyboard",
-  "price": 49.99,
-  "_links": {
-    "self":       { "href": "https://api.example.com/api/products/a1b2c3d4-..." },
-    "collection": { "href": "https://api.example.com/api/products" },
-    "update":     { "href": "https://api.example.com/api/products/a1b2c3d4-..." },
-    "patch":      { "href": "https://api.example.com/api/products/a1b2c3d4-..." }
-  }
-}
-```
-
-Links are CRUD-aware: `update`, `patch`, and `delete` only appear when those
-operations are enabled on the endpoint. Batch responses include per-item links.
-
-For custom link relations (e.g., related resources), implement
-`IHateoasLinkProvider<TEntity, TKey>`:
-
-```csharp
-public class ProductLinkProvider : IHateoasLinkProvider<Product, Guid>
-{
-    public IEnumerable<HateoasLink> GetLinks(Product entity, Guid key, string baseUrl, string collectionPath)
-    {
-        yield return new HateoasLink("category", $"{baseUrl}/api/categories/{entity.CategoryId}");
-    }
-}
-
-builder.Services.AddHateoasLinkProvider<Product, Guid, ProductLinkProvider>();
-```
+For full response examples and custom link-provider registration, see
+[docs/guides/extensibility-and-operations.md](docs/guides/extensibility-and-operations.md).
 
 ### Select Operations
 
-Expose only the operations you want, and mix custom endpoints with generated ones:
+RestLib lets you expose only the CRUD operations you want and combine generated endpoints
+with custom routes when needed. The same resource surface can be declared fluently, loaded
+from JSON files, or bound from `appsettings.json`.
 
-```csharp
-app.MapRestLib<Category, Guid>("/api/categories", config =>
-{
-    config.IncludeOperations(RestLibOperation.GetAll, RestLibOperation.GetById);
-});
-
-app.MapPost("/api/categories", async (Category category, IRepository<Category, Guid> repo) =>
-{
-    return Results.Created($"/api/categories/{category.Id}", await repo.CreateAsync(category));
-});
-```
-
-You can also move this declarative resource configuration out of `Program.cs` and into JSON while keeping your model, repository, and hooks strongly typed:
-
-```json
-{
-  "RestLib": {
-    "Resources": {
-      "Products": {
-        "Name": "products",
-        "Route": "/api/products",
-        "AllowAnonymousAll": true,
-        "Operations": {
-          "Exclude": ["Delete"]
-        },
-        "Filtering": ["CategoryId", "IsActive"],
-        "Sorting": ["Price", "Name", "CreatedAt"],
-        "DefaultSort": "name:asc",
-        "OpenApi": {
-          "Tag": "Product",
-          "Summaries": {
-            "GetAll": "List products"
-          }
-        }
-      }
-    }
-  }
-}
-```
-
-```csharp
-var productResource = builder.Configuration
-    .GetSection("RestLib:Resources:Products")
-    .Get<RestLibJsonResourceConfiguration>()!;
-
-builder.Services.AddJsonResource<Product, Guid>(productResource);
-
-var app = builder.Build();
-app.MapJsonResources();
-```
+For full examples covering operation allow-lists, JSON registration, the new
+`UnifiedTypeResolver`, and two-model folder loading, see
+[docs/guides/extensibility-and-operations.md](docs/guides/extensibility-and-operations.md).
 
 ### Extensible via Hooks
 
-Inject custom logic into the pipeline without subclassing framework types:
+Hooks provide strongly typed pipeline customization without controller inheritance or
+framework subclassing. JSON can select named hooks per operation while C# keeps the actual
+behavior implementation and test surface.
 
-```csharp
-app.MapRestLib<Product, Guid>("/api/products", config =>
-{
-    config.UseHooks(hooks =>
-    {
-        hooks.BeforePersist = ctx =>
-        {
-            if (ctx.Entity is Product product && ctx.Operation == RestLibOperation.Create)
-            {
-                product.CreatedAt = DateTime.UtcNow;
-            }
-
-            return Task.CompletedTask;
-        };
-    });
-});
-```
-
-If you want a cleaner startup file, JSON config can select named hooks per operation while the hook implementations stay in C#:
-
-```csharp
-builder.Services.AddNamedHook<Product, Guid>(HookNames.SetUpdatedAt, ctx =>
-{
-    if (ctx.Entity is Product product)
-    {
-        product.UpdatedAt = ctx.Operation == RestLibOperation.Create ? null : DateTime.UtcNow;
-    }
-
-    return Task.CompletedTask;
-});
-```
-
-```json
-{
-  "Hooks": {
-    "BeforePersist": {
-      "ByOperation": {
-        "Create": ["SetUpdatedAt"],
-        "Update": ["SetUpdatedAt"],
-        "Patch": ["SetUpdatedAt"]
-      }
-    }
-  }
-}
-```
-
-This keeps route, auth, filtering, operation selection, OpenAPI metadata, and hook selection in JSON while your actual behavior remains strongly typed and testable in C#. A simple pattern is to centralize hook names in a `HookNames` class and use those constants when registering handlers.
+For fluent and named-hook examples, see
+[docs/guides/extensibility-and-operations.md](docs/guides/extensibility-and-operations.md).
 
 ### Persistence-Agnostic
 
-Use the in-memory adapter or plug in your own repository implementation:
+RestLib stays persistence-agnostic: use the in-memory adapter, the EF Core adapter, or
+your own repository implementation behind the same endpoint surface.
 
-```csharp
-public class ProductRepository : IRepository<Product, Guid>
-{
-    private readonly MyDbContext _db;
-
-    public ProductRepository(MyDbContext db)
-    {
-        _db = db;
-    }
-
-    public async Task<Product?> GetByIdAsync(Guid id, CancellationToken ct)
-        => await _db.Products.FindAsync([id], ct);
-
-    // Implement the remaining IRepository members...
-}
-
-builder.Services.AddRepository<Product, Guid, ProductRepository>();
-```
+For a custom repository example and guidance on where the EF Core adapter fits, see
+[docs/guides/extensibility-and-operations.md](docs/guides/extensibility-and-operations.md).
 
 ### EF Core Adapter
 
-Use the official EF Core adapter instead of writing a custom repository:
+The official EF Core adapter wires RestLib over a `DbContext` without changing your EF Core
+model ownership. It supports filtering, sorting, counting, pagination, batch operations,
+and conditional field-selection projection pushdown, with some adapter-specific limits.
 
-```csharp
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlite("Data Source=app.db"));
-
-builder.Services.AddRestLibEfCore<AppDbContext, Product, Guid>();
-```
-
-The adapter auto-detects the primary key from EF Core model metadata. To customize
-options:
-
-```csharp
-builder.Services.AddRestLibEfCore<AppDbContext, Product, Guid>(options =>
-{
-    options.KeySelector = p => p.Id;
-    options.UseAsNoTracking = false;
-});
-```
-
-The EF Core adapter supports RestLib's filtering, sorting, counting, pagination,
-batch operations, and hooks on top of EF Core, with server-side query translation
-for filtering, sorting, and counting. Field selection can also be pushed down to SQL
-when projection pushdown is enabled and the request only uses projectable direct scalar
-properties. Some capabilities have important implementation limits;
-see [Current EF Core Adapter Limitations](#current-ef-core-adapter-limitations)
-and [ADR-021](docs/adr/021-ef-core-adapter.md).
+For registration examples and the broader adapter overview, see
+[docs/guides/extensibility-and-operations.md](docs/guides/extensibility-and-operations.md).
+For production migration workflow, see
+[docs/guides/ef-core-migrations.md](docs/guides/ef-core-migrations.md).
 
 #### Current EF Core Adapter Limitations
 
-- **Single-property keys only** - the adapter auto-detects or accepts a single `TKey` value. Composite EF Core keys are not supported.
+- **At most two key parts** - the adapter supports scalar keys and ordered two-part composite keys via `RestLibCompositeKey<TFirst, TSecond>`. Keys with more than two parts are not supported.
 - **Keyset pagination with offset fallback** - the EF Core adapter uses last-seen sort values plus the key for supported stable sorts, but falls back to encoded offset cursors for unsupported sort shapes.
-- **Projection pushdown is opt-in and conditional** - when enabled, EF Core pushes down direct scalar field selections and still includes key/filter/sort columns in SQL. Requests fall back to post-fetch field stripping for non-projectable fields or when HATEOAS, ETag, or hooks are active.
-- **Top-level properties only** - filtering, sorting, field selection, and PATCH handling operate on direct entity properties. Nested or related-property paths are not supported.
+- **Projection pushdown is opt-in and conditional** - when enabled, EF Core pushes down direct scalar field selections and still includes key/filter/sort columns in SQL. Nested field selections currently fall back to post-fetch projection, and any non-projectable selection still falls back when HATEOAS, ETag, or hooks are active.
+- **Nested query paths are reference-only** - filtering, sorting, and field selection support dot-separated nested reference-property paths such as `customer.email`. Collection-valued paths are not supported, nested sparse responses use dotted output keys, and PATCH handling still operates on direct entity properties.
 - **Constraint mapping is provider-limited** - database constraint classification still relies primarily on exception-message inspection and is not yet specialized per provider.
 
 Use the adapter when you want the standard RestLib endpoint surface over a typical
-EF Core model, but expect to write a custom repository if you need composite-key
-resources, deep/navigational query semantics, or SQL-level projection beyond direct
-scalar property selection.
+EF Core model, including two-part composite-key resources. Expect to write a custom
+repository if you need keys with more than two parts, deep/navigational query semantics,
+or SQL-level projection beyond direct scalar property selection.
 
 ### Versioning
 
-RestLib integrates with any ASP.NET Core versioning strategy via route groups.
+RestLib integrates with common ASP.NET Core versioning patterns via route groups, including
+URL prefixes and `Asp.Versioning.Http` when you need header, query-string, or media-type
+versioning.
+
+For complete examples of URL-prefix versioning, prefix-less overloads, and
+`Asp.Versioning.Http` integration, see
+[docs/guides/extensibility-and-operations.md](docs/guides/extensibility-and-operations.md).
 
 #### URL prefix versioning
 
-```csharp
-var v1 = app.MapGroup("/api/v1");
-var v2 = app.MapGroup("/api/v2");
-
-v1.MapRestLib<Product, Guid>("/products", cfg =>
-{
-    cfg.AllowAnonymous();
-    cfg.ExcludeOperations(RestLibOperation.Patch, RestLibOperation.Delete);
-    cfg.AllowFiltering(p => p.CategoryId);
-});
-
-v2.MapRestLib<Product, Guid>("/products", cfg =>
-{
-    cfg.AllowAnonymous();
-    cfg.AllowFiltering(p => p.CategoryId, p => p.IsActive);
-    cfg.AllowSorting(p => p.Price, p => p.Name);
-    cfg.AllowFieldSelection(p => p.Id, p => p.Name, p => p.Price);
-});
-```
-
 #### Prefix-less overload on a route group
 
-When the route group already has the full path configured, use the prefix-less overload:
-
-```csharp
-app.MapGroup("/api/v1/products").MapRestLib<Product, Guid>(cfg =>
-{
-    cfg.AllowAnonymous();
-});
-```
-
 #### With Asp.Versioning.Http
-
-```csharp
-// Install: Asp.Versioning.Http
-builder.Services.AddApiVersioning();
-
-var versionedApi = app.NewVersionedApi("Products");
-
-versionedApi
-    .MapGroup("/api/v{version:apiVersion}/products")
-    .HasApiVersion(1.0)
-    .MapRestLib<Product, Guid>(cfg => cfg.AllowAnonymous());
-
-versionedApi
-    .MapGroup("/api/v{version:apiVersion}/products")
-    .HasApiVersion(2.0)
-    .MapRestLib<Product, Guid>(cfg =>
-    {
-        cfg.AllowAnonymous();
-        cfg.AllowFieldSelection(p => p.Id, p => p.Name, p => p.Price);
-    });
-```
-
-RestLib does not depend on `Asp.Versioning.Http` — install it only if you need
-query-string, header, or media-type versioning strategies.
 
 ## Performance
 
@@ -670,10 +478,19 @@ Intel Core i3-8130U CPU 2.20GHz (Kaby Lake), 1 CPU, 4 logical and 2 physical cor
 ## Learn More
 
 - [Sample app](https://github.com/Adrian01987/RestLib/blob/main/samples/RestLib.Sample/Program.cs)
+- [EF Core migrations guide](https://github.com/Adrian01987/RestLib/blob/main/docs/guides/ef-core-migrations.md)
+- [JSON resources guide](https://github.com/Adrian01987/RestLib/blob/main/docs/guides/json-resources.md)
 - [Architecture decisions](https://github.com/Adrian01987/RestLib/tree/main/docs/adr)
 - [Benchmarks](https://github.com/Adrian01987/RestLib/blob/main/benchmarks/RestLib.Benchmarks/README.md)
 - [Changelog](https://github.com/Adrian01987/RestLib/blob/main/CHANGELOG.md)
 - [Contributing guide](https://github.com/Adrian01987/RestLib/blob/main/CONTRIBUTING.md)
+
+## Guides
+
+- [JSON resources guide](docs/guides/json-resources.md) - folder-based JSON resource setup, two-model JSON resources, and configuration troubleshooting
+- [Query features guide](docs/guides/query-features.md) - filtering, sorting, field selection, nested paths, search, and composite keys
+- [Extensibility and operations guide](docs/guides/extensibility-and-operations.md) - batch operations, hooks, operation selection, adapters, and versioning
+- [EF Core migrations guide](docs/guides/ef-core-migrations.md) - production EF Core schema and migration workflow
 
 ## Architecture Decisions
 
@@ -702,6 +519,10 @@ Key decisions are documented as Architecture Decision Records:
 | [ADR-019](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/019-hateoas.md) | HATEOAS hypermedia links |
 | [ADR-020](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/020-structured-logging.md) | Structured logging |
 | [ADR-021](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/021-ef-core-adapter.md) | EF Core repository adapter |
+| [ADR-022](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/022-per-file-json-resources.md) | Per-file JSON resources |
+| [ADR-023](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/023-json-validation-rules.md) | JSON validation rules |
+| [ADR-024](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/024-two-model-resources-and-the-mapping-seam.md) | Two-model resources and the mapping seam |
+| [ADR-025](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/025-composite-key-support.md) | Two-part composite key support |
 
 ## Packages
 
@@ -721,8 +542,8 @@ Key decisions are documented as Architecture Decision Records:
 - **Forward-only cursor pagination** — cursors support forward traversal only; there is no backward/previous-page navigation.
 - **Cursor contract, adapter-specific implementation** — RestLib exposes an opaque cursor API. The InMemory adapter still uses encoded offsets/indexes, while the EF Core adapter uses keyset cursors for supported stable sorts and falls back to offsets otherwise.
 - **Post-fetch field selection** — field projection is applied after the full entity is retrieved from the repository, not pushed down to the data source.
-- **Flat properties only** — filtering, sorting, and field selection operate on top-level entity properties; nested or related entity paths are not supported.
-- **No built-in search** — full-text or fuzzy search is not included; implement it in your repository if needed.
+- **Nested query paths are reference-only** — filtering, sorting, and field selection support dotted nested reference-property paths such as `customer.email`, but collection-valued paths are not supported and sparse nested responses use dotted output keys rather than nested objects.
+- **Built-in search is intentionally limited** — RestLib supports configured OR-of-contains search across string fields, but it does not provide full-text indexing, ranking, fuzzy matching, or provider-specific search features.
 - **No CORS configuration** — RestLib does not configure CORS. If your API is consumed by browsers, add ASP.NET Core's built-in CORS middleware:
 
   ```csharp

@@ -1,4 +1,5 @@
 using RestLib.Filtering;
+using RestLib.Search;
 using RestLib.Sorting;
 
 namespace RestLib.Pagination;
@@ -29,4 +30,10 @@ public class PaginationRequest
     /// Repository implementations should use these to order results.
     /// </summary>
     public IReadOnlyList<SortField> SortFields { get; init; } = [];
+
+    /// <summary>
+    /// Gets the search criteria to apply to the query.
+    /// Repository implementations may ignore this property when search is not supported.
+    /// </summary>
+    public SearchRequest? Search { get; init; }
 }

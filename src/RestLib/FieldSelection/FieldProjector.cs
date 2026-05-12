@@ -3,6 +3,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using RestLib.Internal;
 
 namespace RestLib.FieldSelection;
 
@@ -23,6 +24,8 @@ internal static class FieldProjector
     private const double SerializeThresholdRatio = 0.5;
 
     private static readonly ConcurrentDictionary<(Type EntityType, Type? NamingPolicyType), PropertyAccessorMap> AccessorCache = new();
+    private static readonly ConcurrentDictionary<(Type EntityType, string PropertyPath), PathAccessor> PathAccessorCache = new();
+    private static readonly JsonElement NullElement = CreateNullElement();
 
     /// <summary>
     /// Projects a single entity to a dictionary containing only the selected fields.
@@ -33,11 +36,13 @@ internal static class FieldProjector
     /// <param name="entity">The entity instance to project.</param>
     /// <param name="selectedFields">The fields to include.</param>
     /// <param name="jsonOptions">The JSON serializer options (for naming policy).</param>
+    /// <param name="responseShape">The sparse response shape to use for nested selected fields.</param>
     /// <returns>A dictionary of field name to JSON value, or null if no projection needed.</returns>
     internal static Dictionary<string, JsonElement>? Project<TEntity>(
         TEntity entity,
         IReadOnlyList<SelectedField> selectedFields,
-        JsonSerializerOptions jsonOptions)
+        JsonSerializerOptions jsonOptions,
+        FieldSelectionResponseShape responseShape = FieldSelectionResponseShape.Flat)
     {
         if (selectedFields.Count == 0)
         {
@@ -45,9 +50,10 @@ internal static class FieldProjector
         }
 
         var accessorMap = GetOrBuildAccessorMap(typeof(TEntity), jsonOptions);
-
         // Fall back to serialize-then-pick for types with class-level JsonConverter
-        // or when selecting a large fraction of properties (cheaper to serialize once)
+        // or when selecting a large fraction of properties (cheaper to serialize once).
+        // Dense fallback intentionally keeps the flat dotted output shape even when
+        // nested sparse responses are enabled.
         if (accessorMap.RequiresSerializeFallback ||
             ShouldUseSerializeFallback(selectedFields.Count, accessorMap.PropertyCount))
         {
@@ -58,11 +64,22 @@ internal static class FieldProjector
 
         foreach (var field in selectedFields)
         {
-            if (accessorMap.TryGetAccessor(field.PropertyName, out var accessor))
+            if (TryGetAccessor(typeof(TEntity), accessorMap, field.PropertyName, jsonOptions, out var accessor))
             {
                 var value = accessor.GetValue(entity!);
-                var element = JsonSerializer.SerializeToElement(value, accessor.PropertyType, jsonOptions);
-                result[field.QueryParameterName] = element;
+                var element = value is null
+                    ? NullElement
+                    : JsonSerializer.SerializeToElement(value, accessor.PropertyType, jsonOptions);
+
+                if (responseShape == FieldSelectionResponseShape.Nested
+                    && field.QueryParameterName.Contains('.', StringComparison.Ordinal))
+                {
+                    SetNestedElement(result, field.QueryParameterName, element, jsonOptions);
+                }
+                else
+                {
+                    result[field.QueryParameterName] = element;
+                }
             }
         }
 
@@ -76,11 +93,13 @@ internal static class FieldProjector
     /// <param name="entities">The entities to project.</param>
     /// <param name="selectedFields">The fields to include.</param>
     /// <param name="jsonOptions">The JSON serializer options (for naming policy).</param>
+    /// <param name="responseShape">The sparse response shape to use for nested selected fields.</param>
     /// <returns>A list of projected dictionaries, or null if no projection needed.</returns>
     internal static IReadOnlyList<Dictionary<string, JsonElement>>? ProjectMany<TEntity>(
         IReadOnlyList<TEntity> entities,
         IReadOnlyList<SelectedField> selectedFields,
-        JsonSerializerOptions jsonOptions)
+        JsonSerializerOptions jsonOptions,
+        FieldSelectionResponseShape responseShape = FieldSelectionResponseShape.Flat)
     {
         if (selectedFields.Count == 0)
         {
@@ -91,7 +110,7 @@ internal static class FieldProjector
 
         foreach (var entity in entities)
         {
-            var projected = Project(entity, selectedFields, jsonOptions);
+            var projected = Project(entity, selectedFields, jsonOptions, responseShape);
             if (projected is not null)
             {
                 results.Add(projected);
@@ -131,9 +150,13 @@ internal static class FieldProjector
 
         foreach (var field in selectedFields)
         {
-            if (doc.RootElement.TryGetProperty(field.QueryParameterName, out var value))
+            if (TryGetJsonPathValue(doc.RootElement, field.QueryParameterName.Split('.'), out var value))
             {
                 result[field.QueryParameterName] = value.Clone();
+            }
+            else if (field.QueryParameterName.Contains('.', StringComparison.Ordinal))
+            {
+                result[field.QueryParameterName] = NullElement;
             }
         }
 
@@ -144,6 +167,146 @@ internal static class FieldProjector
     {
         var key = (entityType, jsonOptions.PropertyNamingPolicy?.GetType());
         return AccessorCache.GetOrAdd(key, _ => PropertyAccessorMap.Build(entityType, jsonOptions));
+    }
+
+    private static bool TryGetAccessor(
+        Type entityType,
+        PropertyAccessorMap accessorMap,
+        string propertyPath,
+        JsonSerializerOptions jsonOptions,
+        out PathAccessor accessor)
+    {
+        if (!propertyPath.Contains('.', StringComparison.Ordinal))
+        {
+            if (accessorMap.TryGetAccessor(propertyPath, out var directAccessor))
+            {
+                accessor = new PathAccessor(directAccessor.GetValue, directAccessor.PropertyType);
+                return true;
+            }
+
+            accessor = null!;
+            return false;
+        }
+
+        var key = (entityType, propertyPath);
+        try
+        {
+            accessor = PathAccessorCache.GetOrAdd(key, _ => BuildPathAccessor(entityType, propertyPath));
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            accessor = null!;
+            return false;
+        }
+    }
+
+    private static PathAccessor BuildPathAccessor(Type entityType, string propertyPath)
+    {
+        var resolvedPath = NamingUtils.ResolvePropertyPath(entityType, propertyPath, nameof(propertyPath));
+        var properties = new List<PropertyInfo>(resolvedPath.ClrSegments.Count);
+        var currentType = entityType;
+
+        foreach (var segment in resolvedPath.ClrSegments)
+        {
+            var property = currentType.GetProperty(segment, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+            if (property is null || !property.CanRead)
+            {
+                throw new InvalidOperationException(
+                    $"Property path '{propertyPath}' could not be projected for entity type '{entityType.Name}'.");
+            }
+
+            properties.Add(property);
+            currentType = property.PropertyType;
+        }
+
+        return new PathAccessor(entity => GetPathValue(entity, properties), resolvedPath.LeafPropertyType);
+    }
+
+    private static object? GetPathValue(object entity, IReadOnlyList<PropertyInfo> properties)
+    {
+        object? current = entity;
+        foreach (var property in properties)
+        {
+            if (current is null)
+            {
+                return null;
+            }
+
+            current = property.GetValue(current);
+        }
+
+        return current;
+    }
+
+    private static bool TryGetJsonPathValue(JsonElement current, IReadOnlyList<string> segments, out JsonElement value)
+    {
+        value = current;
+        foreach (var segment in segments)
+        {
+            if (value.ValueKind != JsonValueKind.Object || !value.TryGetProperty(segment, out value))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static void SetNestedElement(
+        IDictionary<string, JsonElement> result,
+        string queryParameterName,
+        JsonElement value,
+        JsonSerializerOptions jsonOptions)
+    {
+        var segments = queryParameterName.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0)
+        {
+            return;
+        }
+
+        if (segments.Length == 1)
+        {
+            result[segments[0]] = value;
+            return;
+        }
+
+        Dictionary<string, object?> root;
+        if (result.TryGetValue(segments[0], out var existingRoot)
+            && existingRoot.ValueKind == JsonValueKind.Object)
+        {
+            root = JsonSerializer.Deserialize<Dictionary<string, object?>>(existingRoot.GetRawText(), jsonOptions)
+                ?? [];
+        }
+        else
+        {
+            root = [];
+        }
+
+        var current = root;
+        for (var index = 1; index < segments.Length - 1; index++)
+        {
+            var segment = segments[index];
+            if (current.TryGetValue(segment, out var nested)
+                && nested is Dictionary<string, object?> nestedDictionary)
+            {
+                current = nestedDictionary;
+                continue;
+            }
+
+            var next = new Dictionary<string, object?>();
+            current[segment] = next;
+            current = next;
+        }
+
+        current[segments[^1]] = JsonSerializer.Deserialize<object?>(value.GetRawText(), jsonOptions);
+        result[segments[0]] = JsonSerializer.SerializeToElement(root, jsonOptions);
+    }
+
+    private static JsonElement CreateNullElement()
+    {
+        using var document = JsonDocument.Parse("null");
+        return document.RootElement.Clone();
     }
 
     /// <summary>
@@ -269,5 +432,29 @@ internal static class FieldProjector
         /// Gets the JSON property name after applying naming policy and attributes.
         /// </summary>
         public string JsonName { get; }
+    }
+
+    private sealed class PathAccessor
+    {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="PathAccessor"/> class.
+        /// </summary>
+        /// <param name="getValue">The getter delegate.</param>
+        /// <param name="propertyType">The leaf property type.</param>
+        public PathAccessor(Func<object, object?> getValue, Type propertyType)
+        {
+            GetValue = getValue;
+            PropertyType = propertyType;
+        }
+
+        /// <summary>
+        /// Gets the getter delegate.
+        /// </summary>
+        public Func<object, object?> GetValue { get; }
+
+        /// <summary>
+        /// Gets the leaf property type.
+        /// </summary>
+        public Type PropertyType { get; }
     }
 }

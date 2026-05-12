@@ -3,6 +3,8 @@
 **Status:** Accepted
 **Date:** 2026-04-06
 
+Superseded in part by [ADR-022](022-per-file-json-resources.md) for root-level standalone resource files and [ADR-023](023-json-validation-rules.md) for JSON-declared validation rules. This ADR still describes the original appsettings-based registration path and the shared JSON-to-fluent translation model.
+
 ## Context
 
 RestLib's fluent C# API (`MapRestLib<TEntity, TKey>`) is the primary way to configure endpoints. However, some deployment scenarios benefit from declarative configuration:
@@ -72,7 +74,7 @@ The JSON schema covers all configurable aspects:
 | Feature | JSON Property | Type |
 | --- | --- | --- |
 | Route | `Route` | `string` |
-| Key property | `KeyProperty` | `string?` |
+| Key | `KeyProperty` or `Key` | `string?` or object |
 | Operations | `Operations.Include` / `Operations.Exclude` | `RestLibOperation[]` |
 | Auth | `AllowAnonymous`, `AllowAnonymousAll`, `Policies` | Various |
 | Filtering | `Filtering`, `FilteringOperators` | `string[]`, `Dictionary` |
@@ -89,13 +91,12 @@ Resources are registered in two steps:
 
 ```csharp
 // Phase 1: DI registration (ConfigureServices)
-builder.Services.AddRestLib(options =>
-{
-    options.AddJsonResource<Product, Guid>(config.GetSection("RestLib:Resources:0"));
-});
+builder.Services.AddRestLib();
+builder.Services.AddJsonResource<Product, Guid>(
+    builder.Configuration.GetSection("RestLib:Resources:0"));
 
 // Phase 2: Endpoint mapping (Configure)
-app.MapRestLibJsonResources();
+app.MapJsonResources();
 ```
 
 Phase 1 stores a deferred mapping action in `RestLibJsonResourceRegistry`, keyed by resource name. Phase 2 executes the deferred actions against the built `IServiceProvider`, enabling hook handlers to be resolved from DI.
@@ -122,6 +123,7 @@ Since JSON configuration cannot use C# expressions, property names are specified
 ## Consequences
 
 - JSON-configured resources use string-based property names, which are not refactoring-safe. Renaming an entity property requires updating the JSON configuration.
-- The two-phase model requires two explicit calls (`AddJsonResource` + `MapRestLibJsonResources`), which is slightly more ceremony than a single `MapRestLib` call.
+- Composite-key resources use a `Key` object with two ordered CLR property names and two ordered route parameter names. `KeyProperty` remains the single-key path.
+- The two-phase model requires two explicit calls (`AddJsonResource` + `MapJsonResources`), which is slightly more ceremony than a single `MapRestLib` call.
 - Hook references in JSON are resolved by name from DI. If a named hook is not registered, the error surfaces at endpoint mapping time (application startup), not at compile time.
 - The JSON Schema must be updated whenever new configuration properties are added.

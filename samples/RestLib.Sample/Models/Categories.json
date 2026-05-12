@@ -1,0 +1,25 @@
+{
+  "$schema": "../../../schemas/restlib-resource.schema.json",
+  "EntityType": "RestLib.Sample.Models.Category, RestLib.Sample",
+  "Name": "categories",
+  "Route": "/api/categories",
+  "AllowAnonymousAll": true,
+  "Operations": {
+    "Include": ["GetAll", "GetById"]
+  },
+  "OpenApi": {
+    "Tag": "Category",
+    "Summaries": {
+      "GetAll": "List categories",
+      "GetById": "Get category by id"
+    }
+  },
+  "Validation": {
+    "Name": {
+      "Required": true,
+      "Length": {
+        "Max": 100
+      }
+    }
+  }
+}

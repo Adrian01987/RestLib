@@ -1,6 +1,4 @@
-using System.Globalization;
 using System.Linq.Expressions;
-using System.Reflection;
 using RestLib.Filtering;
 
 namespace RestLib.EntityFrameworkCore;
@@ -38,25 +36,25 @@ internal static class ComparisonFilterBuilder
     {
         ArgumentNullException.ThrowIfNull(filter);
 
-        var property = typeof(TEntity).GetProperty(
-            filter.PropertyName,
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)
-            ?? throw new InvalidOperationException(
-                $"Property '{filter.PropertyName}' was not found on entity type '{typeof(TEntity).Name}'.");
+        var propertyAccess = ExpressionBuilder.BuildPropertyAccess<TEntity>(filter.PropertyName);
+        var parameter = propertyAccess.Parameters[0];
+        var filterValue = filter.TypedValue;
+        if (filterValue is null && !string.IsNullOrEmpty(filter.RawValue))
+        {
+            var (success, convertedValue, _) = FilterParser.TryConvertValue(filter.RawValue, propertyAccess.ReturnType);
+            filterValue = success ? convertedValue : null;
+        }
 
-        var filterValue = filter.TypedValue ?? ConvertRawValue(filter.RawValue, property.PropertyType);
-        var parameter = Expression.Parameter(typeof(TEntity), "entity");
-        var propertyAccess = Expression.Property(parameter, property);
-        var constant = CreateConstantExpression(filterValue, property.PropertyType);
+        var constant = CreateConstantExpression(filterValue, propertyAccess.ReturnType);
 
         var comparison = filter.Operator switch
         {
-            FilterOperator.Eq => Expression.Equal(propertyAccess, constant),
-            FilterOperator.Neq => Expression.NotEqual(propertyAccess, constant),
-            FilterOperator.Gt => Expression.GreaterThan(propertyAccess, constant),
-            FilterOperator.Lt => Expression.LessThan(propertyAccess, constant),
-            FilterOperator.Gte => Expression.GreaterThanOrEqual(propertyAccess, constant),
-            FilterOperator.Lte => Expression.LessThanOrEqual(propertyAccess, constant),
+            FilterOperator.Eq => Expression.Equal(propertyAccess.Body, constant),
+            FilterOperator.Neq => Expression.NotEqual(propertyAccess.Body, constant),
+            FilterOperator.Gt => Expression.GreaterThan(propertyAccess.Body, constant),
+            FilterOperator.Lt => Expression.LessThan(propertyAccess.Body, constant),
+            FilterOperator.Gte => Expression.GreaterThanOrEqual(propertyAccess.Body, constant),
+            FilterOperator.Lte => Expression.LessThanOrEqual(propertyAccess.Body, constant),
             _ => throw new NotSupportedException(
                 $"Filter operator '{filter.Operator}' is not supported by ComparisonFilterBuilder. "
                 + "Only comparison operators (Eq, Neq, Gt, Lt, Gte, Lte) are supported."),
@@ -75,22 +73,5 @@ internal static class ComparisonFilterBuilder
         }
 
         return Expression.Constant(value, targetType);
-    }
-
-    private static object ConvertRawValue(string rawValue, Type targetType)
-    {
-        var underlyingType = Nullable.GetUnderlyingType(targetType) ?? targetType;
-
-        if (underlyingType == typeof(Guid))
-        {
-            return Guid.Parse(rawValue);
-        }
-
-        if (underlyingType == typeof(DateTimeOffset))
-        {
-            return DateTimeOffset.Parse(rawValue, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
-        }
-
-        return Convert.ChangeType(rawValue, underlyingType, CultureInfo.InvariantCulture)!;
     }
 }

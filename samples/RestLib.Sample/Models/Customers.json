@@ -1,0 +1,48 @@
+{
+  "$schema": "../../../schemas/restlib-resource.schema.json",
+  "EntityType": "RestLib.Sample.Models.CustomerDto, RestLib.Sample",
+  "Name": "customers",
+  "Route": "/api/customers",
+  "AllowAnonymousAll": true,
+  "Mapping": {
+    "DbType": "RestLib.Sample.Models.Customer, RestLib.Sample",
+    "Mapper": "CustomerMapper"
+  },
+  "Filtering": ["City", "IsActive"],
+  "FilteringOperators": {
+    "Name": ["string"]
+  },
+  "Sorting": ["Name", "Email", "City"],
+  "DefaultSort": "name:asc",
+  "FieldSelection": ["Id", "Name", "Email", "City", "IsActive"],
+  "Batch": {
+    "Actions": ["Create", "Update", "Patch", "Delete"]
+  },
+  "OpenApi": {
+    "Tag": "Customer",
+    "TagDescription": "Manage customers (EF Core + SQLite)",
+    "Summaries": {
+      "GetAll": "List customers",
+      "GetById": "Get customer by id",
+      "Create": "Create a customer",
+      "Update": "Replace a customer",
+      "Patch": "Patch a customer",
+      "Delete": "Delete a customer"
+    }
+  },
+  "Validation": {
+    "Name": {
+      "Required": true,
+      "Length": {
+        "Max": 100
+      }
+    },
+    "Email": {
+      "Required": true,
+      "Email": true,
+      "Length": {
+        "Max": 200
+      }
+    }
+  }
+}

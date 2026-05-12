@@ -314,8 +314,8 @@ public class EfCoreServiceRegistrationTests
         var act = () => scope.ServiceProvider.GetRequiredService<IRepository<CompositeKeyEntity, Guid>>();
 
         // Assert
-        act.Should().Throw<NotSupportedException>()
-            .WithMessage("*CompositeKeyEntity*composite primary key*");
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*CompositeKeyEntity*composite primary key*RestLibCompositeKey*");
     }
 
     [Fact]

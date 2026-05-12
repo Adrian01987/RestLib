@@ -76,6 +76,7 @@ internal static class ETagHelper
             var notFoundResult = Responses.ProblemDetailsResult.NotFound(
                 entityName,
                 id!,
+                [new RestLib.Configuration.RestLibKeyRoutePart<TKey>(string.Empty, "id", typeof(TKey), static key => key)],
                 httpContext.Request.Path,
                 jsonOptions,
                 logger: logger);
@@ -101,5 +102,85 @@ internal static class ETagHelper
         }
 
         return (current, null);
+    }
+
+    /// <summary>
+    /// Checks the If-Match precondition header for a mapped resource.
+    /// The current DB model is mapped to the API model before ETag generation.
+    /// </summary>
+    /// <typeparam name="TApiModel">The API model type.</typeparam>
+    /// <typeparam name="TDbModel">The DB model type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="httpContext">The current HTTP context.</param>
+    /// <param name="repository">The DB-model repository.</param>
+    /// <param name="mapper">The API/DB mapper.</param>
+    /// <param name="id">The resource identifier.</param>
+    /// <param name="entityName">The API entity name for error messages.</param>
+    /// <param name="options">The RestLib options.</param>
+    /// <param name="jsonOptions">The JSON serializer options.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <param name="logger">Optional logger.</param>
+    /// <returns>
+    /// The fetched DB model and mapped API model when the precondition succeeds,
+    /// or an error result if it fails.
+    /// </returns>
+    internal static async Task<(TDbModel? DbEntity, TApiModel? ApiEntity, IResult? Error)> CheckIfMatchPreconditionAsync<TApiModel, TDbModel, TKey>(
+        HttpContext httpContext,
+        IRepository<TDbModel, TKey> repository,
+        IRestLibMapper<TApiModel, TDbModel> mapper,
+        TKey id,
+        string entityName,
+        RestLibOptions options,
+        JsonSerializerOptions jsonOptions,
+        CancellationToken ct,
+        ILogger? logger = null)
+        where TApiModel : class
+        where TDbModel : class
+        where TKey : notnull
+    {
+        if (!options.EnableETagSupport)
+        {
+            return (null, null, null);
+        }
+
+        var ifMatchHeader = httpContext.Request.Headers.IfMatch;
+        if (Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(ifMatchHeader))
+        {
+            return (null, null, null);
+        }
+
+        var currentDb = await repository.GetByIdAsync(id, ct);
+        if (currentDb is null)
+        {
+            var notFoundResult = Responses.ProblemDetailsResult.NotFound(
+                entityName,
+                id!,
+                [new RestLib.Configuration.RestLibKeyRoutePart<TKey>(string.Empty, "id", typeof(TKey), static key => key)],
+                httpContext.Request.Path,
+                jsonOptions,
+                logger: logger);
+            return (null, null, notFoundResult);
+        }
+
+        var currentApi = mapper.ToApi(currentDb);
+        var etagGenerator = ResolveETagGenerator(httpContext);
+        var currentETag = etagGenerator.Generate(currentApi);
+
+        if (!ETagComparer.IfMatchSucceeds(ifMatchHeader, currentETag))
+        {
+            if (logger is not null)
+            {
+                RestLibLogMessages.ETagPreconditionFailed(logger, entityName, id!.ToString()!);
+            }
+
+            var preconditionResult = Responses.ProblemDetailsResult.PreconditionFailed(
+                "The resource has been modified since you last retrieved it.",
+                httpContext.Request.Path,
+                jsonOptions,
+                logger: logger);
+            return (null, null, preconditionResult);
+        }
+
+        return (currentDb, currentApi, null);
     }
 }

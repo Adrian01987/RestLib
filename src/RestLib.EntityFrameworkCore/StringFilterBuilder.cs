@@ -1,5 +1,4 @@
 using System.Linq.Expressions;
-using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using RestLib.Filtering;
 
@@ -39,24 +38,18 @@ internal static class StringFilterBuilder
     {
         ArgumentNullException.ThrowIfNull(filter);
 
-        var property = typeof(TEntity).GetProperty(
-            filter.PropertyName,
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase)
-            ?? throw new InvalidOperationException(
-                $"Property '{filter.PropertyName}' was not found on entity type '{typeof(TEntity).Name}'.");
-
-        var underlyingType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
+        var propertyAccess = ExpressionBuilder.BuildPropertyAccess<TEntity>(filter.PropertyName);
+        var underlyingType = Nullable.GetUnderlyingType(propertyAccess.ReturnType) ?? propertyAccess.ReturnType;
         if (underlyingType != typeof(string))
         {
             throw new InvalidOperationException(
                 $"String filter operators can only be applied to string properties, "
                 + $"but property '{filter.PropertyName}' on entity type '{typeof(TEntity).Name}' "
-                + $"is of type '{property.PropertyType.Name}'.");
+                + $"is of type '{propertyAccess.ReturnType.Name}'.");
         }
 
         var filterString = filter.TypedValue?.ToString() ?? filter.RawValue;
-        var parameter = Expression.Parameter(typeof(TEntity), "entity");
-        var propertyAccess = Expression.Property(parameter, property);
+        var parameter = propertyAccess.Parameters[0];
         var pattern = filter.Operator switch
         {
             FilterOperator.Contains => $"%{filterString}%",
@@ -75,7 +68,7 @@ internal static class StringFilterBuilder
 
         var functions = Expression.Property(null, typeof(EF), nameof(EF.Functions));
         var patternConstant = Expression.Constant(pattern, typeof(string));
-        var methodCall = Expression.Call(method, functions, propertyAccess, patternConstant);
+        var methodCall = Expression.Call(method, functions, propertyAccess.Body, patternConstant);
 
         return Expression.Lambda<Func<TEntity, bool>>(methodCall, parameter);
     }

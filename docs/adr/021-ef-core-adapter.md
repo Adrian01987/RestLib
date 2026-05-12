@@ -92,7 +92,7 @@ document. Using lower-level bulk update APIs such as `ExecuteUpdate()` would byp
 tracked entity model and complicate parity with hooks, validation, and existing update
 semantics.
 
-### Opt-in projection pushdown for field selection
+### Opt-in projection pushdown for field selection with conservative nested fallback
 Field selection remains a core API-layer feature, but the EF Core adapter now exposes an
 optional projection capability through `IFieldSelectionProjectionRepository<TEntity, TKey>`.
 When `EfCoreRepositoryOptions.EnableProjectionPushdown` is enabled and the request selects
@@ -110,15 +110,19 @@ attempt and the endpoints fall back to the existing post-fetch `FieldProjector` 
 The current implementation intentionally limits pushdown to direct scalar CLR properties
 (including strings, numbers, GUIDs, dates, booleans, nullable variants, and enums). That
 keeps the generated `Select` expression straightforward and provider-friendly while still
-covering the common wide-entity scenario that motivated the optimization. Navigation paths,
-blob-like shapes, and other non-projectable members continue to use the previous fallback.
+covering the common wide-entity scenario that motivated the optimization. Nested reference-
+property paths are still supported for filtering and sorting through normal EF Core navigation
+translation. For nested field selection, the adapter declines pushdown, includes the required
+reference navigations, and falls back to the existing post-fetch sparse projection so the
+observable API contract remains correct. Collection-valued paths remain unsupported.
 
 ### Automatic primary key detection from EF Core model metadata
 The adapter resolves the key selector automatically when the caller does not provide one.
 `EfCoreRepository` now resolves the selector from the real scoped `DbContext` during
 repository construction, reads the EF Core model metadata for the entity type, finds the
-primary key, verifies that it is a single-property key, checks that the key type matches
-`TKey`, and builds the corresponding `Expression<Func<TEntity, TKey>>`.
+primary key, supports either a single-property key or an ordered two-part composite key,
+checks that the key type matches `TKey`, and builds the corresponding
+`Expression<Func<TEntity, TKey>>`.
 
 This was chosen to reduce boilerplate for the common case. In most EF Core applications,
 the model already knows the primary key, so forcing every registration to repeat
@@ -129,9 +133,9 @@ wants full control.
 Resolving metadata from the real scoped `DbContext` avoids the DI anti-pattern of building
 a temporary `ServiceProvider` during registration and removes startup-order sensitivity.
 The trade-off is that invalid entity-model or key-shape configurations now surface when the
-repository is resolved from DI rather than during service registration. Composite keys are
-still rejected with a clear error message because the current repository abstraction is
-built around a single `TKey` value rather than a composite key shape.
+repository is resolved from DI rather than during service registration. Keys with more than
+two parts are still rejected with a clear error message because the current product scope
+supports only scalar keys and ordered two-part `RestLibCompositeKey<TFirst, TSecond>` values.
 
 ### Scoped repository lifetime matching DbContext
 The EF Core repository is registered as `Scoped`, and all three repository interfaces
@@ -159,8 +163,11 @@ one another.
   need tracked reads must opt out explicitly.
 - Partial updates integrate cleanly with EF Core and persist only modified properties, but
   patch behavior remains tied to EF Core change tracking.
+- Nested filtering and sorting execute server-side through EF Core navigation translation,
+  while nested field selection currently uses a conservative include-plus-post-projection
+  fallback instead of SQL projection pushdown.
 - Primary key auto-detection reduces configuration noise for simple entities, resolves from
-  the real scoped `DbContext`, and does not support composite keys.
+  the real scoped `DbContext`, and supports either scalar keys or ordered two-part composite keys.
 - Scoped lifetime keeps the repository aligned with `DbContext` semantics and request
   isolation, but it also means repository instances are not suitable for singleton caching
   patterns.
