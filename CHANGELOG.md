@@ -18,12 +18,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Structured logging for batch patch pipeline — `BatchPatchItemNotFound` (1150), `BatchPatchItemValidationFailed` (1151), `BatchPatchCompleted` (1152)
 - Structured logging for batch delete pipeline — `BatchDeleteItemNotFound` (1160), `BatchDeleteCompleted` (1161)
 - 17 new integration tests for logging EventIds: ETag 304 (1011), ETag precondition (1347), endpoint exception (1090), bulk fallback (1110), batch error hook (1111), batch item failure (1112), batch update deserialization (1140), JSON deserialization (1330), batch patch not-found/validation/completed (1150–1152), batch delete not-found/completed (1160–1161)
+- Opt-in nested-object sparse field selection via `FieldSelectionResponseShape`, `FieldSelectionConfiguration<TEntity>.UseNestedObjectsInResponse()`, and additive JSON resource configuration (`"FieldSelection": { "Properties": [...], "Response": "Nested" }`) while keeping flat dotted keys as the default
+- `RestLibResolvedResourceTypes` and `RestLibFolderOptions.UnifiedTypeResolver` for resolving API model, DB model, and key type together when loading JSON resources from a folder
+- New deep-dive guides: `docs/guides/query-features.md` and `docs/guides/extensibility-and-operations.md`
 
 ### Changed
 
 - `ProblemDetailsResult` now logs all error responses at appropriate levels (Information for 4xx, Error for 5xx)
 - `BatchContext` carries `ILogger` for consistent logging through batch pipeline
 - `HookPipeline` emits Trace-level entry/exit events and Debug-level short-circuit events for all hook stages
+- Sample two-model customer API now hides persistence-only `CreatedAt` on `CustomerDto`; the sample `DbContext` preserves the underlying column on create, update, and patch
+- README reorganized around a slimmer quick start and guide links while preserving existing linked anchors
+
+### Fixed
+
+- Dense field-selection fallback continues to return flat dotted keys even when nested sparse responses are enabled
+- Folder-loaded two-model resources now honor `UnifiedTypeResolver` results without still requiring `Mapping.DbType` in JSON
+- Parallel test runs no longer hit transient `MvcTestingAppManifest.json` file-lock errors; the test projects now use `Microsoft.AspNetCore.TestHost` directly instead of the unused MVC testing manifest pipeline
 
 ## [2.0.0] - 2026-04-10
 
