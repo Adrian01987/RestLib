@@ -1,0 +1,59 @@
+# Codecov configuration.
+#
+# Aligns the Codecov badge with the CI coverage gate computed in
+# .github/workflows/ci.yml. The gate parses cobertura's top-level line-rate,
+# which only counts assemblies that coverlet instruments (RestLib and
+# RestLib.EntityFrameworkCore). Codecov re-computes its own number from the
+# uploaded report and would otherwise count auto-generated source-generator
+# output and the in-memory adapter scaffolding as 0%-covered files. The
+# ignore list below mirrors the coverlet /p:Exclude pattern in CI so the
+# two numbers stay within ~1 point of each other.
+
+codecov:
+  require_ci_to_pass: true
+
+coverage:
+  precision: 2
+  round: nearest
+  range: "70...90"
+  status:
+    project:
+      default:
+        # Match the CI gate exactly so the Codecov status check agrees with
+        # the in-workflow threshold check.
+        target: 80%
+        threshold: 1%
+        informational: false
+    patch:
+      default:
+        target: 80%
+        threshold: 1%
+        informational: false
+
+# Files and paths excluded from Codecov's project total. Mirrors the
+# /p:Exclude argument in .github/workflows/ci.yml so both numbers cover the
+# same product surface.
+ignore:
+  # Build/intermediate output - never product code.
+  - "**/obj/**"
+  - "**/bin/**"
+
+  # Auto-generated source-generator output already excluded from the
+  # cobertura line-rate via [*]Microsoft.AspNetCore.OpenApi.Generated.* and
+  # [*]System.Runtime.CompilerServices.* in CI.
+  - "**/*.generated.cs"
+  - "**/*.g.cs"
+
+  # In-memory adapter is a test/development-only convenience; CI excludes it
+  # via [RestLib.InMemory]* in the coverlet filter.
+  - "src/RestLib.InMemory/**"
+
+  # Test, benchmark, and sample projects are not product code.
+  - "tests/**"
+  - "benchmarks/**"
+  - "samples/**"
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: false
