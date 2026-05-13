@@ -1,12 +1,17 @@
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using RestLib;
+using RestLib.Sample.Ecommerce.Auth;
 using RestLib.Sample.Ecommerce.Data;
 using RestLib.Sample.Ecommerce.Identity;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 var useMigrations = builder.Configuration.GetValue<bool>("RestLibSample:UseMigrations");
+var jwtSettings = JwtSettings.Load(builder.Configuration);
 
 builder.Services.AddRestLib(options =>
 {
@@ -38,11 +43,36 @@ builder.Services.AddOpenApi(options =>
 builder.Services.AddHealthChecks();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
+builder.Services.AddSingleton(jwtSettings);
+builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddDbContext<EcommerceDbContext>(options =>
 {
     var connectionString = builder.Configuration.GetConnectionString("Ecommerce")
         ?? "Data Source=restlib-ecommerce.db";
     options.UseSqlite(connectionString);
+});
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtSettings.Issuer,
+            ValidateAudience = true,
+            ValidAudience = jwtSettings.Audience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.SigningKey)),
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromSeconds(30),
+            NameClaimType = System.Security.Claims.ClaimTypes.NameIdentifier,
+            RoleClaimType = System.Security.Claims.ClaimTypes.Role,
+        };
+    });
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("Admin", policy => policy.RequireRole("Admin"));
+    options.AddPolicy("Customer", policy => policy.RequireRole("Customer"));
+    options.AddPolicy("Carrier", policy => policy.RequireRole("Carrier"));
 });
 
 var app = builder.Build();
@@ -63,6 +93,9 @@ using (var scope = app.Services.CreateScope())
     await EcommerceSeedData.EnsureSeededAsync(db);
 }
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapOpenApi();
 app.MapScalarApiReference("/", options =>
 {
@@ -71,5 +104,6 @@ app.MapScalarApiReference("/", options =>
 });
 
 app.MapHealthChecks("/health");
+app.MapEcommerceAuthEndpoints();
 
 app.Run();

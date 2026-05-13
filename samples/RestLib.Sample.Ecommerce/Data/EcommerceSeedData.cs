@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using RestLib.Sample.Ecommerce.Auth;
 using RestLib.Sample.Ecommerce.Models;
 
 namespace RestLib.Sample.Ecommerce.Data;
@@ -24,7 +25,6 @@ public static class EcommerceSeedData
         }
 
         var now = DateTime.UtcNow;
-        var adminId = Guid.Parse("11111111-1111-1111-1111-111111111111");
         var customerId = Guid.Parse("22222222-2222-2222-2222-222222222222");
         var carrierId = Guid.Parse("33333333-3333-3333-3333-333333333333");
         var cartId = Guid.Parse("44444444-4444-4444-4444-444444444444");
@@ -32,22 +32,12 @@ public static class EcommerceSeedData
         var orderId = Guid.Parse("66666666-6666-6666-6666-666666666666");
         var shipmentId = Guid.Parse("77777777-7777-7777-7777-777777777777");
 
-        var admin = new User
-        {
-            Id = adminId,
-            UserName = "admin",
-            Email = "admin@example.com",
-            PasswordHash = "phase1-placeholder",
-            Role = "Admin",
-            CreatedAt = now,
-        };
-
         var customer = new User
         {
             Id = customerId,
             UserName = "customer",
             Email = "customer@example.com",
-            PasswordHash = "phase1-placeholder",
+            PasswordHash = PasswordHasher.Hash("customer-password"),
             Role = "Customer",
             CreatedAt = now,
         };
@@ -57,7 +47,7 @@ public static class EcommerceSeedData
             Id = carrierId,
             UserName = "carrier",
             Email = "carrier@example.com",
-            PasswordHash = "phase1-placeholder",
+            PasswordHash = PasswordHasher.Hash("carrier-password"),
             Role = "Carrier",
             CreatedAt = now,
         };
@@ -162,7 +152,7 @@ public static class EcommerceSeedData
             CreatedAt = now,
         };
 
-        db.Users.AddRange(admin, customer, carrier);
+        db.Users.AddRange(customer, carrier);
         db.AddRange(address, phone, cart, order, supportTicket);
 
         await db.SaveChangesAsync(ct);
