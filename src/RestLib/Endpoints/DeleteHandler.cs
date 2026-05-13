@@ -78,7 +78,8 @@ internal static class DeleteHandler
                         config.KeyRouteParts,
                         httpContext.Request.Path,
                         jsonOptions,
-                        logger);
+                        logger,
+                        options);
                 }
 
                 RestLibLogMessages.EntityDeleted(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
@@ -296,7 +297,8 @@ internal static class DeleteHandler
                 config.KeyRouteParts,
                 httpContext.Request.Path,
                 jsonOptions,
-                logger);
+                logger,
+                options);
         }
 
         RestLibLogMessages.EntityDeleted(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));

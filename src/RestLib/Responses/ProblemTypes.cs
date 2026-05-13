@@ -2,8 +2,8 @@ namespace RestLib.Responses;
 
 /// <summary>
 /// Standard problem type URIs for RestLib errors.
-/// Constants hold the relative path portion; use <see cref="Resolve"/> to obtain
-/// the full URI when a <see cref="Configuration.RestLibOptions.ProblemTypeBaseUri"/> is configured.
+/// Constants hold the relative path portion; use <see cref="Resolve(string, Uri?)"/> to obtain
+/// the full URI when a <see cref="Configuration.RestLibOptions.ProblemTypeBaseUri"/> is provided.
 /// </summary>
 public static class ProblemTypes
 {
@@ -61,8 +61,6 @@ public static class ProblemTypes
     /// <summary>Hook short-circuited the operation (varies).</summary>
     public const string HookShortCircuit = "/problems/hook-short-circuit";
 
-    private static volatile string? _baseUri;
-
     /// <summary>
     /// Resolves a relative problem type path to its full URI.
     /// When no base URI is configured, the relative path is returned unchanged.
@@ -71,28 +69,18 @@ public static class ProblemTypes
     /// <returns>The resolved URI string.</returns>
     public static string Resolve(string relativeType)
     {
-        return _baseUri is null ? relativeType : _baseUri + relativeType;
+        return relativeType;
     }
 
     /// <summary>
-    /// Configures the base URI that is prepended to all relative problem type paths.
-    /// Called once during service registration when a non-<c>null</c> base URI is provided.
+    /// Resolves a relative problem type path against the provided base URI.
     /// </summary>
-    /// <param name="baseUri">
-    /// An absolute URI with no trailing slash (e.g., <c>https://api.example.com</c>).
-    /// </param>
-    internal static void Configure(Uri baseUri)
+    /// <param name="relativeType">A relative problem type path (e.g., <c>/problems/not-found</c>).</param>
+    /// <param name="baseUri">The base URI used to resolve the relative path.</param>
+    /// <returns>The resolved URI string.</returns>
+    public static string Resolve(string relativeType, Uri? baseUri)
     {
-        ArgumentNullException.ThrowIfNull(baseUri);
-        _baseUri = baseUri.ToString().TrimEnd('/');
-    }
-
-    /// <summary>
-    /// Resets the base URI to <c>null</c>, restoring relative problem type paths.
-    /// Intended for test cleanup only.
-    /// </summary>
-    internal static void Reset()
-    {
-        _baseUri = null;
+        var resolvedBaseUri = baseUri?.ToString().TrimEnd('/');
+        return resolvedBaseUri is null ? relativeType : resolvedBaseUri + relativeType;
     }
 }

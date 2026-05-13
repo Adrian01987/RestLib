@@ -75,7 +75,8 @@ internal static class PatchHandler
                             config.KeyRouteParts,
                             httpContext.Request.Path,
                             jsonOptions,
-                            logger);
+                            logger,
+                            options);
                     }
                 }
 
@@ -86,7 +87,8 @@ internal static class PatchHandler
                         "The patch document could not be applied to the resource.",
                         httpContext.Request.Path,
                         jsonOptions,
-                        logger);
+                        logger,
+                        options);
                 }
 
                 // Validate merged entity BEFORE persisting to prevent invalid data in the repository
@@ -99,7 +101,8 @@ internal static class PatchHandler
                             validationResult.Errors,
                             httpContext.Request.Path,
                             jsonOptions,
-                            logger);
+                            logger,
+                            options);
                     }
                 }
 
@@ -123,7 +126,8 @@ internal static class PatchHandler
                         config.KeyRouteParts,
                         httpContext.Request.Path,
                         jsonOptions,
-                        logger);
+                        logger,
+                        options);
                 }
 
                 // AfterPersist hook
@@ -161,7 +165,8 @@ internal static class PatchHandler
                     ex.Message,
                     httpContext.Request.Path,
                     jsonOptions,
-                    logger);
+                    logger,
+                    options);
             }
             catch (Exception ex)
             {
@@ -240,7 +245,8 @@ internal static class PatchHandler
                         ex.Message,
                         httpContext.Request.Path,
                         jsonOptions,
-                        logger);
+                        logger,
+                        options);
                 }
                 catch (Exception ex)
                 {
@@ -288,7 +294,8 @@ internal static class PatchHandler
                     ex.Message,
                     httpContext.Request.Path,
                     jsonOptions,
-                    logger);
+                    logger,
+                    options);
             }
             catch (Exception ex)
             {
@@ -356,7 +363,8 @@ internal static class PatchHandler
                     config.KeyRouteParts,
                     httpContext.Request.Path,
                     jsonOptions,
-                    logger);
+                    logger,
+                    options);
             }
 
             originalApi = originalDb is not null ? mapper.ToApi(originalDb) : null;
@@ -373,7 +381,8 @@ internal static class PatchHandler
                     config.KeyRouteParts,
                     httpContext.Request.Path,
                     jsonOptions,
-                    logger);
+                    logger,
+                    options);
             }
 
             originalDb = notFoundCandidate;
@@ -387,7 +396,8 @@ internal static class PatchHandler
                 "The patch document could not be applied to the resource.",
                 httpContext.Request.Path,
                 jsonOptions,
-                logger);
+                logger,
+                options);
         }
 
         if (options.EnableValidation)
@@ -399,7 +409,8 @@ internal static class PatchHandler
                     validationResult.Errors,
                     httpContext.Request.Path,
                     jsonOptions,
-                    logger);
+                    logger,
+                    options);
             }
         }
 
@@ -443,7 +454,8 @@ internal static class PatchHandler
                     validationResult.Errors,
                     httpContext.Request.Path,
                     jsonOptions,
-                    logger);
+                    logger,
+                    options);
             }
         }
 
@@ -495,7 +507,8 @@ internal static class PatchHandler
                 config.KeyRouteParts,
                 httpContext.Request.Path,
                 jsonOptions,
-                logger);
+                logger,
+                options);
         }
 
         var updatedApi = mapper.ToApi(updatedDb);

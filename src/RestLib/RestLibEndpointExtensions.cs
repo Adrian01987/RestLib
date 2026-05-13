@@ -259,7 +259,7 @@ public static class RestLibEndpointExtensions
             var getByIdEndpoint = typeof(TApiModel) == typeof(TDbModel)
                 ? group.MapGet(keyRouteTemplate, GetByIdHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
                 : group.MapGet(keyRouteTemplate, GetByIdHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
-            OpenApiEndpointConfiguration.ConfigureGetByIdEndpoint(getByIdEndpoint, config, baseEntityName, entityName);
+            OpenApiEndpointConfiguration.ConfigureGetByIdEndpoint(getByIdEndpoint, config, baseEntityName, entityName, restLibOptions);
             AddCompositeKeyBindingMetadataIfNeeded(getByIdEndpoint, config);
 
             // Add OpenAPI documentation for fields parameter
@@ -280,7 +280,7 @@ public static class RestLibEndpointExtensions
             var createEndpoint = typeof(TApiModel) == typeof(TDbModel)
                 ? group.MapPost("", CreateHandler.CreateDelegate<TApiModel, TKey>(config))
                 : group.MapPost("", CreateHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config));
-            OpenApiEndpointConfiguration.ConfigureCreateEndpoint(createEndpoint, config, baseEntityName, entityName);
+            OpenApiEndpointConfiguration.ConfigureCreateEndpoint(createEndpoint, config, baseEntityName, entityName, restLibOptions);
         } // end Create
 
         // PUT /prefix/{id} - Full Update
@@ -289,7 +289,7 @@ public static class RestLibEndpointExtensions
             var updateEndpoint = typeof(TApiModel) == typeof(TDbModel)
                 ? group.MapPut(keyRouteTemplate, UpdateHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
                 : group.MapPut(keyRouteTemplate, UpdateHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
-            OpenApiEndpointConfiguration.ConfigureUpdateEndpoint(updateEndpoint, config, baseEntityName, entityName);
+            OpenApiEndpointConfiguration.ConfigureUpdateEndpoint(updateEndpoint, config, baseEntityName, entityName, restLibOptions);
             AddCompositeKeyBindingMetadataIfNeeded(updateEndpoint, config);
         } // end Update
 
@@ -299,7 +299,7 @@ public static class RestLibEndpointExtensions
             var patchEndpoint = typeof(TApiModel) == typeof(TDbModel)
                 ? group.MapPatch(keyRouteTemplate, PatchHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
                 : group.MapPatch(keyRouteTemplate, PatchHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
-            OpenApiEndpointConfiguration.ConfigurePatchEndpoint(patchEndpoint, config, baseEntityName, entityName);
+            OpenApiEndpointConfiguration.ConfigurePatchEndpoint(patchEndpoint, config, baseEntityName, entityName, restLibOptions);
             AddCompositeKeyBindingMetadataIfNeeded(patchEndpoint, config);
         } // end Patch
 
@@ -309,7 +309,7 @@ public static class RestLibEndpointExtensions
             var deleteEndpoint = typeof(TApiModel) == typeof(TDbModel)
                 ? group.MapDelete(keyRouteTemplate, DeleteHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
                 : group.MapDelete(keyRouteTemplate, DeleteHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
-            OpenApiEndpointConfiguration.ConfigureDeleteEndpoint(deleteEndpoint, config, baseEntityName, entityName);
+            OpenApiEndpointConfiguration.ConfigureDeleteEndpoint(deleteEndpoint, config, baseEntityName, entityName, restLibOptions);
             AddCompositeKeyBindingMetadataIfNeeded(deleteEndpoint, config);
         } // end Delete
 
@@ -319,7 +319,7 @@ public static class RestLibEndpointExtensions
             var batchEndpoint = typeof(TApiModel) == typeof(TDbModel)
                 ? group.MapPost("batch", BatchHandler.CreateDelegate<TApiModel, TKey>(config))
                 : group.MapPost("batch", BatchHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config));
-            OpenApiEndpointConfiguration.ConfigureBatchEndpoint(batchEndpoint, config, baseEntityName, entityName);
+            OpenApiEndpointConfiguration.ConfigureBatchEndpoint(batchEndpoint, config, baseEntityName, entityName, restLibOptions);
         } // end Batch
     }
 

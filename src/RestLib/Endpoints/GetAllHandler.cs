@@ -61,7 +61,8 @@ internal static class GetAllHandler
                             httpContext.Request.Path,
                             jsonOptions,
                             $"The cursor exceeds the maximum allowed length of {options.MaxCursorLength} characters.",
-                            logger);
+                            logger,
+                            options);
                     }
 
                     if (!CursorEncoder.IsValid(cursor))
@@ -70,7 +71,8 @@ internal static class GetAllHandler
                             cursor,
                             httpContext.Request.Path,
                             jsonOptions,
-                            logger: logger);
+                            logger: logger,
+                            options: options);
                     }
                 }
 
@@ -83,7 +85,8 @@ internal static class GetAllHandler
                         options.MaxPageSize,
                         httpContext.Request.Path,
                         jsonOptions,
-                        logger);
+                        logger,
+                        options);
                 }
 
                 // Parse and validate filters
@@ -97,7 +100,8 @@ internal static class GetAllHandler
                             filterResult.Errors,
                             httpContext.Request.Path,
                             jsonOptions,
-                            logger);
+                            logger,
+                            options);
                     }
 
                     filterValues = filterResult.Filters;
@@ -117,7 +121,8 @@ internal static class GetAllHandler
                                 sortResult.Errors,
                                 httpContext.Request.Path,
                                 jsonOptions,
-                                logger);
+                                logger,
+                                options);
                         }
 
                         sortFields = sortResult.Fields;
@@ -142,7 +147,8 @@ internal static class GetAllHandler
                                 fieldsResult.Errors,
                                 httpContext.Request.Path,
                                 jsonOptions,
-                                logger);
+                                logger,
+                                options);
                         }
 
                         selectedFields = fieldsResult.Fields;
@@ -159,7 +165,8 @@ internal static class GetAllHandler
                             searchResult.Errors,
                             httpContext.Request.Path,
                             jsonOptions,
-                            logger);
+                            logger,
+                            options);
                     }
 
                     search = searchResult.Search;
@@ -201,7 +208,8 @@ internal static class GetAllHandler
                         httpContext.Request.Path,
                         jsonOptions,
                         ex.Message,
-                        logger);
+                        logger,
+                        options);
                 }
 
                 // If the repository supports counting, get the total count
@@ -420,7 +428,8 @@ internal static class GetAllHandler
                     httpContext.Request.Path,
                     jsonOptions,
                     $"The cursor exceeds the maximum allowed length of {options.MaxCursorLength} characters.",
-                    logger);
+                    logger,
+                    options);
             }
 
             if (!CursorEncoder.IsValid(cursor))
@@ -429,7 +438,8 @@ internal static class GetAllHandler
                     cursor,
                     httpContext.Request.Path,
                     jsonOptions,
-                    logger: logger);
+                    logger: logger,
+                    options: options);
             }
         }
 
@@ -441,7 +451,8 @@ internal static class GetAllHandler
                 options.MaxPageSize,
                 httpContext.Request.Path,
                 jsonOptions,
-                logger);
+                logger,
+                options);
         }
 
         IReadOnlyList<FilterValue> filterValues = [];
@@ -454,7 +465,8 @@ internal static class GetAllHandler
                     filterResult.Errors,
                     httpContext.Request.Path,
                     jsonOptions,
-                    logger);
+                    logger,
+                    options);
             }
 
             filterValues = filterResult.Filters;
@@ -473,7 +485,8 @@ internal static class GetAllHandler
                         sortResult.Errors,
                         httpContext.Request.Path,
                         jsonOptions,
-                        logger);
+                        logger,
+                        options);
                 }
 
                 sortFields = sortResult.Fields;
@@ -497,7 +510,8 @@ internal static class GetAllHandler
                         fieldsResult.Errors,
                         httpContext.Request.Path,
                         jsonOptions,
-                        logger);
+                        logger,
+                        options);
                 }
 
                 selectedFields = fieldsResult.Fields;
@@ -514,7 +528,8 @@ internal static class GetAllHandler
                     searchResult.Errors,
                     httpContext.Request.Path,
                     jsonOptions,
-                    logger);
+                    logger,
+                    options);
             }
 
             search = searchResult.Search;
@@ -545,7 +560,8 @@ internal static class GetAllHandler
                 httpContext.Request.Path,
                 jsonOptions,
                 ex.Message,
-                logger);
+                logger,
+                options);
         }
 
         long? totalCount = null;
@@ -647,8 +663,8 @@ internal static class GetAllHandler
         where TEntity : class
         where TKey : notnull
     {
-        // Search can still use the projection-aware repository path because repositories
-        // may need to eagerly load navigations for nested sparse field selections.
+        // The EF Core projection-capability path also handles nested field
+        // selections by loading required navigations before falling back.
         return !options.EnableHateoas &&
             !options.EnableETagSupport &&
             config.Hooks is null;

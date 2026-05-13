@@ -79,7 +79,8 @@ internal static class ETagHelper
                 [new RestLib.Configuration.RestLibKeyRoutePart<TKey>(string.Empty, "id", typeof(TKey), static key => key)],
                 httpContext.Request.Path,
                 jsonOptions,
-                logger: logger);
+                logger: logger,
+                options: options);
             return (null, notFoundResult);
         }
 
@@ -97,7 +98,8 @@ internal static class ETagHelper
                 "The resource has been modified since you last retrieved it.",
                 httpContext.Request.Path,
                 jsonOptions,
-                logger: logger);
+                logger: logger,
+                options: options);
             return (null, preconditionResult);
         }
 
@@ -158,7 +160,8 @@ internal static class ETagHelper
                 [new RestLib.Configuration.RestLibKeyRoutePart<TKey>(string.Empty, "id", typeof(TKey), static key => key)],
                 httpContext.Request.Path,
                 jsonOptions,
-                logger: logger);
+                logger: logger,
+                options: options);
             return (null, null, notFoundResult);
         }
 
@@ -177,7 +180,8 @@ internal static class ETagHelper
                 "The resource has been modified since you last retrieved it.",
                 httpContext.Request.Path,
                 jsonOptions,
-                logger: logger);
+                logger: logger,
+                options: options);
             return (null, null, preconditionResult);
         }
 

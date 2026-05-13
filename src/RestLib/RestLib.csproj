@@ -5,7 +5,7 @@
     
     <!-- Package metadata -->
     <PackageId>RestLib</PackageId>
-    <Description>Lightweight REST API scaffolding for ASP.NET Core. Define a model, implement a repository, get a production-ready API — secure by default, extensible when needed.</Description>
+    <Description>Lightweight REST API scaffolding for ASP.NET Core. Define a model, implement a repository, get a consistent CRUD API — secure by default, extensible when needed.</Description>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
@@ -21,8 +21,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.*" />
-    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.*" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
   </ItemGroup>
 
   <ItemGroup>

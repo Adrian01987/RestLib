@@ -49,7 +49,8 @@ internal static class BatchHandler
                     "The request body is not valid JSON.",
                     instance: instance,
                     jsonOptions: jsonOptions,
-                    logger: logger);
+                    logger: logger,
+                    options: options);
             }
 
             if (envelope is null)
@@ -58,7 +59,8 @@ internal static class BatchHandler
                     "The request body is empty.",
                     instance: instance,
                     jsonOptions: jsonOptions,
-                    logger: logger);
+                    logger: logger,
+                    options: options);
             }
 
             // Validate action
@@ -74,7 +76,8 @@ internal static class BatchHandler
                     },
                     instance: instance,
                     jsonOptions: jsonOptions,
-                    logger: logger);
+                    logger: logger,
+                    options: options);
             }
 
             // Verify action is enabled
@@ -87,7 +90,8 @@ internal static class BatchHandler
                     enabledActions,
                     instance: instance,
                     jsonOptions: jsonOptions,
-                    logger: logger);
+                    logger: logger,
+                    options: options);
             }
 
             // Validate items array exists
@@ -98,7 +102,8 @@ internal static class BatchHandler
                     "The 'items' array is required.",
                     instance: instance,
                     jsonOptions: jsonOptions,
-                    logger: logger);
+                    logger: logger,
+                    options: options);
             }
 
             if (envelope.Items.ValueKind != JsonValueKind.Array)
@@ -107,7 +112,8 @@ internal static class BatchHandler
                     "The 'items' property must be an array.",
                     instance: instance,
                     jsonOptions: jsonOptions,
-                    logger: logger);
+                    logger: logger,
+                    options: options);
             }
 
             var itemCount = envelope.Items.GetArrayLength();
@@ -119,7 +125,8 @@ internal static class BatchHandler
                     "The 'items' array must contain at least one item.",
                     instance: instance,
                     jsonOptions: jsonOptions,
-                    logger: logger);
+                    logger: logger,
+                    options: options);
             }
 
             // Validate batch size
@@ -130,7 +137,8 @@ internal static class BatchHandler
                     options.MaxBatchSize,
                     instance: instance,
                     jsonOptions: jsonOptions,
-                    logger: logger);
+                    logger: logger,
+                    options: options);
             }
 
             // Create hook pipeline if hooks are configured
@@ -181,7 +189,8 @@ internal static class BatchHandler
                     ex.Message,
                     instance: instance,
                     jsonOptions: jsonOptions,
-                    logger: logger);
+                    logger: logger,
+                    options: options);
             }
 
             // BeforeResponse hook — runs once for the entire batch, after all items are processed.
@@ -254,7 +263,8 @@ internal static class BatchHandler
                     "The request body is not valid JSON.",
                     instance: instance,
                     jsonOptions: jsonOptions,
-                    logger: logger);
+                    logger: logger,
+                    options: options);
             }
 
             if (envelope is null)
@@ -263,7 +273,8 @@ internal static class BatchHandler
                     "The request body is empty.",
                     instance: instance,
                     jsonOptions: jsonOptions,
-                    logger: logger);
+                    logger: logger,
+                    options: options);
             }
 
             if (!Enum.TryParse<BatchAction>(envelope.Action, ignoreCase: true, out var action))
@@ -278,7 +289,8 @@ internal static class BatchHandler
                     },
                     instance: instance,
                     jsonOptions: jsonOptions,
-                    logger: logger);
+                    logger: logger,
+                    options: options);
             }
 
             if (!config.IsBatchActionEnabled(action))
@@ -290,7 +302,8 @@ internal static class BatchHandler
                     enabledActions,
                     instance: instance,
                     jsonOptions: jsonOptions,
-                    logger: logger);
+                    logger: logger,
+                    options: options);
             }
 
             if (envelope.Items.ValueKind == JsonValueKind.Undefined
@@ -300,7 +313,8 @@ internal static class BatchHandler
                     "The 'items' array is required.",
                     instance: instance,
                     jsonOptions: jsonOptions,
-                    logger: logger);
+                    logger: logger,
+                    options: options);
             }
 
             if (envelope.Items.ValueKind != JsonValueKind.Array)
@@ -309,7 +323,8 @@ internal static class BatchHandler
                     "The 'items' property must be an array.",
                     instance: instance,
                     jsonOptions: jsonOptions,
-                    logger: logger);
+                    logger: logger,
+                    options: options);
             }
 
             var itemCount = envelope.Items.GetArrayLength();
@@ -319,7 +334,8 @@ internal static class BatchHandler
                     "The 'items' array must contain at least one item.",
                     instance: instance,
                     jsonOptions: jsonOptions,
-                    logger: logger);
+                    logger: logger,
+                    options: options);
             }
 
             if (options.MaxBatchSize > 0 && itemCount > options.MaxBatchSize)
@@ -329,7 +345,8 @@ internal static class BatchHandler
                     options.MaxBatchSize,
                     instance: instance,
                     jsonOptions: jsonOptions,
-                    logger: logger);
+                    logger: logger,
+                    options: options);
             }
 
             var apiPipeline = config.UsesDbModelHooks || config.Hooks is null
@@ -381,7 +398,8 @@ internal static class BatchHandler
                     ex.Message,
                     instance: instance,
                     jsonOptions: jsonOptions,
-                    logger: logger);
+                    logger: logger,
+                    options: options);
             }
 
             if (dbPipeline is not null)

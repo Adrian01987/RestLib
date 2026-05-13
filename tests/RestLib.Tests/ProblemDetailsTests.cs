@@ -107,6 +107,70 @@ public class ProblemDetailsTests : IAsyncLifetime
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
     }
 
+    [Fact]
+    public async Task GetById_NotFound_WithProblemTypeBaseUri_ReturnsAbsoluteType()
+    {
+        // Arrange
+        var repository = new ProductEntityRepository();
+        var (host, client) = await new TestHostBuilder<ProductEntity, Guid>(repository, "/api/products")
+            .WithOptions(options => options.ProblemTypeBaseUri = new Uri("https://api.example.com"))
+            .WithEndpoint(config => config.AllowAnonymous())
+            .BuildAsync();
+        var nonExistentId = Guid.NewGuid();
+
+        try
+        {
+            // Act
+            var response = await client.GetAsync($"/api/products/{nonExistentId}");
+            var problem = await response.Content.ReadFromJsonAsync<RestLibProblemDetails>();
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            problem.Should().NotBeNull();
+            problem!.Type.Should().Be("https://api.example.com/problems/not-found");
+            ProblemTypes.Resolve(ProblemTypes.NotFound).Should().Be(ProblemTypes.NotFound);
+        }
+        finally
+        {
+            client.Dispose();
+            await host.StopAsync();
+            host.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task GetById_NotFound_WhenProblemDetailsDisabled_ReturnsPlainJsonError()
+    {
+        // Arrange
+        var repository = new ProductEntityRepository();
+        var (host, client) = await new TestHostBuilder<ProductEntity, Guid>(repository, "/api/products")
+            .WithOptions(options => options.UseProblemDetails = false)
+            .WithEndpoint(config => config.AllowAnonymous())
+            .BuildAsync();
+        var nonExistentId = Guid.NewGuid();
+
+        try
+        {
+            // Act
+            var response = await client.GetAsync($"/api/products/{nonExistentId}");
+            using var body = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync());
+            var root = body.RootElement;
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+            root.GetProperty("error").GetString().Should().Be("Resource Not Found");
+            root.GetProperty("status").GetInt32().Should().Be((int)HttpStatusCode.NotFound);
+            root.TryGetProperty("type", out _).Should().BeFalse();
+        }
+        finally
+        {
+            client.Dispose();
+            await host.StopAsync();
+            host.Dispose();
+        }
+    }
+
     #endregion
 
     #region Acceptance Criteria: Types are relative URIs
@@ -786,32 +850,14 @@ public class ProblemDetailsTests : IAsyncLifetime
 /// Tests for <see cref="ProblemTypes.Resolve"/> and the configurable
 /// <see cref="RestLibOptions.ProblemTypeBaseUri"/> option.
 /// </summary>
-[Collection("ProblemTypeBaseUri")]
 [Trait("Type", "Unit")]
 [Trait("Feature", "ProblemDetails")]
-public class ProblemTypeResolveTests : IAsyncLifetime
+public class ProblemTypeResolveTests
 {
-    /// <summary>
-    /// Initializes the test. No setup required.
-    /// </summary>
-    public Task InitializeAsync() => Task.CompletedTask;
-
-    /// <summary>
-    /// Reset the static base URI after each test to prevent leaking state.
-    /// </summary>
-    public Task DisposeAsync()
-    {
-        ProblemTypes.Reset();
-        return Task.CompletedTask;
-    }
-
     [Fact]
     [Trait("Category", "Story3.3")]
     public void Resolve_WithoutBaseUri_ReturnsRelativePath()
     {
-        // Arrange
-        ProblemTypes.Reset();
-
         // Act & Assert
         ProblemTypes.Resolve(ProblemTypes.NotFound).Should().Be("/problems/not-found");
         ProblemTypes.Resolve(ProblemTypes.ValidationFailed).Should().Be("/problems/validation-failed");
@@ -823,12 +869,12 @@ public class ProblemTypeResolveTests : IAsyncLifetime
     public void Resolve_WithBaseUri_ReturnsAbsoluteUri()
     {
         // Arrange
-        ProblemTypes.Configure(new Uri("https://api.example.com"));
+        var baseUri = new Uri("https://api.example.com");
 
         // Act & Assert
-        ProblemTypes.Resolve(ProblemTypes.NotFound).Should().Be("https://api.example.com/problems/not-found");
-        ProblemTypes.Resolve(ProblemTypes.ValidationFailed).Should().Be("https://api.example.com/problems/validation-failed");
-        ProblemTypes.Resolve(ProblemTypes.InternalError).Should().Be("https://api.example.com/problems/internal-error");
+        ProblemTypes.Resolve(ProblemTypes.NotFound, baseUri).Should().Be("https://api.example.com/problems/not-found");
+        ProblemTypes.Resolve(ProblemTypes.ValidationFailed, baseUri).Should().Be("https://api.example.com/problems/validation-failed");
+        ProblemTypes.Resolve(ProblemTypes.InternalError, baseUri).Should().Be("https://api.example.com/problems/internal-error");
     }
 
     [Fact]
@@ -836,35 +882,31 @@ public class ProblemTypeResolveTests : IAsyncLifetime
     public void Resolve_WithTrailingSlashBaseUri_DoesNotDoubleSlash()
     {
         // Arrange
-        ProblemTypes.Configure(new Uri("https://api.example.com/"));
+        var baseUri = new Uri("https://api.example.com/");
 
         // Act
-        var resolved = ProblemTypes.Resolve(ProblemTypes.NotFound);
+        var resolved = ProblemTypes.Resolve(ProblemTypes.NotFound, baseUri);
 
-        // Assert — no double slash between base and relative path
+        // Assert
         resolved.Should().Be("https://api.example.com/problems/not-found");
     }
 
     [Fact]
     [Trait("Category", "Story3.3")]
-    public void Factory_NotFound_WithBaseUri_ProducesAbsoluteType()
+    public void Factory_NotFound_ReturnsRelativeType()
     {
-        // Arrange
-        ProblemTypes.Configure(new Uri("https://api.example.com"));
-
         // Act
         var problem = ProblemDetailsFactory.NotFound("Product", Guid.Empty);
 
         // Assert
-        problem.Type.Should().Be("https://api.example.com/problems/not-found");
+        problem.Type.Should().Be("/problems/not-found");
     }
 
     [Fact]
     [Trait("Category", "Story3.3")]
-    public void Factory_AllMethods_WithBaseUri_ProduceAbsoluteTypes()
+    public void Factory_AllMethods_ReturnRelativeTypes()
     {
         // Arrange
-        ProblemTypes.Configure(new Uri("https://docs.example.com"));
         var errors = new Dictionary<string, string[]> { ["f"] = ["err"] };
         var filterErrors = new List<FilterValidationError>
         {
@@ -879,81 +921,62 @@ public class ProblemTypeResolveTests : IAsyncLifetime
             new() { Field = "f", Message = "bad" },
         };
 
-        // Act & Assert — every factory method should produce an absolute type URI
+        // Act & Assert
         ProblemDetailsFactory.NotFound("E", 1).Type
-            .Should().StartWith("https://docs.example.com/problems/");
+            .Should().StartWith("/problems/");
         ProblemDetailsFactory.ValidationFailed(errors).Type
-            .Should().StartWith("https://docs.example.com/problems/");
+            .Should().StartWith("/problems/");
         ProblemDetailsFactory.BadRequest("x").Type
-            .Should().StartWith("https://docs.example.com/problems/");
+            .Should().StartWith("/problems/");
         ProblemDetailsFactory.InvalidCursor("x").Type
-            .Should().StartWith("https://docs.example.com/problems/");
+            .Should().StartWith("/problems/");
         ProblemDetailsFactory.InvalidLimit(0, 1, 100).Type
-            .Should().StartWith("https://docs.example.com/problems/");
+            .Should().StartWith("/problems/");
         ProblemDetailsFactory.InvalidFilters(filterErrors).Type
-            .Should().StartWith("https://docs.example.com/problems/");
+            .Should().StartWith("/problems/");
         ProblemDetailsFactory.InvalidSort(sortErrors).Type
-            .Should().StartWith("https://docs.example.com/problems/");
+            .Should().StartWith("/problems/");
         ProblemDetailsFactory.InvalidFields(fieldErrors).Type
-            .Should().StartWith("https://docs.example.com/problems/");
+            .Should().StartWith("/problems/");
         ProblemDetailsFactory.InvalidBatchRequest("x").Type
-            .Should().StartWith("https://docs.example.com/problems/");
+            .Should().StartWith("/problems/");
         ProblemDetailsFactory.BatchSizeExceeded(10, 5).Type
-            .Should().StartWith("https://docs.example.com/problems/");
+            .Should().StartWith("/problems/");
         ProblemDetailsFactory.BatchActionNotEnabled("x", ["y"]).Type
-            .Should().StartWith("https://docs.example.com/problems/");
+            .Should().StartWith("/problems/");
         ProblemDetailsFactory.Conflict("x").Type
-            .Should().StartWith("https://docs.example.com/problems/");
+            .Should().StartWith("/problems/");
         ProblemDetailsFactory.PreconditionFailed("x").Type
-            .Should().StartWith("https://docs.example.com/problems/");
+            .Should().StartWith("/problems/");
         ProblemDetailsFactory.InternalError().Type
-            .Should().StartWith("https://docs.example.com/problems/");
+            .Should().StartWith("/problems/");
         ProblemDetailsFactory.HookShortCircuit(500).Type
-            .Should().StartWith("https://docs.example.com/problems/");
+            .Should().StartWith("/problems/");
     }
 
     [Fact]
     [Trait("Category", "Story3.3")]
-    public void Factory_NotFound_Serialized_WithBaseUri_ContainsAbsoluteType()
+    public void Factory_NotFound_Serialized_ContainsRelativeType()
     {
         // Arrange
-        ProblemTypes.Configure(new Uri("https://api.example.com"));
         var problem = ProblemDetailsFactory.NotFound("Product", Guid.Empty);
 
         // Act
         var json = JsonSerializer.Serialize(problem);
 
-        // Assert — the serialized JSON contains the absolute type URI
-        json.Should().Contain("\"type\":\"https://api.example.com/problems/not-found\"");
+        // Assert
+        json.Should().Contain("\"type\":\"/problems/not-found\"");
     }
 }
 
 /// <summary>
 /// Tests for <see cref="RestLibServiceExtensions.AddRestLib"/> with valid
-/// <see cref="RestLibOptions.ProblemTypeBaseUri"/> values. These live in the
-/// "ProblemTypeBaseUri" collection so they do not run in parallel with
-/// <see cref="ProblemTypeResolveTests"/>, avoiding static-state races on
-/// <see cref="ProblemTypes"/>.
+/// <see cref="RestLibOptions.ProblemTypeBaseUri"/> values.
 /// </summary>
-[Collection("ProblemTypeBaseUri")]
 [Trait("Type", "Unit")]
 [Trait("Feature", "Configuration")]
-public class ProblemTypeBaseUriRegistrationTests : IAsyncLifetime
+public class ProblemTypeBaseUriRegistrationTests
 {
-    /// <summary>
-    /// Initializes the test. No setup required.
-    /// </summary>
-    public Task InitializeAsync() => Task.CompletedTask;
-
-    /// <summary>
-    /// Reset the static base URI after each test to prevent leaking state.
-    /// </summary>
-    public Task DisposeAsync()
-    {
-        ProblemTypes.Reset();
-        return Task.CompletedTask;
-    }
-
     [Fact]
     [Trait("Category", "Story1.3")]
     public void AddRestLib_ValidHttpsProblemTypeBaseUri_DoesNotThrow()

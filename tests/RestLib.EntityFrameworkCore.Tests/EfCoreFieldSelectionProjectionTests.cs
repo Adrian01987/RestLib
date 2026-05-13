@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using RestLib.Configuration;
 using RestLib.EntityFrameworkCore.Tests.Fakes;
 using RestLib.FieldSelection;
 using RestLib.Filtering;
@@ -20,7 +21,7 @@ namespace RestLib.EntityFrameworkCore.Tests;
 /// <summary>
 /// Tests EF Core field-selection projection pushdown behavior.
 /// </summary>
-[Trait("Category", "IMP-2")]
+[Trait("Category", "Story7.1.Projection")]
 public class EfCoreFieldSelectionProjectionTests : IAsyncLifetime
 {
     private static readonly JsonSerializerOptions JsonOptions = RestLibJsonOptions.CreateDefault();
@@ -153,6 +154,183 @@ public class EfCoreFieldSelectionProjectionTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetAll_PushdownEnabled_NestedSelection_FallsBackToFullMaterialization()
+    {
+        // Arrange
+        var sqlLogMessages = new List<string>();
+        var (host, client, dbContext) = await CreateOrderHostAsync(sqlLogMessages);
+
+        try
+        {
+            await SeedOrdersAsync(dbContext);
+            sqlLogMessages.Clear();
+
+            // Act
+            var response = await client.GetAsync("/api/orders?fields=order_number,customer.email");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+            var firstItem = json.GetProperty("items")[0];
+            firstItem.TryGetProperty("order_number", out _).Should().BeTrue();
+            firstItem.TryGetProperty("customer.email", out _).Should().BeTrue();
+
+            var sql = string.Join("\n", sqlLogMessages);
+            sql.Should().Contain("\"TotalAmount\"");
+            sql.Should().Contain("\"CustomerId\"");
+        }
+        finally
+        {
+            await DisposeHostAsync(host, client);
+        }
+    }
+
+    [Fact]
+    public async Task GetById_PushdownEnabled_WithETag_FallsBackToFullMaterialization()
+    {
+        // Arrange
+        var sqlLogMessages = new List<string>();
+        var (host, client, dbContext) = await CreateProductHostAsync(
+            sqlLogMessages,
+            configureOptions: options => options.EnableETagSupport = true,
+            configureRepositoryOptions: options => options.EnableProjectionPushdown = true);
+
+        try
+        {
+            var product = CreateProduct(name: "ETag Fallback", unitPrice: 12m, stockQuantity: 4, isActive: true);
+            await SeedProductsAsync(dbContext, product);
+            sqlLogMessages.Clear();
+
+            // Act
+            var response = await client.GetAsync($"/api/products/{product.Id}?fields=product_name");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var sql = string.Join("\n", sqlLogMessages);
+            sql.Should().Contain("\"StockQuantity\"");
+            sql.Should().Contain("\"OptionalDescription\"");
+        }
+        finally
+        {
+            await DisposeHostAsync(host, client);
+        }
+    }
+
+    [Fact]
+    public async Task GetAll_PushdownEnabled_WithHateoas_FallsBackToFullMaterialization()
+    {
+        // Arrange
+        var sqlLogMessages = new List<string>();
+        var (host, client, dbContext) = await CreateProductHostAsync(
+            sqlLogMessages,
+            configureOptions: options => options.EnableHateoas = true,
+            configureRepositoryOptions: options => options.EnableProjectionPushdown = true);
+
+        try
+        {
+            await SeedProductsAsync(dbContext, CreateProduct(name: "HATEOAS Fallback", unitPrice: 13m, stockQuantity: 5, isActive: true));
+            sqlLogMessages.Clear();
+
+            // Act
+            var response = await client.GetAsync("/api/products?fields=product_name");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var sql = string.Join("\n", sqlLogMessages);
+            sql.Should().Contain("\"StockQuantity\"");
+            sql.Should().Contain("\"OptionalDescription\"");
+        }
+        finally
+        {
+            await DisposeHostAsync(host, client);
+        }
+    }
+
+    [Fact]
+    public async Task GetAll_PushdownEnabled_WithHooks_FallsBackToFullMaterialization()
+    {
+        // Arrange
+        var sqlLogMessages = new List<string>();
+        var (host, client, dbContext) = await CreateProductHostAsync(
+            sqlLogMessages,
+            configureEndpoint: config => config.UseHooks(hooks => hooks.OnRequestReceived = _ => Task.CompletedTask),
+            configureRepositoryOptions: options => options.EnableProjectionPushdown = true);
+
+        try
+        {
+            await SeedProductsAsync(dbContext, CreateProduct(name: "Hook Fallback", unitPrice: 14m, stockQuantity: 6, isActive: true));
+            sqlLogMessages.Clear();
+
+            // Act
+            var response = await client.GetAsync("/api/products?fields=product_name");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var sql = string.Join("\n", sqlLogMessages);
+            sql.Should().Contain("\"StockQuantity\"");
+            sql.Should().Contain("\"OptionalDescription\"");
+        }
+        finally
+        {
+            await DisposeHostAsync(host, client);
+        }
+    }
+
+    [Fact]
+    public async Task GetAll_PushdownDisabledByDefault_BehaviorUnchanged()
+    {
+        // Arrange
+        var sqlLogMessages = new List<string>();
+        var (host, client, dbContext) = await CreateProductHostAsync(sqlLogMessages);
+
+        try
+        {
+            await SeedProductsAsync(dbContext, CreateProduct(name: "Default Disabled", unitPrice: 15m, stockQuantity: 8, isActive: true));
+            sqlLogMessages.Clear();
+
+            // Act
+            var response = await client.GetAsync("/api/products?fields=product_name");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+            var firstItem = json.GetProperty("items")[0];
+            firstItem.TryGetProperty("product_name", out _).Should().BeTrue();
+            firstItem.TryGetProperty("stock_quantity", out _).Should().BeFalse();
+
+            var sql = string.Join("\n", sqlLogMessages);
+            sql.Should().Contain("\"StockQuantity\"");
+            sql.Should().Contain("\"OptionalDescription\"");
+        }
+        finally
+        {
+            await DisposeHostAsync(host, client);
+        }
+    }
+
+    [Fact]
+    public async Task GetAll_PushdownEnabled_NoSelection_ReturnsAllColumns_NoFallbackError()
+    {
+        // Arrange
+        await SeedProductsAsync(CreateProduct(name: "No Selection", unitPrice: 16m, stockQuantity: 9, isActive: true));
+        _sqlLogMessages.Clear();
+
+        // Act
+        var response = await _client.GetAsync("/api/products");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var firstItem = json.GetProperty("items")[0];
+        firstItem.TryGetProperty("product_name", out _).Should().BeTrue();
+        firstItem.TryGetProperty("stock_quantity", out _).Should().BeTrue();
+
+        var sql = string.Join("\n", _sqlLogMessages);
+        sql.Should().Contain("\"StockQuantity\"");
+        sql.Should().Contain("\"OptionalDescription\"");
+    }
+
+    [Fact]
     public async Task RepositoryProjection_WithNonProjectableRequestedField_ReturnsNull()
     {
         // Arrange
@@ -198,6 +376,112 @@ public class EfCoreFieldSelectionProjectionTests : IAsyncLifetime
             OptionalDescription = "desc",
             IsActive = isActive
         };
+    }
+
+    private static async Task<(IHost Host, HttpClient Client, TestDbContext DbContext)> CreateProductHostAsync(
+        List<string> sqlLogMessages,
+        Action<RestLibOptions>? configureOptions = null,
+        Action<RestLibEndpointConfiguration<ProductEntity, Guid>>? configureEndpoint = null,
+        Action<EfCoreRepositoryOptions<ProductEntity, Guid>>? configureRepositoryOptions = null)
+    {
+        var builder = new EfCoreTestHostBuilder<ProductEntity, Guid>("/api/products")
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.AllowFieldSelection(
+                    product => product.Id,
+                    product => product.ProductName,
+                    product => product.UnitPrice,
+                    product => product.StockQuantity,
+                    product => product.CreatedAt,
+                    product => product.OptionalDescription,
+                    product => product.IsActive);
+                config.AllowSorting(product => product.UnitPrice, product => product.ProductName);
+                config.AllowFiltering(product => product.IsActive);
+                configureEndpoint?.Invoke(config);
+            })
+            .WithRepositoryOptions(options =>
+            {
+                options.KeySelector = product => product.Id;
+                configureRepositoryOptions?.Invoke(options);
+            })
+            .WithServices(services =>
+            {
+                services.AddLogging(builder =>
+                {
+                    builder.AddProvider(new ListLoggerProvider(sqlLogMessages));
+                });
+            });
+
+        if (configureOptions is not null)
+        {
+            builder.WithOptions(configureOptions);
+        }
+
+        return await builder.BuildAsync();
+    }
+
+    private static async Task<(IHost Host, HttpClient Client, TestDbContext DbContext)> CreateOrderHostAsync(
+        List<string> sqlLogMessages)
+    {
+        return await new EfCoreTestHostBuilder<OrderEntity, Guid>("/api/orders")
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.AllowFieldSelection(
+                    order => order.Id,
+                    order => order.OrderNumber,
+                    order => order.Customer!.Email);
+                config.AllowSorting(order => order.OrderNumber);
+            })
+            .WithRepositoryOptions(options =>
+            {
+                options.EnableProjectionPushdown = true;
+                options.KeySelector = order => order.Id;
+            })
+            .WithServices(services =>
+            {
+                services.AddLogging(builder =>
+                {
+                    builder.AddProvider(new ListLoggerProvider(sqlLogMessages));
+                });
+            })
+            .BuildAsync();
+    }
+
+    private static async Task SeedProductsAsync(TestDbContext dbContext, params ProductEntity[] products)
+    {
+        dbContext.Products.AddRange(products);
+        await dbContext.SaveChangesAsync();
+    }
+
+    private static async Task SeedOrdersAsync(TestDbContext dbContext)
+    {
+        var customer = new OrderCustomerEntity
+        {
+            Id = Guid.NewGuid(),
+            Name = "Ada",
+            Email = "ada@example.com"
+        };
+
+        dbContext.Customers.Add(customer);
+        dbContext.Orders.Add(new OrderEntity
+        {
+            Id = Guid.NewGuid(),
+            OrderNumber = "ORD-101",
+            TotalAmount = 42m,
+            CustomerId = customer.Id,
+            Customer = customer
+        });
+
+        await dbContext.SaveChangesAsync();
+    }
+
+    private static async Task DisposeHostAsync(IHost host, HttpClient client)
+    {
+        client.Dispose();
+        await host.StopAsync();
+        host.Dispose();
     }
 
     private async Task SeedProductsAsync(params ProductEntity[] products)

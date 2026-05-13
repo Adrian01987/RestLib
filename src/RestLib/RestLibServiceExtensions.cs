@@ -11,7 +11,6 @@ using RestLib.Configuration;
 using RestLib.Hooks;
 using RestLib.Hypermedia;
 using RestLib.Mapping;
-using RestLib.Responses;
 using RestLib.Serialization;
 
 namespace RestLib;
@@ -65,11 +64,6 @@ public static class RestLibServiceExtensions
         configure?.Invoke(options);
 
         ValidateOptions(options);
-
-        if (options.ProblemTypeBaseUri is not null)
-        {
-            ProblemTypes.Configure(options.ProblemTypeBaseUri);
-        }
 
         services.TryAddSingleton(options);
 

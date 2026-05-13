@@ -39,7 +39,9 @@ public class EfCoreRepositoryOptions<TEntity, TKey>
 
     /// <summary>
     /// Gets or sets a value indicating whether field-selection projection pushdown is enabled.
-    /// Default is <c>false</c>.
+    /// When enabled, GET endpoints may translate direct scalar field-selection requests into
+    /// SQL <c>SELECT</c> projections. Nested paths and requests requiring HATEOAS, ETags, or
+    /// hooks fall back to full entity materialization. Default is <c>false</c>.
     /// </summary>
     public bool EnableProjectionPushdown { get; set; }
 }

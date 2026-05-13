@@ -1,6 +1,6 @@
 # RestLib
 
-> **3 lines to a production-ready REST API**
+> **3 lines to a consistent CRUD REST API**
 
 [![Build](https://github.com/Adrian01987/RestLib/actions/workflows/ci.yml/badge.svg)](https://github.com/Adrian01987/RestLib/actions/workflows/ci.yml)
 [![Coverage](https://codecov.io/gh/Adrian01987/RestLib/branch/main/graph/badge.svg)](https://codecov.io/gh/Adrian01987/RestLib)
@@ -541,7 +541,7 @@ Key decisions are documented as Architecture Decision Records:
 
 - **Forward-only cursor pagination** — cursors support forward traversal only; there is no backward/previous-page navigation.
 - **Cursor contract, adapter-specific implementation** — RestLib exposes an opaque cursor API. The InMemory adapter still uses encoded offsets/indexes, while the EF Core adapter uses keyset cursors for supported stable sorts and falls back to offsets otherwise.
-- **Post-fetch field selection** — field projection is applied after the full entity is retrieved from the repository, not pushed down to the data source.
+- **Field selection pushdown is adapter-dependent** — the core endpoint layer can project after retrieval for any repository. The EF Core adapter can opt into conditional SQL projection pushdown for direct scalar fields via `EnableProjectionPushdown`; nested selections and requests using HATEOAS, ETags, or hooks fall back to materialized projection.
 - **Nested query paths are reference-only** — filtering, sorting, and field selection support dotted nested reference-property paths such as `customer.email`, but collection-valued paths are not supported and sparse nested responses use dotted output keys rather than nested objects.
 - **Built-in search is intentionally limited** — RestLib supports configured OR-of-contains search across string fields, but it does not provide full-text indexing, ranking, fuzzy matching, or provider-specific search features.
 - **No CORS configuration** — RestLib does not configure CORS. If your API is consumed by browsers, add ASP.NET Core's built-in CORS middleware:

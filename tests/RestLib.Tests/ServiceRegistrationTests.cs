@@ -596,8 +596,7 @@ public class ServiceRegistrationTests
     }
 
     // NOTE: Tests for valid ProblemTypeBaseUri (https and http schemes) are in
-    // ProblemTypeBaseUriRegistrationTests to share the "ProblemTypeBaseUri" xUnit
-    // collection with ProblemTypeResolveTests, preventing parallel static-state races.
+    // ProblemTypeBaseUriRegistrationTests.
 
     [Fact]
     [Trait("Category", "Story1.3")]

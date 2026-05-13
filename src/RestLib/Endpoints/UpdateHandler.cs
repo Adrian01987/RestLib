@@ -65,7 +65,8 @@ internal static class UpdateHandler
                             validationResult.Errors,
                             httpContext.Request.Path,
                             jsonOptions,
-                            logger);
+                            logger,
+                            options);
                     }
                 }
 
@@ -108,7 +109,8 @@ internal static class UpdateHandler
                         config.KeyRouteParts,
                         httpContext.Request.Path,
                         jsonOptions,
-                        logger);
+                        logger,
+                        options);
                 }
 
                 // AfterPersist hook
@@ -318,7 +320,8 @@ internal static class UpdateHandler
                     validationResult.Errors,
                     httpContext.Request.Path,
                     jsonOptions,
-                    logger);
+                    logger,
+                    options);
             }
         }
 
@@ -358,7 +361,8 @@ internal static class UpdateHandler
                     validationResult.Errors,
                     httpContext.Request.Path,
                     jsonOptions,
-                    logger);
+                    logger,
+                    options);
             }
         }
 
@@ -423,7 +427,8 @@ internal static class UpdateHandler
                 config.KeyRouteParts,
                 httpContext.Request.Path,
                 jsonOptions,
-                logger);
+                logger,
+                options);
         }
 
         var updatedApi = mapper.ToApi(updatedDb);

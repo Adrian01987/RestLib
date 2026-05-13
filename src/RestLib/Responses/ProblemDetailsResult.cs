@@ -23,25 +23,12 @@ public static class ProblemDetailsResult
     /// <param name="problem">The problem details to return.</param>
     /// <param name="jsonOptions">Optional JSON serializer options.</param>
     /// <param name="logger">Optional logger; when provided, the response is logged at the appropriate level.</param>
-    public static IResult Create(RestLibProblemDetails problem, JsonSerializerOptions? jsonOptions = null, ILogger? logger = null)
+    public static IResult Create(
+        RestLibProblemDetails problem,
+        JsonSerializerOptions? jsonOptions = null,
+        ILogger? logger = null)
     {
-        if (logger is not null)
-        {
-            if (problem.Status >= 500)
-            {
-                RestLibLogMessages.ProblemDetailsServerError(logger, problem.Status, problem.Type, problem.Instance);
-            }
-            else
-            {
-                RestLibLogMessages.ProblemDetailsClientError(logger, problem.Status, problem.Type, problem.Instance);
-            }
-        }
-
-        return Results.Json(
-            problem,
-            jsonOptions,
-            contentType: ProblemJsonContentType,
-            statusCode: problem.Status);
+        return Create(problem, jsonOptions, logger, options: null);
     }
 
     /// <summary>
@@ -59,8 +46,7 @@ public static class ProblemDetailsResult
         JsonSerializerOptions? jsonOptions = null,
         ILogger? logger = null)
     {
-        var problem = ProblemDetailsFactory.NotFound(entityName, id, instance);
-        return Create(problem, jsonOptions, logger);
+        return NotFound(entityName, id, instance, jsonOptions, logger, options: null);
     }
 
     /// <summary>
@@ -76,8 +62,7 @@ public static class ProblemDetailsResult
         JsonSerializerOptions? jsonOptions = null,
         ILogger? logger = null)
     {
-        var problem = ProblemDetailsFactory.ValidationFailed(errors, instance);
-        return Create(problem, jsonOptions, logger);
+        return ValidationFailed(errors, instance, jsonOptions, logger, options: null);
     }
 
     /// <summary>
@@ -93,8 +78,7 @@ public static class ProblemDetailsResult
         JsonSerializerOptions? jsonOptions = null,
         ILogger? logger = null)
     {
-        var problem = ProblemDetailsFactory.BadRequest(detail, instance);
-        return Create(problem, jsonOptions, logger);
+        return BadRequest(detail, instance, jsonOptions, logger, options: null);
     }
 
     /// <summary>
@@ -112,8 +96,7 @@ public static class ProblemDetailsResult
         string? detail = null,
         ILogger? logger = null)
     {
-        var problem = ProblemDetailsFactory.InvalidCursor(cursor, instance, detail);
-        return Create(problem, jsonOptions, logger);
+        return InvalidCursor(cursor, instance, jsonOptions, detail, logger, options: null);
     }
 
     /// <summary>
@@ -133,8 +116,7 @@ public static class ProblemDetailsResult
         JsonSerializerOptions? jsonOptions = null,
         ILogger? logger = null)
     {
-        var problem = ProblemDetailsFactory.InvalidLimit(limit, minLimit, maxLimit, instance);
-        return Create(problem, jsonOptions, logger);
+        return InvalidLimit(limit, minLimit, maxLimit, instance, jsonOptions, logger, options: null);
     }
 
     /// <summary>
@@ -150,8 +132,7 @@ public static class ProblemDetailsResult
         JsonSerializerOptions? jsonOptions = null,
         ILogger? logger = null)
     {
-        var problem = ProblemDetailsFactory.InvalidFilters(errors, instance);
-        return Create(problem, jsonOptions, logger);
+        return InvalidFilters(errors, instance, jsonOptions, logger, options: null);
     }
 
     /// <summary>
@@ -167,8 +148,7 @@ public static class ProblemDetailsResult
         JsonSerializerOptions? jsonOptions = null,
         ILogger? logger = null)
     {
-        var problem = ProblemDetailsFactory.InvalidSort(errors, instance);
-        return Create(problem, jsonOptions, logger);
+        return InvalidSort(errors, instance, jsonOptions, logger, options: null);
     }
 
     /// <summary>
@@ -184,8 +164,7 @@ public static class ProblemDetailsResult
         JsonSerializerOptions? jsonOptions = null,
         ILogger? logger = null)
     {
-        var problem = ProblemDetailsFactory.InvalidFields(errors, instance);
-        return Create(problem, jsonOptions, logger);
+        return InvalidFields(errors, instance, jsonOptions, logger, options: null);
     }
 
     /// <summary>
@@ -201,8 +180,7 @@ public static class ProblemDetailsResult
         JsonSerializerOptions? jsonOptions = null,
         ILogger? logger = null)
     {
-        var problem = ProblemDetailsFactory.InvalidSearch(errors, instance);
-        return Create(problem, jsonOptions, logger);
+        return InvalidSearch(errors, instance, jsonOptions, logger, options: null);
     }
 
     /// <summary>
@@ -220,8 +198,7 @@ public static class ProblemDetailsResult
         JsonSerializerOptions? jsonOptions = null,
         ILogger? logger = null)
     {
-        var problem = ProblemDetailsFactory.InvalidBatchRequest(detail, errors, instance);
-        return Create(problem, jsonOptions, logger);
+        return InvalidBatchRequest(detail, errors, instance, jsonOptions, logger, options: null);
     }
 
     /// <summary>
@@ -239,8 +216,7 @@ public static class ProblemDetailsResult
         JsonSerializerOptions? jsonOptions = null,
         ILogger? logger = null)
     {
-        var problem = ProblemDetailsFactory.BatchSizeExceeded(itemCount, maxBatchSize, instance);
-        return Create(problem, jsonOptions, logger);
+        return BatchSizeExceeded(itemCount, maxBatchSize, instance, jsonOptions, logger, options: null);
     }
 
     /// <summary>
@@ -258,8 +234,7 @@ public static class ProblemDetailsResult
         JsonSerializerOptions? jsonOptions = null,
         ILogger? logger = null)
     {
-        var problem = ProblemDetailsFactory.BatchActionNotEnabled(action, enabledActions, instance);
-        return Create(problem, jsonOptions, logger);
+        return BatchActionNotEnabled(action, enabledActions, instance, jsonOptions, logger, options: null);
     }
 
     /// <summary>
@@ -275,8 +250,7 @@ public static class ProblemDetailsResult
         JsonSerializerOptions? jsonOptions = null,
         ILogger? logger = null)
     {
-        var problem = ProblemDetailsFactory.Conflict(detail, instance);
-        return Create(problem, jsonOptions, logger);
+        return Conflict(detail, instance, jsonOptions, logger, options: null);
     }
 
     /// <summary>
@@ -292,8 +266,7 @@ public static class ProblemDetailsResult
         JsonSerializerOptions? jsonOptions = null,
         ILogger? logger = null)
     {
-        var problem = ProblemDetailsFactory.PreconditionFailed(detail, instance);
-        return Create(problem, jsonOptions, logger);
+        return PreconditionFailed(detail, instance, jsonOptions, logger, options: null);
     }
 
     /// <summary>
@@ -309,8 +282,7 @@ public static class ProblemDetailsResult
         JsonSerializerOptions? jsonOptions = null,
         ILogger? logger = null)
     {
-        var problem = ProblemDetailsFactory.InternalError(detail, instance);
-        return Create(problem, jsonOptions, logger);
+        return InternalError(detail, instance, jsonOptions, logger, options: null);
     }
 
     /// <summary>
@@ -326,8 +298,311 @@ public static class ProblemDetailsResult
         JsonSerializerOptions? jsonOptions = null,
         ILogger? logger = null)
     {
+        return HookShortCircuit(statusCode, instance, jsonOptions, logger, options: null);
+    }
+
+    /// <summary>
+    /// Creates an option-aware IResult for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult Create(
+        RestLibProblemDetails problem,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        problem = ApplyOptions(problem, options);
+
+        if (logger is not null)
+        {
+            if (problem.Status >= 500)
+            {
+                RestLibLogMessages.ProblemDetailsServerError(logger, problem.Status, problem.Type, problem.Instance);
+            }
+            else
+            {
+                RestLibLogMessages.ProblemDetailsClientError(logger, problem.Status, problem.Type, problem.Instance);
+            }
+        }
+
+        if (options?.UseProblemDetails == false)
+        {
+            var error = new
+            {
+                error = problem.Title,
+                problem.Status,
+                problem.Detail,
+                problem.Instance,
+                problem.Errors
+            };
+
+            return Results.Json(
+                error,
+                jsonOptions,
+                statusCode: problem.Status);
+        }
+
+        return Results.Json(
+            problem,
+            jsonOptions,
+            contentType: ProblemJsonContentType,
+            statusCode: problem.Status);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 404 Not Found result for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult NotFound(
+        string entityName,
+        object id,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        var problem = ProblemDetailsFactory.NotFound(entityName, id, instance);
+        return Create(problem, jsonOptions, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 400 Validation Failed result for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult ValidationFailed(
+        IReadOnlyDictionary<string, string[]> errors,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        var problem = ProblemDetailsFactory.ValidationFailed(errors, instance);
+        return Create(problem, jsonOptions, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 400 Bad Request result for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult BadRequest(
+        string detail,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        var problem = ProblemDetailsFactory.BadRequest(detail, instance);
+        return Create(problem, jsonOptions, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 400 Invalid Cursor result for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult InvalidCursor(
+        string cursor,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        string? detail,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        var problem = ProblemDetailsFactory.InvalidCursor(cursor, instance, detail);
+        return Create(problem, jsonOptions, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 400 Invalid Cursor result with the default detail for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult InvalidCursor(
+        string cursor,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        return InvalidCursor(cursor, instance, jsonOptions, detail: null, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 400 Invalid Limit result for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult InvalidLimit(
+        int limit,
+        int minLimit,
+        int maxLimit,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        var problem = ProblemDetailsFactory.InvalidLimit(limit, minLimit, maxLimit, instance);
+        return Create(problem, jsonOptions, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 400 Invalid Filters result for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult InvalidFilters(
+        IReadOnlyList<FilterValidationError> errors,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        var problem = ProblemDetailsFactory.InvalidFilters(errors, instance);
+        return Create(problem, jsonOptions, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 400 Invalid Sort result for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult InvalidSort(
+        IReadOnlyList<SortValidationError> errors,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        var problem = ProblemDetailsFactory.InvalidSort(errors, instance);
+        return Create(problem, jsonOptions, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 400 Invalid Fields result for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult InvalidFields(
+        IReadOnlyList<FieldSelectionValidationError> errors,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        var problem = ProblemDetailsFactory.InvalidFields(errors, instance);
+        return Create(problem, jsonOptions, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 400 Invalid Search result for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult InvalidSearch(
+        IReadOnlyList<SearchValidationError> errors,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        var problem = ProblemDetailsFactory.InvalidSearch(errors, instance);
+        return Create(problem, jsonOptions, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 400 Invalid Batch Request result for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult InvalidBatchRequest(
+        string detail,
+        IReadOnlyDictionary<string, string[]>? errors,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        var problem = ProblemDetailsFactory.InvalidBatchRequest(detail, errors, instance);
+        return Create(problem, jsonOptions, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 400 Invalid Batch Request result without field errors for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult InvalidBatchRequest(
+        string detail,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        return InvalidBatchRequest(detail, errors: null, instance, jsonOptions, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 400 Batch Size Exceeded result for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult BatchSizeExceeded(
+        int itemCount,
+        int maxBatchSize,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        var problem = ProblemDetailsFactory.BatchSizeExceeded(itemCount, maxBatchSize, instance);
+        return Create(problem, jsonOptions, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 400 Batch Action Not Enabled result for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult BatchActionNotEnabled(
+        string action,
+        IEnumerable<string> enabledActions,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        var problem = ProblemDetailsFactory.BatchActionNotEnabled(action, enabledActions, instance);
+        return Create(problem, jsonOptions, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 409 Conflict result for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult Conflict(
+        string detail,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        var problem = ProblemDetailsFactory.Conflict(detail, instance);
+        return Create(problem, jsonOptions, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 412 Precondition Failed result for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult PreconditionFailed(
+        string detail,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        var problem = ProblemDetailsFactory.PreconditionFailed(detail, instance);
+        return Create(problem, jsonOptions, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 500 Internal Server Error result for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult InternalError(
+        string? detail,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        var problem = ProblemDetailsFactory.InternalError(detail, instance);
+        return Create(problem, jsonOptions, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware hook short-circuit result for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult HookShortCircuit(
+        int statusCode,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
         var problem = ProblemDetailsFactory.HookShortCircuit(statusCode, instance);
-        return Create(problem, jsonOptions, logger);
+        return Create(problem, jsonOptions, logger, options);
     }
 
     /// <summary>
@@ -340,16 +615,37 @@ public static class ProblemDetailsResult
     /// <param name="instance">The request path.</param>
     /// <param name="jsonOptions">Optional JSON serializer options.</param>
     /// <param name="logger">Optional logger; when provided, the response is logged at the appropriate level.</param>
+    /// <param name="options">Optional RestLib options that control problem type URI resolution and response shape.</param>
     internal static IResult NotFound<TKey>(
         string entityName,
         TKey id,
         IReadOnlyList<RestLibKeyRoutePart<TKey>> keyRouteParts,
-        string? instance = null,
-        JsonSerializerOptions? jsonOptions = null,
-        ILogger? logger = null)
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
         where TKey : notnull
     {
         var problem = ProblemDetailsFactory.NotFound(entityName, id, keyRouteParts, instance);
-        return Create(problem, jsonOptions, logger);
+        return Create(problem, jsonOptions, logger, options);
+    }
+
+    private static RestLibProblemDetails ApplyOptions(RestLibProblemDetails problem, RestLibOptions? options)
+    {
+        if (options?.ProblemTypeBaseUri is null || !problem.Type.StartsWith("/problems/", StringComparison.Ordinal))
+        {
+            return problem;
+        }
+
+        return new RestLibProblemDetails
+        {
+            Type = ProblemTypes.Resolve(problem.Type, options.ProblemTypeBaseUri),
+            Title = problem.Title,
+            Status = problem.Status,
+            Detail = problem.Detail,
+            Instance = problem.Instance,
+            Errors = problem.Errors,
+            Extensions = problem.Extensions
+        };
     }
 }

@@ -44,7 +44,7 @@ Error responses in REST APIs need a consistent, machine-readable format. Options
 
 ## Consequences
 
-- **All 4xx and 5xx responses** return `application/problem+json` content type
+- **By default, RestLib 4xx and 5xx responses** return `application/problem+json` content type. Applications can opt out with `RestLibOptions.UseProblemDetails = false` when they need a plain JSON error envelope.
 - **Problem type URIs** default to relative paths (e.g., `/problems/not-found`) for zero-configuration convenience
 - **Absolute URIs** can be enabled by setting `RestLibOptions.ProblemTypeBaseUri` (e.g., `https://api.example.com`), which produces URIs like `https://api.example.com/problems/not-found`
 - **Validation errors** use the `errors` extension property for field-level details
@@ -64,10 +64,10 @@ services.AddRestLib(options =>
 });
 ```
 
-When configured, all problem type URIs are resolved at runtime by prepending the base URI
-to the relative path constants defined in `ProblemTypes`. The `ProblemTypes` constants
-remain available for programmatic comparison; use `ProblemTypes.Resolve()` to obtain the
-full URI that matches the runtime output.
+When configured, problem type URIs are resolved per RestLib options instance by prepending
+the base URI to the relative path constants defined in `ProblemTypes`. The `ProblemTypes`
+constants remain available for programmatic comparison; use `ProblemTypes.Resolve(type,
+baseUri)` to obtain the full URI that matches configured runtime output.
 
 ## Error Types
 

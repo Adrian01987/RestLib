@@ -58,7 +58,8 @@ internal static class CreateHandler
                             validationResult.Errors,
                             httpContext.Request.Path,
                             jsonOptions,
-                            logger);
+                            logger,
+                            options);
                     }
                 }
 
@@ -272,7 +273,8 @@ internal static class CreateHandler
                     validationResult.Errors,
                     httpContext.Request.Path,
                     jsonOptions,
-                    logger);
+                    logger,
+                    options);
             }
         }
 
@@ -309,7 +311,8 @@ internal static class CreateHandler
                     validationResult.Errors,
                     httpContext.Request.Path,
                     jsonOptions,
-                    logger);
+                    logger,
+                    options);
             }
         }
 

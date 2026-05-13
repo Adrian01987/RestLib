@@ -25,6 +25,7 @@ internal static class OpenApiEndpointConfiguration
         RouteHandlerBuilder endpoint,
         RestLibOperation operation,
         RestLibEndpointConfiguration<TEntity, TKey> config,
+        RestLibOptions options,
         string entityName,
         string endpointNamePrefix,
         string operationId,
@@ -78,7 +79,7 @@ internal static class OpenApiEndpointConfiguration
             {
                 endpoint.RequireAuthorization(policies);
             }
-            else
+            else if (options.RequireAuthorizationByDefault)
             {
                 endpoint.RequireAuthorization();
             }
@@ -120,6 +121,7 @@ internal static class OpenApiEndpointConfiguration
             endpoint,
             RestLibOperation.GetAll,
             config,
+            options,
             entityName,
             endpointNamePrefix,
             "GetAll",
@@ -177,7 +179,8 @@ internal static class OpenApiEndpointConfiguration
         RouteHandlerBuilder endpoint,
         RestLibEndpointConfiguration<TEntity, TKey> config,
         string entityName,
-        string endpointNamePrefix)
+        string endpointNamePrefix,
+        RestLibOptions options)
         where TEntity : class
         where TKey : notnull
     {
@@ -185,6 +188,7 @@ internal static class OpenApiEndpointConfiguration
             endpoint,
             RestLibOperation.GetById,
             config,
+            options,
             entityName,
             endpointNamePrefix,
             "GetById",
@@ -240,7 +244,8 @@ internal static class OpenApiEndpointConfiguration
         RouteHandlerBuilder endpoint,
         RestLibEndpointConfiguration<TEntity, TKey> config,
         string entityName,
-        string endpointNamePrefix)
+        string endpointNamePrefix,
+        RestLibOptions options)
         where TEntity : class
         where TKey : notnull
     {
@@ -248,6 +253,7 @@ internal static class OpenApiEndpointConfiguration
             endpoint,
             RestLibOperation.Create,
             config,
+            options,
             entityName,
             endpointNamePrefix,
             "Create",
@@ -314,7 +320,8 @@ internal static class OpenApiEndpointConfiguration
         RouteHandlerBuilder endpoint,
         RestLibEndpointConfiguration<TEntity, TKey> config,
         string entityName,
-        string endpointNamePrefix)
+        string endpointNamePrefix,
+        RestLibOptions options)
         where TEntity : class
         where TKey : notnull
     {
@@ -322,6 +329,7 @@ internal static class OpenApiEndpointConfiguration
             endpoint,
             RestLibOperation.Update,
             config,
+            options,
             entityName,
             endpointNamePrefix,
             "Update",
@@ -393,7 +401,8 @@ internal static class OpenApiEndpointConfiguration
         RouteHandlerBuilder endpoint,
         RestLibEndpointConfiguration<TEntity, TKey> config,
         string entityName,
-        string endpointNamePrefix)
+        string endpointNamePrefix,
+        RestLibOptions options)
         where TEntity : class
         where TKey : notnull
     {
@@ -401,6 +410,7 @@ internal static class OpenApiEndpointConfiguration
             endpoint,
             RestLibOperation.Patch,
             config,
+            options,
             entityName,
             endpointNamePrefix,
             "Patch",
@@ -477,7 +487,8 @@ internal static class OpenApiEndpointConfiguration
         RouteHandlerBuilder endpoint,
         RestLibEndpointConfiguration<TEntity, TKey> config,
         string entityName,
-        string endpointNamePrefix)
+        string endpointNamePrefix,
+        RestLibOptions options)
         where TEntity : class
         where TKey : notnull
     {
@@ -485,6 +496,7 @@ internal static class OpenApiEndpointConfiguration
             endpoint,
             RestLibOperation.Delete,
             config,
+            options,
             entityName,
             endpointNamePrefix,
             "Delete",
@@ -523,7 +535,8 @@ internal static class OpenApiEndpointConfiguration
         RouteHandlerBuilder endpoint,
         RestLibEndpointConfiguration<TEntity, TKey> config,
         string entityName,
-        string endpointNamePrefix)
+        string endpointNamePrefix,
+        RestLibOptions options)
         where TEntity : class
         where TKey : notnull
     {
@@ -532,6 +545,7 @@ internal static class OpenApiEndpointConfiguration
             endpoint,
             RestLibOperation.BatchCreate,
             config,
+            options,
             entityName,
             endpointNamePrefix,
             "Batch",

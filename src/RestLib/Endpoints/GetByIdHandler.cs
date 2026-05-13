@@ -64,7 +64,8 @@ internal static class GetByIdHandler
                                 fieldsResult.Errors,
                                 httpContext.Request.Path,
                                 jsonOptions,
-                                logger);
+                                logger,
+                                options);
                         }
 
                         selectedFields = fieldsResult.Fields;
@@ -92,7 +93,8 @@ internal static class GetByIdHandler
                         config.KeyRouteParts,
                         httpContext.Request.Path,
                         jsonOptions,
-                        logger);
+                        logger,
+                        options);
                 }
 
                 // Update hook context with entity
@@ -320,7 +322,8 @@ internal static class GetByIdHandler
                         fieldsResult.Errors,
                         httpContext.Request.Path,
                         jsonOptions,
-                        logger);
+                        logger,
+                        options);
                 }
 
                 selectedFields = fieldsResult.Fields;
@@ -336,7 +339,8 @@ internal static class GetByIdHandler
                 config.KeyRouteParts,
                 httpContext.Request.Path,
                 jsonOptions,
-                logger);
+                logger,
+                options);
         }
 
         var apiEntity = mapper.ToApi(dbEntity);
@@ -454,6 +458,8 @@ internal static class GetByIdHandler
         where TEntity : class
         where TKey : notnull
     {
+        // The EF Core projection-capability path also handles nested field
+        // selections by loading required navigations before falling back.
         return !options.EnableHateoas &&
             !options.EnableETagSupport &&
             config.Hooks is null;

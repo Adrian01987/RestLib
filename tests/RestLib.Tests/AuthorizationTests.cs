@@ -29,11 +29,15 @@ public class AuthorizationTests : IAsyncLifetime
     /// <inheritdoc />
     public Task InitializeAsync() => Task.CompletedTask;
 
-    private async Task CreateHostAsync(Action<RestLibEndpointConfiguration<TestEntity, Guid>> configure, bool addAuthentication = true)
+    private async Task CreateHostAsync(
+        Action<RestLibEndpointConfiguration<TestEntity, Guid>> configure,
+        bool addAuthentication = true,
+        Action<RestLibOptions>? configureOptions = null)
     {
         _repository = new TestEntityRepository();
 
         var builder = new TestHostBuilder<TestEntity, Guid>(_repository, "/api/test-entities")
+            .WithOptions(configureOptions ?? (_ => { }))
             .WithEndpoint(configure);
 
         if (addAuthentication)
@@ -85,6 +89,37 @@ public class AuthorizationTests : IAsyncLifetime
 
         // Act
         var response = await _client!.GetAsync("/api/test-entities");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task GetAll_WhenAuthorizationDefaultDisabled_Returns200WithoutAuth()
+    {
+        // Arrange
+        await CreateHostAsync(
+            _ => { },
+            addAuthentication: false,
+            configureOptions: options => options.RequireAuthorizationByDefault = false);
+
+        // Act
+        var response = await _client!.GetAsync("/api/test-entities");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task RequirePolicy_WhenAuthorizationDefaultDisabled_StillRequiresPolicy()
+    {
+        // Arrange
+        await CreateHostAsync(
+            config => config.RequirePolicy(RestLibOperation.Delete, "AdminOnly"),
+            configureOptions: options => options.RequireAuthorizationByDefault = false);
+
+        // Act
+        var response = await _client!.DeleteAsync($"/api/test-entities/{Guid.NewGuid()}");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
