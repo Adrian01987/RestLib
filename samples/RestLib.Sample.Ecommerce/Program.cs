@@ -1,8 +1,12 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
 using RestLib;
+using RestLib.Sample.Ecommerce.Data;
+using RestLib.Sample.Ecommerce.Identity;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
+var useMigrations = builder.Configuration.GetValue<bool>("RestLibSample:UseMigrations");
 
 builder.Services.AddRestLib(options =>
 {
@@ -32,8 +36,32 @@ builder.Services.AddOpenApi(options =>
 });
 
 builder.Services.AddHealthChecks();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
+builder.Services.AddDbContext<EcommerceDbContext>(options =>
+{
+    var connectionString = builder.Configuration.GetConnectionString("Ecommerce")
+        ?? "Data Source=restlib-ecommerce.db";
+    options.UseSqlite(connectionString);
+});
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<EcommerceDbContext>();
+
+    if (useMigrations)
+    {
+        await db.Database.MigrateAsync();
+    }
+    else
+    {
+        await db.Database.EnsureCreatedAsync();
+    }
+
+    await EcommerceSeedData.EnsureSeededAsync(db);
+}
 
 app.MapOpenApi();
 app.MapScalarApiReference("/", options =>
