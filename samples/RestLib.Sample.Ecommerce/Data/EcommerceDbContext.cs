@@ -271,6 +271,9 @@ public class EcommerceDbContext : DbContext
 
         modelBuilder.Entity<OrderItem>(entity =>
         {
+            entity.HasQueryFilter(item =>
+                IsAdmin || (IsCustomer && item.Order!.CustomerId == CurrentActorId));
+
             entity.HasOne(item => item.Order)
                 .WithMany(order => order.Items)
                 .HasForeignKey(item => item.OrderId)

@@ -23,7 +23,7 @@ public class Order
     /// <summary>
     /// Gets or sets the status.
     /// </summary>
-    public required string Status { get; set; }
+    public string Status { get; set; } = "PLACED";
 
     /// <summary>
     /// Gets or sets the selected payment method.

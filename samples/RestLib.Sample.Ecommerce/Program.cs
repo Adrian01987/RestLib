@@ -15,6 +15,7 @@ using RestLib.Sample.Ecommerce.Catalog;
 using RestLib.Sample.Ecommerce.Data;
 using RestLib.Sample.Ecommerce.Identity;
 using RestLib.Sample.Ecommerce.Models;
+using RestLib.Sample.Ecommerce.Ordering;
 using RestLib.Sample.Ecommerce.Storefront;
 using Scalar.AspNetCore;
 
@@ -68,6 +69,8 @@ builder.Services.AddRestLibEfCore<EcommerceDbContext, Address, Guid>();
 builder.Services.AddRestLibEfCore<EcommerceDbContext, Phone, Guid>();
 builder.Services.AddRestLibEfCore<EcommerceDbContext, Cart, Guid>();
 builder.Services.AddRestLibEfCore<EcommerceDbContext, CartItem, RestLibCompositeKey<Guid, Guid>>();
+builder.Services.AddRestLibEfCore<EcommerceDbContext, Order, Guid>();
+builder.Services.AddRestLibEfCore<EcommerceDbContext, OrderItem, Guid>();
 builder.Services.AddRestLibInMemoryWithData<Carrier, Guid>(
     carrier => carrier.Id,
     Guid.NewGuid,
@@ -199,6 +202,105 @@ app.MapRestLib<Product, Guid>("/api/v2/admin/products", config =>
     config.OpenApi.Summaries.Update = "Replace admin product";
     config.OpenApi.Summaries.Patch = "Patch admin product";
     config.OpenApi.Summaries.Delete = "Delete admin product";
+});
+
+var adminOrders = app.MapRestLib<Order, Guid>("/api/admin/orders", config =>
+{
+    config.ExcludeOperations(RestLibOperation.Patch);
+    config.RequirePolicyForOperations("Admin", Enum.GetValues<RestLibOperation>());
+    config.AllowFiltering(order => order.CustomerId, order => order.Status, order => order.PaymentMethod);
+    config.AllowFiltering(order => order.Total, FilterOperators.Comparison);
+    config.AllowSorting(order => order.CreatedAt, order => order.UpdatedAt, order => order.Total, order => order.Status);
+    config.DefaultSort("created_at:desc");
+    config.AllowFieldSelection(
+        order => order.Id,
+        order => order.CustomerId,
+        order => order.Status,
+        order => order.PaymentMethod,
+        order => order.Total,
+        order => order.CreatedAt,
+        order => order.UpdatedAt);
+    config.UseHooks(hooks =>
+    {
+        hooks.OnRequestReceived = OrderHooks.ApplyAdminOrderDefaultsAsync;
+        hooks.BeforePersist = OrderHooks.PrepareAdminOrderAsync;
+    });
+    config.OpenApi.Tag = "Admin Orders";
+    config.OpenApi.TagDescription = "Admin order management surface with status transition validation.";
+    config.OpenApi.Summaries.GetAll = "List admin orders";
+    config.OpenApi.Summaries.GetById = "Get admin order by id";
+    config.OpenApi.Summaries.Create = "Create admin order";
+    config.OpenApi.Summaries.Update = "Replace admin order";
+    config.OpenApi.Summaries.Delete = "Delete admin order";
+});
+adminOrders.MapAdminOrderStatusPatch();
+
+app.MapRestLib<OrderItem, Guid>("/api/admin/order-items", config =>
+{
+    config.IncludeOperations(RestLibOperation.GetAll, RestLibOperation.GetById);
+    config.RequirePolicyForOperations("Admin", RestLibOperation.GetAll, RestLibOperation.GetById);
+    config.AllowFiltering(item => item.OrderId, item => item.ProductId);
+    config.AllowFiltering(item => item.ProductName, FilterOperators.String);
+    config.AllowSorting(item => item.OrderId, item => item.ProductName, item => item.LineTotal);
+    config.DefaultSort("order_id:asc,product_name:asc");
+    config.AllowFieldSelection(
+        item => item.Id,
+        item => item.OrderId,
+        item => item.ProductId,
+        item => item.ProductName,
+        item => item.Quantity,
+        item => item.UnitPrice,
+        item => item.LineTotal);
+    config.OpenApi.Tag = "Admin Orders";
+    config.OpenApi.Summaries.GetAll = "List admin order items";
+    config.OpenApi.Summaries.GetById = "Get admin order item by id";
+});
+
+app.MapRestLib<Order, Guid>("/api/storefront/orders", config =>
+{
+    config.IncludeOperations(RestLibOperation.GetAll, RestLibOperation.GetById, RestLibOperation.Create);
+    config.RequirePolicyForOperations("Customer", RestLibOperation.GetAll, RestLibOperation.GetById, RestLibOperation.Create);
+    config.AllowFiltering(order => order.Status, order => order.PaymentMethod);
+    config.AllowSorting(order => order.CreatedAt, order => order.Total, order => order.Status);
+    config.DefaultSort("created_at:desc");
+    config.AllowFieldSelection(
+        order => order.Id,
+        order => order.CustomerId,
+        order => order.Status,
+        order => order.PaymentMethod,
+        order => order.Total,
+        order => order.CreatedAt,
+        order => order.UpdatedAt);
+    config.UseHooks(hooks =>
+    {
+        hooks.OnRequestReceived = OrderHooks.PrepareStorefrontOrderAsync;
+        hooks.BeforePersist = OrderHooks.PrepareStorefrontOrderAsync;
+    });
+    config.OpenApi.Tag = "Storefront Orders";
+    config.OpenApi.TagDescription = "Customer order surface scoped by EF Core query filters.";
+    config.OpenApi.Summaries.GetAll = "List my orders";
+    config.OpenApi.Summaries.GetById = "Get my order by id";
+    config.OpenApi.Summaries.Create = "Create my order";
+});
+
+app.MapRestLib<OrderItem, Guid>("/api/storefront/order-items", config =>
+{
+    config.IncludeOperations(RestLibOperation.GetAll, RestLibOperation.GetById);
+    config.RequirePolicyForOperations("Customer", RestLibOperation.GetAll, RestLibOperation.GetById);
+    config.AllowFiltering(item => item.OrderId, item => item.ProductId);
+    config.AllowSorting(item => item.OrderId, item => item.ProductName, item => item.LineTotal);
+    config.DefaultSort("order_id:asc,product_name:asc");
+    config.AllowFieldSelection(
+        item => item.Id,
+        item => item.OrderId,
+        item => item.ProductId,
+        item => item.ProductName,
+        item => item.Quantity,
+        item => item.UnitPrice,
+        item => item.LineTotal);
+    config.OpenApi.Tag = "Storefront Orders";
+    config.OpenApi.Summaries.GetAll = "List my order items";
+    config.OpenApi.Summaries.GetById = "Get my order item by id";
 });
 
 app.Run();
