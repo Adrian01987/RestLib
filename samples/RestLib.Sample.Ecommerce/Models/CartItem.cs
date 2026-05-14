@@ -1,3 +1,6 @@
+using System.ComponentModel.DataAnnotations.Schema;
+using RestLib;
+
 namespace RestLib.Sample.Ecommerce.Models;
 
 /// <summary>
@@ -5,6 +8,20 @@ namespace RestLib.Sample.Ecommerce.Models;
 /// </summary>
 public class CartItem
 {
+    /// <summary>
+    /// Gets or sets the RestLib composite key for the cart item.
+    /// </summary>
+    [NotMapped]
+    public RestLibCompositeKey<Guid, Guid> Id
+    {
+        get => new(CartId, ProductId);
+        set
+        {
+            CartId = value.First;
+            ProductId = value.Second;
+        }
+    }
+
     /// <summary>
     /// Gets or sets the cart identifier.
     /// </summary>

@@ -232,6 +232,9 @@ public class EcommerceDbContext : DbContext
 
         modelBuilder.Entity<CartItem>(entity =>
         {
+            entity.HasQueryFilter(item =>
+                IsAdmin || (IsCustomer && item.Cart!.CustomerId == CurrentActorId));
+
             entity.HasKey(item => new { item.CartId, item.ProductId });
 
             entity.HasOne(item => item.Cart)

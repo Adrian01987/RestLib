@@ -66,6 +66,8 @@ builder.Services.AddRestLibEfCore<EcommerceDbContext, Product, Guid>();
 builder.Services.AddRestLibEfCore<EcommerceDbContext, User, Guid>();
 builder.Services.AddRestLibEfCore<EcommerceDbContext, Address, Guid>();
 builder.Services.AddRestLibEfCore<EcommerceDbContext, Phone, Guid>();
+builder.Services.AddRestLibEfCore<EcommerceDbContext, Cart, Guid>();
+builder.Services.AddRestLibEfCore<EcommerceDbContext, CartItem, RestLibCompositeKey<Guid, Guid>>();
 builder.Services.AddRestLibInMemoryWithData<Carrier, Guid>(
     carrier => carrier.Id,
     Guid.NewGuid,
@@ -77,6 +79,12 @@ builder.Services.AddNamedHook<Address, Guid>(
 builder.Services.AddNamedHook<Phone, Guid>(
     CustomerProfileHooks.EnsureSinglePrimaryHookName,
     CustomerProfileHooks.EnsureSinglePrimaryPhoneAsync);
+builder.Services.AddNamedHook<Cart, Guid>(
+    StorefrontCartHooks.EnsureActiveCartHookName,
+    StorefrontCartHooks.EnsureActiveCartAsync);
+builder.Services.AddNamedHook<CartItem, RestLibCompositeKey<Guid, Guid>>(
+    StorefrontCartHooks.PrepareCartItemHookName,
+    StorefrontCartHooks.PrepareCartItemAsync);
 builder.Services.AddRestLibFromFolder("Models");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -133,6 +141,7 @@ app.MapScalarApiReference("/", options =>
 app.MapHealthChecks("/health");
 app.MapEcommerceAuthEndpoints();
 app.MapStorefrontAccountEndpoints();
+app.MapStorefrontCartEndpoints();
 app.MapCarrierProvisioningEndpoints();
 app.MapJsonResources();
 

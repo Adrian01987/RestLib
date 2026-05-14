@@ -23,7 +23,7 @@ public class Cart
     /// <summary>
     /// Gets or sets the cart status.
     /// </summary>
-    public required string Status { get; set; }
+    public string Status { get; set; } = "ACTIVE";
 
     /// <summary>
     /// Gets or sets the creation timestamp.
