@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ecommerce sample admin users resource demonstrating two-model JSON mapping that hides password hashes and last-login metadata
 - Ecommerce sample customer self-registration and custom storefront `/me` profile endpoints
 - Ecommerce sample admin carrier provisioning backed by an InMemory carrier reference resource
+- Ecommerce auth-flow E2E coverage for admin bootstrap, customer registration, carrier provisioning, role logins, and safe profile responses
 
 ### Changed
 
