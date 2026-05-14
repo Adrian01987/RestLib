@@ -96,6 +96,34 @@ public class EcommerceDbContext : DbContext
     private bool IsCarrier => _currentUser.IsCarrier;
 
     /// <inheritdoc />
+    public override int SaveChanges()
+    {
+        UpdateProductRowVersions();
+        return base.SaveChanges();
+    }
+
+    /// <inheritdoc />
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        UpdateProductRowVersions();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    /// <inheritdoc />
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        UpdateProductRowVersions();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        UpdateProductRowVersions();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
@@ -143,6 +171,7 @@ public class EcommerceDbContext : DbContext
                 .HasForeignKey(product => product.CategoryId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            entity.Navigation(product => product.Category).AutoInclude();
             entity.Property(product => product.Sku).HasMaxLength(80);
             entity.Property(product => product.Name).HasMaxLength(200);
             entity.Property(product => product.Description).HasMaxLength(1000);
@@ -317,5 +346,16 @@ public class EcommerceDbContext : DbContext
             entity.Property(ticket => ticket.Message).HasMaxLength(2000);
             entity.Property(ticket => ticket.Status).HasMaxLength(40);
         });
+    }
+
+    private void UpdateProductRowVersions()
+    {
+        foreach (var entry in ChangeTracker.Entries<Product>())
+        {
+            if (entry.State is EntityState.Added or EntityState.Modified)
+            {
+                entry.Entity.RowVersion = BitConverter.GetBytes(DateTime.UtcNow.Ticks);
+            }
+        }
     }
 }

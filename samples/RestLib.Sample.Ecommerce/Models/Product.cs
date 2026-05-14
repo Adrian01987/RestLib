@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace RestLib.Sample.Ecommerce.Models;
 
 /// <summary>
@@ -18,6 +20,7 @@ public class Product
     /// <summary>
     /// Gets or sets the category.
     /// </summary>
+    [JsonIgnore]
     public Category? Category { get; set; }
 
     /// <summary>
@@ -58,5 +61,6 @@ public class Product
     /// <summary>
     /// Gets or sets the concurrency token used for ETags.
     /// </summary>
+    [JsonIgnore]
     public byte[] RowVersion { get; set; } = [];
 }

@@ -4,8 +4,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using RestLib;
+using RestLib.Abstractions;
+using RestLib.Batch;
 using RestLib.EntityFrameworkCore;
+using RestLib.Filtering;
 using RestLib.Sample.Ecommerce.Auth;
+using RestLib.Sample.Ecommerce.Catalog;
 using RestLib.Sample.Ecommerce.Data;
 using RestLib.Sample.Ecommerce.Identity;
 using RestLib.Sample.Ecommerce.Models;
@@ -21,6 +25,7 @@ builder.Services.AddRestLib(options =>
     options.EnableHateoas = true;
     options.RequireAuthorizationByDefault = true;
 });
+builder.Services.AddSingleton<IETagGenerator, ProductRowVersionETagGenerator>();
 
 builder.Services.AddOpenApi(options =>
 {
@@ -111,5 +116,37 @@ app.MapScalarApiReference("/", options =>
 app.MapHealthChecks("/health");
 app.MapEcommerceAuthEndpoints();
 app.MapJsonResources();
+
+app.MapRestLib<Product, Guid>("/api/v2/admin/products", config =>
+{
+    config.RequirePolicyForOperations("Admin", Enum.GetValues<RestLibOperation>());
+    config.AllowFiltering(product => product.CategoryId, product => product.IsActive);
+    config.AllowFiltering(product => product.Price, FilterOperators.Comparison);
+    config.AllowFiltering(product => product.Name, FilterOperators.String);
+    config.AllowSorting(product => product.Price, product => product.Name, product => product.CreatedAt);
+    config.DefaultSort("name:asc");
+    config.AllowFieldSelection(fields =>
+    {
+        fields.UseNestedObjectsInResponse();
+        fields.AddProperty(product => product.Id);
+        fields.AddProperty(product => product.Sku);
+        fields.AddProperty(product => product.Name);
+        fields.AddProperty(product => product.Description);
+        fields.AddProperty(product => product.Price);
+        fields.AddProperty(product => product.StockOnHand);
+        fields.AddProperty(product => product.CategoryId);
+        fields.AddProperty(product => product.Category!.Name);
+        fields.AddProperty(product => product.Category!.Slug);
+    });
+    config.EnableBatch(BatchAction.Create, BatchAction.Update, BatchAction.Patch);
+    config.OpenApi.Tag = "Admin Catalog";
+    config.OpenApi.TagDescription = "Manage products through the admin catalog surface.";
+    config.OpenApi.Summaries.GetAll = "List admin products";
+    config.OpenApi.Summaries.GetById = "Get admin product by id";
+    config.OpenApi.Summaries.Create = "Create admin product";
+    config.OpenApi.Summaries.Update = "Replace admin product";
+    config.OpenApi.Summaries.Patch = "Patch admin product";
+    config.OpenApi.Summaries.Delete = "Delete admin product";
+});
 
 app.Run();

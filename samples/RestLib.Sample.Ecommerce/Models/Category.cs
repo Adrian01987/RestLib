@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace RestLib.Sample.Ecommerce.Models;
 
 /// <summary>
@@ -38,5 +40,6 @@ public class Category
     /// <summary>
     /// Gets the products in this category.
     /// </summary>
+    [JsonIgnore]
     public List<Product> Products { get; } = [];
 }
