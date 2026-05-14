@@ -1,0 +1,49 @@
+{
+  "$schema": "../../../schemas/restlib-resource.schema.json",
+  "EntityType": "RestLib.Sample.Ecommerce.Models.Product, RestLib.Sample.Ecommerce",
+  "Name": "storefront-products-v1",
+  "Route": "/api/v1/storefront/products",
+  "AllowAnonymousAll": true,
+  "Operations": {
+    "Include": ["GetAll", "GetById"]
+  },
+  "Filtering": ["CategoryId", "IsActive"],
+  "FilteringOperators": {
+    "Price": ["eq", "neq", "gt", "lt", "gte", "lte"],
+    "Name": ["eq", "neq", "contains", "starts_with", "ends_with"]
+  },
+  "Search": ["Name", "Description"],
+  "Sorting": ["Price", "Name", "CreatedAt"],
+  "DefaultSort": "name:asc",
+  "FieldSelection": ["Id", "Name", "Price", "StockOnHand", "CategoryId"],
+  "OpenApi": {
+    "Tag": "Storefront Catalog",
+    "Summaries": {
+      "GetAll": "List storefront products",
+      "GetById": "Get storefront product by id"
+    },
+    "Descriptions": {
+      "GetAll": "Returns anonymous storefront products with filtering, search, sorting, sparse field selection, and cursor pagination."
+    }
+  },
+  "Validation": {
+    "Sku": {
+      "Required": true,
+      "Length": {
+        "Max": 80
+      }
+    },
+    "Name": {
+      "Required": true,
+      "Length": {
+        "Max": 200
+      }
+    },
+    "Price": {
+      "Min": 0.01
+    },
+    "StockOnHand": {
+      "Min": 0
+    }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "$schema": "../../../schemas/restlib-resource.schema.json",
+  "EntityType": "RestLib.Sample.Ecommerce.Models.Category, RestLib.Sample.Ecommerce",
+  "Name": "storefront-categories",
+  "Route": "/api/storefront/categories",
+  "AllowAnonymousAll": true,
+  "Operations": {
+    "Include": ["GetAll", "GetById"]
+  },
+  "OpenApi": {
+    "Tag": "Storefront Catalog",
+    "Summaries": {
+      "GetAll": "List storefront categories",
+      "GetById": "Get storefront category by id"
+    }
+  },
+  "Validation": {
+    "Name": {
+      "Required": true,
+      "Length": {
+        "Max": 120
+      }
+    },
+    "Slug": {
+      "Required": true,
+      "Length": {
+        "Max": 120
+      }
+    }
+  }
+}

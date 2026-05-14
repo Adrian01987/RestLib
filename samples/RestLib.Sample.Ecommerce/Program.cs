@@ -4,9 +4,11 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using RestLib;
+using RestLib.EntityFrameworkCore;
 using RestLib.Sample.Ecommerce.Auth;
 using RestLib.Sample.Ecommerce.Data;
 using RestLib.Sample.Ecommerce.Identity;
+using RestLib.Sample.Ecommerce.Models;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -51,6 +53,9 @@ builder.Services.AddDbContext<EcommerceDbContext>(options =>
         ?? "Data Source=restlib-ecommerce.db";
     options.UseSqlite(connectionString);
 });
+builder.Services.AddRestLibEfCore<EcommerceDbContext, Category, Guid>();
+builder.Services.AddRestLibEfCore<EcommerceDbContext, Product, Guid>();
+builder.Services.AddRestLibFromFolder("Models");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -105,5 +110,6 @@ app.MapScalarApiReference("/", options =>
 
 app.MapHealthChecks("/health");
 app.MapEcommerceAuthEndpoints();
+app.MapJsonResources();
 
 app.Run();
