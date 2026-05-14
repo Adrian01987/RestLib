@@ -60,6 +60,8 @@ builder.Services.AddDbContext<EcommerceDbContext>(options =>
 });
 builder.Services.AddRestLibEfCore<EcommerceDbContext, Category, Guid>();
 builder.Services.AddRestLibEfCore<EcommerceDbContext, Product, Guid>();
+builder.Services.AddRestLibEfCore<EcommerceDbContext, User, Guid>();
+builder.Services.AddRestLibMapper<UserDto, User, UserMapper>();
 builder.Services.AddRestLibFromFolder("Models");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
