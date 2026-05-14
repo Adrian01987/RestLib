@@ -8,6 +8,8 @@ using RestLib.Abstractions;
 using RestLib.Batch;
 using RestLib.EntityFrameworkCore;
 using RestLib.Filtering;
+using RestLib.InMemory;
+using RestLib.Sample.Ecommerce.Admin;
 using RestLib.Sample.Ecommerce.Auth;
 using RestLib.Sample.Ecommerce.Catalog;
 using RestLib.Sample.Ecommerce.Data;
@@ -62,6 +64,10 @@ builder.Services.AddDbContext<EcommerceDbContext>(options =>
 builder.Services.AddRestLibEfCore<EcommerceDbContext, Category, Guid>();
 builder.Services.AddRestLibEfCore<EcommerceDbContext, Product, Guid>();
 builder.Services.AddRestLibEfCore<EcommerceDbContext, User, Guid>();
+builder.Services.AddRestLibInMemoryWithData<Carrier, Guid>(
+    carrier => carrier.Id,
+    Guid.NewGuid,
+    EcommerceReferenceData.GetCarriers());
 builder.Services.AddRestLibMapper<UserDto, User, UserMapper>();
 builder.Services.AddRestLibFromFolder("Models");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -119,7 +125,32 @@ app.MapScalarApiReference("/", options =>
 app.MapHealthChecks("/health");
 app.MapEcommerceAuthEndpoints();
 app.MapStorefrontAccountEndpoints();
+app.MapCarrierProvisioningEndpoints();
 app.MapJsonResources();
+
+app.MapRestLib<Carrier, Guid>("/api/admin/carriers", config =>
+{
+    config.ExcludeOperations(RestLibOperation.Create);
+    config.RequirePolicyForOperations("Admin", Enum.GetValues<RestLibOperation>());
+    config.AllowFiltering(carrier => carrier.IsActive);
+    config.AllowFiltering(carrier => carrier.DisplayName, FilterOperators.String);
+    config.AllowSorting(carrier => carrier.DisplayName, carrier => carrier.CreatedAt);
+    config.DefaultSort("display_name:asc");
+    config.AllowFieldSelection(
+        carrier => carrier.Id,
+        carrier => carrier.UserId,
+        carrier => carrier.DisplayName,
+        carrier => carrier.ServiceArea,
+        carrier => carrier.IsActive,
+        carrier => carrier.CreatedAt);
+    config.OpenApi.Tag = "Admin Carriers";
+    config.OpenApi.TagDescription = "Manage carrier reference data through the InMemory adapter.";
+    config.OpenApi.Summaries.GetAll = "List carriers";
+    config.OpenApi.Summaries.GetById = "Get carrier by id";
+    config.OpenApi.Summaries.Update = "Replace carrier";
+    config.OpenApi.Summaries.Patch = "Patch carrier";
+    config.OpenApi.Summaries.Delete = "Delete carrier";
+});
 
 app.MapRestLib<Product, Guid>("/api/v2/admin/products", config =>
 {
