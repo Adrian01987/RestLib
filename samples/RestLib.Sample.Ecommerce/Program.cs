@@ -64,11 +64,19 @@ builder.Services.AddDbContext<EcommerceDbContext>(options =>
 builder.Services.AddRestLibEfCore<EcommerceDbContext, Category, Guid>();
 builder.Services.AddRestLibEfCore<EcommerceDbContext, Product, Guid>();
 builder.Services.AddRestLibEfCore<EcommerceDbContext, User, Guid>();
+builder.Services.AddRestLibEfCore<EcommerceDbContext, Address, Guid>();
+builder.Services.AddRestLibEfCore<EcommerceDbContext, Phone, Guid>();
 builder.Services.AddRestLibInMemoryWithData<Carrier, Guid>(
     carrier => carrier.Id,
     Guid.NewGuid,
     EcommerceReferenceData.GetCarriers());
 builder.Services.AddRestLibMapper<UserDto, User, UserMapper>();
+builder.Services.AddNamedHook<Address, Guid>(
+    CustomerProfileHooks.EnsureSinglePrimaryHookName,
+    CustomerProfileHooks.EnsureSinglePrimaryAddressAsync);
+builder.Services.AddNamedHook<Phone, Guid>(
+    CustomerProfileHooks.EnsureSinglePrimaryHookName,
+    CustomerProfileHooks.EnsureSinglePrimaryPhoneAsync);
 builder.Services.AddRestLibFromFolder("Models");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>

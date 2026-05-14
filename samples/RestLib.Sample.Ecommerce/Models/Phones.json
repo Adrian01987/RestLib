@@ -1,0 +1,63 @@
+{
+  "$schema": "../../../schemas/restlib-resource.schema.json",
+  "EntityType": "RestLib.Sample.Ecommerce.Models.Phone, RestLib.Sample.Ecommerce",
+  "Name": "storefront-phones",
+  "Route": "/api/storefront/phones",
+  "Policies": {
+    "GetAll": ["Customer"],
+    "GetById": ["Customer"],
+    "Create": ["Customer"],
+    "Update": ["Customer"],
+    "Patch": ["Customer"],
+    "Delete": ["Customer"]
+  },
+  "Filtering": ["IsPrimary", "Type"],
+  "FilteringOperators": {
+    "Number": ["string"]
+  },
+  "Sorting": ["CreatedAt", "Type", "IsPrimary"],
+  "DefaultSort": "created_at:desc",
+  "FieldSelection": ["Id", "CustomerId", "Number", "Type", "IsPrimary", "CreatedAt"],
+  "Hooks": {
+    "BeforePersist": {
+      "ByOperation": {
+        "Create": ["EnsureSinglePrimary"],
+        "Update": ["EnsureSinglePrimary"]
+      }
+    },
+    "AfterPersist": {
+      "ByOperation": {
+        "Patch": ["EnsureSinglePrimary"]
+      }
+    }
+  },
+  "OpenApi": {
+    "Tag": "Storefront Profile",
+    "Summaries": {
+      "GetAll": "List my phone numbers",
+      "GetById": "Get my phone number by id",
+      "Create": "Create my phone number",
+      "Update": "Replace my phone number",
+      "Patch": "Patch my phone number",
+      "Delete": "Delete my phone number"
+    },
+    "Descriptions": {
+      "Create": "Creates a phone number owned by the authenticated customer. The primary hook demotes other primary phone numbers."
+    }
+  },
+  "Validation": {
+    "Number": {
+      "Required": true,
+      "Pattern": "^\\+?[0-9][0-9 .()\\-]{6,24}$",
+      "Length": {
+        "Max": 40
+      }
+    },
+    "Type": {
+      "Required": true,
+      "Length": {
+        "Max": 40
+      }
+    }
+  }
+}
