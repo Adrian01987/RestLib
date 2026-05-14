@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `RestLibResolvedResourceTypes` and `RestLibFolderOptions.UnifiedTypeResolver` for resolving API model, DB model, and key type together when loading JSON resources from a folder
 - New deep-dive guides: `docs/guides/query-features.md` and `docs/guides/extensibility-and-operations.md`
 - Ecommerce sample admin users resource demonstrating two-model JSON mapping that hides password hashes and last-login metadata
+- Ecommerce sample customer self-registration and custom storefront `/me` profile endpoints
 
 ### Changed
 

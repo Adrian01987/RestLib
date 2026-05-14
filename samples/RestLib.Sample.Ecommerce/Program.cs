@@ -13,6 +13,7 @@ using RestLib.Sample.Ecommerce.Catalog;
 using RestLib.Sample.Ecommerce.Data;
 using RestLib.Sample.Ecommerce.Identity;
 using RestLib.Sample.Ecommerce.Models;
+using RestLib.Sample.Ecommerce.Storefront;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -117,6 +118,7 @@ app.MapScalarApiReference("/", options =>
 
 app.MapHealthChecks("/health");
 app.MapEcommerceAuthEndpoints();
+app.MapStorefrontAccountEndpoints();
 app.MapJsonResources();
 
 app.MapRestLib<Product, Guid>("/api/v2/admin/products", config =>

@@ -33,6 +33,11 @@ public static class AuthEndpoints
             .WithSummary("Bootstrap the first administrator")
             .WithDescription("Creates the first administrator when the X-Bootstrap-Key header matches configuration.");
 
+        group.MapPost("/register-customer", RegisterCustomerAsync)
+            .AllowAnonymous()
+            .WithSummary("Register a customer")
+            .WithDescription("Creates a customer account and returns a JWT for storefront access.");
+
         return endpoints;
     }
 
@@ -116,6 +121,45 @@ public static class AuthEndpoints
         return Results.Created($"/api/admin/users/{admin.Id}", jwtTokenService.CreateToken(admin));
     }
 
+    private static async Task<IResult> RegisterCustomerAsync(
+        RegisterCustomerRequest request,
+        EcommerceDbContext db,
+        JwtTokenService jwtTokenService,
+        CancellationToken ct)
+    {
+        var validationErrors = ValidateRegisterCustomerRequest(request);
+        if (validationErrors.Count > 0)
+        {
+            return Results.ValidationProblem(validationErrors);
+        }
+
+        var normalizedUserName = request.UserName.Trim().ToUpperInvariant();
+        var normalizedEmail = request.Email.Trim().ToUpperInvariant();
+        if (await db.Users.AnyAsync(
+            user => user.UserName.ToUpper() == normalizedUserName || user.Email.ToUpper() == normalizedEmail,
+            ct))
+        {
+            return Results.Conflict(new { error = "user_already_exists" });
+        }
+
+        var now = DateTime.UtcNow;
+        var customer = new User
+        {
+            Id = Guid.NewGuid(),
+            UserName = request.UserName.Trim(),
+            Email = request.Email.Trim(),
+            PasswordHash = PasswordHasher.Hash(request.Password),
+            Role = "Customer",
+            CreatedAt = now,
+            LastLoginAt = now,
+        };
+
+        db.Users.Add(customer);
+        await db.SaveChangesAsync(ct);
+
+        return Results.Created("/api/storefront/me", jwtTokenService.CreateToken(customer));
+    }
+
     private static Dictionary<string, string[]> ValidateLoginRequest(LoginRequest request)
     {
         var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
@@ -150,6 +194,40 @@ public static class AuthEndpoints
         if (string.IsNullOrWhiteSpace(request.Password))
         {
             errors[nameof(AdminBootstrapRequest.Password)] = ["Password is required."];
+        }
+
+        return errors;
+    }
+
+    private static Dictionary<string, string[]> ValidateRegisterCustomerRequest(RegisterCustomerRequest request)
+    {
+        var errors = new Dictionary<string, string[]>(StringComparer.Ordinal);
+
+        if (string.IsNullOrWhiteSpace(request.UserName))
+        {
+            errors[nameof(RegisterCustomerRequest.UserName)] = ["Username is required."];
+        }
+        else if (request.UserName.Length > 100)
+        {
+            errors[nameof(RegisterCustomerRequest.UserName)] = ["Username cannot exceed 100 characters."];
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Email))
+        {
+            errors[nameof(RegisterCustomerRequest.Email)] = ["Email is required."];
+        }
+        else if (request.Email.Length > 200)
+        {
+            errors[nameof(RegisterCustomerRequest.Email)] = ["Email cannot exceed 200 characters."];
+        }
+        else if (!request.Email.Contains('@', StringComparison.Ordinal))
+        {
+            errors[nameof(RegisterCustomerRequest.Email)] = ["Email must contain an at-sign."];
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Password))
+        {
+            errors[nameof(RegisterCustomerRequest.Password)] = ["Password is required."];
         }
 
         return errors;
