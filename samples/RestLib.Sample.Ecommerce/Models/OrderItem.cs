@@ -26,6 +26,11 @@ public class OrderItem
     public Guid ProductId { get; set; }
 
     /// <summary>
+    /// Gets or sets the product.
+    /// </summary>
+    public Product? Product { get; set; }
+
+    /// <summary>
     /// Gets or sets the product name captured for the order.
     /// </summary>
     public required string ProductName { get; set; }

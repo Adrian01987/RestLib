@@ -21,6 +21,11 @@ public class CartItem
     public Guid ProductId { get; set; }
 
     /// <summary>
+    /// Gets or sets the product.
+    /// </summary>
+    public Product? Product { get; set; }
+
+    /// <summary>
     /// Gets or sets the quantity.
     /// </summary>
     public int Quantity { get; set; }

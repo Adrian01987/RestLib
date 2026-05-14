@@ -28,6 +28,16 @@ public class EcommerceDbContext : DbContext
     public DbSet<User> Users => Set<User>();
 
     /// <summary>
+    /// Gets the categories set.
+    /// </summary>
+    public DbSet<Category> Categories => Set<Category>();
+
+    /// <summary>
+    /// Gets the products set.
+    /// </summary>
+    public DbSet<Product> Products => Set<Product>();
+
+    /// <summary>
     /// Gets the addresses set.
     /// </summary>
     public DbSet<Address> Addresses => Set<Address>();
@@ -91,6 +101,7 @@ public class EcommerceDbContext : DbContext
         ArgumentNullException.ThrowIfNull(modelBuilder);
 
         ConfigureUsers(modelBuilder);
+        ConfigureCatalog(modelBuilder);
         ConfigureCustomerOwnedResources(modelBuilder);
         ConfigureCarts(modelBuilder);
         ConfigureOrders(modelBuilder);
@@ -109,6 +120,34 @@ public class EcommerceDbContext : DbContext
             entity.Property(user => user.Email).HasMaxLength(200);
             entity.Property(user => user.PasswordHash).HasMaxLength(500);
             entity.Property(user => user.Role).HasMaxLength(40);
+        });
+    }
+
+    private void ConfigureCatalog(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Category>(entity =>
+        {
+            entity.HasIndex(category => category.Slug).IsUnique();
+
+            entity.Property(category => category.Name).HasMaxLength(120);
+            entity.Property(category => category.Slug).HasMaxLength(120);
+            entity.Property(category => category.Description).HasMaxLength(500);
+        });
+
+        modelBuilder.Entity<Product>(entity =>
+        {
+            entity.HasIndex(product => product.Sku).IsUnique();
+
+            entity.HasOne(product => product.Category)
+                .WithMany(category => category.Products)
+                .HasForeignKey(product => product.CategoryId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.Property(product => product.Sku).HasMaxLength(80);
+            entity.Property(product => product.Name).HasMaxLength(200);
+            entity.Property(product => product.Description).HasMaxLength(1000);
+            entity.Property(product => product.Price).HasPrecision(18, 2);
+            entity.Property(product => product.RowVersion).IsConcurrencyToken();
         });
     }
 
@@ -170,6 +209,14 @@ public class EcommerceDbContext : DbContext
                 .WithMany(cart => cart.Items)
                 .HasForeignKey(item => item.CartId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(item => item.Product)
+                .WithMany()
+                .HasForeignKey(item => item.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.Property(item => item.UnitPrice).HasPrecision(18, 2);
+            entity.Property(item => item.LineTotal).HasPrecision(18, 2);
         });
     }
 
@@ -187,6 +234,7 @@ public class EcommerceDbContext : DbContext
 
             entity.Property(order => order.Status).HasMaxLength(40);
             entity.Property(order => order.PaymentMethod).HasMaxLength(40);
+            entity.Property(order => order.Total).HasPrecision(18, 2);
         });
 
         modelBuilder.Entity<OrderItem>(entity =>
@@ -196,7 +244,14 @@ public class EcommerceDbContext : DbContext
                 .HasForeignKey(item => item.OrderId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            entity.HasOne(item => item.Product)
+                .WithMany()
+                .HasForeignKey(item => item.ProductId)
+                .OnDelete(DeleteBehavior.Restrict);
+
             entity.Property(item => item.ProductName).HasMaxLength(200);
+            entity.Property(item => item.UnitPrice).HasPrecision(18, 2);
+            entity.Property(item => item.LineTotal).HasPrecision(18, 2);
         });
 
         modelBuilder.Entity<Payment>(entity =>
@@ -210,6 +265,7 @@ public class EcommerceDbContext : DbContext
 
             entity.Property(payment => payment.Method).HasMaxLength(40);
             entity.Property(payment => payment.Status).HasMaxLength(40);
+            entity.Property(payment => payment.Amount).HasPrecision(18, 2);
             entity.Property(payment => payment.ExternalReference).HasMaxLength(120);
         });
     }
