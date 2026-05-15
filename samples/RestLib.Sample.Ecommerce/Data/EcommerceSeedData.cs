@@ -193,6 +193,7 @@ public static class EcommerceSeedData
             PaymentMethod = "card",
             Total = 49.99m,
             CreatedAt = now,
+            PaidAt = now,
         };
 
         order.Items.Add(new OrderItem

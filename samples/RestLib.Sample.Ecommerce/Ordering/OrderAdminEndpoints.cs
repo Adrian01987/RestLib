@@ -65,6 +65,7 @@ public static class OrderAdminEndpoints
             RowVersion = order.RowVersion,
             CreatedAt = order.CreatedAt,
             UpdatedAt = order.UpdatedAt,
+            PaidAt = order.PaidAt,
         };
 
         var hookContext = new HookContext<Order, Guid>

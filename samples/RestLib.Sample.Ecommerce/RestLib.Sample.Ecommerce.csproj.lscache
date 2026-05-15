@@ -107,6 +107,8 @@ Ordering/
  OrderAdminEndpoints.cs
  OrderHooks.cs
  OrderLinkProvider.cs
+ OrderPaid.cs
+ OrderPaidHandler.cs
  OrderPlaced.cs
  OrderStatusPatchRequest.cs
  StorefrontOrderEndpoints.cs

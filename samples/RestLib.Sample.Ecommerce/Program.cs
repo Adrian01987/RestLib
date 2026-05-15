@@ -62,6 +62,7 @@ builder.Services.AddScoped<IDomainEventDispatcher, InProcessDomainEventDispatche
 builder.Services.AddSingleton<CarrierAssignmentCursor>();
 builder.Services.AddScoped<ICarrierAssignmentService, CarrierAssignmentService>();
 builder.Services.AddScoped<IDomainEventHandler<OrderPlaced>, OrderPlacedHandler>();
+builder.Services.AddScoped<IDomainEventHandler<OrderPaid>, OrderPaidHandler>();
 builder.Services.AddScoped<INotificationService, ConsoleNotificationService>();
 builder.Services.AddOptions<FakeExternalPaymentOptions>()
     .Bind(builder.Configuration.GetSection(FakeExternalPaymentOptions.SectionName))
@@ -237,7 +238,8 @@ var adminOrders = app.MapRestLib<Order, Guid>("/api/admin/orders", config =>
         order => order.PaymentMethod,
         order => order.Total,
         order => order.CreatedAt,
-        order => order.UpdatedAt);
+        order => order.UpdatedAt,
+        order => order.PaidAt);
     config.UseHooks(hooks =>
     {
         hooks.OnRequestReceived = OrderHooks.ApplyAdminOrderDefaultsAsync;
@@ -293,7 +295,8 @@ storefrontOrders.MapRestLib<Order, Guid>(config =>
         order => order.PaymentMethod,
         order => order.Total,
         order => order.CreatedAt,
-        order => order.UpdatedAt);
+        order => order.UpdatedAt,
+        order => order.PaidAt);
     config.UseHooks(hooks =>
     {
         hooks.OnRequestReceived = OrderHooks.PrepareStorefrontOrderAsync;

@@ -51,6 +51,11 @@ public class Order
     public DateTime? UpdatedAt { get; set; }
 
     /// <summary>
+    /// Gets or sets the payment completion timestamp.
+    /// </summary>
+    public DateTime? PaidAt { get; set; }
+
+    /// <summary>
     /// Gets the order items.
     /// </summary>
     public List<OrderItem> Items { get; } = [];
