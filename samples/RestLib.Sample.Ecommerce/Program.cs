@@ -266,7 +266,8 @@ var storefrontOrderSurface = app.MapGroup("/api/storefront")
     .WithTags("Storefront Orders");
 storefrontOrderSurface.MapStorefrontCheckout();
 
-storefrontOrderSurface.MapGroup("/orders").MapRestLib<Order, Guid>(config =>
+var storefrontOrders = storefrontOrderSurface.MapGroup("/orders");
+storefrontOrders.MapRestLib<Order, Guid>(config =>
 {
     config.IncludeOperations(RestLibOperation.GetAll, RestLibOperation.GetById, RestLibOperation.Create);
     config.RequirePolicyForOperations("Customer", RestLibOperation.GetAll, RestLibOperation.GetById, RestLibOperation.Create);
@@ -292,6 +293,7 @@ storefrontOrderSurface.MapGroup("/orders").MapRestLib<Order, Guid>(config =>
     config.OpenApi.Summaries.GetById = "Get my order by id";
     config.OpenApi.Summaries.Create = "Create my order";
 });
+storefrontOrders.MapStorefrontOrderCommands();
 
 storefrontOrderSurface.MapGroup("/order-items").MapRestLib<OrderItem, Guid>(config =>
 {

@@ -19,6 +19,7 @@ public static class OrderHooks
     public const string OriginalStatusItemKey = "OriginalStatus";
 
     private const string DefaultStatus = "PLACED";
+    private const string DeliveryConfirmedStatus = "DELIVERY CONFIRMED";
 
     private static readonly IReadOnlyDictionary<string, string[]> AllowedTransitions =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
@@ -28,7 +29,8 @@ public static class OrderHooks
             ["PAID"] = ["ON THE WAY", "CANCELLED"],
             ["ON THE WAY"] = ["DELIVERED", "NOT DELIVERED"],
             ["NOT DELIVERED"] = ["ON THE WAY", "CANCELLED"],
-            ["DELIVERED"] = [],
+            ["DELIVERED"] = [DeliveryConfirmedStatus],
+            [DeliveryConfirmedStatus] = [],
             ["CANCELLED"] = [],
         };
 
