@@ -88,6 +88,8 @@ baseUri)` to obtain the full URI that matches configured runtime output.
 | 403         | `/problems/forbidden`           | Forbidden             | OpenAPI docs only; handled by middleware |
 | 404         | `/problems/not-found`           | Resource Not Found    |                                      |
 | 409         | `/problems/conflict`            | Resource Conflict     |                                      |
+| 409         | `/problems/insufficient-stock`  | Insufficient Stock    | Requested quantity exceeds available stock |
+| 409         | `/problems/invalid-status-transition` | Invalid Status Transition | Requested status change is not allowed |
 | 412         | `/problems/precondition-failed` | Precondition Failed   |                                      |
 | 500         | `/problems/internal-error`      | Internal Server Error |                                      |
 

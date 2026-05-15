@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using RestLib.Responses;
 using RestLib.Sample.Ecommerce.Data;
 using RestLib.Sample.Ecommerce.Identity;
 using RestLib.Sample.Ecommerce.Models;
@@ -32,6 +33,7 @@ public static class CheckoutEndpoints
 
     private static async Task<IResult> CheckoutAsync(
         CheckoutRequest request,
+        HttpContext httpContext,
         ICurrentUser currentUser,
         EcommerceDbContext db,
         IDomainEventDispatcher domainEventDispatcher,
@@ -91,13 +93,13 @@ public static class CheckoutEndpoints
             if (!productsById.TryGetValue(cartItem.ProductId, out var product) || !product.IsActive)
             {
                 await transaction.RollbackAsync(ct);
-                return InsufficientStockProblem(cartItem, product, available: 0);
+                return InsufficientStockProblem(cartItem, product, available: 0, httpContext.Request.Path.ToString());
             }
 
             if (cartItem.Quantity > product.StockOnHand)
             {
                 await transaction.RollbackAsync(ct);
-                return InsufficientStockProblem(cartItem, product, product.StockOnHand);
+                return InsufficientStockProblem(cartItem, product, product.StockOnHand, httpContext.Request.Path.ToString());
             }
 
             var unitPrice = cartItem.UnitPrice > 0 ? cartItem.UnitPrice : product.Price;
@@ -148,19 +150,15 @@ public static class CheckoutEndpoints
     private static IResult InsufficientStockProblem(
         CartItem cartItem,
         Product? product,
-        int available)
+        int available,
+        string? instance)
     {
         var productName = product?.Name ?? "Unknown product";
-        return Results.Problem(
-            type: "/problems/insufficient-stock",
-            title: "Insufficient stock",
-            statusCode: StatusCodes.Status409Conflict,
-            detail: $"Product '{productName}' has {available} units available; requested {cartItem.Quantity}.",
-            extensions: new Dictionary<string, object?>
-            {
-                ["product_id"] = cartItem.ProductId,
-                ["requested"] = cartItem.Quantity,
-                ["available"] = available,
-            });
+        return ProblemDetailsResult.InsufficientStock(
+            $"Product '{productName}' has {available} units available; requested {cartItem.Quantity}.",
+            cartItem.ProductId.ToString("D"),
+            cartItem.Quantity,
+            available,
+            instance);
     }
 }

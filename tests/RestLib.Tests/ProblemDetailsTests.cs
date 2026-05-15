@@ -377,6 +377,49 @@ public class ProblemDetailsTests : IAsyncLifetime
     }
 
     [Fact]
+    public void ProblemDetailsFactory_InsufficientStock_CreatesCorrectProblem()
+    {
+        // Act
+        var problem = ProblemDetailsFactory.InsufficientStock(
+            "Product has 2 units available; requested 5.",
+            "product-1",
+            requested: 5,
+            available: 2,
+            "/api/storefront/checkout");
+
+        // Assert
+        problem.Type.Should().Be(ProblemTypes.InsufficientStock);
+        problem.Title.Should().Be("Insufficient Stock");
+        problem.Status.Should().Be(409);
+        problem.Detail.Should().Be("Product has 2 units available; requested 5.");
+        problem.Instance.Should().Be("/api/storefront/checkout");
+        problem.Extensions.Should().NotBeNull();
+        problem.Extensions!["product_id"].GetString().Should().Be("product-1");
+        problem.Extensions["requested"].GetInt32().Should().Be(5);
+        problem.Extensions["available"].GetInt32().Should().Be(2);
+    }
+
+    [Fact]
+    public void ProblemDetailsFactory_InvalidStatusTransition_CreatesCorrectProblem()
+    {
+        // Act
+        var problem = ProblemDetailsFactory.InvalidStatusTransition(
+            "PAID",
+            "PLACED",
+            "/api/admin/orders/1");
+
+        // Assert
+        problem.Type.Should().Be(ProblemTypes.InvalidStatusTransition);
+        problem.Title.Should().Be("Invalid Status Transition");
+        problem.Status.Should().Be(409);
+        problem.Detail.Should().Be("Status cannot transition from 'PAID' to 'PLACED'.");
+        problem.Instance.Should().Be("/api/admin/orders/1");
+        problem.Extensions.Should().NotBeNull();
+        problem.Extensions!["from"].GetString().Should().Be("PAID");
+        problem.Extensions["to"].GetString().Should().Be("PLACED");
+    }
+
+    [Fact]
     public void ProblemDetailsFactory_PreconditionFailed_CreatesCorrectProblem()
     {
         // Act
@@ -441,6 +484,20 @@ public class ProblemDetailsTests : IAsyncLifetime
     {
         // Act & Assert
         ProblemTypes.Conflict.Should().Be("/problems/conflict");
+    }
+
+    [Fact]
+    public void ProblemTypes_InsufficientStock_IsRelativeUri()
+    {
+        // Act & Assert
+        ProblemTypes.InsufficientStock.Should().Be("/problems/insufficient-stock");
+    }
+
+    [Fact]
+    public void ProblemTypes_InvalidStatusTransition_IsRelativeUri()
+    {
+        // Act & Assert
+        ProblemTypes.InvalidStatusTransition.Should().Be("/problems/invalid-status-transition");
     }
 
     [Fact]

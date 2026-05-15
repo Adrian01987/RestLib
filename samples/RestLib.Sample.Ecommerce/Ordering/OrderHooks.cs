@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using RestLib;
 using RestLib.Hooks;
+using RestLib.Responses;
 using RestLib.Sample.Ecommerce.Identity;
 using RestLib.Sample.Ecommerce.Models;
 
@@ -211,11 +212,9 @@ public static class OrderHooks
         string targetStatus)
     {
         context.ShouldContinue = false;
-        context.EarlyResult = Results.Conflict(new
-        {
-            error = "invalid_status_transition",
-            from = originalStatus,
-            to = targetStatus,
-        });
+        context.EarlyResult = ProblemDetailsResult.InvalidStatusTransition(
+            originalStatus,
+            targetStatus,
+            context.HttpContext.Request.Path.ToString());
     }
 }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using RestLib.Configuration;
 using RestLib.Endpoints;
@@ -305,6 +306,59 @@ public static class ProblemDetailsFactory
     }
 
     /// <summary>
+    /// Creates a 409 Insufficient Stock problem details response.
+    /// </summary>
+    /// <param name="detail">Description of the stock conflict.</param>
+    /// <param name="productId">The product identifier.</param>
+    /// <param name="requested">The requested quantity.</param>
+    /// <param name="available">The available quantity.</param>
+    /// <param name="instance">The request path.</param>
+    public static RestLibProblemDetails InsufficientStock(
+        string detail,
+        string productId,
+        int requested,
+        int available,
+        string? instance = null)
+    {
+        return new RestLibProblemDetails
+        {
+            Type = ProblemTypes.Resolve(ProblemTypes.InsufficientStock),
+            Title = "Insufficient Stock",
+            Status = StatusCodes.Status409Conflict,
+            Detail = detail,
+            Instance = instance,
+            Extensions = CreateExtensions(
+                ("product_id", productId),
+                ("requested", requested),
+                ("available", available))
+        };
+    }
+
+    /// <summary>
+    /// Creates a 409 Invalid Status Transition problem details response.
+    /// </summary>
+    /// <param name="fromStatus">The current status.</param>
+    /// <param name="toStatus">The requested target status.</param>
+    /// <param name="instance">The request path.</param>
+    public static RestLibProblemDetails InvalidStatusTransition(
+        string fromStatus,
+        string toStatus,
+        string? instance = null)
+    {
+        return new RestLibProblemDetails
+        {
+            Type = ProblemTypes.Resolve(ProblemTypes.InvalidStatusTransition),
+            Title = "Invalid Status Transition",
+            Status = StatusCodes.Status409Conflict,
+            Detail = $"Status cannot transition from '{fromStatus}' to '{toStatus}'.",
+            Instance = instance,
+            Extensions = CreateExtensions(
+                ("from", fromStatus),
+                ("to", toStatus))
+        };
+    }
+
+    /// <summary>
     /// Creates a 412 Precondition Failed problem details response.
     /// </summary>
     /// <param name="detail">Description of the precondition failure.</param>
@@ -383,5 +437,17 @@ public static class ProblemDetailsFactory
             Detail = detail,
             Instance = instance
         };
+    }
+
+    private static IDictionary<string, JsonElement> CreateExtensions(
+        params (string Key, object? Value)[] values)
+    {
+        var extensions = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var (key, value) in values)
+        {
+            extensions[key] = JsonSerializer.SerializeToElement(value);
+        }
+
+        return extensions;
     }
 }

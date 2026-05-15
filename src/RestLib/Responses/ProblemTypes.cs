@@ -46,6 +46,12 @@ public static class ProblemTypes
     /// <summary>Resource conflict (409).</summary>
     public const string Conflict = "/problems/conflict";
 
+    /// <summary>Requested quantity exceeds available stock (409).</summary>
+    public const string InsufficientStock = "/problems/insufficient-stock";
+
+    /// <summary>Requested status transition is not allowed (409).</summary>
+    public const string InvalidStatusTransition = "/problems/invalid-status-transition";
+
     /// <summary>Precondition failed / ETag mismatch (412).</summary>
     public const string PreconditionFailed = "/problems/precondition-failed";
 
