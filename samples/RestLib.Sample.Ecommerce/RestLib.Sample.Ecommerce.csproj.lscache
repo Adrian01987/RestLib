@@ -109,6 +109,16 @@ Ordering/
  OrderLinkProvider.cs
  OrderPlaced.cs
  OrderStatusPatchRequest.cs
+ StorefrontOrderEndpoints.cs
+Payments/
+ FakeExternalPaymentClient.cs
+ FakeExternalPaymentOptions.cs
+ IPaymentStrategy.cs
+ IPaymentStrategyResolver.cs
+ KeyedPaymentStrategyResolver.cs
+ PaymentMethods.cs
+ PaymentStrategies.cs
+ PaymentStrategyResult.cs
 Program.cs
 Storefront/
  CustomerProfileHooks.cs

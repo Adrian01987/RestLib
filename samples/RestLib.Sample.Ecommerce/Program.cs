@@ -16,6 +16,7 @@ using RestLib.Sample.Ecommerce.Data;
 using RestLib.Sample.Ecommerce.Identity;
 using RestLib.Sample.Ecommerce.Models;
 using RestLib.Sample.Ecommerce.Ordering;
+using RestLib.Sample.Ecommerce.Payments;
 using RestLib.Sample.Ecommerce.Storefront;
 using Scalar.AspNetCore;
 
@@ -62,6 +63,17 @@ builder.Services.AddSingleton<CarrierAssignmentCursor>();
 builder.Services.AddScoped<ICarrierAssignmentService, CarrierAssignmentService>();
 builder.Services.AddScoped<IDomainEventHandler<OrderPlaced>, OrderPlacedHandler>();
 builder.Services.AddScoped<INotificationService, ConsoleNotificationService>();
+builder.Services.AddOptions<FakeExternalPaymentOptions>()
+    .Bind(builder.Configuration.GetSection(FakeExternalPaymentOptions.SectionName))
+    .Validate(options => options.LatencyMilliseconds >= 0, "Payment latency must be zero or greater.")
+    .Validate(options => options.FailureRate is >= 0 and <= 1, "Payment failure rate must be between 0.0 and 1.0.")
+    .Validate(options => !string.IsNullOrWhiteSpace(options.FailureErrorCode), "Payment failure error code is required.")
+    .ValidateOnStart();
+builder.Services.AddSingleton<FakeExternalPaymentClient>();
+builder.Services.AddScoped<IPaymentStrategyResolver, KeyedPaymentStrategyResolver>();
+builder.Services.AddKeyedScoped<IPaymentStrategy, CardPaymentStrategy>(PaymentMethods.Card);
+builder.Services.AddKeyedScoped<IPaymentStrategy, PayPalPaymentStrategy>(PaymentMethods.PayPal);
+builder.Services.AddKeyedScoped<IPaymentStrategy, BankTransferPaymentStrategy>(PaymentMethods.BankTransfer);
 builder.Services.AddDbContext<EcommerceDbContext>(options =>
 {
     var connectionString = builder.Configuration.GetConnectionString("Ecommerce")
