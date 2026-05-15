@@ -68,7 +68,7 @@ public static class StorefrontCartEndpoints
             .OrderBy(item => item.ProductId)
             .ToListAsync(ct);
 
-        return Results.Ok(items);
+        return Results.Ok(items.Select(ToResponse));
     }
 
     private static async Task<IResult> GetItemAsync(
@@ -80,7 +80,7 @@ public static class StorefrontCartEndpoints
         var item = await FindActiveCartItemAsync(cartId, productId, db, ct);
         return item is null
             ? Results.NotFound()
-            : Results.Ok(item);
+            : Results.Ok(ToResponse(item));
     }
 
     private static async Task<IResult> CreateItemAsync(
@@ -121,7 +121,7 @@ public static class StorefrontCartEndpoints
         db.CartItems.Add(item);
         await db.SaveChangesAsync(ct);
 
-        return Results.Created($"/api/storefront/carts/{cartId}/items/{item.ProductId}", item);
+        return Results.Created($"/api/storefront/carts/{cartId}/items/{item.ProductId}", ToResponse(item));
     }
 
     private static async Task<IResult> ReplaceItemAsync(
@@ -147,7 +147,7 @@ public static class StorefrontCartEndpoints
         }
 
         await db.SaveChangesAsync(ct);
-        return Results.Ok(item);
+        return Results.Ok(ToResponse(item));
     }
 
     private static async Task<IResult> PatchItemAsync(
@@ -173,7 +173,7 @@ public static class StorefrontCartEndpoints
         }
 
         await db.SaveChangesAsync(ct);
-        return Results.Ok(item);
+        return Results.Ok(ToResponse(item));
     }
 
     private static async Task<IResult> DeleteItemAsync(
@@ -236,6 +236,19 @@ public static class StorefrontCartEndpoints
         return context.ShouldContinue
             ? null
             : context.EarlyResult ?? Results.StatusCode(500);
+    }
+
+    private static object ToResponse(CartItem item)
+    {
+        return new
+        {
+            item.Id,
+            item.CartId,
+            item.ProductId,
+            item.Quantity,
+            item.UnitPrice,
+            item.LineTotal,
+        };
     }
 }
 

@@ -56,6 +56,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
 builder.Services.AddSingleton(jwtSettings);
 builder.Services.AddSingleton<JwtTokenService>();
+builder.Services.AddScoped<IDomainEventDispatcher, InProcessDomainEventDispatcher>();
 builder.Services.AddDbContext<EcommerceDbContext>(options =>
 {
     var connectionString = builder.Configuration.GetConnectionString("Ecommerce")
@@ -256,7 +257,11 @@ app.MapRestLib<OrderItem, Guid>("/api/admin/order-items", config =>
     config.OpenApi.Summaries.GetById = "Get admin order item by id";
 });
 
-app.MapRestLib<Order, Guid>("/api/storefront/orders", config =>
+var storefrontOrderSurface = app.MapGroup("/api/storefront")
+    .WithTags("Storefront Orders");
+storefrontOrderSurface.MapStorefrontCheckout();
+
+storefrontOrderSurface.MapGroup("/orders").MapRestLib<Order, Guid>(config =>
 {
     config.IncludeOperations(RestLibOperation.GetAll, RestLibOperation.GetById, RestLibOperation.Create);
     config.RequirePolicyForOperations("Customer", RestLibOperation.GetAll, RestLibOperation.GetById, RestLibOperation.Create);
@@ -283,7 +288,7 @@ app.MapRestLib<Order, Guid>("/api/storefront/orders", config =>
     config.OpenApi.Summaries.Create = "Create my order";
 });
 
-app.MapRestLib<OrderItem, Guid>("/api/storefront/order-items", config =>
+storefrontOrderSurface.MapGroup("/order-items").MapRestLib<OrderItem, Guid>(config =>
 {
     config.IncludeOperations(RestLibOperation.GetAll, RestLibOperation.GetById);
     config.RequirePolicyForOperations("Customer", RestLibOperation.GetAll, RestLibOperation.GetById);
