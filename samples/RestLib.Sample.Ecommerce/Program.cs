@@ -57,6 +57,10 @@ builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
 builder.Services.AddSingleton(jwtSettings);
 builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddScoped<IDomainEventDispatcher, InProcessDomainEventDispatcher>();
+builder.Services.AddSingleton<CarrierAssignmentCursor>();
+builder.Services.AddScoped<ICarrierAssignmentService, CarrierAssignmentService>();
+builder.Services.AddScoped<IDomainEventHandler<OrderPlaced>, OrderPlacedHandler>();
+builder.Services.AddScoped<INotificationService, ConsoleNotificationService>();
 builder.Services.AddDbContext<EcommerceDbContext>(options =>
 {
     var connectionString = builder.Configuration.GetConnectionString("Ecommerce")
