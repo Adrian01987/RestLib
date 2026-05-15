@@ -29,7 +29,7 @@ builder.Services.AddRestLib(options =>
     options.EnableHateoas = true;
     options.RequireAuthorizationByDefault = true;
 });
-builder.Services.AddSingleton<IETagGenerator, ProductRowVersionETagGenerator>();
+builder.Services.AddSingleton<IETagGenerator, EcommerceRowVersionETagGenerator>();
 builder.Services.AddHateoasLinkProvider<Order, Guid, OrderLinkProvider>();
 
 builder.Services.AddOpenApi(options =>

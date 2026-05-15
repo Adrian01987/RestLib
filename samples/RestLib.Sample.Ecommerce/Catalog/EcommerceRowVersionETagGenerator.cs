@@ -6,17 +6,17 @@ using RestLib.Sample.Ecommerce.Models;
 namespace RestLib.Sample.Ecommerce.Catalog;
 
 /// <summary>
-/// Generates product ETags from the EF Core row-version token.
+/// Generates ETags from app-managed row-version tokens in the ecommerce sample.
 /// </summary>
-public sealed class ProductRowVersionETagGenerator : IETagGenerator
+public sealed class EcommerceRowVersionETagGenerator : IETagGenerator
 {
     private readonly HashBasedETagGenerator _fallback;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="ProductRowVersionETagGenerator"/> class.
+    /// Initializes a new instance of the <see cref="EcommerceRowVersionETagGenerator"/> class.
     /// </summary>
     /// <param name="jsonOptions">The RestLib JSON serializer options.</param>
-    public ProductRowVersionETagGenerator(JsonSerializerOptions jsonOptions)
+    public EcommerceRowVersionETagGenerator(JsonSerializerOptions jsonOptions)
     {
         _fallback = new HashBasedETagGenerator(jsonOptions);
     }
@@ -27,16 +27,12 @@ public sealed class ProductRowVersionETagGenerator : IETagGenerator
     {
         ArgumentNullException.ThrowIfNull(entity);
 
-        if (entity is Product product)
+        return entity switch
         {
-            var token = product.RowVersion.Length == 0
-                ? product.Id.ToByteArray()
-                : product.RowVersion;
-
-            return $"\"{EncodeToBase64Url(token)}\"";
-        }
-
-        return _fallback.Generate(entity);
+            Product product => GenerateFromRowVersion(product.RowVersion, product.Id),
+            Order order => GenerateFromRowVersion(order.RowVersion, order.Id),
+            _ => _fallback.Generate(entity),
+        };
     }
 
     /// <inheritdoc />
@@ -55,11 +51,18 @@ public sealed class ProductRowVersionETagGenerator : IETagGenerator
             return true;
         }
 
+        var generated = Generate(entity);
         var normalized = etag.StartsWith("W/", StringComparison.OrdinalIgnoreCase)
             ? etag[2..]
             : etag;
 
-        return string.Equals(Generate(entity), normalized, StringComparison.Ordinal);
+        return string.Equals(generated, normalized, StringComparison.Ordinal);
+    }
+
+    private static string GenerateFromRowVersion(byte[] rowVersion, Guid id)
+    {
+        var tokenBytes = rowVersion.Length > 0 ? rowVersion : id.ToByteArray();
+        return $"\"{EncodeToBase64Url(tokenBytes)}\"";
     }
 
     private static string EncodeToBase64Url(byte[] bytes)

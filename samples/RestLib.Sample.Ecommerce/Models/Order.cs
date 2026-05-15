@@ -36,6 +36,11 @@ public class Order
     public decimal Total { get; set; }
 
     /// <summary>
+    /// Gets or sets the app-managed concurrency token.
+    /// </summary>
+    public byte[] RowVersion { get; set; } = [];
+
+    /// <summary>
     /// Gets or sets the creation timestamp.
     /// </summary>
     public DateTime CreatedAt { get; set; }

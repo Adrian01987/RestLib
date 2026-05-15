@@ -98,28 +98,28 @@ public class EcommerceDbContext : DbContext
     /// <inheritdoc />
     public override int SaveChanges()
     {
-        UpdateProductRowVersions();
+        UpdateRowVersions();
         return base.SaveChanges();
     }
 
     /// <inheritdoc />
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
-        UpdateProductRowVersions();
+        UpdateRowVersions();
         return base.SaveChanges(acceptAllChangesOnSuccess);
     }
 
     /// <inheritdoc />
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
-        UpdateProductRowVersions();
+        UpdateRowVersions();
         return base.SaveChangesAsync(cancellationToken);
     }
 
     /// <inheritdoc />
     public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
-        UpdateProductRowVersions();
+        UpdateRowVersions();
         return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
     }
 
@@ -267,6 +267,7 @@ public class EcommerceDbContext : DbContext
             entity.Property(order => order.Status).HasMaxLength(40);
             entity.Property(order => order.PaymentMethod).HasMaxLength(40);
             entity.Property(order => order.Total).HasPrecision(18, 2);
+            entity.Property(order => order.RowVersion).IsConcurrencyToken();
         });
 
         modelBuilder.Entity<OrderItem>(entity =>
@@ -354,13 +355,26 @@ public class EcommerceDbContext : DbContext
         });
     }
 
-    private void UpdateProductRowVersions()
+    private byte[] CreateRowVersion()
+    {
+        return BitConverter.GetBytes(DateTime.UtcNow.Ticks);
+    }
+
+    private void UpdateRowVersions()
     {
         foreach (var entry in ChangeTracker.Entries<Product>())
         {
             if (entry.State is EntityState.Added or EntityState.Modified)
             {
-                entry.Entity.RowVersion = BitConverter.GetBytes(DateTime.UtcNow.Ticks);
+                entry.Entity.RowVersion = CreateRowVersion();
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<Order>())
+        {
+            if (entry.State is EntityState.Added or EntityState.Modified)
+            {
+                entry.Entity.RowVersion = CreateRowVersion();
             }
         }
     }
