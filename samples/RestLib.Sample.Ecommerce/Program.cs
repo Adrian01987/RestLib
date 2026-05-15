@@ -30,6 +30,7 @@ builder.Services.AddRestLib(options =>
     options.RequireAuthorizationByDefault = true;
 });
 builder.Services.AddSingleton<IETagGenerator, ProductRowVersionETagGenerator>();
+builder.Services.AddHateoasLinkProvider<Order, Guid, OrderLinkProvider>();
 
 builder.Services.AddOpenApi(options =>
 {
