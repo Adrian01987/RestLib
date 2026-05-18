@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ecommerce sample carrier shipment JSON resource at `/api/carrier/shipments` with carrier-scoped read, patch, and batch patch operations
 - Ecommerce sample carrier shipment event append route with AfterPersist shipment/order propagation and customer notifications
 - Ecommerce carrier-flow E2E coverage for shipment scoping, batch patch, event append, and customer-visible status propagation
+- Ecommerce sample support ticket resources with a shared customer/carrier create policy and admin-only read surface
 
 ### Changed
 

@@ -33,7 +33,7 @@ public class SupportTicket
     /// <summary>
     /// Gets or sets the ticket status.
     /// </summary>
-    public required string Status { get; set; }
+    public string Status { get; set; } = "OPEN";
 
     /// <summary>
     /// Gets or sets the creation timestamp.

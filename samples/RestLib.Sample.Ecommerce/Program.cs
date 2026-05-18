@@ -19,6 +19,7 @@ using RestLib.Sample.Ecommerce.Models;
 using RestLib.Sample.Ecommerce.Ordering;
 using RestLib.Sample.Ecommerce.Payments;
 using RestLib.Sample.Ecommerce.Storefront;
+using RestLib.Sample.Ecommerce.Support;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -94,6 +95,7 @@ builder.Services.AddRestLibEfCore<EcommerceDbContext, Order, Guid>();
 builder.Services.AddRestLibEfCore<EcommerceDbContext, OrderItem, Guid>();
 builder.Services.AddRestLibEfCore<EcommerceDbContext, Shipment, Guid>();
 builder.Services.AddRestLibEfCore<EcommerceDbContext, ShipmentEvent, Guid>();
+builder.Services.AddRestLibEfCore<EcommerceDbContext, SupportTicket, Guid>();
 builder.Services.AddRestLibInMemoryWithData<Carrier, Guid>(
     carrier => carrier.Id,
     Guid.NewGuid,
@@ -117,6 +119,9 @@ builder.Services.AddNamedHook<ShipmentEvent, Guid>(
 builder.Services.AddNamedHook<ShipmentEvent, Guid>(
     ShipmentEventHooks.PropagateShipmentEventHookName,
     ShipmentEventHooks.PropagateShipmentEventAsync);
+builder.Services.AddNamedHook<SupportTicket, Guid>(
+    SupportTicketHooks.PrepareSupportTicketHookName,
+    SupportTicketHooks.PrepareSupportTicketAsync);
 builder.Services.AddRestLibFromFolder("Models");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -140,6 +145,7 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("Admin", policy => policy.RequireRole("Admin"));
     options.AddPolicy("Customer", policy => policy.RequireRole("Customer"));
     options.AddPolicy("Carrier", policy => policy.RequireRole("Carrier"));
+    options.AddPolicy("SupportRequester", policy => policy.RequireRole("Customer", "Carrier"));
 });
 
 var app = builder.Build();
