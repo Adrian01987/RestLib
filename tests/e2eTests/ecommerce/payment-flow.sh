@@ -6,8 +6,11 @@
 # against a forced-failure payment processor and observe Problem Details.
 #
 # By default this script starts two isolated ecommerce sample instances:
-#   BASE_URL                    success server, default http://127.0.0.1:5064
-#   PAYMENT_FAILURE_BASE_URL    failure server, default http://127.0.0.1:5065
+#   BASE_URL                    success client URL, default http://127.0.0.1:5064
+#   PAYMENT_SUCCESS_SERVER_URL  success bind URL, default BASE_URL
+#   DOTNET_CMD                  dotnet executable override, default dotnet
+#   PAYMENT_FAILURE_BASE_URL    failure client URL, default http://127.0.0.1:5065
+#   PAYMENT_FAILURE_SERVER_URL  failure bind URL, default PAYMENT_FAILURE_BASE_URL
 #
 # Use --no-server to run against already-started servers. In that mode,
 # PAYMENT_SUCCESS_LOG must point at the success server log file so the
@@ -17,11 +20,14 @@
 set -euo pipefail
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:5064}"
+PAYMENT_SUCCESS_SERVER_URL="${PAYMENT_SUCCESS_SERVER_URL:-$BASE_URL}"
+DOTNET_CMD="${DOTNET_CMD:-dotnet}"
 PAYMENT_FAILURE_BASE_URL="${PAYMENT_FAILURE_BASE_URL:-http://127.0.0.1:5065}"
+PAYMENT_FAILURE_SERVER_URL="${PAYMENT_FAILURE_SERVER_URL:-$PAYMENT_FAILURE_BASE_URL}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-SAMPLE_PROJECT="${REPO_ROOT}/samples/RestLib.Sample.Ecommerce/RestLib.Sample.Ecommerce.csproj"
+SAMPLE_PROJECT="samples/RestLib.Sample.Ecommerce/RestLib.Sample.Ecommerce.csproj"
 RESULTS_DIR="${SCRIPT_DIR}/../TestResults/ecommerce"
 
 source "${SCRIPT_DIR}/../e2e-lib.sh"
@@ -75,17 +81,20 @@ trap cleanup_servers EXIT
 check_payment_prerequisites() {
   check_prerequisites
 
-  if [ "$NO_SERVER" = false ] && ! command -v dotnet &>/dev/null; then
-    fail "Required command 'dotnet' not found. Please install the .NET SDK."
+  if [ "$NO_SERVER" = false ] && ! command -v "$DOTNET_CMD" &>/dev/null && [ ! -x "$DOTNET_CMD" ]; then
+    fail "Required command '${DOTNET_CMD}' not found. Please install the .NET SDK."
     exit 1
   fi
 }
 
 build_sample() {
   header "Building ecommerce sample"
-  info "Building ${SAMPLE_PROJECT}..."
+  info "Building ${REPO_ROOT}/${SAMPLE_PROJECT}..."
 
-  if ! dotnet build "$SAMPLE_PROJECT" --configuration Release --verbosity quiet; then
+  if ! (
+    cd "$REPO_ROOT"
+    "$DOTNET_CMD" build "$SAMPLE_PROJECT" --configuration Release --verbosity quiet
+  ); then
     fail "Ecommerce sample build failed."
     exit 1
   fi
@@ -101,7 +110,7 @@ wait_for_url() {
   local waited=0
 
   info "Waiting for ecommerce sample at ${url} ..."
-  while ! curl -sf -o /dev/null "${url}/health" 2>/dev/null; do
+  while ! curl -sf --max-time 3 -o /dev/null "${url}/health" 2>/dev/null; do
     sleep 1
     waited=$((waited + 1))
 
@@ -123,9 +132,10 @@ wait_for_url() {
 
 start_payment_server() {
   local label="$1"
-  local url="$2"
-  local failure_rate="$3"
-  local log_variable="$4"
+  local client_url="$2"
+  local server_url="$3"
+  local failure_rate="$4"
+  local log_variable="$5"
   local timestamp db_file log_file pid
 
   timestamp=$(date +"%Y%m%d_%H%M%S")
@@ -133,20 +143,20 @@ start_payment_server() {
   db_file="tests/e2eTests/TestResults/ecommerce/${label}-${timestamp}.db"
   log_file="${RESULTS_DIR}/${label}-${timestamp}.log"
 
-  info "Starting ${label} ecommerce sample at ${url} (payment failure rate ${failure_rate})..."
+  info "Starting ${label} ecommerce sample at ${server_url} (payment failure rate ${failure_rate})..."
   (
     cd "$REPO_ROOT"
     ASPNETCORE_ENVIRONMENT=Development \
     ConnectionStrings__Ecommerce="Data Source=${db_file}" \
     RestLibSample__Payments__FakeExternalClient__LatencyMilliseconds=0 \
     RestLibSample__Payments__FakeExternalClient__FailureRate="${failure_rate}" \
-      dotnet run --project "$SAMPLE_PROJECT" --configuration Release --no-build --urls "$url"
+      "$DOTNET_CMD" run --project "$SAMPLE_PROJECT" --configuration Release --no-build --urls "$server_url"
   ) > "$log_file" 2>&1 &
 
   pid=$!
   SERVER_PIDS+=("$pid")
   printf -v "$log_variable" "%s" "$log_file"
-  wait_for_url "$url" "$log_file" "$pid"
+  wait_for_url "$client_url" "$log_file" "$pid"
 }
 
 start_servers_if_needed() {
@@ -161,8 +171,8 @@ start_servers_if_needed() {
     exit 1
   fi
 
-  start_payment_server "payment-success" "$BASE_URL" "0" PAYMENT_SUCCESS_LOG
-  start_payment_server "payment-failure" "$PAYMENT_FAILURE_BASE_URL" "1" PAYMENT_FAILURE_LOG
+  start_payment_server "payment-success" "$BASE_URL" "$PAYMENT_SUCCESS_SERVER_URL" "0" PAYMENT_SUCCESS_LOG
+  start_payment_server "payment-failure" "$PAYMENT_FAILURE_BASE_URL" "$PAYMENT_FAILURE_SERVER_URL" "1" PAYMENT_FAILURE_LOG
 }
 
 # =============================================================================
