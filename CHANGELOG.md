@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ecommerce sample README with a feature-by-line index and documented workaround references
 - Ecommerce E2E run-all orchestrator for catalog, auth, profile, ordering, fulfillment, support, and payment suites
 - CI runs the ecommerce E2E suite on Ubuntu alongside the existing sample E2E suite
+- Minimal sample README that links to the ecommerce reference sample
 
 ### Changed
 
