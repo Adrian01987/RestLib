@@ -189,7 +189,7 @@ start_common_server() {
   mkdir -p "$RESULTS_DIR"
 
   timestamp=$(date +"%Y%m%d_%H%M%S")
-  db_file="tests/e2eTests/TestResults/ecommerce/ecommerce-${timestamp}.db"
+  db_file="${RESULTS_DIR}/ecommerce-${timestamp}.db"
   log_file="${RESULTS_DIR}/server-${timestamp}.log"
 
   info "Launching normal-suite server on ${SERVER_URL}..."

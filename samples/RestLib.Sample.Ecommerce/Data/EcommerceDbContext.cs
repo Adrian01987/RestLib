@@ -292,6 +292,9 @@ public class EcommerceDbContext : DbContext
 
         modelBuilder.Entity<Payment>(entity =>
         {
+            entity.HasQueryFilter(payment =>
+                IsAdmin || (IsCustomer && payment.Order!.CustomerId == CurrentActorId));
+
             entity.HasIndex(payment => payment.OrderId).IsUnique();
 
             entity.HasOne(payment => payment.Order)
@@ -330,6 +333,9 @@ public class EcommerceDbContext : DbContext
 
         modelBuilder.Entity<ShipmentEvent>(entity =>
         {
+            entity.HasQueryFilter(shipmentEvent =>
+                IsAdmin || (IsCarrier && shipmentEvent.Shipment!.CarrierId == CurrentActorId));
+
             entity.HasOne(shipmentEvent => shipmentEvent.Shipment)
                 .WithMany(shipment => shipment.Events)
                 .HasForeignKey(shipmentEvent => shipmentEvent.ShipmentId)

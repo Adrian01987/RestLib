@@ -63,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `RestLibOptions.RequireAuthorizationByDefault = false` now leaves endpoints anonymous unless an operation-specific authorization policy is configured
 - `RestLibOptions.UseProblemDetails = false` now returns plain JSON error responses, and `ProblemTypeBaseUri` is applied per response without process-global problem type state
 - `ProblemDetailsResult` preserves its existing public method signatures while RestLib endpoint handlers use internal option-aware overloads
+- Ecommerce E2E runners now pass absolute SQLite database paths, and the ecommerce sample applies matching dependent query filters for payments and shipment events to avoid EF Core required-navigation warnings
 
 ## [2.0.0] - 2026-04-10
 

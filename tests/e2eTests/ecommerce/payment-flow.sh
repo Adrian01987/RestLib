@@ -140,7 +140,7 @@ start_payment_server() {
 
   timestamp=$(date +"%Y%m%d_%H%M%S")
   mkdir -p "$RESULTS_DIR"
-  db_file="tests/e2eTests/TestResults/ecommerce/${label}-${timestamp}.db"
+  db_file="${RESULTS_DIR}/${label}-${timestamp}.db"
   log_file="${RESULTS_DIR}/${label}-${timestamp}.log"
 
   info "Starting ${label} ecommerce sample at ${server_url} (payment failure rate ${failure_rate})..."
