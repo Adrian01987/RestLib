@@ -168,9 +168,13 @@ jobs:
       - name: Install prerequisites
         run: sudo apt-get update && sudo apt-get install -y curl jq bc
 
-      - name: Run E2E tests
+      - name: Run sample E2E tests
         timeout-minutes: 10
         run: bash tests/e2eTests/run-all.sh
+
+      - name: Run ecommerce E2E tests
+        timeout-minutes: 25
+        run: bash tests/e2eTests/ecommerce/run-all.sh
 
       - name: Upload E2E test results
         uses: actions/upload-artifact@v7
