@@ -90,6 +90,7 @@ builder.Services.AddRestLibEfCore<EcommerceDbContext, Cart, Guid>();
 builder.Services.AddRestLibEfCore<EcommerceDbContext, CartItem, RestLibCompositeKey<Guid, Guid>>();
 builder.Services.AddRestLibEfCore<EcommerceDbContext, Order, Guid>();
 builder.Services.AddRestLibEfCore<EcommerceDbContext, OrderItem, Guid>();
+builder.Services.AddRestLibEfCore<EcommerceDbContext, Shipment, Guid>();
 builder.Services.AddRestLibInMemoryWithData<Carrier, Guid>(
     carrier => carrier.Id,
     Guid.NewGuid,

@@ -1,0 +1,47 @@
+{
+  "$schema": "../../../schemas/restlib-resource.schema.json",
+  "EntityType": "RestLib.Sample.Ecommerce.Models.Shipment, RestLib.Sample.Ecommerce",
+  "Name": "carrier-shipments",
+  "Route": "/api/carrier/shipments",
+  "Operations": {
+    "Include": ["GetAll", "GetById", "Patch"]
+  },
+  "Policies": {
+    "GetAll": ["Carrier"],
+    "GetById": ["Carrier"],
+    "Patch": ["Carrier"],
+    "BatchCreate": ["Carrier"],
+    "BatchPatch": ["Carrier"]
+  },
+  "Filtering": ["Status", "OrderId"],
+  "Sorting": ["CreatedAt", "Status"],
+  "DefaultSort": "created_at:desc",
+  "FieldSelection": ["Id", "OrderId", "CarrierId", "Status", "CreatedAt"],
+  "Batch": {
+    "Actions": ["Patch"]
+  },
+  "OpenApi": {
+    "Tag": "Carrier Fulfillment",
+    "TagDescription": "Carrier shipment surface scoped by EF Core global query filters.",
+    "Summaries": {
+      "GetAll": "List my assigned shipments",
+      "GetById": "Get assigned shipment by id",
+      "Patch": "Patch assigned shipment",
+      "BatchPatch": "Batch patch assigned shipments"
+    },
+    "Descriptions": {
+      "GetAll": "Returns only shipments assigned to the authenticated carrier by relying on the EF Core global query filter.",
+      "GetById": "Returns a shipment only when it is assigned to the authenticated carrier.",
+      "Patch": "Updates an assigned shipment through the carrier fulfillment surface.",
+      "BatchPatch": "Patches assigned shipments in bulk."
+    }
+  },
+  "Validation": {
+    "Status": {
+      "Required": true,
+      "Length": {
+        "Max": 40
+      }
+    }
+  }
+}
