@@ -131,6 +131,14 @@ builder.Services.AddRestLibInMemoryWithData<Carrier, Guid>(
     carrier => carrier.Id,
     Guid.NewGuid,
     EcommerceReferenceData.GetCarriers());
+builder.Services.AddRestLibInMemoryWithData<Country, string>(
+    country => country.Code,
+    () => string.Empty,
+    EcommerceReferenceData.GetCountries());
+builder.Services.AddRestLibInMemoryWithData<PaymentMethod, string>(
+    paymentMethod => paymentMethod.Key,
+    () => string.Empty,
+    EcommerceReferenceData.GetPaymentMethods());
 builder.Services.AddRestLibMapper<UserDto, User, UserMapper>();
 builder.Services.AddNamedHook<Address, Guid>(
     CustomerProfileHooks.EnsureSinglePrimaryHookName,
@@ -153,6 +161,10 @@ builder.Services.AddNamedHook<ShipmentEvent, Guid>(
 builder.Services.AddNamedHook<SupportTicket, Guid>(
     SupportTicketHooks.PrepareSupportTicketHookName,
     SupportTicketHooks.PrepareSupportTicketAsync);
+builder.Services.AddJsonResource<Country, string>(
+    builder.Configuration.GetSection("RestLib:Resources:Countries"));
+builder.Services.AddJsonResource<PaymentMethod, string>(
+    builder.Configuration.GetSection("RestLib:Resources:PaymentMethods"));
 builder.Services.AddRestLibFromFolder("Models");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
