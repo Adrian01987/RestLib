@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ecommerce sample customer address and phone resources with primary-row hooks and JSON validation
 - Ecommerce customer-profile E2E coverage for primary address/phone rows and customer scoping
 - Ecommerce sample carrier shipment JSON resource at `/api/carrier/shipments` with carrier-scoped read, patch, and batch patch operations
+- Ecommerce sample carrier shipment event append route with AfterPersist shipment/order propagation and customer notifications
 
 ### Changed
 

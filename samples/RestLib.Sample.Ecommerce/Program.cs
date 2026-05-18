@@ -13,6 +13,7 @@ using RestLib.Sample.Ecommerce.Admin;
 using RestLib.Sample.Ecommerce.Auth;
 using RestLib.Sample.Ecommerce.Catalog;
 using RestLib.Sample.Ecommerce.Data;
+using RestLib.Sample.Ecommerce.Fulfillment;
 using RestLib.Sample.Ecommerce.Identity;
 using RestLib.Sample.Ecommerce.Models;
 using RestLib.Sample.Ecommerce.Ordering;
@@ -63,6 +64,7 @@ builder.Services.AddSingleton<CarrierAssignmentCursor>();
 builder.Services.AddScoped<ICarrierAssignmentService, CarrierAssignmentService>();
 builder.Services.AddScoped<IDomainEventHandler<OrderPlaced>, OrderPlacedHandler>();
 builder.Services.AddScoped<IDomainEventHandler<OrderPaid>, OrderPaidHandler>();
+builder.Services.AddScoped<IDomainEventHandler<ShipmentStatusChanged>, ShipmentStatusChangedHandler>();
 builder.Services.AddScoped<INotificationService, ConsoleNotificationService>();
 builder.Services.AddOptions<FakeExternalPaymentOptions>()
     .Bind(builder.Configuration.GetSection(FakeExternalPaymentOptions.SectionName))
@@ -91,6 +93,7 @@ builder.Services.AddRestLibEfCore<EcommerceDbContext, CartItem, RestLibComposite
 builder.Services.AddRestLibEfCore<EcommerceDbContext, Order, Guid>();
 builder.Services.AddRestLibEfCore<EcommerceDbContext, OrderItem, Guid>();
 builder.Services.AddRestLibEfCore<EcommerceDbContext, Shipment, Guid>();
+builder.Services.AddRestLibEfCore<EcommerceDbContext, ShipmentEvent, Guid>();
 builder.Services.AddRestLibInMemoryWithData<Carrier, Guid>(
     carrier => carrier.Id,
     Guid.NewGuid,
@@ -108,6 +111,12 @@ builder.Services.AddNamedHook<Cart, Guid>(
 builder.Services.AddNamedHook<CartItem, RestLibCompositeKey<Guid, Guid>>(
     StorefrontCartHooks.PrepareCartItemHookName,
     StorefrontCartHooks.PrepareCartItemAsync);
+builder.Services.AddNamedHook<ShipmentEvent, Guid>(
+    ShipmentEventHooks.PrepareShipmentEventHookName,
+    ShipmentEventHooks.PrepareShipmentEventAsync);
+builder.Services.AddNamedHook<ShipmentEvent, Guid>(
+    ShipmentEventHooks.PropagateShipmentEventHookName,
+    ShipmentEventHooks.PropagateShipmentEventAsync);
 builder.Services.AddRestLibFromFolder("Models");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
