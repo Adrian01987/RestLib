@@ -17,6 +17,14 @@
   "Sorting": ["CreatedAt", "Status"],
   "DefaultSort": "created_at:desc",
   "FieldSelection": ["Id", "CustomerId", "Status", "CreatedAt"],
+  "RateLimiting": {
+    "Default": "storefront-read",
+    "ByOperation": {
+      "Create": "storefront-write",
+      "Update": "storefront-write",
+      "Delete": "storefront-write"
+    }
+  },
   "Hooks": {
     "BeforePersist": {
       "ByOperation": {

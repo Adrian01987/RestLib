@@ -1,8 +1,10 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using RestLib;
 using RestLib.Abstractions;
 using RestLib.Caching;
 using RestLib.Hooks;
+using RestLib.Sample.Ecommerce;
 using RestLib.Sample.Ecommerce.Data;
 using RestLib.Sample.Ecommerce.Models;
 
@@ -24,6 +26,7 @@ public static class OrderAdminEndpoints
 
         group.MapPatch("/{id:guid}", PatchStatusAsync)
             .RequireAuthorization("Admin")
+            .RequireRateLimiting(EcommerceRateLimitPolicies.AdminBatch)
             .WithSummary("Patch admin order status")
             .WithDescription("Patches an order status after validating the status state machine in a BeforePersist hook.");
 

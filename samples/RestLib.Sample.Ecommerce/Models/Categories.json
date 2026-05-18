@@ -7,6 +7,9 @@
   "Operations": {
     "Include": ["GetAll", "GetById"]
   },
+  "RateLimiting": {
+    "Default": "storefront-read"
+  },
   "OpenApi": {
     "Tag": "Storefront Catalog",
     "Summaries": {

@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ecommerce carrier-flow E2E coverage for shipment scoping, batch patch, event append, and customer-visible status propagation
 - Ecommerce sample support ticket resources with a shared customer/carrier create policy and admin-only read surface
 - Ecommerce support-flow E2E coverage for customer/carrier ticket creation and admin-only support reads
+- Ecommerce sample rate-limit policies for auth, storefront reads/writes, checkout, and admin batch surfaces
 
 ### Changed
 

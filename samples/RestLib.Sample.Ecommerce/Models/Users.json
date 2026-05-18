@@ -22,6 +22,9 @@
   "Sorting": ["UserName", "Email", "Role", "CreatedAt"],
   "DefaultSort": "user_name:asc",
   "FieldSelection": ["Id", "UserName", "Email", "Role", "IsActive", "CreatedAt"],
+  "RateLimiting": {
+    "Default": "storefront-read"
+  },
   "OpenApi": {
     "Tag": "Admin Users",
     "TagDescription": "Admin-only user directory exposed through a safe API model.",

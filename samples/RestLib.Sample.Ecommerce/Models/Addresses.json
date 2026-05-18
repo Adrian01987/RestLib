@@ -19,6 +19,15 @@
   "Sorting": ["CreatedAt", "City", "IsPrimary"],
   "DefaultSort": "created_at:desc",
   "FieldSelection": ["Id", "CustomerId", "Line1", "Line2", "City", "Region", "PostalCode", "CountryCode", "IsPrimary", "CreatedAt", "UpdatedAt"],
+  "RateLimiting": {
+    "Default": "storefront-read",
+    "ByOperation": {
+      "Create": "storefront-write",
+      "Update": "storefront-write",
+      "Patch": "storefront-write",
+      "Delete": "storefront-write"
+    }
+  },
   "Hooks": {
     "BeforePersist": {
       "ByOperation": {

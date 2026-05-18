@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using RestLib.Abstractions;
+using RestLib.Sample.Ecommerce;
 using RestLib.Sample.Ecommerce.Auth;
 using RestLib.Sample.Ecommerce.Data;
 using RestLib.Sample.Ecommerce.Models;
@@ -25,6 +27,7 @@ public static class CarrierProvisioningEndpoints
             .WithTags("Admin Carriers");
 
         group.MapPost("", ProvisionCarrierAsync)
+            .RequireRateLimiting(EcommerceRateLimitPolicies.AdminBatch)
             .WithSummary("Provision carrier")
             .WithDescription("Creates a carrier login user and its in-memory carrier reference row.");
 

@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using RestLib.Abstractions;
+using RestLib.Sample.Ecommerce;
 using RestLib.Sample.Ecommerce.Data;
 using RestLib.Sample.Ecommerce.Identity;
 using RestLib.Sample.Ecommerce.Models;
@@ -25,10 +27,12 @@ public static class StorefrontAccountEndpoints
             .WithTags("Storefront Account");
 
         group.MapGet("/me", GetMeAsync)
+            .RequireRateLimiting(EcommerceRateLimitPolicies.StorefrontRead)
             .WithSummary("Get my storefront profile")
             .WithDescription("Returns the current customer's profile derived from the JWT subject.");
 
         group.MapPatch("/me", PatchMeAsync)
+            .RequireRateLimiting(EcommerceRateLimitPolicies.StorefrontWrite)
             .WithSummary("Patch my storefront profile")
             .WithDescription("Updates the current customer's username or email address derived from the JWT subject.");
 

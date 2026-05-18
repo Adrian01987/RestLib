@@ -1,6 +1,8 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using RestLib;
 using RestLib.Hooks;
+using RestLib.Sample.Ecommerce;
 using RestLib.Sample.Ecommerce.Data;
 using RestLib.Sample.Ecommerce.Models;
 
@@ -25,26 +27,32 @@ public static class StorefrontCartEndpoints
             .WithTags("Storefront Cart");
 
         group.MapGet("", ListItemsAsync)
+            .RequireRateLimiting(EcommerceRateLimitPolicies.StorefrontRead)
             .WithSummary("List cart items")
             .WithDescription("Lists items in the authenticated customer's active cart.");
 
         group.MapGet("/{productId:guid}", GetItemAsync)
+            .RequireRateLimiting(EcommerceRateLimitPolicies.StorefrontRead)
             .WithSummary("Get cart item")
             .WithDescription("Gets one active cart item by the cart id and product id composite key.");
 
         group.MapPost("", CreateItemAsync)
+            .RequireRateLimiting(EcommerceRateLimitPolicies.StorefrontWrite)
             .WithSummary("Add cart item")
             .WithDescription("Adds a product to the authenticated customer's active cart.");
 
         group.MapPut("/{productId:guid}", ReplaceItemAsync)
+            .RequireRateLimiting(EcommerceRateLimitPolicies.StorefrontWrite)
             .WithSummary("Replace cart item")
             .WithDescription("Replaces the quantity of a product in the authenticated customer's active cart.");
 
         group.MapPatch("/{productId:guid}", PatchItemAsync)
+            .RequireRateLimiting(EcommerceRateLimitPolicies.StorefrontWrite)
             .WithSummary("Patch cart item")
             .WithDescription("Updates the quantity of a product in the authenticated customer's active cart.");
 
         group.MapDelete("/{productId:guid}", DeleteItemAsync)
+            .RequireRateLimiting(EcommerceRateLimitPolicies.StorefrontWrite)
             .WithSummary("Delete cart item")
             .WithDescription("Removes a product from the authenticated customer's active cart.");
 

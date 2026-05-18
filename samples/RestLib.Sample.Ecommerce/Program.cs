@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
@@ -9,6 +10,7 @@ using RestLib.Batch;
 using RestLib.EntityFrameworkCore;
 using RestLib.Filtering;
 using RestLib.InMemory;
+using RestLib.Sample.Ecommerce;
 using RestLib.Sample.Ecommerce.Admin;
 using RestLib.Sample.Ecommerce.Auth;
 using RestLib.Sample.Ecommerce.Catalog;
@@ -34,6 +36,35 @@ builder.Services.AddRestLib(options =>
 });
 builder.Services.AddSingleton<IETagGenerator, EcommerceRowVersionETagGenerator>();
 builder.Services.AddHateoasLinkProvider<Order, Guid, OrderLinkProvider>();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddFixedWindowLimiter(EcommerceRateLimitPolicies.StorefrontRead, limiter =>
+    {
+        limiter.PermitLimit = 600;
+        limiter.Window = TimeSpan.FromMinutes(1);
+    });
+    options.AddFixedWindowLimiter(EcommerceRateLimitPolicies.StorefrontWrite, limiter =>
+    {
+        limiter.PermitLimit = 240;
+        limiter.Window = TimeSpan.FromMinutes(1);
+    });
+    options.AddFixedWindowLimiter(EcommerceRateLimitPolicies.CheckoutStrict, limiter =>
+    {
+        limiter.PermitLimit = 60;
+        limiter.Window = TimeSpan.FromMinutes(1);
+    });
+    options.AddFixedWindowLimiter(EcommerceRateLimitPolicies.AdminBatch, limiter =>
+    {
+        limiter.PermitLimit = 120;
+        limiter.Window = TimeSpan.FromMinutes(1);
+    });
+    options.AddFixedWindowLimiter(EcommerceRateLimitPolicies.Auth, limiter =>
+    {
+        limiter.PermitLimit = 120;
+        limiter.Window = TimeSpan.FromMinutes(1);
+    });
+});
 
 builder.Services.AddOpenApi(options =>
 {
@@ -168,6 +199,7 @@ using (var scope = app.Services.CreateScope())
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapOpenApi();
 app.MapScalarApiReference("/", options =>
@@ -198,6 +230,12 @@ app.MapRestLib<Carrier, Guid>("/api/admin/carriers", config =>
         carrier => carrier.ServiceArea,
         carrier => carrier.IsActive,
         carrier => carrier.CreatedAt);
+    config.UseRateLimiting(EcommerceRateLimitPolicies.StorefrontRead, RestLibOperation.GetAll, RestLibOperation.GetById);
+    config.UseRateLimiting(
+        EcommerceRateLimitPolicies.AdminBatch,
+        RestLibOperation.Update,
+        RestLibOperation.Patch,
+        RestLibOperation.Delete);
     config.OpenApi.Tag = "Admin Carriers";
     config.OpenApi.TagDescription = "Manage carrier reference data through the InMemory adapter.";
     config.OpenApi.Summaries.GetAll = "List carriers";
@@ -228,6 +266,16 @@ app.MapRestLib<Product, Guid>("/api/v2/admin/products", config =>
         fields.AddProperty(product => product.Category!.Name);
         fields.AddProperty(product => product.Category!.Slug);
     });
+    config.UseRateLimiting(EcommerceRateLimitPolicies.StorefrontRead, RestLibOperation.GetAll, RestLibOperation.GetById);
+    config.UseRateLimiting(
+        EcommerceRateLimitPolicies.AdminBatch,
+        RestLibOperation.Create,
+        RestLibOperation.Update,
+        RestLibOperation.Patch,
+        RestLibOperation.Delete,
+        RestLibOperation.BatchCreate,
+        RestLibOperation.BatchUpdate,
+        RestLibOperation.BatchPatch);
     config.EnableBatch(BatchAction.Create, BatchAction.Update, BatchAction.Patch);
     config.OpenApi.Tag = "Admin Catalog";
     config.OpenApi.TagDescription = "Manage products through the admin catalog surface.";
@@ -261,6 +309,12 @@ var adminOrders = app.MapRestLib<Order, Guid>("/api/admin/orders", config =>
         hooks.OnRequestReceived = OrderHooks.ApplyAdminOrderDefaultsAsync;
         hooks.BeforePersist = OrderHooks.PrepareAdminOrderAsync;
     });
+    config.UseRateLimiting(EcommerceRateLimitPolicies.StorefrontRead, RestLibOperation.GetAll, RestLibOperation.GetById);
+    config.UseRateLimiting(
+        EcommerceRateLimitPolicies.AdminBatch,
+        RestLibOperation.Create,
+        RestLibOperation.Update,
+        RestLibOperation.Delete);
     config.OpenApi.Tag = "Admin Orders";
     config.OpenApi.TagDescription = "Admin order management surface with status transition validation.";
     config.OpenApi.Summaries.GetAll = "List admin orders";
@@ -287,6 +341,7 @@ app.MapRestLib<OrderItem, Guid>("/api/admin/order-items", config =>
         item => item.Quantity,
         item => item.UnitPrice,
         item => item.LineTotal);
+    config.UseRateLimiting(EcommerceRateLimitPolicies.StorefrontRead, RestLibOperation.GetAll, RestLibOperation.GetById);
     config.OpenApi.Tag = "Admin Orders";
     config.OpenApi.Summaries.GetAll = "List admin order items";
     config.OpenApi.Summaries.GetById = "Get admin order item by id";
@@ -318,6 +373,8 @@ storefrontOrders.MapRestLib<Order, Guid>(config =>
         hooks.OnRequestReceived = OrderHooks.PrepareStorefrontOrderAsync;
         hooks.BeforePersist = OrderHooks.PrepareStorefrontOrderAsync;
     });
+    config.UseRateLimiting(EcommerceRateLimitPolicies.StorefrontRead, RestLibOperation.GetAll, RestLibOperation.GetById);
+    config.UseRateLimiting(EcommerceRateLimitPolicies.StorefrontWrite, RestLibOperation.Create);
     config.OpenApi.Tag = "Storefront Orders";
     config.OpenApi.TagDescription = "Customer order surface scoped by EF Core query filters.";
     config.OpenApi.Summaries.GetAll = "List my orders";
@@ -341,6 +398,7 @@ storefrontOrderSurface.MapGroup("/order-items").MapRestLib<OrderItem, Guid>(conf
         item => item.Quantity,
         item => item.UnitPrice,
         item => item.LineTotal);
+    config.UseRateLimiting(EcommerceRateLimitPolicies.StorefrontRead, RestLibOperation.GetAll, RestLibOperation.GetById);
     config.OpenApi.Tag = "Storefront Orders";
     config.OpenApi.Summaries.GetAll = "List my order items";
     config.OpenApi.Summaries.GetById = "Get my order item by id";

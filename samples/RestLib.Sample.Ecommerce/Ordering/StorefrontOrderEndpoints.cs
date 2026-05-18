@@ -1,6 +1,8 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using RestLib.Responses;
+using RestLib.Sample.Ecommerce;
 using RestLib.Sample.Ecommerce.Data;
 using RestLib.Sample.Ecommerce.Identity;
 using RestLib.Sample.Ecommerce.Models;
@@ -28,11 +30,13 @@ public static class StorefrontOrderEndpoints
 
         group.MapPost("/{id:guid}/confirm-delivery", ConfirmDeliveryAsync)
             .RequireAuthorization("Customer")
+            .RequireRateLimiting(EcommerceRateLimitPolicies.StorefrontWrite)
             .WithSummary("Confirm order delivery")
             .WithDescription("Confirms delivery for an authenticated customer's delivered order.");
 
         group.MapPost("/{id:guid}/pay", PayAsync)
             .RequireAuthorization("Customer")
+            .RequireRateLimiting(EcommerceRateLimitPolicies.CheckoutStrict)
             .WithSummary("Pay for an order")
             .WithDescription("Pays an authenticated customer's order through the payment strategy matching the order payment method.");
 

@@ -16,6 +16,9 @@
   "Sorting": ["Price", "Name", "CreatedAt"],
   "DefaultSort": "name:asc",
   "FieldSelection": ["Id", "Name", "Price", "StockOnHand", "CategoryId"],
+  "RateLimiting": {
+    "Default": "storefront-read"
+  },
   "OpenApi": {
     "Tag": "Storefront Catalog",
     "Summaries": {

@@ -16,6 +16,9 @@
       }
     }
   },
+  "RateLimiting": {
+    "Default": "storefront-write"
+  },
   "OpenApi": {
     "Tag": "Support",
     "TagDescription": "Shared support ticket creation surface for customers and carriers.",

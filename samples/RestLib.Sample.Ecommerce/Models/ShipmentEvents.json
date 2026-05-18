@@ -9,6 +9,9 @@
   "Policies": {
     "Create": ["Carrier"]
   },
+  "RateLimiting": {
+    "Default": "storefront-write"
+  },
   "Hooks": {
     "OnRequestReceived": {
       "ByOperation": {

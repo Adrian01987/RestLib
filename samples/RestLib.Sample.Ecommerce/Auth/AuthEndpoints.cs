@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using RestLib.Sample.Ecommerce;
 using RestLib.Sample.Ecommerce.Data;
 using RestLib.Sample.Ecommerce.Models;
 
@@ -21,6 +23,7 @@ public static class AuthEndpoints
         ArgumentNullException.ThrowIfNull(endpoints);
 
         var group = endpoints.MapGroup("/auth")
+            .RequireRateLimiting(EcommerceRateLimitPolicies.Auth)
             .WithTags("Auth");
 
         group.MapPost("/login", LoginAsync)

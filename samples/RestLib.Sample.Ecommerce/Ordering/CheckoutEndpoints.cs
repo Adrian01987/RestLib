@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using RestLib.Responses;
+using RestLib.Sample.Ecommerce;
 using RestLib.Sample.Ecommerce.Data;
 using RestLib.Sample.Ecommerce.Identity;
 using RestLib.Sample.Ecommerce.Models;
@@ -25,6 +27,7 @@ public static class CheckoutEndpoints
 
         group.MapPost("/checkout", CheckoutAsync)
             .RequireAuthorization("Customer")
+            .RequireRateLimiting(EcommerceRateLimitPolicies.CheckoutStrict)
             .WithSummary("Checkout active cart")
             .WithDescription("Creates an order and shipment from the active cart inside one EF Core transaction.");
 

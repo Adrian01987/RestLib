@@ -20,6 +20,14 @@
   "Batch": {
     "Actions": ["Patch"]
   },
+  "RateLimiting": {
+    "Default": "storefront-read",
+    "ByOperation": {
+      "Patch": "storefront-write",
+      "BatchCreate": "admin-batch",
+      "BatchPatch": "admin-batch"
+    }
+  },
   "OpenApi": {
     "Tag": "Carrier Fulfillment",
     "TagDescription": "Carrier shipment surface scoped by EF Core global query filters.",

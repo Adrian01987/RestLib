@@ -17,6 +17,9 @@
   "Sorting": ["CreatedAt", "Status", "Subject"],
   "DefaultSort": "created_at:desc",
   "FieldSelection": ["Id", "CreatedByUserId", "Subject", "Message", "Status", "CreatedAt"],
+  "RateLimiting": {
+    "Default": "storefront-read"
+  },
   "OpenApi": {
     "Tag": "Admin Support",
     "TagDescription": "Admin support ticket read surface.",
