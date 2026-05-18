@@ -1,0 +1,46 @@
+{
+  "$schema": "../../../schemas/restlib-resource.schema.json",
+  "EntityType": "RestLib.Sample.Ecommerce.Models.SupportTicket, RestLib.Sample.Ecommerce",
+  "Name": "support-tickets",
+  "Route": "/api/support/tickets",
+  "Operations": {
+    "Include": ["Create"]
+  },
+  "Policies": {
+    "Create": ["SupportRequester"]
+  },
+  "Hooks": {
+    "OnRequestReceived": {
+      "ByOperation": {
+        "Create": ["PrepareSupportTicket"]
+      }
+    }
+  },
+  "RateLimiting": {
+    "Default": "storefront-write"
+  },
+  "OpenApi": {
+    "Tag": "Support",
+    "TagDescription": "Shared support ticket creation surface for customers and carriers.",
+    "Summaries": {
+      "Create": "Create support ticket"
+    },
+    "Descriptions": {
+      "Create": "Creates an OPEN support ticket for the authenticated customer or carrier."
+    }
+  },
+  "Validation": {
+    "Subject": {
+      "Required": true,
+      "Length": {
+        "Max": 200
+      }
+    },
+    "Message": {
+      "Required": true,
+      "Length": {
+        "Max": 2000
+      }
+    }
+  }
+}

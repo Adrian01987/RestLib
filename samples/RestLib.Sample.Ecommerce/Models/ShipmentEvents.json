@@ -1,0 +1,51 @@
+{
+  "$schema": "../../../schemas/restlib-resource.schema.json",
+  "EntityType": "RestLib.Sample.Ecommerce.Models.ShipmentEvent, RestLib.Sample.Ecommerce",
+  "Name": "carrier-shipment-events",
+  "Route": "/api/carrier/shipments/{shipmentId:guid}/events",
+  "Operations": {
+    "Include": ["Create"]
+  },
+  "Policies": {
+    "Create": ["Carrier"]
+  },
+  "RateLimiting": {
+    "Default": "storefront-write"
+  },
+  "Hooks": {
+    "OnRequestReceived": {
+      "ByOperation": {
+        "Create": ["PrepareShipmentEvent"]
+      }
+    },
+    "AfterPersist": {
+      "ByOperation": {
+        "Create": ["PropagateShipmentEvent"]
+      }
+    }
+  },
+  "OpenApi": {
+    "Tag": "Carrier Fulfillment",
+    "TagDescription": "Carrier shipment event append surface scoped by EF Core global query filters.",
+    "Summaries": {
+      "Create": "Append shipment event"
+    },
+    "Descriptions": {
+      "Create": "Appends an immutable shipment event for the route shipment, then propagates shipment and order status from the AfterPersist hook."
+    }
+  },
+  "Validation": {
+    "Status": {
+      "Required": true,
+      "Pattern": "^(ASSIGNED|ON THE WAY|DELIVERED|NOT DELIVERED)$",
+      "Length": {
+        "Max": 40
+      }
+    },
+    "Notes": {
+      "Length": {
+        "Max": 500
+      }
+    }
+  }
+}

@@ -488,4 +488,5 @@ test_output.txt
 nupkg/
 
 # Sample app SQLite database
-restlib-sample.db
+restlib-sample.db*
+restlib-ecommerce.db*

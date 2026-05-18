@@ -1,0 +1,60 @@
+{
+  "$schema": "../../../schemas/restlib-resource.schema.json",
+  "EntityType": "RestLib.Sample.Ecommerce.Models.UserDto, RestLib.Sample.Ecommerce",
+  "Name": "admin-users",
+  "Route": "/api/admin/users",
+  "Operations": {
+    "Include": ["GetAll", "GetById"]
+  },
+  "Policies": {
+    "GetAll": ["Admin"],
+    "GetById": ["Admin"]
+  },
+  "Mapping": {
+    "DbType": "RestLib.Sample.Ecommerce.Models.User, RestLib.Sample.Ecommerce",
+    "Mapper": "UserMapper"
+  },
+  "Filtering": ["Role", "IsActive"],
+  "FilteringOperators": {
+    "UserName": ["string"],
+    "Email": ["string"]
+  },
+  "Sorting": ["UserName", "Email", "Role", "CreatedAt"],
+  "DefaultSort": "user_name:asc",
+  "FieldSelection": ["Id", "UserName", "Email", "Role", "IsActive", "CreatedAt"],
+  "RateLimiting": {
+    "Default": "storefront-read"
+  },
+  "OpenApi": {
+    "Tag": "Admin Users",
+    "TagDescription": "Admin-only user directory exposed through a safe API model.",
+    "Summaries": {
+      "GetAll": "List users",
+      "GetById": "Get user by id"
+    },
+    "Descriptions": {
+      "GetAll": "Returns user profiles without password hashes or last-login metadata."
+    }
+  },
+  "Validation": {
+    "UserName": {
+      "Required": true,
+      "Length": {
+        "Max": 100
+      }
+    },
+    "Email": {
+      "Required": true,
+      "Email": true,
+      "Length": {
+        "Max": 200
+      }
+    },
+    "Role": {
+      "Required": true,
+      "Length": {
+        "Max": 40
+      }
+    }
+  }
+}

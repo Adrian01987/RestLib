@@ -23,6 +23,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ADR-026: EF Core projection pushdown design decisions — opt-in default, scalar-only scope, endpoint fallback conditions, fluent-only configuration
 - `RestLibResolvedResourceTypes` and `RestLibFolderOptions.UnifiedTypeResolver` for resolving API model, DB model, and key type together when loading JSON resources from a folder
 - New deep-dive guides: `docs/guides/query-features.md` and `docs/guides/extensibility-and-operations.md`
+- Ecommerce sample admin users resource demonstrating two-model JSON mapping that hides password hashes and last-login metadata
+- Ecommerce sample customer self-registration and custom storefront `/me` profile endpoints
+- Ecommerce sample admin carrier provisioning backed by an InMemory carrier reference resource
+- Ecommerce auth-flow E2E coverage for admin bootstrap, customer registration, carrier provisioning, role logins, and safe profile responses
+- Ecommerce sample customer address and phone resources with primary-row hooks and JSON validation
+- Ecommerce customer-profile E2E coverage for primary address/phone rows and customer scoping
+- Ecommerce sample carrier shipment JSON resource at `/api/carrier/shipments` with carrier-scoped read, patch, and batch patch operations
+- Ecommerce sample carrier shipment event append route with AfterPersist shipment/order propagation and customer notifications
+- Ecommerce carrier-flow E2E coverage for shipment scoping, batch patch, event append, and customer-visible status propagation
+- Ecommerce sample support ticket resources with a shared customer/carrier create policy and admin-only read surface
+- Ecommerce support-flow E2E coverage for customer/carrier ticket creation and admin-only support reads
+- Ecommerce sample rate-limit policies for auth, storefront reads/writes, checkout, and admin batch surfaces
+- Ecommerce sample appsettings-declared country and payment method reference data resources
+- Ecommerce sample README with a feature-by-line index and documented workaround references
+- Ecommerce E2E run-all orchestrator for catalog, auth, profile, ordering, fulfillment, support, and payment suites
+- CI runs the ecommerce E2E suite on Ubuntu alongside the existing sample E2E suite
+- Minimal sample README that links to the ecommerce reference sample
 
 ### Changed
 
@@ -46,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `RestLibOptions.RequireAuthorizationByDefault = false` now leaves endpoints anonymous unless an operation-specific authorization policy is configured
 - `RestLibOptions.UseProblemDetails = false` now returns plain JSON error responses, and `ProblemTypeBaseUri` is applied per response without process-global problem type state
 - `ProblemDetailsResult` preserves its existing public method signatures while RestLib endpoint handlers use internal option-aware overloads
+- Ecommerce E2E runners now pass absolute SQLite database paths, and the ecommerce sample applies matching dependent query filters for payments and shipment events to avoid EF Core required-navigation warnings
 
 ## [2.0.0] - 2026-04-10
 

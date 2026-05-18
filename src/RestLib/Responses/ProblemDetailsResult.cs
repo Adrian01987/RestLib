@@ -254,6 +254,46 @@ public static class ProblemDetailsResult
     }
 
     /// <summary>
+    /// Creates a 409 Insufficient Stock result.
+    /// </summary>
+    /// <param name="detail">The stock conflict detail message.</param>
+    /// <param name="productId">The product identifier.</param>
+    /// <param name="requested">The requested quantity.</param>
+    /// <param name="available">The available quantity.</param>
+    /// <param name="instance">The request path.</param>
+    /// <param name="jsonOptions">Optional JSON serializer options.</param>
+    /// <param name="logger">Optional logger; when provided, the response is logged at the appropriate level.</param>
+    public static IResult InsufficientStock(
+        string detail,
+        string productId,
+        int requested,
+        int available,
+        string? instance = null,
+        JsonSerializerOptions? jsonOptions = null,
+        ILogger? logger = null)
+    {
+        return InsufficientStock(detail, productId, requested, available, instance, jsonOptions, logger, options: null);
+    }
+
+    /// <summary>
+    /// Creates a 409 Invalid Status Transition result.
+    /// </summary>
+    /// <param name="fromStatus">The current status.</param>
+    /// <param name="toStatus">The requested target status.</param>
+    /// <param name="instance">The request path.</param>
+    /// <param name="jsonOptions">Optional JSON serializer options.</param>
+    /// <param name="logger">Optional logger; when provided, the response is logged at the appropriate level.</param>
+    public static IResult InvalidStatusTransition(
+        string fromStatus,
+        string toStatus,
+        string? instance = null,
+        JsonSerializerOptions? jsonOptions = null,
+        ILogger? logger = null)
+    {
+        return InvalidStatusTransition(fromStatus, toStatus, instance, jsonOptions, logger, options: null);
+    }
+
+    /// <summary>
     /// Creates a 412 Precondition Failed result.
     /// </summary>
     /// <param name="detail">The precondition failure detail message.</param>
@@ -560,6 +600,38 @@ public static class ProblemDetailsResult
         RestLibOptions? options)
     {
         var problem = ProblemDetailsFactory.Conflict(detail, instance);
+        return Create(problem, jsonOptions, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 409 Insufficient Stock result for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult InsufficientStock(
+        string detail,
+        string productId,
+        int requested,
+        int available,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        var problem = ProblemDetailsFactory.InsufficientStock(detail, productId, requested, available, instance);
+        return Create(problem, jsonOptions, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 409 Invalid Status Transition result for RestLib endpoint handlers.
+    /// </summary>
+    internal static IResult InvalidStatusTransition(
+        string fromStatus,
+        string toStatus,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        var problem = ProblemDetailsFactory.InvalidStatusTransition(fromStatus, toStatus, instance);
         return Create(problem, jsonOptions, logger, options);
     }
 

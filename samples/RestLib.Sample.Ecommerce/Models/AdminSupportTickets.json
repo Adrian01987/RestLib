@@ -1,0 +1,35 @@
+{
+  "$schema": "../../../schemas/restlib-resource.schema.json",
+  "EntityType": "RestLib.Sample.Ecommerce.Models.SupportTicket, RestLib.Sample.Ecommerce",
+  "Name": "admin-support-tickets",
+  "Route": "/api/admin/support/tickets",
+  "Operations": {
+    "Include": ["GetAll", "GetById"]
+  },
+  "Policies": {
+    "GetAll": ["Admin"],
+    "GetById": ["Admin"]
+  },
+  "Filtering": ["Status", "CreatedByUserId"],
+  "FilteringOperators": {
+    "Subject": ["string"]
+  },
+  "Sorting": ["CreatedAt", "Status", "Subject"],
+  "DefaultSort": "created_at:desc",
+  "FieldSelection": ["Id", "CreatedByUserId", "Subject", "Message", "Status", "CreatedAt"],
+  "RateLimiting": {
+    "Default": "storefront-read"
+  },
+  "OpenApi": {
+    "Tag": "Admin Support",
+    "TagDescription": "Admin support ticket read surface.",
+    "Summaries": {
+      "GetAll": "List support tickets",
+      "GetById": "Get support ticket by id"
+    },
+    "Descriptions": {
+      "GetAll": "Lists support tickets for administrators, including customer- and carrier-created tickets.",
+      "GetById": "Returns a support ticket for administrators."
+    }
+  }
+}

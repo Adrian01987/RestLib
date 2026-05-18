@@ -1,0 +1,57 @@
+{
+  "$schema": "../../../schemas/restlib-resource.schema.json",
+  "EntityType": "RestLib.Sample.Ecommerce.Models.Cart, RestLib.Sample.Ecommerce",
+  "Name": "storefront-carts",
+  "Route": "/api/storefront/carts",
+  "Operations": {
+    "Include": ["GetAll", "GetById", "Create", "Update", "Delete"]
+  },
+  "Policies": {
+    "GetAll": ["Customer"],
+    "GetById": ["Customer"],
+    "Create": ["Customer"],
+    "Update": ["Customer"],
+    "Delete": ["Customer"]
+  },
+  "Filtering": ["Status"],
+  "Sorting": ["CreatedAt", "Status"],
+  "DefaultSort": "created_at:desc",
+  "FieldSelection": ["Id", "CustomerId", "Status", "CreatedAt"],
+  "RateLimiting": {
+    "Default": "storefront-read",
+    "ByOperation": {
+      "Create": "storefront-write",
+      "Update": "storefront-write",
+      "Delete": "storefront-write"
+    }
+  },
+  "Hooks": {
+    "BeforePersist": {
+      "ByOperation": {
+        "Create": ["EnsureActiveCart"],
+        "Update": ["EnsureActiveCart"]
+      }
+    }
+  },
+  "OpenApi": {
+    "Tag": "Storefront Cart",
+    "TagDescription": "Customer-owned carts scoped by EF Core query filters.",
+    "Summaries": {
+      "GetAll": "List my carts",
+      "GetById": "Get my cart by id",
+      "Create": "Create my active cart",
+      "Update": "Replace my cart",
+      "Delete": "Delete my cart"
+    },
+    "Descriptions": {
+      "Create": "Creates one active cart owned by the authenticated customer. The active-cart hook prevents a second active cart."
+    }
+  },
+  "Validation": {
+    "Status": {
+      "Length": {
+        "Max": 40
+      }
+    }
+  }
+}

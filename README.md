@@ -477,7 +477,8 @@ Intel Core i3-8130U CPU 2.20GHz (Kaby Lake), 1 CPU, 4 logical and 2 physical cor
 
 ## Learn More
 
-- [Sample app](https://github.com/Adrian01987/RestLib/blob/main/samples/RestLib.Sample/Program.cs)
+- [Minimal sample app](https://github.com/Adrian01987/RestLib/blob/main/samples/RestLib.Sample/README.md)
+- [Ecommerce reference sample](https://github.com/Adrian01987/RestLib/blob/main/samples/RestLib.Sample.Ecommerce/README.md)
 - [EF Core migrations guide](https://github.com/Adrian01987/RestLib/blob/main/docs/guides/ef-core-migrations.md)
 - [JSON resources guide](https://github.com/Adrian01987/RestLib/blob/main/docs/guides/json-resources.md)
 - [Architecture decisions](https://github.com/Adrian01987/RestLib/tree/main/docs/adr)
