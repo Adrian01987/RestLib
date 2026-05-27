@@ -118,11 +118,18 @@ observable API contract remains correct. Collection-valued paths remain unsuppor
 
 ### Automatic primary key detection from EF Core model metadata
 The adapter resolves the key selector automatically when the caller does not provide one.
-`EfCoreRepository` now resolves the selector from the real scoped `DbContext` during
+`EfCoreRepository` resolves the selector from the real scoped `DbContext` during
 repository construction, reads the EF Core model metadata for the entity type, finds the
 primary key, supports either a single-property key or an ordered two-part composite key,
 checks that the key type matches `TKey`, and builds the corresponding
 `Expression<Func<TEntity, TKey>>`.
+
+When the caller provides `EfCoreRepositoryOptions<TEntity, TKey>.KeySelector`, the adapter
+uses that explicit direct mapped property expression as the resource identity. This allows
+applications to expose a stable public identifier or alternate key while the EF model keeps
+its own primary key. Arbitrary expressions and unmapped properties are rejected when the
+repository is resolved because the adapter still needs key metadata for lookup predicates,
+batch operations, stable sort tie-breakers, and projection fallback behavior.
 
 This was chosen to reduce boilerplate for the common case. In most EF Core applications,
 the model already knows the primary key, so forcing every registration to repeat

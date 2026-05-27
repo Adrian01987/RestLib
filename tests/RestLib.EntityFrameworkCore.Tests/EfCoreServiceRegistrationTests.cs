@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using RestLib.Abstractions;
@@ -346,16 +347,69 @@ public class EfCoreServiceRegistrationTests
         AddKeyDetectionDbContext(services);
         services.AddRestLibEfCore<KeyDetectionTestDbContext, IntKeyEntity, Guid>(options =>
         {
-            options.KeySelector = entity => Guid.Empty;
+            options.KeySelector = entity => entity.ExternalId;
         });
         var provider = services.BuildServiceProvider();
+        var entity = new IntKeyEntity
+        {
+            Id = 42,
+            ExternalId = Guid.NewGuid(),
+            Name = "Test"
+        };
 
         // Act
         var options = provider.GetRequiredService<EfCoreRepositoryOptions<IntKeyEntity, Guid>>();
+        using var scope = provider.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<IRepository<IntKeyEntity, Guid>>();
+        var keySelector = ((EfCoreRepository<KeyDetectionTestDbContext, IntKeyEntity, Guid>)repository)
+            .GetType()
+            .GetField("_keySelector", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var key = ((System.Linq.Expressions.Expression<Func<IntKeyEntity, Guid>>)keySelector.GetValue(repository)!)
+            .Compile()
+            .Invoke(entity);
 
         // Assert
         options.KeySelector.Should().NotBeNull();
-        options.KeySelector!.Compile().Invoke(new IntKeyEntity { Id = 42, Name = "Test" }).Should().Be(Guid.Empty);
+        key.Should().Be(entity.ExternalId);
+    }
+
+    [Fact]
+    [Trait("Category", "Story1.2.3")]
+    public async Task GetById_WithExplicitNonPrimaryKeySelector_ReturnsEntity()
+    {
+        // Arrange
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+
+        var services = new ServiceCollection();
+        services.AddDbContext<KeyDetectionTestDbContext>(options => options.UseSqlite(connection));
+        services.AddRestLibEfCore<KeyDetectionTestDbContext, IntKeyEntity, Guid>(options =>
+        {
+            options.KeySelector = entity => entity.ExternalId;
+        });
+        var provider = services.BuildServiceProvider();
+        var externalId = Guid.NewGuid();
+
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<KeyDetectionTestDbContext>();
+        await db.Database.EnsureCreatedAsync();
+        db.IntKeyEntities.Add(new IntKeyEntity
+        {
+            Id = 42,
+            ExternalId = externalId,
+            Name = "Known"
+        });
+        await db.SaveChangesAsync();
+        db.ChangeTracker.Clear();
+        var repository = scope.ServiceProvider.GetRequiredService<IRepository<IntKeyEntity, Guid>>();
+
+        // Act
+        var result = await repository.GetByIdAsync(externalId);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Id.Should().Be(42);
+        result.Name.Should().Be("Known");
     }
 
     [Fact]

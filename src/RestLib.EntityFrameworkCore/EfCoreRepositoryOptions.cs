@@ -13,9 +13,10 @@ public class EfCoreRepositoryOptions<TEntity, TKey>
     where TKey : notnull
 {
     /// <summary>
-    /// Gets or sets the expression used to extract the primary key from an entity.
+    /// Gets or sets the expression used to extract the resource key from an entity.
     /// When <c>null</c>, the adapter attempts to resolve the key automatically
-    /// from EF Core model metadata.
+    /// from EF Core model metadata. Explicit selectors must access direct mapped
+    /// properties and should identify a unique resource key.
     /// </summary>
     public Expression<Func<TEntity, TKey>>? KeySelector { get; set; }
 

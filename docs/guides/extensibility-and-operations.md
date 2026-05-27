@@ -333,6 +333,11 @@ builder.Services.AddRestLibEfCore<AppDbContext, Product, Guid>(options =>
 });
 ```
 
+When `KeySelector` is set, RestLib uses that direct mapped property expression as the
+resource identity for generated endpoints. Use this only for a stable unique key, such as
+an alternate public identifier. Arbitrary expressions and unmapped properties fail when the
+repository is resolved.
+
 The EF Core adapter supports RestLib's filtering, sorting, counting, pagination,
 batch operations, and hooks on top of EF Core, with server-side query translation
 for filtering, sorting, and counting. Field selection can also be pushed down to SQL

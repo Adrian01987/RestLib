@@ -1365,6 +1365,11 @@ public class EfCoreRepository<TContext, TEntity, TKey>
 
     private KeyMetadata ResolveKeyMetadata()
     {
+        if (_options.KeySelector is not null)
+        {
+            return ResolveExplicitKeyMetadata(_options.KeySelector);
+        }
+
         var primaryKey = GetPrimaryKey();
 
         if (primaryKey.Properties.Count == 0)
@@ -1431,6 +1436,100 @@ public class EfCoreRepository<TContext, TEntity, TKey>
                 CreateKeyPart(primaryKey.Properties[0], firstAccess, CreateCompositeKeyPartGetter<TKey>(nameof(RestLibCompositeKey<int, int>.First))),
                 CreateKeyPart(primaryKey.Properties[1], secondAccess, CreateCompositeKeyPartGetter<TKey>(nameof(RestLibCompositeKey<int, int>.Second)))
             ]);
+    }
+
+    private KeyMetadata ResolveExplicitKeyMetadata(Expression<Func<TEntity, TKey>> keySelector)
+    {
+        _ = GetPrimaryKey();
+
+        if (typeof(TKey).IsGenericType && typeof(TKey).GetGenericTypeDefinition() == typeof(RestLibCompositeKey<,>))
+        {
+            return ResolveExplicitCompositeKeyMetadata(keySelector);
+        }
+
+        var keyProperty = ResolveExplicitKeyProperty(keySelector.Body, typeof(TKey), "KeySelector");
+        var parameter = Expression.Parameter(typeof(TEntity), "entity");
+        var propertyAccess = BuildPropertyAccess(parameter, keyProperty);
+        var selector = Expression.Lambda<Func<TEntity, TKey>>(propertyAccess, parameter);
+
+        return new KeyMetadata(
+            selector,
+            selector.Compile(),
+            [CreateKeyPart(keyProperty, propertyAccess, static key => key)]);
+    }
+
+    private KeyMetadata ResolveExplicitCompositeKeyMetadata(Expression<Func<TEntity, TKey>> keySelector)
+    {
+        var body = UnwrapConvert(keySelector.Body);
+        if (body is not NewExpression { Arguments.Count: 2 })
+        {
+            throw new InvalidOperationException(
+                $"The explicit key selector for entity type '{typeof(TEntity).Name}' must create a " +
+                $"{nameof(RestLibCompositeKey<int, int>)} value from two direct mapped properties.");
+        }
+
+        var newExpression = (NewExpression)body;
+        var keyArguments = typeof(TKey).GetGenericArguments();
+        var firstProperty = ResolveExplicitKeyProperty(newExpression.Arguments[0], keyArguments[0], "KeySelector");
+        var secondProperty = ResolveExplicitKeyProperty(newExpression.Arguments[1], keyArguments[1], "KeySelector");
+        var parameter = Expression.Parameter(typeof(TEntity), "entity");
+        var firstAccess = BuildPropertyAccess(parameter, firstProperty);
+        var secondAccess = BuildPropertyAccess(parameter, secondProperty);
+        var constructor = typeof(TKey).GetConstructor([keyArguments[0], keyArguments[1]])
+            ?? throw new InvalidOperationException(
+                $"RestLib could not resolve the composite key constructor for '{typeof(TKey).Name}'.");
+        var bodyExpression = Expression.New(constructor, firstAccess, secondAccess);
+        var compositeSelector = Expression.Lambda<Func<TEntity, TKey>>(bodyExpression, parameter);
+
+        return new KeyMetadata(
+            compositeSelector,
+            compositeSelector.Compile(),
+            [
+                CreateKeyPart(firstProperty, firstAccess, CreateCompositeKeyPartGetter<TKey>(nameof(RestLibCompositeKey<int, int>.First))),
+                CreateKeyPart(secondProperty, secondAccess, CreateCompositeKeyPartGetter<TKey>(nameof(RestLibCompositeKey<int, int>.Second)))
+            ]);
+    }
+
+    private Microsoft.EntityFrameworkCore.Metadata.IProperty ResolveExplicitKeyProperty(
+        Expression expression,
+        Type expectedType,
+        string optionName)
+    {
+        var memberExpression = UnwrapConvert(expression) as MemberExpression;
+        if (memberExpression?.Member is not PropertyInfo propertyInfo
+            || UnwrapConvert(memberExpression.Expression!) is not ParameterExpression)
+        {
+            throw new InvalidOperationException(
+                $"The explicit key selector for entity type '{typeof(TEntity).Name}' must access direct mapped properties only.");
+        }
+
+        if (propertyInfo.PropertyType != expectedType)
+        {
+            throw new InvalidOperationException(
+                $"The explicit key selector property '{propertyInfo.Name}' on entity type '{typeof(TEntity).Name}' " +
+                $"must be of type '{expectedType.Name}', but it is '{propertyInfo.PropertyType.Name}'.");
+        }
+
+        var entityType = _context.Model.FindEntityType(typeof(TEntity))
+            ?? throw new InvalidOperationException(
+                $"Entity type '{typeof(TEntity).Name}' is not part of the EF Core model.");
+
+        return entityType.FindProperty(propertyInfo.Name)
+            ?? throw new InvalidOperationException(
+                $"{nameof(EfCoreRepositoryOptions<TEntity, TKey>)}.{optionName} selects property '{propertyInfo.Name}' " +
+                $"on entity type '{typeof(TEntity).Name}', but that property is not mapped in the EF Core model.");
+    }
+
+    private Expression UnwrapConvert(Expression expression)
+    {
+        while (expression is UnaryExpression unaryExpression
+            && (unaryExpression.NodeType == ExpressionType.Convert
+                || unaryExpression.NodeType == ExpressionType.ConvertChecked))
+        {
+            expression = unaryExpression.Operand;
+        }
+
+        return expression;
     }
 
     private object?[] GetKeyValues(TKey key)

@@ -50,11 +50,11 @@ section to a concrete implementation point in this sample.
   injects `ICurrentUser` and applies EF Core query filters so customers and
   carriers only see their own rows, while admins bypass those scopes
   (`Data/EcommerceDbContext.cs:12`, `Data/EcommerceDbContext.cs:187`). The
-  future RestLib seam is tracked in
-  `docs/adr/proposals/027-row-level-security-seam.md`.
+  current RestLib decision is documented in
+  `docs/adr/027-row-level-security-application-owned.md`.
 - Cross-resource transactions are also application-owned. Checkout uses a
   custom endpoint and explicit EF Core transaction to create an order, decrement
   stock, create a shipment, and commit as one operation
   (`Ordering/CheckoutEndpoints.cs:28`, `Ordering/CheckoutEndpoints.cs:54`,
-  `Ordering/CheckoutEndpoints.cs:137`). The future RestLib unit-of-work seam is
-  tracked in `docs/adr/proposals/028-unit-of-work.md`.
+  `Ordering/CheckoutEndpoints.cs:137`). The current RestLib decision is
+  documented in `docs/adr/028-unit-of-work-application-owned.md`.

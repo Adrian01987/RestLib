@@ -84,6 +84,11 @@ public class IntKeyEntity
     public int Id { get; set; }
 
     /// <summary>
+    /// Gets or sets the external identifier used by explicit key selector tests.
+    /// </summary>
+    public Guid ExternalId { get; set; }
+
+    /// <summary>
     /// Gets or sets the entity name.
     /// </summary>
     public string Name { get; set; } = string.Empty;

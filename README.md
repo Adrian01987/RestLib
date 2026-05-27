@@ -14,6 +14,7 @@ RestLib is a .NET 10 library for ASP.NET Core Minimal APIs that generates CRUD e
 - [Install](#install)
 - [Quick Start](#quick-start)
 - [Why RestLib](#why-restlib)
+- [Choosing RestLib](#choosing-restlib)
 - [Features](#features)
 - [Performance](#performance)
 - [Learn More](#learn-more)
@@ -235,6 +236,26 @@ RestLib removes that repetition while keeping the parts that matter explicit:
 - Opt-in HATEOAS hypermedia links (Richardson Maturity Model Level 3)
 - Hook-based extensibility instead of controller inheritance
 - OpenAPI metadata and package-ready defaults out of the box
+
+## Choosing RestLib
+
+RestLib is a good fit when you want many resource-oriented endpoints to share one
+well-documented API contract without hand-writing the same CRUD, pagination, validation,
+OpenAPI, and error-handling code repeatedly.
+
+| Scenario | Recommended path |
+| --- | --- |
+| Prototype, demo, or test fixture | `RestLib.InMemory` with fluent endpoint configuration |
+| Typical database-backed API | `RestLib.EntityFrameworkCore` over your existing `DbContext` |
+| Configuration-heavy resource catalog | JSON resources loaded from `Models/` or `appsettings.json` |
+| Public DTO differs from persistence model | Two-model resources plus an explicit `IRestLibMapper` |
+| Workflow, orchestration, or cross-resource transaction | Custom Minimal API endpoint beside generated RestLib resources |
+| Provider-specific search, deep authorization scoping, or complex query semantics | Custom repository or custom endpoint |
+
+Prefer custom endpoints for commands that are not naturally resource CRUD: checkout,
+payment capture, state-machine transitions, report generation, and other workflows where
+the route should express a business action instead of exposing a generic persistence
+operation. Generated RestLib endpoints can still coexist with those custom routes.
 
 ## Features
 
@@ -524,6 +545,9 @@ Key decisions are documented as Architecture Decision Records:
 | [ADR-023](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/023-json-validation-rules.md) | JSON validation rules |
 | [ADR-024](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/024-two-model-resources-and-the-mapping-seam.md) | Two-model resources and the mapping seam |
 | [ADR-025](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/025-composite-key-support.md) | Two-part composite key support |
+| [ADR-026](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/026-projection-pushdown.md) | EF Core projection pushdown |
+| [ADR-027](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/027-row-level-security-application-owned.md) | Row-level security is application-owned |
+| [ADR-028](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/028-unit-of-work-application-owned.md) | Unit of work is application-owned |
 
 ## Packages
 
@@ -545,6 +569,8 @@ Key decisions are documented as Architecture Decision Records:
 - **Field selection pushdown is adapter-dependent** — the core endpoint layer can project after retrieval for any repository. The EF Core adapter can opt into conditional SQL projection pushdown for direct scalar fields via `EnableProjectionPushdown`; nested selections and requests using HATEOAS, ETags, or hooks fall back to materialized projection.
 - **Nested query paths are reference-only** — filtering, sorting, and field selection support dotted nested reference-property paths such as `customer.email`, but collection-valued paths are not supported and sparse nested responses use dotted output keys rather than nested objects.
 - **Built-in search is intentionally limited** — RestLib supports configured OR-of-contains search across string fields, but it does not provide full-text indexing, ranking, fuzzy matching, or provider-specific search features.
+- **Row-level scoping is application-owned** — apply tenant/user scoping in EF Core global query filters, database policies, or custom repositories before generated endpoints query data.
+- **Cross-resource transactions are application-owned** — use custom endpoints or transactional repositories for workflows such as checkout, payment capture, or multi-resource state changes.
 - **No CORS configuration** — RestLib does not configure CORS. If your API is consumed by browsers, add ASP.NET Core's built-in CORS middleware:
 
   ```csharp
