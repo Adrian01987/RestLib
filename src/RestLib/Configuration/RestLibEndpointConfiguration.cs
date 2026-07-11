@@ -612,6 +612,8 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     /// <summary>
     /// Applies a rate limiting policy to specific operations on this resource.
     /// Takes precedence over the default policy set via <see cref="UseRateLimiting(string)"/>.
+    /// Enabled batch actions share one route and must resolve to the same effective
+    /// rate-limit policy and disabled state; incompatible batch settings fail during endpoint mapping.
     /// </summary>
     /// <param name="policyName">The name of the rate limiting policy defined via <c>AddRateLimiter</c>.</param>
     /// <param name="operations">The operations to apply the policy to.</param>
@@ -639,6 +641,8 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     /// This is useful when a global rate limiter is applied via middleware
     /// but certain RestLib operations should be exempt.
     /// Takes precedence over both per-operation and default policies.
+    /// Enabled batch actions share one route and must all be disabled or all resolve to the
+    /// same enabled policy; incompatible batch settings fail during endpoint mapping.
     /// </summary>
     /// <param name="operations">The operations to exempt from rate limiting.</param>
     /// <returns>This configuration instance for chaining.</returns>

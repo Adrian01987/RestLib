@@ -80,6 +80,17 @@ internal static class BatchHandler
                     options: options);
             }
 
+            var batchOperation = action.ToRestLibOperation();
+            var authorizationResult = await BatchAuthorizationHelper.AuthorizeAsync(
+                httpContext,
+                config,
+                options,
+                batchOperation);
+            if (authorizationResult is not null)
+            {
+                return authorizationResult;
+            }
+
             // Verify action is enabled
             if (!config.IsBatchActionEnabled(action))
             {
@@ -196,14 +207,6 @@ internal static class BatchHandler
             // BeforeResponse hook — runs once for the entire batch, after all items are processed.
             if (pipeline is not null)
             {
-                var batchOperation = action switch
-                {
-                    BatchAction.Create => RestLibOperation.BatchCreate,
-                    BatchAction.Update => RestLibOperation.BatchUpdate,
-                    BatchAction.Patch => RestLibOperation.BatchPatch,
-                    BatchAction.Delete => RestLibOperation.BatchDelete,
-                    _ => RestLibOperation.BatchCreate
-                };
                 var hookContext = pipeline.CreateContext(httpContext, batchOperation);
                 var beforeResponseResult = await HookHelper.ExecuteHookAsync(
                     pipeline.ExecuteBeforeResponseAsync, hookContext);
@@ -291,6 +294,17 @@ internal static class BatchHandler
                     jsonOptions: jsonOptions,
                     logger: logger,
                     options: options);
+            }
+
+            var batchOperation = action.ToRestLibOperation();
+            var authorizationResult = await BatchAuthorizationHelper.AuthorizeAsync(
+                httpContext,
+                config,
+                options,
+                batchOperation);
+            if (authorizationResult is not null)
+            {
+                return authorizationResult;
             }
 
             if (!config.IsBatchActionEnabled(action))
@@ -404,14 +418,6 @@ internal static class BatchHandler
 
             if (dbPipeline is not null)
             {
-                var batchOperation = action switch
-                {
-                    BatchAction.Create => RestLibOperation.BatchCreate,
-                    BatchAction.Update => RestLibOperation.BatchUpdate,
-                    BatchAction.Patch => RestLibOperation.BatchPatch,
-                    BatchAction.Delete => RestLibOperation.BatchDelete,
-                    _ => RestLibOperation.BatchCreate
-                };
                 var hookContext = dbPipeline.CreateContext(httpContext, batchOperation);
                 var beforeResponseResult = await HookHelper.ExecuteHookAsync(
                     dbPipeline.ExecuteBeforeResponseAsync,
@@ -423,14 +429,6 @@ internal static class BatchHandler
             }
             else if (apiPipeline is not null)
             {
-                var batchOperation = action switch
-                {
-                    BatchAction.Create => RestLibOperation.BatchCreate,
-                    BatchAction.Update => RestLibOperation.BatchUpdate,
-                    BatchAction.Patch => RestLibOperation.BatchPatch,
-                    BatchAction.Delete => RestLibOperation.BatchDelete,
-                    _ => RestLibOperation.BatchCreate
-                };
                 var hookContext = apiPipeline.CreateContext(httpContext, batchOperation);
                 var beforeResponseResult = await HookHelper.ExecuteHookAsync(
                     apiPipeline.ExecuteBeforeResponseAsync,

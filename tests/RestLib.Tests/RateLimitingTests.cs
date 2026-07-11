@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using RestLib.Abstractions;
+using RestLib.Batch;
 using RestLib.Configuration;
 using RestLib.Tests.Fakes;
 using Xunit;
@@ -159,6 +160,65 @@ public class RateLimitingTests : IAsyncLifetime
         // Assert
         createResponse.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
         getAllResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    [Trait("Category", "Story6.1")]
+    public async Task BatchDelete_WithActionPolicy_Returns429WhenExceeded()
+    {
+        // Arrange
+        await CreateHostAsync(cfg =>
+        {
+            cfg.EnableBatch(BatchAction.Delete);
+            cfg.UseRateLimiting("strict", RestLibOperation.BatchDelete);
+        });
+        var payload = new
+        {
+            action = "delete",
+            items = new[] { Guid.NewGuid() }
+        };
+
+        // Act
+        var firstResponse = await _client!.PostAsJsonAsync("/api/limited/batch", payload);
+        var secondResponse = await _client.PostAsJsonAsync("/api/limited/batch", payload);
+
+        // Assert
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+    }
+
+    [Fact]
+    [Trait("Category", "Story6.1")]
+    public async Task BatchActions_WithDifferentPolicies_ThrowsDuringEndpointMapping()
+    {
+        // Arrange
+        Func<Task> act = () => CreateHostAsync(cfg =>
+        {
+            cfg.EnableBatch(BatchAction.Create, BatchAction.Delete);
+            cfg.UseRateLimiting("strict", RestLibOperation.BatchCreate);
+            cfg.UseRateLimiting("relaxed", RestLibOperation.BatchDelete);
+        });
+
+        // Act & Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*shared batch endpoint*same effective rate-limit policy*");
+    }
+
+    [Fact]
+    [Trait("Category", "Story6.1")]
+    public async Task BatchActions_WithDifferentDisabledStates_ThrowsDuringEndpointMapping()
+    {
+        // Arrange
+        Func<Task> act = () => CreateHostAsync(cfg =>
+        {
+            cfg.EnableBatch(BatchAction.Create, BatchAction.Delete);
+            cfg.UseRateLimiting("strict");
+            cfg.DisableRateLimiting(RestLibOperation.BatchDelete);
+        });
+
+        // Act & Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*shared batch endpoint*disabled state*");
     }
 
     [Fact]

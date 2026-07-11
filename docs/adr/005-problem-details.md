@@ -84,8 +84,8 @@ baseUri)` to obtain the full URI that matches configured runtime output.
 | 400         | `/problems/invalid-batch-request` | Invalid Batch Request | Invalid envelope structure or action |
 | 400         | `/problems/batch-size-exceeded` | Batch Size Exceeded   | Items exceed `MaxBatchSize` limit    |
 | 400         | `/problems/batch-action-not-enabled` | Batch Action Not Enabled | Requested action not enabled for resource |
-| 401         | `/problems/unauthorized`        | Unauthorized          | OpenAPI docs only; handled by middleware |
-| 403         | `/problems/forbidden`           | Forbidden             | OpenAPI docs only; handled by middleware |
+| 401         | `/problems/unauthorized`        | Unauthorized          | OpenAPI docs only; handled by ASP.NET Core authorization (including action-aware batch evaluation) |
+| 403         | `/problems/forbidden`           | Forbidden             | OpenAPI docs only; handled by ASP.NET Core authorization (including action-aware batch evaluation) |
 | 404         | `/problems/not-found`           | Resource Not Found    |                                      |
 | 409         | `/problems/conflict`            | Resource Conflict     |                                      |
 | 409         | `/problems/insufficient-stock`  | Insufficient Stock    | Requested quantity exceeds available stock |

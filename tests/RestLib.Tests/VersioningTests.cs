@@ -753,6 +753,7 @@ public class VersioningTests : IAsyncLifetime
                     group.MapRestLib<TestEntity, Guid>(config =>
                     {
                         // Do NOT call AllowAnonymous — authorization comes from the group
+                        config.EnableBatch();
                     });
                 });
             },
@@ -772,16 +773,55 @@ public class VersioningTests : IAsyncLifetime
         var anonPost = await client.PostAsJsonAsync("/api/v1/products", new { name = "New", price = 1.0m });
         anonPost.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 
+        // Act & Assert — anonymous batch should be denied by inherited authorization
+        var anonBatch = await client.PostAsJsonAsync(
+            "/api/v1/products/batch",
+            new { action = "create", items = new[] { new { name = "Batch", price = 1.0m } } });
+        anonBatch.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
         // Act & Assert — authenticated GET should succeed
         var authRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/products");
         authRequest.Headers.Add("Authorization", "Test");
         var authGet = await client.SendAsync(authRequest);
         authGet.StatusCode.Should().Be(HttpStatusCode.OK);
 
+        // Act & Assert — authenticated batch should succeed
+        var authBatchRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/products/batch")
+        {
+            Content = JsonContent.Create(
+                new { action = "create", items = new[] { new { name = "Batch", price = 1.0m } } })
+        };
+        authBatchRequest.Headers.Add("Authorization", "Test");
+        var authBatch = await client.SendAsync(authBatchRequest);
+        authBatch.StatusCode.Should().Be(HttpStatusCode.OK);
+
         // Act & Assert — authenticated GET by ID should succeed
         var authByIdRequest = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/products/{entityId}");
         authByIdRequest.Headers.Add("Authorization", "Test");
         var authById = await client.SendAsync(authByIdRequest);
         authById.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task GroupAllowAnonymous_AppliedToBatchEndpoint()
+    {
+        // Arrange
+        var repository = new InMemoryRepository<TestEntity, Guid>(e => e.Id, Guid.NewGuid);
+        var (_, client) = await CreateHostAsync(
+            app => app.UseEndpoints(endpoints =>
+            {
+                var group = endpoints.MapGroup("/api/v1/products");
+                group.AllowAnonymous();
+                group.MapRestLib<TestEntity, Guid>(config => config.EnableBatch());
+            }),
+            services => services.AddSingleton<IRepository<TestEntity, Guid>>(repository));
+
+        // Act
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/products/batch",
+            new { action = "create", items = new[] { new { name = "Batch", price = 1.0m } } });
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }

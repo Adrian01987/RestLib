@@ -339,6 +339,14 @@ config.DisableRateLimiting(RestLibOperation.GetById);
 Rate limiting is opt-in. RestLib applies the named policy to endpoints;
 the application defines and registers the actual policies.
 
+All enabled batch actions share `POST /batch`. Authorization is evaluated after
+the envelope action is parsed, so `BatchCreate`, `BatchUpdate`, `BatchPatch`, and
+`BatchDelete` can use different authorization policies. Rate limiting remains
+ASP.NET Core endpoint metadata and therefore must be identical for every batch
+action enabled on the shared route. Endpoint mapping fails fast when enabled
+batch actions resolve to different rate-limit policies or exemptions; enable a
+single batch action when it needs its own rate-limit policy.
+
 ### Field Selection
 
 Field selection lets clients request sparse fieldsets such as `?fields=id,name,price`

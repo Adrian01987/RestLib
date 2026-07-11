@@ -86,7 +86,7 @@ RestLib does not add version properties to `RestLibEndpointConfiguration`. Versi
 2. **No dependency avoids coupling.** The versioning ecosystem has multiple libraries and approaches. By not depending on any of them, RestLib remains compatible with all of them.
 3. **Prefix in operation IDs prevents OpenAPI collisions.** When the same entity type is registered at multiple routes (common in versioned APIs), operation IDs must be unique. Incorporating the route prefix into the ID is more predictable than a global counter alone.
 4. **DI-scoped registry enables test isolation.** Each test host gets its own `EndpointNameRegistry` instance, preventing counter leakage between xUnit test classes that run in the same process.
-5. **Authorization and rate limiting cascade from groups.** ASP.NET Core's `RouteGroupBuilder` metadata inheritance means `group.RequireAuthorization()` or `group.RequireRateLimiting()` automatically applies to all RestLib endpoints on that group. No special handling is needed in RestLib.
+5. **Authorization and rate limiting cascade from groups.** ASP.NET Core's `RouteGroupBuilder` metadata inheritance means `group.RequireAuthorization()` or `group.RequireRateLimiting()` applies to RestLib endpoints on that group. The shared batch route evaluates inherited authorization metadata after parsing its action so action-specific anonymous/policy configuration remains possible; inherited rate-limit metadata continues to be enforced by ASP.NET Core middleware.
 
 ## Consequences
 

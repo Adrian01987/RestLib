@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.OpenApi;
+using RestLib.Batch;
 using RestLib.Configuration;
 using RestLib.FieldSelection;
 using RestLib.Search;
@@ -30,7 +31,8 @@ internal static class OpenApiEndpointConfiguration
         string endpointNamePrefix,
         string operationId,
         string defaultSummary,
-        string defaultDescription)
+        string defaultDescription,
+        bool configureAuthorization = true)
         where TEntity : class
         where TKey : notnull
     {
@@ -68,11 +70,11 @@ internal static class OpenApiEndpointConfiguration
             });
         }
 
-        if (config.IsAnonymous(operation))
+        if (configureAuthorization && config.IsAnonymous(operation))
         {
             endpoint.AllowAnonymous();
         }
-        else
+        else if (configureAuthorization)
         {
             var policies = config.GetPolicies(operation);
             if (policies is { Length: > 0 })
@@ -540,10 +542,18 @@ internal static class OpenApiEndpointConfiguration
         where TEntity : class
         where TKey : notnull
     {
-        // Use BatchCreate as the representative operation for auth/rate-limiting
+        var batchOperations = config.EnabledBatchActions
+            .Select(static action => action.ToRestLibOperation())
+            .OrderBy(static operation => operation)
+            .ToArray();
+        ValidateBatchRateLimiting(config, batchOperations);
+
+        // Authorization is evaluated in BatchHandler after the request action is parsed.
+        // Rate limiting remains endpoint metadata and is safe to apply because all enabled
+        // batch operations are required to have the same effective rate-limit configuration.
         ConfigureEndpointBase(
             endpoint,
-            RestLibOperation.BatchCreate,
+            batchOperations[0],
             config,
             options,
             entityName,
@@ -551,7 +561,12 @@ internal static class OpenApiEndpointConfiguration
             "Batch",
             $"Batch operations for {entityName}",
             $"Perform batch create, update, patch, or delete operations on {entityName} resources. " +
-            $"Enabled actions: {string.Join(", ", config.EnabledBatchActions.Select(a => a.ToString().ToLowerInvariant()))}.");
+            $"Enabled actions: {string.Join(", ", config.EnabledBatchActions.Select(a => a.ToString().ToLowerInvariant()))}.",
+            configureAuthorization: false);
+
+        // Let the action-aware authorization check in BatchHandler run even when a route group
+        // or fallback policy would otherwise authorize the shared route before its body is parsed.
+        endpoint.WithMetadata(BatchAuthorizationBypassMetadata.Instance);
 
         endpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
         {
@@ -682,6 +697,37 @@ internal static class OpenApiEndpointConfiguration
         }
 
         return schema;
+    }
+
+    private static void ValidateBatchRateLimiting<TEntity, TKey>(
+        RestLibEndpointConfiguration<TEntity, TKey> config,
+        IReadOnlyList<RestLibOperation> batchOperations)
+        where TEntity : class
+        where TKey : notnull
+    {
+        if (batchOperations.Count == 0)
+        {
+            throw new InvalidOperationException("At least one batch action must be enabled.");
+        }
+
+        var firstOperation = batchOperations[0];
+        var firstDisabled = config.IsRateLimitingDisabled(firstOperation);
+        var firstPolicy = firstDisabled ? null : config.GetRateLimitPolicy(firstOperation);
+
+        foreach (var operation in batchOperations.Skip(1))
+        {
+            var disabled = config.IsRateLimitingDisabled(operation);
+            var policy = disabled ? null : config.GetRateLimitPolicy(operation);
+            if (disabled == firstDisabled && string.Equals(policy, firstPolicy, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            throw new InvalidOperationException(
+                "All enabled actions on the shared batch endpoint must use the same effective " +
+                "rate-limit policy and disabled state. Configure one shared policy, enable only " +
+                "actions with matching rate-limit settings, or expose the operations separately.");
+        }
     }
 
     /// <summary>

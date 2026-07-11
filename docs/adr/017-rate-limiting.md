@@ -66,6 +66,13 @@ config.DisableRateLimiting(RestLibOperation.GetById);        // Exempt GetById
 | Per-operation | `UseRateLimiting(policy, operations...)` | Overrides default for specific operations |
 | Disable | `DisableRateLimiting(operations...)` | Exempts operations entirely (highest precedence) |
 
+Batch actions are a special case because create, update, patch, and delete share
+one `POST /batch` endpoint while rate-limit middleware executes before the body is
+parsed. All actions enabled on that route must resolve to the same effective policy
+and disabled state. RestLib validates this during endpoint mapping instead of
+silently applying one action's policy to every batch request. A resource that needs
+a distinct batch rate limit must enable only that action or expose a separate route.
+
 ### 3. 429 responses handled by ASP.NET Core middleware
 
 When a request is rate-limited, ASP.NET Core's middleware returns a `429 Too Many Requests` response with `Retry-After` header. RestLib does not intercept or wrap this response in Problem Details, because:

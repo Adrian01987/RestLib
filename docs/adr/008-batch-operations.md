@@ -16,6 +16,23 @@ All batch operations go through `POST /prefix/batch` with a JSON envelope:
 routing simple (one endpoint) and allows the action to be determined from the
 request body rather than HTTP method.
 
+### Action-aware authorization and rate limiting
+
+Authorization for the shared endpoint is evaluated after the envelope action is
+parsed. RestLib combines inherited endpoint/group authorization metadata with the
+configuration for the corresponding `BatchCreate`, `BatchUpdate`, `BatchPatch`,
+or `BatchDelete` operation, then delegates evaluation and challenge/forbid handling
+to ASP.NET Core's authorization services. An operation configured with
+`AllowAnonymous` bypasses inherited authorization in the same way as an ordinary
+anonymous endpoint.
+
+ASP.NET Core rate-limit middleware runs before the handler parses the body, so it
+cannot select a named policy from the envelope action. Every action enabled on one
+shared batch route must therefore resolve to the same effective rate-limit policy
+and disabled state. Endpoint mapping fails fast when those settings differ. A
+resource that needs different batch rate limits must enable one action on that
+route or expose the operations as separate resources/routes.
+
 ### Partial success semantics
 Each item is processed independently. The response uses 200 when all items
 succeed, 207 Multi-Status when results are mixed. Each item in the response

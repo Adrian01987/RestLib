@@ -475,6 +475,96 @@ public class AuthorizationTests : IAsyncLifetime
 
     #endregion
 
+    #region Batch Authorization
+
+    [Theory]
+    [InlineData("create", RestLibOperation.BatchCreate)]
+    [InlineData("update", RestLibOperation.BatchUpdate)]
+    [InlineData("patch", RestLibOperation.BatchPatch)]
+    [InlineData("delete", RestLibOperation.BatchDelete)]
+    public async Task BatchAction_WithSpecificPolicy_AuthorizesParsedAction(
+        string action,
+        RestLibOperation operation)
+    {
+        // Arrange
+        await CreateHostAsync(
+            config =>
+            {
+                config.EnableBatch();
+                config.RequirePolicy(operation, "AdminOnly");
+            },
+            configureOptions: options => options.RequireAuthorizationByDefault = false);
+        _client!.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Test");
+        var payload = new
+        {
+            action,
+            items = new[] { new { id = Guid.NewGuid(), name = "Test" } }
+        };
+
+        // Act
+        var forbiddenResponse = await _client.PostAsJsonAsync("/api/test-entities/batch", payload);
+        _client.DefaultRequestHeaders.Add("X-Test-Role", "admin");
+        var authorizedResponse = await _client.PostAsJsonAsync("/api/test-entities/batch", payload);
+
+        // Assert
+        forbiddenResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        authorizedResponse.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+        authorizedResponse.StatusCode.Should().NotBe(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task BatchDelete_WhenAnonymousAndBatchCreateRequiresPolicy_IsNotBlocked()
+    {
+        // Arrange
+        await CreateHostAsync(
+            config =>
+            {
+                config.EnableBatch();
+                config.RequirePolicy(RestLibOperation.BatchCreate, "AdminOnly");
+                config.AllowAnonymous(RestLibOperation.BatchDelete);
+            },
+            configureOptions: options => options.RequireAuthorizationByDefault = false);
+        var payload = new
+        {
+            action = "delete",
+            items = new[] { Guid.NewGuid() }
+        };
+
+        // Act
+        var response = await _client!.PostAsJsonAsync("/api/test-entities/batch", payload);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+    }
+
+    [Fact]
+    public async Task BatchDelete_WhenProtectedAndBatchCreateAnonymous_RequiresPolicy()
+    {
+        // Arrange
+        await CreateHostAsync(
+            config =>
+            {
+                config.EnableBatch();
+                config.AllowAnonymous(RestLibOperation.BatchCreate);
+                config.RequirePolicy(RestLibOperation.BatchDelete, "AdminOnly");
+            },
+            configureOptions: options => options.RequireAuthorizationByDefault = false);
+        var payload = new
+        {
+            action = "delete",
+            items = new[] { Guid.NewGuid() }
+        };
+
+        // Act
+        var response = await _client!.PostAsJsonAsync("/api/test-entities/batch", payload);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    #endregion
+
     #region Authenticated Access
 
     [Fact]
