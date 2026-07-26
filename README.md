@@ -107,6 +107,14 @@ That gives you:
 - `PATCH /api/products/{id}` - partially update
 - `DELETE /api/products/{id}` - delete
 
+PATCH applies JSON Merge Patch semantics (RFC 7396) to the resource's serialized
+representation. Nested objects are merged recursively, `null` removes the named
+member, and arrays or non-object values replace the previous value. RestLib uses
+the configured `JsonSerializerOptions` for the merge, including naming policies
+and custom converters, and preserves JSON number tokens without converting them
+through `double`. Because RestLib endpoints expose typed object resources, the
+root patch document must be a JSON object.
+
 ### Quick Start (folder convention)
 
 For JSON-driven resources, the recommended path is one file per resource under `Models/`.
@@ -429,7 +437,7 @@ For production migration workflow, see
 - **At most two key parts** - the adapter supports scalar keys and ordered two-part composite keys via `RestLibCompositeKey<TFirst, TSecond>`. Keys with more than two parts are not supported.
 - **Keyset pagination with offset fallback** - the EF Core adapter uses last-seen sort values plus the key for supported stable sorts, but falls back to encoded offset cursors for unsupported sort shapes.
 - **Projection pushdown is opt-in and conditional** - when enabled, EF Core pushes down direct scalar field selections and still includes key/filter/sort columns in SQL. Nested field selections currently fall back to post-fetch projection, and any non-projectable selection still falls back when HATEOAS, ETag, or hooks are active.
-- **Nested query paths are reference-only** - filtering, sorting, and field selection support dot-separated nested reference-property paths such as `customer.email`. Collection-valued paths are not supported, nested sparse responses use dotted output keys, and PATCH handling still operates on direct entity properties.
+- **Nested query paths are reference-only** - filtering, sorting, and field selection support dot-separated nested reference-property paths such as `customer.email`. Collection-valued paths are not supported and nested sparse responses use dotted output keys. EF PATCH selects direct mapped entity properties, but applies recursive JSON Merge Patch semantics inside a mapped JSON/value-converted property.
 - **Constraint mapping is provider-limited** - database constraint classification still relies primarily on exception-message inspection and is not yet specialized per provider.
 
 Use the adapter when you want the standard RestLib endpoint surface over a typical

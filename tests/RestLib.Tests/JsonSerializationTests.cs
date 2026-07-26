@@ -296,6 +296,34 @@ public class JsonSerializationTests : IAsyncLifetime
         rawJson.Should().Contain("\"product_name\":\"Patched via snake_case\"");
     }
 
+    [Fact]
+    public async Task Patch_Accepts_JsonMergePatch_MediaType()
+    {
+        // Arrange
+        var id = Guid.NewGuid();
+        _repository.Seed(new ProductEntity
+        {
+            Id = id,
+            ProductName = "Original",
+            UnitPrice = 10.00m,
+            StockQuantity = 10,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = false
+        });
+        var jsonContent = new StringContent(
+            """{"product_name":"Patched via merge-patch media type"}""",
+            Encoding.UTF8,
+            "application/merge-patch+json");
+
+        // Act
+        var response = await _client.PatchAsync($"/api/products/{id}", jsonContent);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var rawJson = await response.Content.ReadAsStringAsync();
+        rawJson.Should().Contain("\"product_name\":\"Patched via merge-patch media type\"");
+    }
+
     #endregion
 
     #region Acceptance Criteria: Nulls omitted from responses

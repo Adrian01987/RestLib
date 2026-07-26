@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using FluentAssertions;
 using RestLib.Endpoints;
 using RestLib.Serialization;
@@ -165,7 +166,7 @@ public class PreviewPatchTests
     }
 
     [Fact]
-    public void PreviewPatch_NullValueForRequiredProperty_SetsToDefault()
+    public void PreviewPatch_NullValue_RemovesMemberAndSetsClrDefault()
     {
         // Arrange
         var original = new PatchEntity
@@ -239,10 +240,10 @@ public class PreviewPatchTests
 
     #endregion
 
-    #region Nested objects (shallow merge per RFC 7396)
+    #region Nested objects
 
     [Fact]
-    public void PreviewPatch_NestedObject_IsFullyReplacedNotDeepMerged()
+    public void PreviewPatch_NestedObject_RecursivelyMergesMembers()
     {
         // Arrange
         var original = new EntityWithNestedObject
@@ -252,7 +253,7 @@ public class PreviewPatchTests
             Address = new AddressValue { Street = "123 Main St", City = "Springfield", Zip = "62701" }
         };
 
-        // Patch only supplies City — per RFC 7396 shallow merge, the entire Address is replaced
+        // Patch only supplies City; RFC 7396 preserves unmentioned nested members.
         var patch = ParsePatch("""{"address": {"city": "Shelbyville"}}""");
 
         // Act
@@ -264,8 +265,30 @@ public class PreviewPatchTests
         result.Address.Should().NotBeNull();
         result.Address!.City.Should().Be("Shelbyville");
 
-        // Street and Zip are lost because the patch fully replaces the nested object
-        result.Address.Street.Should().BeNull();
+        result.Address.Street.Should().Be("123 Main St");
+        result.Address.Zip.Should().Be("62701");
+    }
+
+    [Fact]
+    public void PreviewPatch_NestedNull_RemovesOnlyTheNamedMember()
+    {
+        // Arrange
+        var original = new EntityWithNestedObject
+        {
+            Id = 1,
+            Name = "Parent",
+            Address = new AddressValue { Street = "123 Main St", City = "Springfield", Zip = "62701" }
+        };
+        var patch = ParsePatch("""{"address": {"zip": null}}""");
+
+        // Act
+        var result = PatchHelper.PreviewPatch(original, patch, JsonOptions);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Address.Should().NotBeNull();
+        result.Address!.Street.Should().Be("123 Main St");
+        result.Address.City.Should().Be("Springfield");
         result.Address.Zip.Should().BeNull();
     }
 
@@ -339,6 +362,50 @@ public class PreviewPatchTests
         result!.Id.Should().Be(42);
     }
 
+    [Fact]
+    public void PreviewPatch_ArrayAndLargeNumbers_PreservesJsonValues()
+    {
+        // Arrange
+        var original = new EntityWithPreciseValues
+        {
+            Amount = 1m,
+            Sequence = 1,
+            Tags = ["old", "values"]
+        };
+        var patch = ParsePatch(
+            """{"amount":79228162514264337593543950335,"sequence":18446744073709551615,"tags":["replacement"]}""");
+
+        // Act
+        var result = PatchHelper.PreviewPatch(original, patch, JsonOptions);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Amount.Should().Be(decimal.MaxValue);
+        result.Sequence.Should().Be(ulong.MaxValue);
+        result.Tags.Should().Equal("replacement");
+    }
+
+    [Fact]
+    public void PreviewPatch_CustomConverterObject_RecursivelyMergesItsJsonRepresentation()
+    {
+        // Arrange
+        var jsonOptions = RestLibJsonOptions.CreateDefault();
+        jsonOptions.Converters.Add(new ConvertedPointJsonConverter());
+        var original = new EntityWithConvertedValue
+        {
+            Id = 1,
+            Location = new ConvertedPoint(10, 20)
+        };
+        var patch = ParsePatch("""{"location":{"x":99}}""");
+
+        // Act
+        var result = PatchHelper.PreviewPatch(original, patch, jsonOptions);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Location.Should().Be(new ConvertedPoint(99, 20));
+    }
+
     #endregion
 
     #region Helpers and test entities
@@ -398,6 +465,50 @@ public class PreviewPatchTests
 
         [EmailAddress]
         public string? Email { get; set; }
+    }
+
+    private class EntityWithPreciseValues
+    {
+        public decimal Amount { get; set; }
+
+        public ulong Sequence { get; set; }
+
+        public string[] Tags { get; set; } = [];
+    }
+
+    private class EntityWithConvertedValue
+    {
+        public int Id { get; set; }
+
+        public ConvertedPoint Location { get; set; } = new(0, 0);
+    }
+
+    private sealed record ConvertedPoint(int X, int Y);
+
+    private sealed class ConvertedPointJsonConverter : JsonConverter<ConvertedPoint>
+    {
+        public override ConvertedPoint Read(
+            ref Utf8JsonReader reader,
+            Type typeToConvert,
+            JsonSerializerOptions options)
+        {
+            using var document = JsonDocument.ParseValue(ref reader);
+            var root = document.RootElement;
+            return new ConvertedPoint(
+                root.GetProperty("x").GetInt32(),
+                root.GetProperty("y").GetInt32());
+        }
+
+        public override void Write(
+            Utf8JsonWriter writer,
+            ConvertedPoint value,
+            JsonSerializerOptions options)
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber("x", value.X);
+            writer.WriteNumber("y", value.Y);
+            writer.WriteEndObject();
+        }
     }
 
     #endregion

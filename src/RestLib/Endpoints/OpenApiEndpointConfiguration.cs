@@ -418,7 +418,7 @@ internal static class OpenApiEndpointConfiguration
             "Patch",
             $"Partially update a {entityName}",
             $"Partially updates an existing {entityName} entity using JSON Merge Patch (RFC 7396). " +
-            "Only the provided fields will be updated. " +
+            "Nested objects merge recursively, null removes a member, and arrays replace their previous value. " +
             "Supports optimistic locking via If-Match header when ETag support is enabled.");
 
         endpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
@@ -434,10 +434,20 @@ internal static class OpenApiEndpointConfiguration
             operation.RequestBody = new OpenApiRequestBody
             {
                 Required = true,
-                Description = $"JSON Merge Patch document containing the fields to update",
+                Description = "JSON Merge Patch document. Nested objects merge recursively; " +
+                    "null removes a member; arrays and scalar values replace their previous value.",
                 Content = new Dictionary<string, OpenApiMediaType>
                 {
                     ["application/json"] = new OpenApiMediaType
+                    {
+                        Schema = new OpenApiSchema
+                        {
+                            Type = JsonSchemaType.Object,
+                            Description = "Partial update document. Only include the fields you want to modify.",
+                            AdditionalPropertiesAllowed = true
+                        }
+                    },
+                    ["application/merge-patch+json"] = new OpenApiMediaType
                     {
                         Schema = new OpenApiSchema
                         {

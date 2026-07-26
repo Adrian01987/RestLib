@@ -6,6 +6,7 @@ using RestLib.Filtering;
 using RestLib.Internal;
 using RestLib.Pagination;
 using RestLib.Search;
+using RestLib.Serialization;
 using RestLib.Sorting;
 
 namespace RestLib.InMemory;
@@ -172,15 +173,7 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
                 return Task.FromResult<TEntity?>(null);
             }
 
-            // Serialize existing entity to JSON
-            var existingJson = JsonSerializer.Serialize(existing, _jsonOptions);
-
-            // Merge patch document with existing JSON
-            var existingDoc = JsonDocument.Parse(existingJson);
-            var merged = MergeJsonObjects(existingDoc.RootElement, patchDocument);
-
-            // Deserialize merged result back to entity
-            var updated = JsonSerializer.Deserialize<TEntity>(merged, _jsonOptions);
+            var updated = JsonMergePatch.Apply(existing, patchDocument, _jsonOptions);
             if (updated == null)
             {
                 throw new InvalidOperationException("Failed to deserialize patched entity.");
@@ -305,11 +298,7 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
                     throw new KeyNotFoundException($"Entity with key '{id}' not found.");
                 }
 
-                var existingJson = JsonSerializer.Serialize(existing, _jsonOptions);
-                var existingDoc = JsonDocument.Parse(existingJson);
-                var merged = MergeJsonObjects(existingDoc.RootElement, patchDocument);
-
-                var updated = JsonSerializer.Deserialize<TEntity>(merged, _jsonOptions);
+                var updated = JsonMergePatch.Apply(existing, patchDocument, _jsonOptions);
                 if (updated == null)
                 {
                     throw new InvalidOperationException($"Failed to deserialize patched entity with key '{id}'.");
@@ -400,80 +389,6 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
         {
             return value;
         }
-    }
-
-    /// <summary>
-    /// Builds a mapping from C# PascalCase property names to their serialized JSON key names.
-    /// </summary>
-    /// <param name="serializedKeys">The existing serialized key names from the original entity.</param>
-    /// <returns>A dictionary mapping each CLR property name (case-insensitive) to its serialized key.</returns>
-    private static Dictionary<string, string> BuildPropertyNameMap(IEnumerable<string> serializedKeys)
-    {
-        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var entityProperties = typeof(TEntity).GetProperties(
-            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-
-        foreach (var clrProp in entityProperties)
-        {
-            // Find which serialized key corresponds to this CLR property.
-            // Match case-insensitively against the serialized keys.
-            foreach (var serializedKey in serializedKeys)
-            {
-                if (serializedKey.Equals(clrProp.Name, StringComparison.OrdinalIgnoreCase))
-                {
-                    map[clrProp.Name] = serializedKey;
-                    break;
-                }
-            }
-        }
-
-        return map;
-    }
-
-    /// <summary>
-    /// Resolves a patch property name to the matching serialized key name from the original entity,
-    /// allowing the patch document to use a different naming convention (e.g., snake_case)
-    /// than the repository's internal serialization (e.g., camelCase).
-    /// </summary>
-    /// <param name="patchKey">The property name from the patch document.</param>
-    /// <param name="propertyNameMap">Map from CLR property name to serialized key.</param>
-    /// <returns>The matching serialized key, or the original patch key if no match is found.</returns>
-    private static string ResolvePropertyName(string patchKey, Dictionary<string, string> propertyNameMap)
-    {
-        // Direct match against CLR property names (handles PascalCase patches)
-        if (propertyNameMap.TryGetValue(patchKey, out var match))
-        {
-            return match;
-        }
-
-        // Normalize the patch key by stripping underscores for comparison
-        // This handles snake_case → PascalCase mapping (e.g., "is_active" → "IsActive")
-        var normalizedPatch = patchKey.Replace("_", string.Empty);
-        foreach (var kvp in propertyNameMap)
-        {
-            if (kvp.Key.Equals(normalizedPatch, StringComparison.OrdinalIgnoreCase))
-            {
-                return kvp.Value;
-            }
-        }
-
-        // No match found — use the patch key as-is
-        return patchKey;
-    }
-
-    private static object? GetJsonValue(JsonElement element)
-    {
-        return element.ValueKind switch
-        {
-            JsonValueKind.String => element.GetString(),
-            JsonValueKind.Number => element.TryGetInt64(out var l) ? l : element.GetDouble(),
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            JsonValueKind.Null => null,
-            JsonValueKind.Array => element.EnumerateArray().Select(GetJsonValue).ToList(),
-            JsonValueKind.Object => element.EnumerateObject().ToDictionary(p => p.Name, p => GetJsonValue(p.Value)),
-            _ => element.GetRawText()
-        };
     }
 
     private static int CompareValues(object? entityValue, object? filterValue)
@@ -848,31 +763,5 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
             p.Name.Equals($"{typeof(TEntity).Name}Id", StringComparison.OrdinalIgnoreCase));
 
         return conventionMatch?.Name;
-    }
-
-    private string MergeJsonObjects(JsonElement original, JsonElement patch)
-    {
-        var merged = new Dictionary<string, object?>();
-
-        // Start with original values
-        foreach (var prop in original.EnumerateObject())
-        {
-            merged[prop.Name] = GetJsonValue(prop.Value);
-        }
-
-        // Build a lookup from the C# property names to the serialized key names
-        // so we can map patch keys (which may use a different naming convention)
-        // back to the original's key names.
-        var propertyNameMap = BuildPropertyNameMap(merged.Keys);
-
-        // Apply patch values (overwriting originals)
-        foreach (var prop in patch.EnumerateObject())
-        {
-            // Resolve the patch key to the corresponding original key
-            var key = ResolvePropertyName(prop.Name, propertyNameMap);
-            merged[key] = GetJsonValue(prop.Value);
-        }
-
-        return JsonSerializer.Serialize(merged, _jsonOptions);
     }
 }

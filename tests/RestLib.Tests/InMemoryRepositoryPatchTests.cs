@@ -197,12 +197,12 @@ public partial class InMemoryRepositoryTests
 
     #endregion
 
-    #region GetJsonValue Edge Case Tests
+    #region JSON value edge cases
 
     [Fact]
     public async Task PatchAsync_WithNullValue_SetsPropertyToDefault()
     {
-        // Arrange — tests the JsonValueKind.Null branch in GetJsonValue
+        // Arrange
         var repository = CreateMultiWordRepository();
         var entity = new MultiWordEntity(Guid.NewGuid(), "Widget", true, 50, DateTime.UtcNow);
         await repository.CreateAsync(entity);
@@ -219,11 +219,9 @@ public partial class InMemoryRepositoryTests
     }
 
     [Fact]
-    public async Task PatchAsync_WithArrayValue_IsProcessedByGetJsonValue()
+    public async Task PatchAsync_WithUnknownArrayValue_IgnoresUnknownMember()
     {
-        // Arrange — tests the JsonValueKind.Array branch in GetJsonValue.
-        // Since TestEntity has no array properties, the patch still works by
-        // including the array in the merged JSON (it will be ignored during deserialization).
+        // Arrange
         var repository = CreateRepository();
         var entity = CreateEntity("Original", 100);
         await repository.CreateAsync(entity);
@@ -241,9 +239,9 @@ public partial class InMemoryRepositoryTests
     }
 
     [Fact]
-    public async Task PatchAsync_WithNestedObjectValue_IsProcessedByGetJsonValue()
+    public async Task PatchAsync_WithUnknownNestedObject_IgnoresUnknownMember()
     {
-        // Arrange — tests the JsonValueKind.Object branch in GetJsonValue.
+        // Arrange
         var repository = CreateRepository();
         var entity = CreateEntity("Original", 100);
         await repository.CreateAsync(entity);
@@ -258,6 +256,89 @@ public partial class InMemoryRepositoryTests
         result.Should().NotBeNull();
         result!.Name.Should().Be("Updated");
         result.Value.Should().Be(100);
+    }
+
+    [Fact]
+    public async Task PatchAsync_NestedObjectAndPreciseValues_AppliesRfc7396Semantics()
+    {
+        // Arrange
+        var repository = CreateMergePatchRepository();
+        var entity = CreateMergePatchEntity();
+        await repository.CreateAsync(entity);
+        var patch = JsonDocument.Parse(
+            """{"details":{"city":"Shelbyville"},"amount":79228162514264337593543950335,"sequence":18446744073709551615,"tags":["replacement"]}""")
+            .RootElement;
+
+        // Act
+        var result = await repository.PatchAsync(entity.Id, patch);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Details.Street.Should().Be("123 Main St");
+        result.Details.City.Should().Be("Shelbyville");
+        result.Amount.Should().Be(decimal.MaxValue);
+        result.Sequence.Should().Be(ulong.MaxValue);
+        result.Tags.Should().Equal("replacement");
+    }
+
+    [Fact]
+    public async Task PatchManyAsync_NestedObject_RecursivelyMergesEachEntity()
+    {
+        // Arrange
+        var repository = CreateMergePatchRepository();
+        var first = CreateMergePatchEntity();
+        var second = CreateMergePatchEntity();
+        await repository.CreateManyAsync([first, second]);
+        var firstPatch = JsonDocument.Parse("""{"details":{"city":"First City"}}""").RootElement;
+        var secondPatch = JsonDocument.Parse("""{"details":{"city":"Second City"}}""").RootElement;
+
+        // Act
+        var results = await repository.PatchManyAsync(
+            [(first.Id, firstPatch), (second.Id, secondPatch)]);
+
+        // Assert
+        results.Should().HaveCount(2);
+        results[0].Details.Street.Should().Be("123 Main St");
+        results[0].Details.City.Should().Be("First City");
+        results[1].Details.Street.Should().Be("123 Main St");
+        results[1].Details.City.Should().Be("Second City");
+    }
+
+    private static InMemoryRepository<MergePatchEntity, Guid> CreateMergePatchRepository() =>
+        new(entity => entity.Id, Guid.NewGuid);
+
+    private static MergePatchEntity CreateMergePatchEntity() =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Details = new MergePatchDetails
+            {
+                Street = "123 Main St",
+                City = "Springfield"
+            },
+            Amount = 1m,
+            Sequence = 1,
+            Tags = ["old", "values"]
+        };
+
+    private sealed class MergePatchEntity
+    {
+        public Guid Id { get; set; }
+
+        public MergePatchDetails Details { get; set; } = new();
+
+        public decimal Amount { get; set; }
+
+        public ulong Sequence { get; set; }
+
+        public string[] Tags { get; set; } = [];
+    }
+
+    private sealed class MergePatchDetails
+    {
+        public string? Street { get; set; }
+
+        public string? City { get; set; }
     }
 
     #endregion

@@ -118,7 +118,10 @@ public partial class OpenApiDocumentationTests
         patchOp.RequestBody.Should().NotBeNull();
         patchOp.RequestBody!.Required.Should().BeTrue();
         patchOp.RequestBody.Content.Should().ContainKey("application/json");
+        patchOp.RequestBody.Content.Should().ContainKey("application/merge-patch+json");
         patchOp.RequestBody.Description.Should().Contain("JSON Merge Patch");
+        patchOp.RequestBody.Description.Should().Contain("Nested objects merge recursively");
+        patchOp.RequestBody.Description.Should().Contain("null removes a member");
     }
 
     #endregion

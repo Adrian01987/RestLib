@@ -1,7 +1,7 @@
-using System.Buffers;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using RestLib.Logging;
+using RestLib.Serialization;
 
 namespace RestLib.Endpoints;
 
@@ -33,45 +33,9 @@ internal static class PatchHelper
             return null;
         }
 
-        // Serialize original entity to a JSON document
-        var originalJson = JsonSerializer.SerializeToUtf8Bytes(original, jsonOptions);
-        using var originalDoc = JsonDocument.Parse(originalJson);
-
         try
         {
-            // Collect patch property names for O(1) lookups
-            var patchPropertyNames = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var prop in patchDocument.EnumerateObject())
-            {
-                patchPropertyNames.Add(prop.Name);
-            }
-
-            // Merge original + patch into a single JSON buffer using Utf8JsonWriter
-            var buffer = new ArrayBufferWriter<byte>();
-            using (var writer = new Utf8JsonWriter(buffer))
-            {
-                writer.WriteStartObject();
-
-                // Write original properties not overridden by the patch
-                foreach (var prop in originalDoc.RootElement.EnumerateObject())
-                {
-                    if (!patchPropertyNames.Contains(prop.Name))
-                    {
-                        prop.WriteTo(writer);
-                    }
-                }
-
-                // Write all patch properties (overrides + additions)
-                foreach (var prop in patchDocument.EnumerateObject())
-                {
-                    prop.WriteTo(writer);
-                }
-
-                writer.WriteEndObject();
-            }
-
-            // Deserialize the merged JSON back to the entity type
-            var result = JsonSerializer.Deserialize<TEntity>(buffer.WrittenSpan, jsonOptions);
+            var result = JsonMergePatch.Apply(original, patchDocument, jsonOptions);
 
             if (result is null && logger is not null)
             {
@@ -80,7 +44,7 @@ internal static class PatchHelper
 
             return result;
         }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException or NotSupportedException)
         {
             if (logger is not null)
             {

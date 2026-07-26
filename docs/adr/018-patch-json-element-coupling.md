@@ -37,8 +37,9 @@ Task<TEntity?> PatchAsync(TKey id, JsonElement patchDocument, CancellationToken 
    request body buffer without intermediate allocations. Converting to `IDictionary` or raw
    bytes would add overhead with no benefit for the primary use case.
 3. **InMemoryRepository simplicity:** The provided `InMemoryRepository<TEntity, TKey>`
-   iterates `JsonElement` properties to apply merge-patch semantics. Using `JsonElement`
-   makes this implementation concise and correct.
+   delegates the original serialized representation and patch document to the shared
+   RFC 7396 merge engine. Keeping values as `JsonElement` preserves nested structure
+   and exact JSON number tokens without an intermediate object graph.
 4. **Breaking change cost:** Changing the signature would break `IRepository`, `IBatchRepository`,
    all handler/helper classes, the `InMemoryRepository` implementation, and every consumer's
    repository. This is disproportionate to the benefit for v1.x.
@@ -49,6 +50,12 @@ Task<TEntity?> PatchAsync(TKey id, JsonElement patchDocument, CancellationToken 
   `Microsoft.AspNetCore.App` shared framework, so no extra NuGet dependency in practice).
 - Non-JSON backends (e.g., MongoDB) need to convert `JsonElement` to their native format
   inside `PatchAsync`. This is a localized conversion cost.
+- Core preview validation, InMemory persistence, and EF Core property persistence use
+  the same recursive merge algorithm. Objects merge recursively, `null` removes a
+  member, and arrays or non-object values replace the previous value.
+- Merge input and output use the configured `JsonSerializerOptions`, including naming
+  policies and custom converters. Typed RestLib resources still require a JSON object
+  at the root of an HTTP PATCH document.
 - **v2 consideration:** If a future major version introduces pluggable serializers or
   non-JSON transport, this decision should be revisited. The `IDictionary<string, object?>`
   or generic `TPatch` approach would then merit the breaking change cost.

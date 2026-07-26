@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.Logging;
@@ -10,6 +11,7 @@ using RestLib.Filtering;
 using RestLib.Internal;
 using RestLib.Pagination;
 using RestLib.Search;
+using RestLib.Serialization;
 using RestLib.Sorting;
 
 namespace RestLib.EntityFrameworkCore;
@@ -62,16 +64,12 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     private static readonly MethodInfo StringCompareMethod = typeof(string)
         .GetMethod(nameof(string.Compare), [typeof(string), typeof(string)])
         ?? throw new InvalidOperationException("RestLib could not resolve string.Compare(string, string).");
-    private static readonly IReadOnlyDictionary<string, PropertyInfo> SnakeCasePropertyMap = BuildSnakeCasePropertyMap();
-    private static readonly JsonSerializerOptions PatchJsonOptions = new()
-    {
-        PropertyNameCaseInsensitive = true
-    };
-
     private readonly TContext _context;
     private readonly EfCoreRepositoryOptions<TEntity, TKey> _options;
     private readonly Expression<Func<TEntity, TKey>> _keySelector;
     private readonly KeyMetadata _keyMetadata;
+    private readonly JsonSerializerOptions _jsonOptions;
+    private readonly IReadOnlyDictionary<string, PropertyInfo> _patchPropertyMap;
     private readonly bool _usesExplicitKeySelector;
 
     /// <summary>
@@ -80,9 +78,25 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     /// <param name="context">The EF Core DbContext used by the repository.</param>
     /// <param name="options">The repository options.</param>
     public EfCoreRepository(TContext context, EfCoreRepositoryOptions<TEntity, TKey> options)
+        : this(context, options, RestLibJsonOptions.CreateDefault())
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="EfCoreRepository{TContext, TEntity, TKey}"/> class.
+    /// </summary>
+    /// <param name="context">The EF Core DbContext used by the repository.</param>
+    /// <param name="options">The repository options.</param>
+    /// <param name="jsonOptions">The JSON serializer options used by PATCH operations.</param>
+    public EfCoreRepository(
+        TContext context,
+        EfCoreRepositoryOptions<TEntity, TKey> options,
+        JsonSerializerOptions jsonOptions)
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _jsonOptions = jsonOptions ?? throw new ArgumentNullException(nameof(jsonOptions));
+        _patchPropertyMap = BuildPatchPropertyMap(_jsonOptions);
         _usesExplicitKeySelector = _options.KeySelector is not null;
         _keyMetadata = ResolveKeyMetadata();
         _keySelector = _keyMetadata.CompositeSelector;
@@ -661,15 +675,31 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         return countQuery.LongCountAsync(ct);
     }
 
-    private static IReadOnlyDictionary<string, PropertyInfo> BuildSnakeCasePropertyMap()
+    private static IReadOnlyDictionary<string, PropertyInfo> BuildPatchPropertyMap(
+        JsonSerializerOptions jsonOptions)
     {
-        return typeof(TEntity)
-            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(property => property.CanWrite)
-            .ToDictionary(
-                property => JsonNamingPolicy.SnakeCaseLower.ConvertName(property.Name),
-                property => property,
-                StringComparer.OrdinalIgnoreCase);
+        var map = new Dictionary<string, PropertyInfo>(StringComparer.OrdinalIgnoreCase);
+        foreach (var property in typeof(TEntity)
+                     .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                     .Where(property => property.CanWrite))
+        {
+            map[property.Name] = property;
+            map[JsonNamingPolicy.SnakeCaseLower.ConvertName(property.Name)] = property;
+
+            var configuredName = jsonOptions.PropertyNamingPolicy?.ConvertName(property.Name);
+            if (configuredName is not null)
+            {
+                map[configuredName] = property;
+            }
+
+            var attributedName = property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name;
+            if (attributedName is not null)
+            {
+                map[attributedName] = property;
+            }
+        }
+
+        return map;
     }
 
     private static EfCoreConstraintViolationException ClassifyConstraintViolation(DbUpdateException ex)
@@ -1247,7 +1277,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     {
         foreach (var patchProperty in patchDocument.EnumerateObject())
         {
-            if (!SnakeCasePropertyMap.TryGetValue(patchProperty.Name, out var propertyInfo))
+            if (!_patchPropertyMap.TryGetValue(patchProperty.Name, out var propertyInfo))
             {
                 ThrowIfStrictUnknownField(unknownFieldBehavior, patchProperty.Name, "unknown");
                 continue;
@@ -1259,10 +1289,11 @@ public class EfCoreRepository<TContext, TEntity, TKey>
                 continue;
             }
 
-            var value = JsonSerializer.Deserialize(
-                patchProperty.Value.GetRawText(),
+            var value = JsonMergePatch.Apply(
+                propertyInfo.GetValue(entry.Entity),
                 propertyInfo.PropertyType,
-                PatchJsonOptions);
+                patchProperty.Value,
+                _jsonOptions);
 
             entry.Property(propertyInfo.Name).CurrentValue = value;
         }

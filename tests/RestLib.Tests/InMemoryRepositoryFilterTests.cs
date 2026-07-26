@@ -765,7 +765,7 @@ public partial class InMemoryRepositoryTests
     public async Task GetAllAsync_WithIntEqFilter_ViaRawValue_MatchesCorrectly()
     {
         // Arrange — verifies that int-typed filter values from ConvertFilterValue
-        // correctly match entity values even when GetJsonValue boxes them as long.
+        // correctly match raw JSON numeric values represented as long.
         // This was a bug: Equals(long, int) returns false in .NET.
         var repository = CreateFilterTestRepository();
         var entity = CreateFilterTestEntity(nullableValue: 42);

@@ -74,10 +74,18 @@ need tracking on reads can opt out explicitly through the options callback.
 
 ### JSON Merge Patch via EF Core change tracking
 Partial updates are implemented by loading the target entity as a tracked EF Core entity,
-iterating the incoming JSON patch document, mapping snake_case JSON fields to CLR
-properties through `SnakeCasePropertyMap`, and assigning values through
-`EntityEntry.Property(name).CurrentValue`. Primary key properties are excluded so a patch
-cannot mutate the entity identity.
+iterating the incoming JSON patch document, resolving JSON fields through the configured
+serializer naming policy (while retaining snake_case compatibility), and assigning values
+through `EntityEntry.Property(name).CurrentValue`. Primary key properties are excluded so
+a patch cannot mutate the entity identity.
+
+Each selected property's current serialized value and incoming patch value pass through
+the same RFC 7396 engine used by endpoint preview validation and the InMemory adapter.
+Nested JSON objects therefore merge recursively, `null` removes the named member, arrays
+replace their previous value, JSON number tokens remain lossless, and custom
+`System.Text.Json` converters participate in both serialization directions. This also
+supports recursive updates inside direct EF properties stored through JSON/value
+conversion; EF navigation traversal remains outside the adapter's PATCH contract.
 
 This design uses EF Core the way it is intended to be used. Change tracking allows the
 adapter to update only the properties that were actually patched, and `SaveChangesAsync`
