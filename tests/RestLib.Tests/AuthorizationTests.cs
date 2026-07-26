@@ -4,11 +4,14 @@ using System.Security.Claims;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using RestLib.Batch;
 using RestLib.Configuration;
 using RestLib.Tests.Fakes;
 using Xunit;
@@ -34,7 +37,8 @@ public class AuthorizationTests : IAsyncLifetime
         Action<RestLibEndpointConfiguration<TestEntity, Guid>> configure,
         bool addAuthentication = true,
         Action<RestLibOptions>? configureOptions = null,
-        Action<AuthorizationOptions>? configureAuthorization = null)
+        Action<AuthorizationOptions>? configureAuthorization = null,
+        Action<IServiceCollection>? configureServices = null)
     {
         _repository = new TestEntityRepository();
 
@@ -59,6 +63,7 @@ public class AuthorizationTests : IAsyncLifetime
                             policy.RequireClaim("role", "editor"));
                         configureAuthorization?.Invoke(options);
                     });
+                    configureServices?.Invoke(services);
                 })
                 .WithMiddleware(app =>
                 {
@@ -532,6 +537,40 @@ public class AuthorizationTests : IAsyncLifetime
         authenticatedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [Fact]
+    public async Task BatchDelete_WithCustomAuthorizationResultHandler_PreservesCustomResponse()
+    {
+        // Arrange
+        await CreateHostAsync(
+            config =>
+            {
+                config.EnableBatch(BatchAction.Delete);
+                config.RequirePolicy(RestLibOperation.BatchDelete, "AdminOnly");
+            },
+            configureOptions: options => options.RequireAuthorizationByDefault = false,
+            configureServices: services =>
+                services.AddSingleton<IAuthorizationMiddlewareResultHandler, TeapotAuthorizationResultHandler>());
+        var id = Guid.NewGuid();
+        _repository!.Seed(new TestEntity { Id = id, Name = "Protected" });
+        _client!.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Test");
+        var payload = new
+        {
+            action = "delete",
+            items = new[] { id }
+        };
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/test-entities/batch", payload);
+        var responseBody = await response.Content.ReadAsStringAsync();
+        var storedEntity = await _repository.GetByIdAsync(id);
+
+        // Assert
+        response.StatusCode.Should().Be((HttpStatusCode)StatusCodes.Status418ImATeapot);
+        responseBody.Should().Be("custom-forbidden");
+        storedEntity.Should().NotBeNull();
+    }
+
     [Theory]
     [InlineData("create", RestLibOperation.BatchCreate)]
     [InlineData("update", RestLibOperation.BatchUpdate)]
@@ -669,6 +708,20 @@ public class AuthorizationTests : IAsyncLifetime
     }
 
     #endregion
+
+    private sealed class TeapotAuthorizationResultHandler : IAuthorizationMiddlewareResultHandler
+    {
+        /// <inheritdoc />
+        public async Task HandleAsync(
+            RequestDelegate next,
+            HttpContext context,
+            AuthorizationPolicy policy,
+            PolicyAuthorizationResult authorizeResult)
+        {
+            context.Response.StatusCode = StatusCodes.Status418ImATeapot;
+            await context.Response.WriteAsync("custom-forbidden");
+        }
+    }
 }
 
 /// <summary>
