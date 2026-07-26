@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Claims;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
@@ -599,13 +600,14 @@ public class AuthorizationTests : IAsyncLifetime
     }
 
     [Theory]
-    [InlineData("create", RestLibOperation.BatchCreate)]
-    [InlineData("update", RestLibOperation.BatchUpdate)]
-    [InlineData("patch", RestLibOperation.BatchPatch)]
-    [InlineData("delete", RestLibOperation.BatchDelete)]
+    [InlineData("create", RestLibOperation.BatchCreate, StatusCodes.Status201Created)]
+    [InlineData("update", RestLibOperation.BatchUpdate, StatusCodes.Status200OK)]
+    [InlineData("patch", RestLibOperation.BatchPatch, StatusCodes.Status200OK)]
+    [InlineData("delete", RestLibOperation.BatchDelete, StatusCodes.Status204NoContent)]
     public async Task BatchAction_WithSpecificPolicy_AuthorizesParsedAction(
         string action,
-        RestLibOperation operation)
+        RestLibOperation operation,
+        int expectedItemStatus)
     {
         // Arrange
         await CreateHostAsync(
@@ -615,12 +617,42 @@ public class AuthorizationTests : IAsyncLifetime
                 config.RequirePolicy(operation, "AdminOnly");
             },
             configureOptions: options => options.RequireAuthorizationByDefault = false);
+        var id = Guid.NewGuid();
+        if (action != "create")
+        {
+            _repository!.Seed(new TestEntity
+            {
+                Id = id,
+                Name = "Original",
+                Price = 10m
+            });
+        }
+
         _client!.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Test");
-        var payload = new
+        object payload = action switch
         {
-            action,
-            items = new[] { new { id = Guid.NewGuid(), name = "Test" } }
+            "create" => new
+            {
+                action,
+                items = new[] { new { name = "Created", price = 20m } }
+            },
+            "update" => new
+            {
+                action,
+                items = new[] { new { id, body = new { name = "Updated", price = 30m } } }
+            },
+            "patch" => new
+            {
+                action,
+                items = new[] { new { id, body = new { price = 40m } } }
+            },
+            "delete" => new
+            {
+                action,
+                items = new[] { id }
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Unknown batch action.")
         };
 
         // Act
@@ -630,8 +662,33 @@ public class AuthorizationTests : IAsyncLifetime
 
         // Assert
         forbiddenResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        authorizedResponse.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
-        authorizedResponse.StatusCode.Should().NotBe(HttpStatusCode.Forbidden);
+        authorizedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var responseBody = await authorizedResponse.Content.ReadFromJsonAsync<JsonElement>();
+        responseBody.GetProperty("items")[0].GetProperty("status").GetInt32()
+            .Should().Be(expectedItemStatus);
+
+        switch (action)
+        {
+            case "create":
+                _repository!.Count.Should().Be(1);
+                break;
+            case "update":
+                var updatedEntity = await _repository!.GetByIdAsync(id);
+                updatedEntity.Should().NotBeNull();
+                updatedEntity!.Name.Should().Be("Updated");
+                updatedEntity.Price.Should().Be(30m);
+                break;
+            case "patch":
+                var patchedEntity = await _repository!.GetByIdAsync(id);
+                patchedEntity.Should().NotBeNull();
+                patchedEntity!.Name.Should().Be("Original");
+                patchedEntity.Price.Should().Be(40m);
+                break;
+            case "delete":
+                var deletedEntity = await _repository!.GetByIdAsync(id);
+                deletedEntity.Should().BeNull();
+                break;
+        }
     }
 
     [Fact]
