@@ -189,6 +189,39 @@ public class RateLimitingTests : IAsyncLifetime
 
     [Fact]
     [Trait("Category", "Story6.1")]
+    public async Task BatchActions_WithSamePolicy_MapAndShareRateLimit()
+    {
+        // Arrange
+        await CreateHostAsync(cfg =>
+        {
+            cfg.EnableBatch(BatchAction.Create, BatchAction.Delete);
+            cfg.UseRateLimiting(
+                "strict",
+                RestLibOperation.BatchCreate,
+                RestLibOperation.BatchDelete);
+        });
+        var createPayload = new
+        {
+            action = "create",
+            items = new[] { new { name = "Created" } }
+        };
+        var deletePayload = new
+        {
+            action = "delete",
+            items = new[] { Guid.NewGuid() }
+        };
+
+        // Act
+        var createResponse = await _client!.PostAsJsonAsync("/api/limited/batch", createPayload);
+        var deleteResponse = await _client.PostAsJsonAsync("/api/limited/batch", deletePayload);
+
+        // Assert
+        createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        deleteResponse.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+    }
+
+    [Fact]
+    [Trait("Category", "Story6.1")]
     public async Task BatchActions_WithDifferentPolicies_ThrowsDuringEndpointMapping()
     {
         // Arrange
