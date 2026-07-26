@@ -600,6 +600,38 @@ public class AuthorizationTests : IAsyncLifetime
     }
 
     [Theory]
+    [InlineData("update")]
+    [InlineData("patch")]
+    public async Task BatchAction_WhenDisabledAndAuthorizationServicesMissing_ReturnsActionNotEnabled(
+        string action)
+    {
+        // Arrange
+        await CreateHostAsync(
+            config =>
+            {
+                config.EnableBatch(BatchAction.Create, BatchAction.Delete);
+                config.AllowAnonymous(
+                    RestLibOperation.BatchCreate,
+                    RestLibOperation.BatchDelete);
+            },
+            addAuthentication: false);
+        var payload = new
+        {
+            action,
+            items = Array.Empty<object>()
+        };
+
+        // Act
+        var response = await _client!.PostAsJsonAsync("/api/test-entities/batch", payload);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        problem.GetProperty("type").GetString()
+            .Should().Be("/problems/batch-action-not-enabled");
+    }
+
+    [Theory]
     [InlineData("create", RestLibOperation.BatchCreate, StatusCodes.Status201Created)]
     [InlineData("update", RestLibOperation.BatchUpdate, StatusCodes.Status200OK)]
     [InlineData("patch", RestLibOperation.BatchPatch, StatusCodes.Status200OK)]

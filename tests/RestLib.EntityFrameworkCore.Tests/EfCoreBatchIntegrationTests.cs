@@ -551,7 +551,7 @@ public class EfCoreStrictBatchPatchIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task BatchPatch_StrictUnknownField_Returns207WithPerItem400AndDoesNotPersistInvalidItem()
+    public async Task BatchPatch_StrictBulkFailure_DoesNotRetryItemsOrPersistChanges()
     {
         // Arrange
         await ClearProductsAsync();
@@ -578,17 +578,13 @@ public class EfCoreStrictBatchPatchIntegrationTests : IAsyncLifetime
         var items = json.GetProperty("items");
         items.GetArrayLength().Should().Be(2);
 
-        items[0].GetProperty("status").GetInt32().Should().Be(200);
-        items[0].GetProperty("entity").GetProperty("product_name").GetString().Should().Be("Patched 1");
-
-        items[1].GetProperty("status").GetInt32().Should().Be(400);
-        items[1].GetProperty("error").GetProperty("type").GetString().Should().Be("/problems/bad-request");
-        items[1].GetProperty("error").GetProperty("detail").GetString().Should().Contain("unknown_field");
+        items[0].GetProperty("status").GetInt32().Should().Be(500);
+        items[1].GetProperty("status").GetInt32().Should().Be(500);
 
         _db.ChangeTracker.Clear();
         var persisted1 = await _db.Products.FindAsync(product1.Id);
         var persisted2 = await _db.Products.FindAsync(product2.Id);
-        persisted1!.ProductName.Should().Be("Patched 1");
+        persisted1!.ProductName.Should().Be("Original 1");
         persisted2!.ProductName.Should().Be("Original 2");
     }
 

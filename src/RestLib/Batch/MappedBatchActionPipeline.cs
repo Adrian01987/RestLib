@@ -404,15 +404,16 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
 
     /// <summary>
     /// Persists all validated items using the bulk repository path.
+    /// Repository calls must use <see cref="BulkPersistenceExecutor"/> so failures
+    /// are distinguished from post-persistence processing failures.
     /// </summary>
     /// <param name="validItems">The validated items.</param>
     /// <param name="results">The results array to populate.</param>
     /// <param name="context">The mapped batch context.</param>
-    protected virtual async Task PersistBulkAsync(
+    protected abstract Task PersistBulkAsync(
         List<TValidItem> validItems,
         BatchItemResult?[] results,
-        MappedBatchContext<TApiModel, TDbModel, TKey> context) =>
-        await PersistIndividuallyAsync(validItems, results, context);
+        MappedBatchContext<TApiModel, TDbModel, TKey> context);
 
     /// <summary>
     /// Runs the after-persist hook and builds the success result.
@@ -540,9 +541,6 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
         };
     }
 
-    private static bool IsConcurrencyException(Exception exception) =>
-        exception.GetType().FullName == "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException";
-
     private static BatchItemResult BuildHandledErrorResult(
         int index,
         Exception exception,
@@ -585,41 +583,31 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
             {
                 await PersistBulkAsync(validItems, results, context);
             }
-            catch (Exception bulkException)
+            catch (BulkPersistenceException bulkException)
             {
-                if (IsConcurrencyException(bulkException))
-                {
-                    var failedItems = validItems
-                        .Where(item => results[GetIndex(item)] is null)
-                        .ToList();
-
-                    foreach (var item in failedItems)
-                    {
-                        var index = GetIndex(item);
-                        results[index] = await HandleItemErrorAsync(
-                            index,
-                            bulkException,
-                            context,
-                            GetResourceId(item),
-                            GetApiEntity(item),
-                            GetDbEntity(item));
-                    }
-
-                    return;
-                }
-
+                var persistenceException = bulkException.InnerException ?? bulkException;
                 var actionName = Operation.ToString().ToLowerInvariant();
-                RestLibLogMessages.BulkPersistenceFallback(
+                RestLibLogMessages.BulkPersistenceFailed(
                     context.Logger,
                     actionName,
                     validItems.Count,
-                    bulkException);
+                    persistenceException);
 
-                var remainingItems = validItems
+                var failedItems = validItems
                     .Where(item => results[GetIndex(item)] is null)
                     .ToList();
 
-                await PersistIndividuallyAsync(remainingItems, results, context);
+                foreach (var item in failedItems)
+                {
+                    var index = GetIndex(item);
+                    results[index] = await HandleItemErrorAsync(
+                        index,
+                        persistenceException,
+                        context,
+                        GetResourceId(item),
+                        GetApiEntity(item),
+                        GetDbEntity(item));
+                }
             }
         }
         else

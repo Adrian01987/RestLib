@@ -1001,14 +1001,14 @@ public class BatchErrorLoggingTests : IAsyncLifetime
     }
 
     // ──────────────────────────────────────────────────────────────
-    //  BulkPersistenceFallback (EventId 1110)
+    //  BulkPersistenceFailed (EventId 1110)
     // ──────────────────────────────────────────────────────────────
 
     [Fact]
     [Trait("Category", "Logging")]
-    public async Task BulkCreate_Throws_LogsBulkPersistenceFallback()
+    public async Task BulkCreate_Throws_LogsBulkPersistenceFailureWithoutRetry()
     {
-        // Arrange — register ThrowingBulkBatchRepository so bulk path throws, individual works
+        // Arrange
         _repository = new InMemoryRepository<BatchEntity, Guid>(e => e.Id, Guid.NewGuid);
 
         (_host, _client, _logCollector) = await new TestHostBuilder<BatchEntity, Guid>(_repository, "/api/items")
@@ -1041,6 +1041,7 @@ public class BatchErrorLoggingTests : IAsyncLifetime
         var entry = logs.FirstOrDefault(r => r.Id.Id == 1110 && r.Category == "RestLib.Batch");
         entry.Should().NotBeNull();
         entry!.Level.Should().Be(LogLevel.Warning);
+        entry.Message.Should().Contain("retry skipped");
         entry.Message.Should().Contain("create");
         entry.Message.Should().Contain("2");
     }

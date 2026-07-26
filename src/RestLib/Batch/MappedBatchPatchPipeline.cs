@@ -83,7 +83,8 @@ internal sealed class MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>
         MappedBatchContext<TApiModel, TDbModel, TKey> context)
     {
         var ids = validItems.Select(item => item.Id).ToList();
-        var originals = await context.BatchRepository!.GetByIdsAsync(ids, context.CancellationToken);
+        var originals = await BulkPersistenceExecutor.ExecuteAsync(
+            () => context.BatchRepository!.GetByIdsAsync(ids, context.CancellationToken));
 
         var itemsToPersist = new List<(int Index, TKey Id, TDbModel Entity)>();
 
@@ -210,7 +211,8 @@ internal sealed class MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>
         }
 
         var entities = itemsToPersist.Select(item => item.Entity).ToList();
-        var updated = await context.BatchRepository!.UpdateManyAsync(entities, context.CancellationToken);
+        var updated = await BulkPersistenceExecutor.ExecuteAsync(
+            () => context.BatchRepository!.UpdateManyAsync(entities, context.CancellationToken));
 
         for (var i = 0; i < itemsToPersist.Count; i++)
         {

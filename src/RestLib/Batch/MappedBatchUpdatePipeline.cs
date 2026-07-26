@@ -201,7 +201,8 @@ internal sealed class MappedBatchUpdatePipeline<TApiModel, TDbModel, TKey>
         MappedBatchContext<TApiModel, TDbModel, TKey> context)
     {
         var entities = validItems.Select(item => item.DbEntity).ToList();
-        var updated = await context.BatchRepository!.UpdateManyAsync(entities, context.CancellationToken);
+        var updated = await BulkPersistenceExecutor.ExecuteAsync(
+            () => context.BatchRepository!.UpdateManyAsync(entities, context.CancellationToken));
 
         await ProcessBulkResultsAsync(validItems, updated, results, context);
     }

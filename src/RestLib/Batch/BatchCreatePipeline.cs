@@ -63,7 +63,8 @@ internal sealed class BatchCreatePipeline<TEntity, TKey>
         BatchContext<TEntity, TKey> context)
     {
         var entities = validItems.Select(v => v.Entity).ToList();
-        var created = await context.BatchRepository!.CreateManyAsync(entities, context.CancellationToken);
+        var created = await BulkPersistenceExecutor.ExecuteAsync(
+            () => context.BatchRepository!.CreateManyAsync(entities, context.CancellationToken));
 
         await ProcessBulkResultsAsync(validItems, created, results, context);
 

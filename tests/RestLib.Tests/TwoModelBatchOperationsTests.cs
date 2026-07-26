@@ -276,6 +276,40 @@ public class TwoModelBatchOperationsTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task MapRestLib_WithDisabledBatchActionAndNoAuthorizationServices_ReturnsActionNotEnabled()
+    {
+        // Arrange
+        (_host, _client) = await new TestTwoModelHostBuilder<TwoModelBatchApiItem, TwoModelBatchDbItem, Guid>(
+            _repository,
+            "/api/items")
+            .WithServices(services =>
+            {
+                services.AddRestLibMapper<TwoModelBatchApiItem, TwoModelBatchDbItem>(
+                    _ => new TwoModelBatchMapper());
+            })
+            .WithEndpoint(config =>
+            {
+                config.EnableBatch(BatchAction.Create);
+                config.AllowAnonymous(RestLibOperation.BatchCreate);
+            })
+            .BuildAsync();
+        var payload = new
+        {
+            action = "delete",
+            items = new[] { Guid.NewGuid() }
+        };
+
+        // Act
+        var response = await _client.PostAsync("/api/items/batch", BatchJson(payload));
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        problem.GetProperty("type").GetString()
+            .Should().Be(ProblemTypes.BatchActionNotEnabled);
+    }
+
+    [Fact]
     public async Task MapRestLib_WithTwoModelBatchCreate_UseDbModelHooksRunsDbHooks()
     {
         // Arrange
@@ -446,7 +480,7 @@ public class TwoModelBatchOperationsTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task MapRestLib_WithTwoModelBatchPatch_BulkThrows_FallsBackToIndividualUpdate()
+    public async Task MapRestLib_WithTwoModelBatchPatch_BulkThrows_DoesNotRetryIndividualUpdate()
     {
         // Arrange
         var id = Guid.NewGuid();
@@ -475,9 +509,12 @@ public class TwoModelBatchOperationsTests : IAsyncLifetime
         var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        _repository.UpdateCallCount.Should().Be(1);
+        response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        json.GetProperty("items")[0].GetProperty("status").GetInt32().Should().Be(500);
+        _repository.UpdateCallCount.Should().Be(0);
         _repository.PatchCallCount.Should().Be(0);
+        (await _repository.GetByIdAsync(id))!.Price.Should().Be(5m);
     }
 
     [Fact]
@@ -707,7 +744,8 @@ public class TwoModelBatchOperationsTests : IAsyncLifetime
             .WithServices(services =>
             {
                 services.AddRestLibMapper<TwoModelBatchApiItem, TwoModelBatchDbItem>(_ => new TwoModelBatchMapper());
-                services.AddSingleton<IBatchRepository<TwoModelBatchDbItem, Guid>>(new ThrowingMappedBulkBatchRepository());
+                services.AddSingleton<IBatchRepository<TwoModelBatchDbItem, Guid>>(
+                    new ThrowingMappedBulkBatchRepository(_repository));
             })
             .WithEndpoint(config =>
             {
@@ -995,6 +1033,13 @@ public class TwoModelBatchOperationsTests : IAsyncLifetime
 
     private sealed class ThrowingMappedBulkBatchRepository : IBatchRepository<TwoModelBatchDbItem, Guid>
     {
+        private readonly IBatchRepository<TwoModelBatchDbItem, Guid> _inner;
+
+        public ThrowingMappedBulkBatchRepository(IBatchRepository<TwoModelBatchDbItem, Guid> inner)
+        {
+            _inner = inner;
+        }
+
         public Task<IReadOnlyList<TwoModelBatchDbItem>> CreateManyAsync(IReadOnlyList<TwoModelBatchDbItem> entities, CancellationToken ct = default)
             => throw new InvalidOperationException("Simulated bulk create failure");
 
@@ -1008,6 +1053,6 @@ public class TwoModelBatchOperationsTests : IAsyncLifetime
             => throw new InvalidOperationException("Simulated bulk delete failure");
 
         public Task<IReadOnlyDictionary<Guid, TwoModelBatchDbItem>> GetByIdsAsync(IReadOnlyList<Guid> ids, CancellationToken ct = default)
-            => throw new InvalidOperationException("Simulated bulk get-by-ids failure");
+            => _inner.GetByIdsAsync(ids, ct);
     }
 }

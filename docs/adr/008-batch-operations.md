@@ -19,12 +19,14 @@ request body rather than HTTP method.
 ### Action-aware authorization and rate limiting
 
 Authorization for the shared endpoint is evaluated after the envelope action is
-parsed. RestLib combines inherited endpoint/group authorization metadata with the
-configuration for the corresponding `BatchCreate`, `BatchUpdate`, `BatchPatch`,
-or `BatchDelete` operation, then delegates evaluation and challenge/forbid handling
-to ASP.NET Core's authorization services. An operation configured with
-`AllowAnonymous` bypasses inherited authorization in the same way as an ordinary
-anonymous endpoint.
+parsed and confirmed to be enabled. Disabled actions return the batch-action-not-enabled
+response without requiring authorization services or disclosing an authorization
+outcome for an unavailable operation. For enabled actions, RestLib combines inherited
+endpoint/group authorization metadata with the configuration for the corresponding
+`BatchCreate`, `BatchUpdate`, `BatchPatch`, or `BatchDelete` operation, then delegates
+evaluation and challenge/forbid handling to ASP.NET Core's authorization services. An
+operation configured with `AllowAnonymous` bypasses inherited authorization in the
+same way as an ordinary anonymous endpoint.
 
 ASP.NET Core rate-limit middleware runs before the handler parses the body, so it
 cannot select a named policy from the envelope action. Every action enabled on one
@@ -52,11 +54,12 @@ processing normally. No previously-persisted items are rolled back.
 
 **Bulk path** (`PersistBulkAsync`): All validated items are passed to a
 single bulk repository method (e.g. `CreateManyAsync`, `UpdateManyAsync`,
-`PatchManyAsync`, `DeleteManyAsync`). If the bulk method throws, RestLib
-falls back to the individual path for every item whose result slot is still
-empty (see "Bulk-to-individual fallback" below). Whether the bulk method
-itself is transactional depends entirely on the repository implementation —
-RestLib does not impose or assume any transactional guarantee.
+`PatchManyAsync`, `DeleteManyAsync`). If a bulk repository operation throws,
+RestLib does not retry any item because the operation may have partially or
+fully committed. Items that do not already have a validation or hook result
+receive a 500 result for the bulk failure. Whether the bulk method itself is
+transactional depends entirely on the repository implementation — RestLib
+does not impose or assume any transactional guarantee.
 
 Consumers who need all-or-nothing semantics should implement transactional
 logic inside their repository (e.g. wrapping bulk methods in a database
@@ -67,18 +70,24 @@ transaction that rolls back on failure).
 methods (`CreateManyAsync`, `UpdateManyAsync`, `PatchManyAsync`,
 `DeleteManyAsync`, `GetByIdsAsync`). When the repository implements it,
 RestLib uses the batch methods for better performance. Otherwise, it falls
-back to looping over `IRepository` methods. This avoids breaking existing
-repository implementations.
+back to looping over `IRepository` methods without first attempting a bulk
+operation. This avoids breaking existing repository implementations.
 
-### Bulk-to-individual fallback
+### Bulk failure handling
 
-When a `PersistBulkAsync` override throws, the base class catches the
-exception and retries via `PersistIndividuallyAsync`. Only items whose
-result slot is still `null` are retried — some subclasses (e.g.
-`BatchPatchPipeline`) may populate result slots during pre-validation
-inside `PersistBulkAsync` before the actual bulk call, so those items are
-not retried. This ensures every item receives a per-item result even when
-the bulk path fails, at the cost of falling back to N individual calls.
+Repository calls within `PersistBulkAsync` use an explicit bulk-persistence
+boundary. When one of those calls throws, the base class preserves any
+results already produced during validation or pre-persistence hooks and
+reports the original exception as a per-item failure for every unresolved
+item. It never retries through `PersistIndividuallyAsync`, because RestLib
+cannot know whether the failed operation committed none, some, or all of its
+work. Applications that can prove a retry is safe must initiate that retry
+according to their own repository and idempotency guarantees.
+
+Post-persistence processing runs outside the bulk-persistence boundary.
+After-persist hooks, model mapping, HATEOAS providers, and result construction
+can therefore fail after a successful repository call, but such a failure is
+not classified as a persistence failure and cannot trigger another write.
 
 ### Per-item hooks
 Hooks fire once per item with the standard `HookContext`, using batch-specific

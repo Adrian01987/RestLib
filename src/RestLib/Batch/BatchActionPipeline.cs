@@ -381,16 +381,16 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
     /// <summary>
     /// Persists all validated items using the bulk repository path.
     /// Subclasses override this to call the appropriate <c>XxxManyAsync</c> method.
-    /// The default implementation falls back to individual persistence.
+    /// Repository calls must use <see cref="BulkPersistenceExecutor"/> so failures
+    /// are distinguished from post-persistence processing failures.
     /// </summary>
     /// <param name="validItems">The validated items.</param>
     /// <param name="results">The results array to populate.</param>
     /// <param name="context">The batch context.</param>
-    protected virtual async Task PersistBulkAsync(
+    protected abstract Task PersistBulkAsync(
         List<TValidItem> validItems,
         BatchItemResult?[] results,
-        BatchContext<TEntity, TKey> context) =>
-            await PersistIndividuallyAsync(validItems, results, context);
+        BatchContext<TEntity, TKey> context);
 
     // ── Protected instance methods ──────────────────────────────────────
 
@@ -494,15 +494,11 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
         };
     }
 
-    private static bool IsConcurrencyException(Exception exception) =>
-        exception.GetType().FullName == "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException";
-
     // ── Private instance methods ────────────────────────────────────────
 
     /// <summary>
     /// Chooses the bulk or individual persistence path based on availability and configuration.
-    /// When the bulk path throws, falls back to individual persistence so that each item
-    /// receives its own per-item error result instead of all items being blamed for one failure.
+    /// A failed bulk repository operation is not retried because its persistence outcome is unknown.
     /// </summary>
     private async Task ExecuteAsync(
         List<TValidItem> validItems,
@@ -517,41 +513,27 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
             {
                 await PersistBulkAsync(validItems, results, context);
             }
-            catch (Exception bulkException)
+            catch (BulkPersistenceException bulkException)
             {
-                if (IsConcurrencyException(bulkException))
-                {
-                    var failedItems = validItems
-                        .Where(item => results[GetIndex(item)] is null)
-                        .ToList();
-
-                    foreach (var item in failedItems)
-                    {
-                        var index = GetIndex(item);
-                        results[index] = await HandleItemErrorAsync(
-                            index,
-                            bulkException,
-                            context,
-                            GetResourceId(item),
-                            GetEntity(item));
-                    }
-
-                    return;
-                }
-
-                // Bulk path failed — fall back to individual persistence for items that
-                // don't already have a result. Some subclasses (e.g. BatchPatchPipeline)
-                // may populate results during pre-validation inside PersistBulkAsync,
-                // so we only retry items whose result slot is still empty.
+                var persistenceException = bulkException.InnerException ?? bulkException;
                 var actionName = Operation.ToString().ToLowerInvariant();
-                RestLibLogMessages.BulkPersistenceFallback(
-                    context.Logger, actionName, validItems.Count, bulkException);
+                RestLibLogMessages.BulkPersistenceFailed(
+                    context.Logger, actionName, validItems.Count, persistenceException);
 
-                var remainingItems = validItems
+                var failedItems = validItems
                     .Where(item => results[GetIndex(item)] is null)
                     .ToList();
 
-                await PersistIndividuallyAsync(remainingItems, results, context);
+                foreach (var item in failedItems)
+                {
+                    var index = GetIndex(item);
+                    results[index] = await HandleItemErrorAsync(
+                        index,
+                        persistenceException,
+                        context,
+                        GetResourceId(item),
+                        GetEntity(item));
+                }
             }
         }
         else

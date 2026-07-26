@@ -97,7 +97,8 @@ internal sealed class BatchUpdatePipeline<TEntity, TKey>
         BatchContext<TEntity, TKey> context)
     {
         var entities = validItems.Select(v => v.Entity).ToList();
-        var updated = await context.BatchRepository!.UpdateManyAsync(entities, context.CancellationToken);
+        var updated = await BulkPersistenceExecutor.ExecuteAsync(
+            () => context.BatchRepository!.UpdateManyAsync(entities, context.CancellationToken));
 
         await ProcessBulkResultsAsync(validItems, updated, results, context);
     }

@@ -138,9 +138,13 @@ app.MapRestLib<Order, Guid>("/api/orders", cfg =>
     // Operation selection — orders are replace-only, no PATCH
     cfg.ExcludeOperations(RestLibOperation.Patch);
 
-    // Authorization — reads are public, writes require authentication (secure by default)
-    // BatchCreate is included so the batch endpoint is accessible without auth middleware in this demo
-    cfg.AllowAnonymous(RestLibOperation.GetAll, RestLibOperation.GetById, RestLibOperation.BatchCreate);
+    // Authorization — reads are public, writes require authentication (secure by default).
+    // Both enabled batch actions are anonymous so the demo and E2E cleanup work without auth middleware.
+    cfg.AllowAnonymous(
+        RestLibOperation.GetAll,
+        RestLibOperation.GetById,
+        RestLibOperation.BatchCreate,
+        RestLibOperation.BatchDelete);
 
     // Filtering — equality for status, string operators for email, comparison for total
     cfg.AllowFiltering(o => o.Status, [FilterOperator.Eq, FilterOperator.Neq, FilterOperator.In]);

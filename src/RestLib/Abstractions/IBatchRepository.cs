@@ -7,6 +7,10 @@ namespace RestLib.Abstractions;
 /// When implemented alongside <see cref="IRepository{TEntity, TKey}"/>,
 /// RestLib uses these methods for batch endpoints instead of looping
 /// over single-entity methods.
+/// RestLib makes no atomicity assumption about these operations. If an
+/// operation throws, RestLib reports the failure and does not retry through
+/// <see cref="IRepository{TEntity, TKey}"/> because some or all work may
+/// already have been committed.
 /// </summary>
 /// <typeparam name="TEntity">The entity type managed by this repository.</typeparam>
 /// <typeparam name="TKey">The type of the entity's primary key.</typeparam>

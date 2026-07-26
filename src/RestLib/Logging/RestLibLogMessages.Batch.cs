@@ -40,11 +40,11 @@ internal static partial class RestLibLogMessages
     // ──────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Logs that bulk persistence failed and the pipeline is falling back to individual persistence.
+    /// Logs that bulk persistence failed and individual retry was skipped because the outcome is unknown.
     /// </summary>
     [LoggerMessage(EventId = 1110, Level = LogLevel.Warning,
-        Message = "Bulk persistence failed, falling back to individual persistence (action: {Action}, item count: {ItemCount})")]
-    internal static partial void BulkPersistenceFallback(
+        Message = "Bulk persistence failed; individual retry skipped because the persistence outcome is unknown (action: {Action}, item count: {ItemCount})")]
+    internal static partial void BulkPersistenceFailed(
         ILogger logger, string action, int itemCount, Exception exception);
 
     /// <summary>

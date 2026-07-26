@@ -75,7 +75,8 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
         var itemsToPersist = validItems;
         {
             var ids = validItems.Select(v => v.Id).ToList();
-            var originals = await context.BatchRepository!.GetByIdsAsync(ids, context.CancellationToken);
+            var originals = await BulkPersistenceExecutor.ExecuteAsync(
+                () => context.BatchRepository!.GetByIdsAsync(ids, context.CancellationToken));
 
             itemsToPersist = new List<(int Index, TKey Id, JsonElement Body)>();
             foreach (var (index, id, body) in validItems)
@@ -147,7 +148,8 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
             var patches = itemsToPersist
                 .Select(v => (v.Id, v.Body))
                 .ToList();
-            var patched = await context.BatchRepository!.PatchManyAsync(patches, context.CancellationToken);
+            var patched = await BulkPersistenceExecutor.ExecuteAsync(
+                () => context.BatchRepository!.PatchManyAsync(patches, context.CancellationToken));
 
             await ProcessBulkResultsAsync(itemsToPersist, patched, results, context);
 

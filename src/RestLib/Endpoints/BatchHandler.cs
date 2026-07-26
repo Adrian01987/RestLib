@@ -80,17 +80,6 @@ internal static class BatchHandler
                     options: options);
             }
 
-            var batchOperation = action.ToRestLibOperation();
-            var authorizationResult = await BatchAuthorizationHelper.AuthorizeAsync(
-                httpContext,
-                config,
-                options,
-                batchOperation);
-            if (authorizationResult is not null)
-            {
-                return authorizationResult;
-            }
-
             // Verify action is enabled
             if (!config.IsBatchActionEnabled(action))
             {
@@ -103,6 +92,17 @@ internal static class BatchHandler
                     jsonOptions: jsonOptions,
                     logger: logger,
                     options: options);
+            }
+
+            var batchOperation = action.ToRestLibOperation();
+            var authorizationResult = await BatchAuthorizationHelper.AuthorizeAsync(
+                httpContext,
+                config,
+                options,
+                batchOperation);
+            if (authorizationResult is not null)
+            {
+                return authorizationResult;
             }
 
             // Validate items array exists
@@ -296,17 +296,6 @@ internal static class BatchHandler
                     options: options);
             }
 
-            var batchOperation = action.ToRestLibOperation();
-            var authorizationResult = await BatchAuthorizationHelper.AuthorizeAsync(
-                httpContext,
-                config,
-                options,
-                batchOperation);
-            if (authorizationResult is not null)
-            {
-                return authorizationResult;
-            }
-
             if (!config.IsBatchActionEnabled(action))
             {
                 var enabledActions = config.EnabledBatchActions
@@ -318,6 +307,17 @@ internal static class BatchHandler
                     jsonOptions: jsonOptions,
                     logger: logger,
                     options: options);
+            }
+
+            var batchOperation = action.ToRestLibOperation();
+            var authorizationResult = await BatchAuthorizationHelper.AuthorizeAsync(
+                httpContext,
+                config,
+                options,
+                batchOperation);
+            if (authorizationResult is not null)
+            {
+                return authorizationResult;
             }
 
             if (envelope.Items.ValueKind == JsonValueKind.Undefined
