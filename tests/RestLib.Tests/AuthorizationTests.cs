@@ -571,6 +571,33 @@ public class AuthorizationTests : IAsyncLifetime
         storedEntity.Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task BatchDelete_WhenAuthorizationServicesMissing_ThrowsHelpfulException()
+    {
+        // Arrange
+        await CreateHostAsync(
+            config => config.EnableBatch(BatchAction.Delete),
+            addAuthentication: false);
+        var id = Guid.NewGuid();
+        _repository!.Seed(new TestEntity { Id = id, Name = "Protected" });
+        var payload = new
+        {
+            action = "delete",
+            items = new[] { id }
+        };
+
+        // Act
+        var act = async () => await _client!.PostAsJsonAsync("/api/test-entities/batch", payload);
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage(
+                "Authorization services are required for the configured batch operation. " +
+                "Register them by calling AddAuthorization().");
+        var storedEntity = await _repository.GetByIdAsync(id);
+        storedEntity.Should().NotBeNull();
+    }
+
     [Theory]
     [InlineData("create", RestLibOperation.BatchCreate)]
     [InlineData("update", RestLibOperation.BatchUpdate)]
