@@ -477,6 +477,28 @@ public class AuthorizationTests : IAsyncLifetime
 
     #region Batch Authorization
 
+    [Fact]
+    public async Task BatchCreate_WhenAuthorizationRequiredByDefault_RequiresAuthentication()
+    {
+        // Arrange
+        await CreateHostAsync(config => config.EnableBatch());
+        var payload = new
+        {
+            action = "create",
+            items = new[] { new { name = "Batch" } }
+        };
+
+        // Act
+        var anonymousResponse = await _client!.PostAsJsonAsync("/api/test-entities/batch", payload);
+        _client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Test");
+        var authenticatedResponse = await _client.PostAsJsonAsync("/api/test-entities/batch", payload);
+
+        // Assert
+        anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        authenticatedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     [Theory]
     [InlineData("create", RestLibOperation.BatchCreate)]
     [InlineData("update", RestLibOperation.BatchUpdate)]
