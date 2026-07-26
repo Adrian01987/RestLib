@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Security.Claims;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -32,7 +33,8 @@ public class AuthorizationTests : IAsyncLifetime
     private async Task CreateHostAsync(
         Action<RestLibEndpointConfiguration<TestEntity, Guid>> configure,
         bool addAuthentication = true,
-        Action<RestLibOptions>? configureOptions = null)
+        Action<RestLibOptions>? configureOptions = null,
+        Action<AuthorizationOptions>? configureAuthorization = null)
     {
         _repository = new TestEntityRepository();
 
@@ -55,6 +57,7 @@ public class AuthorizationTests : IAsyncLifetime
                             policy.RequireClaim("role", "manager"));
                         options.AddPolicy("EditorOnly", policy =>
                             policy.RequireClaim("role", "editor"));
+                        configureAuthorization?.Invoke(options);
                     });
                 })
                 .WithMiddleware(app =>
@@ -482,6 +485,36 @@ public class AuthorizationTests : IAsyncLifetime
     {
         // Arrange
         await CreateHostAsync(config => config.EnableBatch());
+        var payload = new
+        {
+            action = "create",
+            items = new[] { new { name = "Batch" } }
+        };
+
+        // Act
+        var anonymousResponse = await _client!.PostAsJsonAsync("/api/test-entities/batch", payload);
+        _client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Test");
+        var authenticatedResponse = await _client.PostAsJsonAsync("/api/test-entities/batch", payload);
+
+        // Assert
+        anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        authenticatedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task BatchCreate_WhenFallbackPolicyRequiresAuthentication_EnforcesFallbackPolicy()
+    {
+        // Arrange
+        await CreateHostAsync(
+            config => config.EnableBatch(),
+            configureOptions: options => options.RequireAuthorizationByDefault = false,
+            configureAuthorization: options =>
+            {
+                options.FallbackPolicy = new AuthorizationPolicyBuilder()
+                    .RequireAuthenticatedUser()
+                    .Build();
+            });
         var payload = new
         {
             action = "create",
