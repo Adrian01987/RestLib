@@ -4,6 +4,8 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using RestLib.Abstractions;
@@ -210,6 +212,67 @@ public class TwoModelBatchOperationsTests : IAsyncLifetime
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         capturedEntity.Should().BeOfType<TwoModelBatchApiItem>();
+    }
+
+    [Fact]
+    public async Task MapRestLib_WithProtectedTwoModelBatchDelete_AuthorizesParsedAction()
+    {
+        // Arrange
+        var id = Guid.NewGuid();
+        _repository.Seed(new TwoModelBatchDbItem
+        {
+            Id = id,
+            Name = "Protected",
+            Price = 5m,
+            Category = "hardware",
+            IsActive = true,
+            InternalToken = "db-only"
+        });
+
+        (_host, _client) = await new TestTwoModelHostBuilder<TwoModelBatchApiItem, TwoModelBatchDbItem, Guid>(
+            _repository,
+            "/api/items")
+            .WithOptions(options => options.RequireAuthorizationByDefault = false)
+            .WithServices(services =>
+            {
+                services.AddRestLibMapper<TwoModelBatchApiItem, TwoModelBatchDbItem>(
+                    _ => new TwoModelBatchMapper());
+                services.AddAuthentication("Test")
+                    .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", _ => { });
+                services.AddAuthorization(options =>
+                    options.AddPolicy("AdminOnly", policy => policy.RequireClaim("role", "admin")));
+            })
+            .WithMiddleware(app =>
+            {
+                app.UseAuthentication();
+                app.UseAuthorization();
+            })
+            .WithEndpoint(config =>
+            {
+                config.EnableBatch(BatchAction.Delete);
+                config.RequirePolicy(RestLibOperation.BatchDelete, "AdminOnly");
+            })
+            .BuildAsync();
+        _client.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Test");
+        var payload = new
+        {
+            action = "delete",
+            items = new[] { id }
+        };
+
+        // Act
+        var forbiddenResponse = await _client.PostAsync("/api/items/batch", BatchJson(payload));
+        var entityAfterForbiddenRequest = await _repository.GetByIdAsync(id);
+        _client.DefaultRequestHeaders.Add("X-Test-Role", "admin");
+        var authorizedResponse = await _client.PostAsync("/api/items/batch", BatchJson(payload));
+        var entityAfterAuthorizedRequest = await _repository.GetByIdAsync(id);
+
+        // Assert
+        forbiddenResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        entityAfterForbiddenRequest.Should().NotBeNull();
+        authorizedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        entityAfterAuthorizedRequest.Should().BeNull();
     }
 
     [Fact]
