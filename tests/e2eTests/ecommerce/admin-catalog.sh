@@ -2,7 +2,8 @@
 # =============================================================================
 # admin-catalog.sh - E2E tests for the ecommerce admin catalog
 # =============================================================================
-# Tests: admin login, protected access, batch create, ETag patch, stale ETag.
+# Tests: protected access, action-aware batch authorization, admin login,
+# batch create/patch, ETag patch, stale ETag.
 # Resource used: admin v2 products.
 # =============================================================================
 
@@ -17,7 +18,14 @@ ADMIN_USER_NAME="${E2E_ADMIN_USER_NAME:-admin}"
 ADMIN_EMAIL="${E2E_ADMIN_EMAIL:-admin@example.com}"
 ADMIN_PASSWORD="${E2E_ADMIN_PASSWORD:-admin-password}"
 ADMIN_TOKEN=""
+ADMIN_CATALOG_RUN_ID="${E2E_ADMIN_CATALOG_RUN_ID:-$(date +%s)-$$}"
+CUSTOMER_USER_NAME="admin-catalog-customer-${ADMIN_CATALOG_RUN_ID}"
+CUSTOMER_EMAIL="${CUSTOMER_USER_NAME}@example.com"
+CUSTOMER_PASSWORD="customer-password"
+CUSTOMER_TOKEN=""
 ADMIN_PRODUCT_ID="30000000-0000-0000-0000-000000000001"
+ANONYMOUS_PRODUCT_ID="30000000-0000-0000-0000-000000000002"
+NON_ADMIN_PRODUCT_ID="30000000-0000-0000-0000-000000000003"
 ADMIN_PRODUCT_SKU="E2E-ADMIN-CATALOG"
 ECOMMERCE_ELECTRONICS_ID="10000000-0000-0000-0000-000000000001"
 
@@ -79,12 +87,52 @@ http_delete_admin() {
   http_request_with_headers DELETE "$1" "" "Authorization: Bearer ${ADMIN_TOKEN}"
 }
 
-cleanup_admin_product() {
+batch_create_product_payload() {
+  local id="$1"
+  local sku="$2"
+  local name="$3"
+
+  jq -n \
+    --arg id "$id" \
+    --arg category_id "$ECOMMERCE_ELECTRONICS_ID" \
+    --arg sku "$sku" \
+    --arg name "$name" \
+    --arg created_at "2026-01-01T00:00:00Z" \
+    '{
+      action: "create",
+      items: [
+        {
+          id: $id,
+          category_id: $category_id,
+          sku: $sku,
+          name: $name,
+          description: "Created by admin catalog E2E",
+          price: 42.50,
+          stock_on_hand: 6,
+          is_active: true,
+          created_at: $created_at
+        }
+      ]
+    }'
+}
+
+batch_patch_product_payload() {
+  local id="$1"
+
+  jq -n \
+    --arg id "$id" \
+    '{action: "patch", items: [{id: $id, body: {description: "Batch patched by admin"}}]}'
+}
+
+cleanup_admin_products() {
   if [ -n "${ADMIN_TOKEN}" ]; then
-    http_delete_admin "${ADMIN_PRODUCTS_URL}/${ADMIN_PRODUCT_ID}" >/dev/null 2>&1 || true
+    local product_id
+    for product_id in "$ADMIN_PRODUCT_ID" "$ANONYMOUS_PRODUCT_ID" "$NON_ADMIN_PRODUCT_ID"; do
+      http_delete_admin "${ADMIN_PRODUCTS_URL}/${product_id}" >/dev/null 2>&1 || true
+    done
   fi
 }
-trap cleanup_admin_product EXIT
+trap cleanup_admin_products EXIT
 
 # =============================================================================
 # TEST 1: Anonymous admin catalog access is rejected
@@ -96,7 +144,34 @@ test_anonymous_admin_access_rejected() {
 }
 
 # =============================================================================
-# TEST 2: Bootstrap or login admin
+# TEST 2: Anonymous batch create is rejected by authorization middleware
+# =============================================================================
+test_anonymous_batch_create_rejected() {
+  local payload
+  payload=$(batch_create_product_payload \
+    "$ANONYMOUS_PRODUCT_ID" \
+    "E2E-ANONYMOUS-BATCH-CREATE" \
+    "Anonymous Batch Create")
+
+  http_post "${ADMIN_PRODUCTS_URL}/batch" "$payload"
+
+  assert_http_status "401"                               || return 1
+}
+
+# =============================================================================
+# TEST 3: Anonymous batch patch is rejected by authorization middleware
+# =============================================================================
+test_anonymous_batch_patch_rejected() {
+  local payload
+  payload=$(batch_patch_product_payload "$ANONYMOUS_PRODUCT_ID")
+
+  http_post "${ADMIN_PRODUCTS_URL}/batch" "$payload"
+
+  assert_http_status "401"                               || return 1
+}
+
+# =============================================================================
+# TEST 4: Bootstrap or login admin
 # =============================================================================
 test_admin_login() {
   local bootstrap_body login_body
@@ -137,33 +212,41 @@ test_admin_login() {
 }
 
 # =============================================================================
-# TEST 3: Batch create product through admin catalog
+# TEST 5: An authenticated customer cannot use admin batch patch
+# =============================================================================
+test_customer_batch_patch_forbidden() {
+  local registration_payload patch_payload
+  registration_payload=$(jq -n \
+    --arg user_name "$CUSTOMER_USER_NAME" \
+    --arg email "$CUSTOMER_EMAIL" \
+    --arg password "$CUSTOMER_PASSWORD" \
+    '{user_name:$user_name,email:$email,password:$password}')
+
+  http_post "${BASE_URL}/auth/register-customer" "$registration_payload"
+  assert_http_status "201"                               || return 1
+
+  CUSTOMER_TOKEN=$(jq_val ".access_token")
+  assert_ne "customer token" "$CUSTOMER_TOKEN" "null"   || return 1
+  assert_ne "customer token" "$CUSTOMER_TOKEN" ""       || return 1
+
+  patch_payload=$(batch_patch_product_payload "$NON_ADMIN_PRODUCT_ID")
+  http_request_with_headers POST "${ADMIN_PRODUCTS_URL}/batch" "$patch_payload" \
+    "Authorization: Bearer ${CUSTOMER_TOKEN}"
+
+  assert_http_status "403"                               || return 1
+}
+
+# =============================================================================
+# TEST 6: Batch create product through admin catalog
 # =============================================================================
 test_batch_create_product() {
-  cleanup_admin_product
+  cleanup_admin_products
 
   local payload
-  payload=$(jq -n \
-    --arg id "$ADMIN_PRODUCT_ID" \
-    --arg category_id "$ECOMMERCE_ELECTRONICS_ID" \
-    --arg sku "$ADMIN_PRODUCT_SKU" \
-    --arg created_at "2026-01-01T00:00:00Z" \
-    '{
-      action: "create",
-      items: [
-        {
-          id: $id,
-          category_id: $category_id,
-          sku: $sku,
-          name: "E2E Admin Catalog Product",
-          description: "Created by admin catalog E2E",
-          price: 42.50,
-          stock_on_hand: 6,
-          is_active: true,
-          created_at: $created_at
-        }
-      ]
-    }')
+  payload=$(batch_create_product_payload \
+    "$ADMIN_PRODUCT_ID" \
+    "$ADMIN_PRODUCT_SKU" \
+    "E2E Admin Catalog Product")
 
   http_post_admin "${ADMIN_PRODUCTS_URL}/batch" "$payload"
 
@@ -175,7 +258,23 @@ test_batch_create_product() {
 }
 
 # =============================================================================
-# TEST 4: Admin field selection returns stock and nested category shape
+# TEST 7: Batch patch product through admin catalog
+# =============================================================================
+test_batch_patch_product() {
+  local payload
+  payload=$(batch_patch_product_payload "$ADMIN_PRODUCT_ID")
+
+  http_post_admin "${ADMIN_PRODUCTS_URL}/batch" "$payload"
+
+  assert_http_status "200"                               || return 1
+  assert_items_count "1"                                 || return 1
+  assert_item_status 0 "200"                             || return 1
+  assert_json_field ".items[0].entity.id" "$ADMIN_PRODUCT_ID" || return 1
+  assert_json_field ".items[0].entity.description" "Batch patched by admin" || return 1
+}
+
+# =============================================================================
+# TEST 8: Admin field selection returns stock and nested category shape
 # =============================================================================
 test_admin_nested_field_selection() {
   http_get_admin "${ADMIN_PRODUCTS_URL}?fields=id,stock_on_hand,category.name,category.slug&limit=1"
@@ -188,7 +287,7 @@ test_admin_nested_field_selection() {
 }
 
 # =============================================================================
-# TEST 5: PATCH with If-Match succeeds
+# TEST 9: PATCH with If-Match succeeds
 # =============================================================================
 test_patch_with_if_match() {
   http_get_admin "${ADMIN_PRODUCTS_URL}/${ADMIN_PRODUCT_ID}"
@@ -207,7 +306,7 @@ test_patch_with_if_match() {
 }
 
 # =============================================================================
-# TEST 6: Stale If-Match returns 412
+# TEST 10: Stale If-Match returns 412
 # =============================================================================
 test_stale_if_match_returns_412() {
   http_get_admin "${ADMIN_PRODUCTS_URL}/${ADMIN_PRODUCT_ID}"
@@ -229,7 +328,7 @@ test_stale_if_match_returns_412() {
 }
 
 # =============================================================================
-# TEST 7: Cleanup test product
+# TEST 11: Cleanup test product
 # =============================================================================
 test_cleanup_product() {
   http_delete_admin "${ADMIN_PRODUCTS_URL}/${ADMIN_PRODUCT_ID}"
@@ -249,8 +348,12 @@ test_cleanup_product() {
 # =============================================================================
 
 run_test "Anonymous Admin Access Rejected"                test_anonymous_admin_access_rejected
+run_test "Anonymous Batch Create Rejected"                test_anonymous_batch_create_rejected
+run_test "Anonymous Batch Patch Rejected"                 test_anonymous_batch_patch_rejected
 run_test "Bootstrap or Login Admin"                       test_admin_login
+run_test "Customer Batch Patch Forbidden"                 test_customer_batch_patch_forbidden
 run_test "Batch Create Product"                           test_batch_create_product
+run_test "Batch Patch Product"                            test_batch_patch_product
 run_test "Nested Admin Field Selection"                   test_admin_nested_field_selection
 run_test "PATCH with If-Match"                            test_patch_with_if_match
 run_test "Stale If-Match Returns 412"                     test_stale_if_match_returns_412
