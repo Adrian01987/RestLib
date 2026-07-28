@@ -62,6 +62,15 @@ public class EfCoreConcurrencyTests
 
         // Assert
         result.Should().BeNull();
+        product.ProductName.Should().Be("Original Product");
+        context.Entry(product).Property(entity => entity.ProductName).IsModified.Should().BeFalse();
+        context.Entry(product).State.Should().Be(EntityState.Unchanged);
+
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+        var persisted = await context.Products.FindAsync(product.Id);
+        persisted.Should().NotBeNull();
+        persisted!.ProductName.Should().Be("Original Product");
     }
 
     [Fact]

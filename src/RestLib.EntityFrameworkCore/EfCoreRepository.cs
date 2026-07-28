@@ -96,7 +96,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _jsonOptions = jsonOptions ?? throw new ArgumentNullException(nameof(jsonOptions));
-        _patchPropertyMap = BuildPatchPropertyMap(_jsonOptions);
+        _patchPropertyMap = BuildPatchPropertyMap(_context, _jsonOptions);
         _usesExplicitKeySelector = _options.KeySelector is not null;
         _keyMetadata = ResolveKeyMetadata();
         _keySelector = _keyMetadata.CompositeSelector;
@@ -398,20 +398,33 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         var keyPropertyNames = primaryKey.Properties
             .Select(property => property.Name)
             .ToHashSet(StringComparer.Ordinal);
+        var patchPlan = BuildPatchPlan(
+            existing,
+            patchDocument,
+            keyPropertyNames,
+            _options.PatchUnknownFieldBehavior,
+            new Dictionary<string, object?>(StringComparer.Ordinal));
+        var snapshots = new List<PatchPropertySnapshot>(patchPlan.Count);
 
         try
         {
-            ApplyPatch(entry, patchDocument, keyPropertyNames, _options.PatchUnknownFieldBehavior);
-
+            ApplyPatchPlan(entry, patchPlan, snapshots);
             await _context.SaveChangesAsync(ct);
         }
         catch (DbUpdateConcurrencyException)
         {
+            RestorePatchChanges(snapshots);
             return null;
         }
         catch (DbUpdateException ex)
         {
+            RestorePatchChanges(snapshots);
             throw ClassifyConstraintViolation(ex);
+        }
+        catch
+        {
+            RestorePatchChanges(snapshots);
+            throw;
         }
 
         return existing;
@@ -544,7 +557,9 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         var keyPropertyNames = GetPrimaryKey().Properties
             .Select(property => property.Name)
             .ToHashSet(StringComparer.Ordinal);
-        var results = new List<TEntity>(existingById.Count);
+        var patchPlans = new List<PatchPlan>(patches.Count);
+        var plannedValuesByEntity = new Dictionary<TEntity, Dictionary<string, object?>>(
+            ReferenceEqualityComparer.Instance);
 
         foreach (var (id, patchDocument) in patches)
         {
@@ -553,25 +568,47 @@ public class EfCoreRepository<TContext, TEntity, TKey>
                 continue;
             }
 
-            ApplyPatch(
-                _context.Entry(existing),
+            if (!plannedValuesByEntity.TryGetValue(existing, out var plannedValues))
+            {
+                plannedValues = new Dictionary<string, object?>(StringComparer.Ordinal);
+                plannedValuesByEntity.Add(existing, plannedValues);
+            }
+
+            var operations = BuildPatchPlan(
+                existing,
                 patchDocument,
                 keyPropertyNames,
-                _options.PatchUnknownFieldBehavior);
-            results.Add(existing);
+                _options.PatchUnknownFieldBehavior,
+                plannedValues);
+            patchPlans.Add(new PatchPlan(
+                _context.Entry(existing),
+                operations));
         }
 
+        var snapshots = new List<PatchPropertySnapshot>();
         try
         {
+            foreach (var patchPlan in patchPlans)
+            {
+                ApplyPatchPlan(patchPlan.Entry, patchPlan.Operations, snapshots);
+            }
+
             await _context.SaveChangesAsync(ct);
         }
         catch (DbUpdateConcurrencyException)
         {
+            RestorePatchChanges(snapshots);
             throw;
         }
         catch (DbUpdateException ex)
         {
+            RestorePatchChanges(snapshots);
             throw ClassifyConstraintViolation(ex);
+        }
+        catch
+        {
+            RestorePatchChanges(snapshots);
+            throw;
         }
 
         return patches
@@ -676,13 +713,21 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     }
 
     private static IReadOnlyDictionary<string, PropertyInfo> BuildPatchPropertyMap(
+        TContext context,
         JsonSerializerOptions jsonOptions)
     {
+        var entityType = context.Model.FindEntityType(typeof(TEntity))
+            ?? throw new InvalidOperationException(
+                $"Entity type '{typeof(TEntity).Name}' is not part of the EF Core model.");
         var map = new Dictionary<string, PropertyInfo>(StringComparer.OrdinalIgnoreCase);
-        foreach (var property in typeof(TEntity)
-                     .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                     .Where(property => property.CanWrite))
+        foreach (var mappedProperty in entityType.GetProperties())
         {
+            var property = mappedProperty.PropertyInfo;
+            if (property is null || !property.CanWrite || property.GetIndexParameters().Length > 0)
+            {
+                continue;
+            }
+
             map[property.Name] = property;
             map[JsonNamingPolicy.SnakeCaseLower.ConvertName(property.Name)] = property;
 
@@ -1269,12 +1314,14 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         return (IOrderedQueryable<TEntity>)genericMethod.Invoke(null, [source, keySelector])!;
     }
 
-    private void ApplyPatch(
-        EntityEntry<TEntity> entry,
+    private IReadOnlyList<PatchOperation> BuildPatchPlan(
+        TEntity entity,
         JsonElement patchDocument,
         IReadOnlySet<string> keyPropertyNames,
-        EfCorePatchUnknownFieldBehavior unknownFieldBehavior)
+        EfCorePatchUnknownFieldBehavior unknownFieldBehavior,
+        IDictionary<string, object?> plannedValues)
     {
+        var operations = new List<PatchOperation>();
         foreach (var patchProperty in patchDocument.EnumerateObject())
         {
             if (!_patchPropertyMap.TryGetValue(patchProperty.Name, out var propertyInfo))
@@ -1289,13 +1336,52 @@ public class EfCoreRepository<TContext, TEntity, TKey>
                 continue;
             }
 
+            var currentValue = plannedValues.TryGetValue(propertyInfo.Name, out var plannedValue)
+                ? plannedValue
+                : propertyInfo.GetValue(entity);
             var value = JsonMergePatch.Apply(
-                propertyInfo.GetValue(entry.Entity),
+                currentValue,
                 propertyInfo.PropertyType,
                 patchProperty.Value,
                 _jsonOptions);
 
-            entry.Property(propertyInfo.Name).CurrentValue = value;
+            operations.Add(new PatchOperation(propertyInfo, value));
+            plannedValues[propertyInfo.Name] = value;
+        }
+
+        return operations;
+    }
+
+    private void ApplyPatchPlan(
+        EntityEntry<TEntity> entry,
+        IReadOnlyList<PatchOperation> operations,
+        ICollection<PatchPropertySnapshot> snapshots)
+    {
+        foreach (var operation in operations)
+        {
+            if (!snapshots.Any(snapshot =>
+                    ReferenceEquals(snapshot.Entry.Entity, entry.Entity)
+                    && string.Equals(snapshot.PropertyName, operation.PropertyInfo.Name, StringComparison.Ordinal)))
+            {
+                var propertyEntry = entry.Property(operation.PropertyInfo.Name);
+                snapshots.Add(new PatchPropertySnapshot(
+                    entry,
+                    operation.PropertyInfo.Name,
+                    propertyEntry.CurrentValue,
+                    propertyEntry.IsModified));
+            }
+
+            entry.Property(operation.PropertyInfo.Name).CurrentValue = operation.Value;
+        }
+    }
+
+    private void RestorePatchChanges(IEnumerable<PatchPropertySnapshot> snapshots)
+    {
+        foreach (var snapshot in snapshots.Reverse())
+        {
+            var propertyEntry = snapshot.Entry.Property(snapshot.PropertyName);
+            propertyEntry.CurrentValue = snapshot.CurrentValue;
+            propertyEntry.IsModified = snapshot.IsModified;
         }
     }
 
@@ -1643,6 +1729,18 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     private sealed record KeysetSortPart(string PropertyName, SortDirection Direction, string QueryParameterName);
 
     private sealed record KeysetPlan(IReadOnlyList<KeysetPlanPart> Parts);
+
+    private sealed record PatchOperation(PropertyInfo PropertyInfo, object? Value);
+
+    private sealed record PatchPlan(
+        EntityEntry<TEntity> Entry,
+        IReadOnlyList<PatchOperation> Operations);
+
+    private sealed record PatchPropertySnapshot(
+        EntityEntry<TEntity> Entry,
+        string PropertyName,
+        object? CurrentValue,
+        bool IsModified);
 
     private sealed record KeyMetadata(
         Expression<Func<TEntity, TKey>> CompositeSelector,

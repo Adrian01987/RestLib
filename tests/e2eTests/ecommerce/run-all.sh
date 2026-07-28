@@ -29,7 +29,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-SAMPLE_PROJECT="samples/RestLib.Sample.Ecommerce/RestLib.Sample.Ecommerce.csproj"
+SAMPLE_DIR="samples/RestLib.Sample.Ecommerce"
+SAMPLE_PROJECT="${SAMPLE_DIR}/RestLib.Sample.Ecommerce.csproj"
+SAMPLE_ASSEMBLY="bin/Release/net10.0/RestLib.Sample.Ecommerce.dll"
 RESULTS_DIR="${SCRIPT_DIR}/../TestResults/ecommerce"
 BASE_URL="${BASE_URL:-http://localhost:5000}"
 SERVER_URL="${SERVER_URL:-$BASE_URL}"
@@ -183,24 +185,29 @@ build_sample() {
 }
 
 start_common_server() {
-  local timestamp db_file log_file
+  local timestamp db_file dotnet_db_file log_file
 
   header "Starting ecommerce sample app"
   mkdir -p "$RESULTS_DIR"
 
   timestamp=$(date +"%Y%m%d_%H%M%S")
   db_file="${RESULTS_DIR}/ecommerce-${timestamp}.db"
+  if command -v cygpath >/dev/null 2>&1; then
+    dotnet_db_file=$(cygpath -m "$db_file")
+  else
+    dotnet_db_file="$db_file"
+  fi
   log_file="${RESULTS_DIR}/server-${timestamp}.log"
 
   info "Launching normal-suite server on ${SERVER_URL}..."
   info "Server log: ${log_file}"
 
   (
-    cd "$REPO_ROOT"
-    ASPNETCORE_ENVIRONMENT=Development \
-    ConnectionStrings__Ecommerce="Data Source=${db_file}" \
-    RestLibSample__Payments__FakeExternalClient__LatencyMilliseconds=0 \
-      "$DOTNET_CMD" run --project "$SAMPLE_PROJECT" --configuration Release --no-build --urls "$SERVER_URL"
+    cd "${REPO_ROOT}/${SAMPLE_DIR}"
+    export ASPNETCORE_ENVIRONMENT=Development
+    export ConnectionStrings__Ecommerce="Data Source=${dotnet_db_file}"
+    export RestLibSample__Payments__FakeExternalClient__LatencyMilliseconds=0
+    exec "$DOTNET_CMD" "$SAMPLE_ASSEMBLY" --urls "$SERVER_URL"
   ) > "$log_file" 2>&1 &
 
   SERVER_PID=$!

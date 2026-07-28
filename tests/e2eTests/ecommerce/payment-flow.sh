@@ -27,7 +27,9 @@ PAYMENT_FAILURE_SERVER_URL="${PAYMENT_FAILURE_SERVER_URL:-$PAYMENT_FAILURE_BASE_
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-SAMPLE_PROJECT="samples/RestLib.Sample.Ecommerce/RestLib.Sample.Ecommerce.csproj"
+SAMPLE_DIR="samples/RestLib.Sample.Ecommerce"
+SAMPLE_PROJECT="${SAMPLE_DIR}/RestLib.Sample.Ecommerce.csproj"
+SAMPLE_ASSEMBLY="bin/Release/net10.0/RestLib.Sample.Ecommerce.dll"
 RESULTS_DIR="${SCRIPT_DIR}/../TestResults/ecommerce"
 
 source "${SCRIPT_DIR}/../e2e-lib.sh"
@@ -136,21 +138,26 @@ start_payment_server() {
   local server_url="$3"
   local failure_rate="$4"
   local log_variable="$5"
-  local timestamp db_file log_file pid
+  local timestamp db_file dotnet_db_file log_file pid
 
   timestamp=$(date +"%Y%m%d_%H%M%S")
   mkdir -p "$RESULTS_DIR"
   db_file="${RESULTS_DIR}/${label}-${timestamp}.db"
+  if command -v cygpath >/dev/null 2>&1; then
+    dotnet_db_file=$(cygpath -m "$db_file")
+  else
+    dotnet_db_file="$db_file"
+  fi
   log_file="${RESULTS_DIR}/${label}-${timestamp}.log"
 
   info "Starting ${label} ecommerce sample at ${server_url} (payment failure rate ${failure_rate})..."
   (
-    cd "$REPO_ROOT"
-    ASPNETCORE_ENVIRONMENT=Development \
-    ConnectionStrings__Ecommerce="Data Source=${db_file}" \
-    RestLibSample__Payments__FakeExternalClient__LatencyMilliseconds=0 \
-    RestLibSample__Payments__FakeExternalClient__FailureRate="${failure_rate}" \
-      "$DOTNET_CMD" run --project "$SAMPLE_PROJECT" --configuration Release --no-build --urls "$server_url"
+    cd "${REPO_ROOT}/${SAMPLE_DIR}"
+    export ASPNETCORE_ENVIRONMENT=Development
+    export ConnectionStrings__Ecommerce="Data Source=${dotnet_db_file}"
+    export RestLibSample__Payments__FakeExternalClient__LatencyMilliseconds=0
+    export RestLibSample__Payments__FakeExternalClient__FailureRate="${failure_rate}"
+    exec "$DOTNET_CMD" "$SAMPLE_ASSEMBLY" --urls "$server_url"
   ) > "$log_file" 2>&1 &
 
   pid=$!

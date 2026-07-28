@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using RestLib.EntityFrameworkCore.Tests.Fakes;
 using RestLib.Responses;
@@ -248,8 +249,8 @@ public class EfCoreStrictPatchTests : IAsyncLifetime
         // Arrange
         var patch = new
         {
-            unknown_field = "not allowed",
-            product_name = "Should Not Persist"
+            product_name = "Should Not Persist",
+            unknown_field = "not allowed"
         };
 
         // Act
@@ -276,8 +277,8 @@ public class EfCoreStrictPatchTests : IAsyncLifetime
         // Arrange
         var patch = new
         {
-            id = Guid.NewGuid(),
-            product_name = "Should Not Persist"
+            product_name = "Should Not Persist",
+            id = Guid.NewGuid()
         };
 
         // Act
@@ -296,5 +297,161 @@ public class EfCoreStrictPatchTests : IAsyncLifetime
         var persisted = await _db.Products.FindAsync(_product.Id);
         persisted.Should().NotBeNull();
         persisted!.ProductName.Should().Be(_product.ProductName);
+    }
+
+    [Fact]
+    public async Task PatchAsync_UnknownFieldAfterValidField_StrictMode_LeavesTrackedEntityUnchanged()
+    {
+        // Arrange
+        var originalName = _product.ProductName;
+        var repository = CreateStrictRepository<ProductEntity>();
+        using var patchDocument = JsonDocument.Parse(
+            """{"product_name":"Should Not Persist","unknown_field":"not allowed"}""");
+
+        // Act
+        var act = () => repository.PatchAsync(_product.Id, patchDocument.RootElement);
+
+        // Assert
+        var exception = await act.Should().ThrowAsync<EfCorePatchValidationException>();
+        exception.Which.Message.Should().Contain("unknown_field");
+
+        var entry = _db.Entry(_product);
+        entry.Entity.ProductName.Should().Be(originalName);
+        entry.Property(product => product.ProductName).IsModified.Should().BeFalse();
+        entry.State.Should().Be(EntityState.Unchanged);
+
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
+        var persisted = await _db.Products.FindAsync(_product.Id);
+        persisted.Should().NotBeNull();
+        persisted!.ProductName.Should().Be(originalName);
+    }
+
+    [Fact]
+    public async Task PatchAsync_InvalidMappedValueAfterValidField_LeavesTrackedEntityUnchanged()
+    {
+        // Arrange
+        var originalName = _product.ProductName;
+        var originalStockQuantity = _product.StockQuantity;
+        var repository = CreateStrictRepository<ProductEntity>();
+        using var patchDocument = JsonDocument.Parse(
+            """{"product_name":"Should Not Persist","stock_quantity":"not an integer"}""");
+
+        // Act
+        var act = () => repository.PatchAsync(_product.Id, patchDocument.RootElement);
+
+        // Assert
+        await act.Should().ThrowAsync<JsonException>();
+
+        var entry = _db.Entry(_product);
+        entry.Entity.ProductName.Should().Be(originalName);
+        entry.Entity.StockQuantity.Should().Be(originalStockQuantity);
+        entry.Property(product => product.ProductName).IsModified.Should().BeFalse();
+        entry.Property(product => product.StockQuantity).IsModified.Should().BeFalse();
+        entry.State.Should().Be(EntityState.Unchanged);
+    }
+
+    [Theory]
+    [InlineData(
+        "customer",
+        """{"order_number":"Should Not Persist","customer":{"name":"Not Patchable"}}""")]
+    [InlineData(
+        "display_status",
+        """{"order_number":"Should Not Persist","display_status":"Not Patchable"}""")]
+    public async Task PatchAsync_UnsupportedClrMember_StrictMode_ThrowsValidationAndLeavesTrackedEntityUnchanged(
+        string unsupportedMember,
+        string patchJson)
+    {
+        // Arrange
+        var customer = new OrderCustomerEntity
+        {
+            Id = Guid.NewGuid(),
+            Name = "Customer",
+            Email = "customer@example.com"
+        };
+        var order = new OrderEntity
+        {
+            Id = Guid.NewGuid(),
+            OrderNumber = "ORDER-001",
+            TotalAmount = 10m,
+            CustomerId = customer.Id,
+            Customer = customer,
+            DisplayStatus = "Original display"
+        };
+        _db.Orders.Add(order);
+        await _db.SaveChangesAsync();
+
+        var repository = CreateStrictRepository<OrderEntity>();
+        using var patchDocument = JsonDocument.Parse(patchJson);
+
+        // Act
+        var act = () => repository.PatchAsync(order.Id, patchDocument.RootElement);
+
+        // Assert
+        var exception = await act.Should().ThrowAsync<EfCorePatchValidationException>();
+        exception.Which.Message.Should().Contain(unsupportedMember);
+
+        var entry = _db.Entry(order);
+        entry.Entity.OrderNumber.Should().Be("ORDER-001");
+        entry.Property(entity => entity.OrderNumber).IsModified.Should().BeFalse();
+        entry.State.Should().Be(EntityState.Unchanged);
+    }
+
+    [Fact]
+    public async Task PatchAsync_UnsupportedClrMembers_PermissiveMode_IgnoresThemAndAppliesMappedFields()
+    {
+        // Arrange
+        var customer = new OrderCustomerEntity
+        {
+            Id = Guid.NewGuid(),
+            Name = "Customer",
+            Email = "customer@example.com"
+        };
+        var order = new OrderEntity
+        {
+            Id = Guid.NewGuid(),
+            OrderNumber = "ORDER-001",
+            TotalAmount = 10m,
+            CustomerId = customer.Id,
+            Customer = customer,
+            DisplayStatus = "Original display"
+        };
+        _db.Orders.Add(order);
+        await _db.SaveChangesAsync();
+
+        var options = new EfCoreRepositoryOptions<OrderEntity, Guid>
+        {
+            KeySelector = entity => entity.Id,
+            PatchUnknownFieldBehavior = EfCorePatchUnknownFieldBehavior.Permissive
+        };
+        var repository = new EfCoreRepository<TestDbContext, OrderEntity, Guid>(_db, options);
+        using var patchDocument = JsonDocument.Parse(
+            """
+            {
+              "order_number": "ORDER-002",
+              "customer": {"name": "Not Patchable"},
+              "display_status": "Not Patchable"
+            }
+            """);
+
+        // Act
+        var result = await repository.PatchAsync(order.Id, patchDocument.RootElement);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.OrderNumber.Should().Be("ORDER-002");
+        result.Customer.Should().BeSameAs(customer);
+        result.DisplayStatus.Should().Be("Original display");
+    }
+
+    private EfCoreRepository<TestDbContext, TEntity, Guid> CreateStrictRepository<TEntity>()
+        where TEntity : class
+    {
+        var options = new EfCoreRepositoryOptions<TEntity, Guid>
+        {
+            PatchUnknownFieldBehavior = EfCorePatchUnknownFieldBehavior.Strict
+        };
+
+        return new EfCoreRepository<TestDbContext, TEntity, Guid>(_db, options);
     }
 }

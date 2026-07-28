@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace RestLib.EntityFrameworkCore.Tests.Fakes;
 
@@ -217,4 +218,10 @@ public class OrderEntity
     /// Gets or sets the customer navigation.
     /// </summary>
     public OrderCustomerEntity? Customer { get; set; }
+
+    /// <summary>
+    /// Gets or sets a display-only value that is not persisted.
+    /// </summary>
+    [NotMapped]
+    public string? DisplayStatus { get; set; }
 }

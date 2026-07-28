@@ -372,6 +372,16 @@ public class EfCoreBatchTests : IAsyncLifetime
         var exception = await act.Should().ThrowAsync<EfCorePatchValidationException>();
         exception.Which.Message.Should().Contain("unknown_field");
 
+        var entry1 = _db.Entry(product1);
+        var entry2 = _db.Entry(product2);
+        entry1.Entity.ProductName.Should().Be("Original 1");
+        entry2.Entity.ProductName.Should().Be("Original 2");
+        entry1.Property(product => product.ProductName).IsModified.Should().BeFalse();
+        entry2.Property(product => product.ProductName).IsModified.Should().BeFalse();
+        entry1.State.Should().Be(EntityState.Unchanged);
+        entry2.State.Should().Be(EntityState.Unchanged);
+
+        await _db.SaveChangesAsync();
         _db.ChangeTracker.Clear();
         var persisted1 = await _db.Products.FindAsync(product1.Id);
         var persisted2 = await _db.Products.FindAsync(product2.Id);
@@ -479,6 +489,16 @@ public class EfCoreBatchTests : IAsyncLifetime
         // Assert
         await act.Should().ThrowAsync<DbUpdateConcurrencyException>();
 
+        var entry1 = context.Entry(product1);
+        var entry2 = context.Entry(product2);
+        entry1.Entity.ProductName.Should().Be("Original 1");
+        entry2.Entity.UnitPrice.Should().Be(20m);
+        entry1.Property(product => product.ProductName).IsModified.Should().BeFalse();
+        entry2.Property(product => product.UnitPrice).IsModified.Should().BeFalse();
+        entry1.State.Should().Be(EntityState.Unchanged);
+        entry2.State.Should().Be(EntityState.Unchanged);
+
+        await context.SaveChangesAsync();
         context.ChangeTracker.Clear();
         var persisted1 = await context.Products.FindAsync(product1.Id);
         var persisted2 = await context.Products.FindAsync(product2.Id);
