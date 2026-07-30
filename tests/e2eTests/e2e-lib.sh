@@ -86,6 +86,7 @@ _http_request() {
   local method="$1"
   local url="$2"
   local body="${3:-}"
+  local content_type="${4:-application/json}"
   local max_retries="${E2E_RETRY_ON_429:-5}"
   local retry_wait="${E2E_RETRY_WAIT:-8}"
   local attempt=0
@@ -97,7 +98,7 @@ _http_request() {
 
     local curl_args=(-s -g -D "$tmpheaders" -o "$tmpbody" -w "%{http_code}" -X "$method")
     if [ -n "$body" ]; then
-      curl_args+=(-H "Content-Type: application/json" -d "$body")
+      curl_args+=(-H "Content-Type: ${content_type}" -d "$body")
     fi
     curl_args+=("$url")
 
@@ -120,6 +121,7 @@ http_get()    { _http_request GET    "$1"; }
 http_post()   { _http_request POST   "$1" "$2"; }
 http_put()    { _http_request PUT    "$1" "$2"; }
 http_patch()  { _http_request PATCH  "$1" "$2"; }
+http_merge_patch() { _http_request PATCH "$1" "$2" "application/merge-patch+json"; }
 http_delete() { _http_request DELETE "$1"; }
 
 # http_get_with_headers — GET with extra headers (e.g., If-None-Match)

@@ -176,7 +176,39 @@ test_patch_product() {
 }
 
 # =============================================================================
-# TEST 9: Delete Not Allowed on Products (excluded operation)
+# TEST 9: JSON Merge Patch removes null members and persists untouched fields
+# =============================================================================
+test_json_merge_patch_product() {
+  if [ -z "$CREATED_PRODUCT_ID" ]; then
+    warn "Skipping: no product from Test 5"
+    SKIP_COUNT=$((SKIP_COUNT + 1))
+    return 0
+  fi
+
+  http_merge_patch "${BASE_URL}/api/products/${CREATED_PRODUCT_ID}" '{
+    "description": null,
+    "price": 123.45
+  }'
+
+  assert_http_status "200"                               || return 1
+  assert_json_field_null ".description"                  || return 1
+  assert_num_eq "price (merge patched)" "$(jq_val '.price')" "123.45" || return 1
+  assert_json_field ".name" "E2E Updated Widget"         || return 1
+  assert_json_field ".category_id" "${BOOKS_ID}"         || return 1
+  assert_json_field ".is_active" "true"                  || return 1
+
+  http_get "${BASE_URL}/api/products/${CREATED_PRODUCT_ID}"
+
+  assert_http_status "200"                               || return 1
+  assert_json_field_null ".description"                  || return 1
+  assert_num_eq "persisted price" "$(jq_val '.price')" "123.45" || return 1
+  assert_json_field ".name" "E2E Updated Widget"         || return 1
+  assert_json_field ".category_id" "${BOOKS_ID}"         || return 1
+  assert_json_field ".is_active" "true"                  || return 1
+}
+
+# =============================================================================
+# TEST 10: Delete Not Allowed on Products (excluded operation)
 # =============================================================================
 test_delete_product_not_allowed() {
   if [ -z "$CREATED_PRODUCT_ID" ]; then
@@ -192,7 +224,7 @@ test_delete_product_not_allowed() {
 }
 
 # =============================================================================
-# TEST 10: Patch Not Allowed on Orders (excluded operation)
+# TEST 11: Patch Not Allowed on Orders (excluded operation)
 # =============================================================================
 test_patch_order_not_allowed() {
   # Get a real order ID first
@@ -207,7 +239,7 @@ test_patch_order_not_allowed() {
 }
 
 # =============================================================================
-# TEST 11: Create with missing required field
+# TEST 12: Create with missing required field
 # =============================================================================
 test_create_missing_required_field() {
   # Product requires "name" (C# required keyword)
@@ -228,7 +260,7 @@ test_create_missing_required_field() {
 }
 
 # =============================================================================
-# TEST 12: Cleanup — delete test product via batch (since direct DELETE is 405)
+# TEST 13: Cleanup — delete test product via batch (since direct DELETE is 405)
 # =============================================================================
 test_cleanup_product() {
   if [ -z "$CREATED_PRODUCT_ID" ]; then
@@ -252,7 +284,7 @@ test_cleanup_product() {
 }
 
 # =============================================================================
-# TEST 13: Create returns Location header
+# TEST 14: Create returns Location header
 #   POST → 201 should include a Location header pointing to the new resource.
 #   Uses v2 Products (full CRUD, anonymous).
 # =============================================================================
@@ -293,7 +325,7 @@ test_create_returns_location_header() {
 }
 
 # =============================================================================
-# TEST 14: Delete happy path (204 No Content)
+# TEST 15: Delete happy path (204 No Content)
 #   v2 Products allows DELETE. Create a product, then delete it.
 # =============================================================================
 test_delete_happy_path() {
@@ -322,7 +354,7 @@ test_delete_happy_path() {
 }
 
 # =============================================================================
-# TEST 15: Customer DTO hides persistence-only fields
+# TEST 16: Customer DTO hides persistence-only fields
 # =============================================================================
 test_getall_customers_hides_created_at() {
   http_get "${BASE_URL}/api/customers"
@@ -346,6 +378,7 @@ run_test "Create Product"                                 test_create_product
 run_test "GetById Created Product"                        test_getbyid_created_product
 run_test "Update Product (PUT)"                           test_update_product
 run_test "Patch Product (partial update)"                 test_patch_product
+run_test "JSON Merge Patch Product"                       test_json_merge_patch_product
 run_test "Delete Not Allowed on Products"                 test_delete_product_not_allowed
 run_test "Patch Not Allowed on Orders"                    test_patch_order_not_allowed
 run_test "Create with Missing Required Field"             test_create_missing_required_field
