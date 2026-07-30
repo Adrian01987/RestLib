@@ -14,6 +14,7 @@
   },
   "Sorting": ["Price", "Name", "CreatedAt"],
   "DefaultSort": "name:asc",
+  "Search": ["Name", "Description"],
   "FieldSelection": ["Id", "Name", "Price", "CategoryId", "IsActive"],
   "Batch": {
     "Actions": ["Create", "Patch", "Delete"]

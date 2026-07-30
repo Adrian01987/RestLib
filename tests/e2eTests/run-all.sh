@@ -137,6 +137,7 @@ ALL_SUITES=(
   "pagination-tests.sh"
   "filtering-tests.sh"
   "filter-operator-tests.sh"
+  "search-tests.sh"
   "sorting-tests.sh"
   "field-selection-tests.sh"
   "error-handling-tests.sh"
