@@ -1,0 +1,45 @@
+{
+  "$schema": "../../../schemas/restlib-resource.schema.json",
+  "EntityType": "RestLib.Sample.Models.CustomerDirectoryEntry, RestLib.Sample",
+  "Name": "customer-directory",
+  "Route": "/api/customer-directory",
+  "KeyProperty": "Email",
+  "AllowAnonymousAll": true,
+  "Mapping": {
+    "DbType": "RestLib.Sample.Models.Customer, RestLib.Sample",
+    "Mapper": "CustomerDirectoryMapper"
+  },
+  "Sorting": ["Email", "Name"],
+  "DefaultSort": "email:asc",
+  "FieldSelection": ["Email", "Name", "City", "IsActive"],
+  "Batch": {
+    "Actions": ["Create", "Update", "Patch", "Delete"]
+  },
+  "OpenApi": {
+    "Tag": "Customer Directory",
+    "TagDescription": "Demonstrates an email route key mapped to an EF entity with a separate primary key",
+    "Summaries": {
+      "GetAll": "List customer directory entries",
+      "GetById": "Get a directory entry by public email key",
+      "Create": "Create a directory entry",
+      "Update": "Replace a directory entry by public email key",
+      "Patch": "Patch a directory entry by public email key",
+      "Delete": "Delete a directory entry by public email key"
+    }
+  },
+  "Validation": {
+    "Email": {
+      "Required": true,
+      "Email": true,
+      "Length": {
+        "Max": 200
+      }
+    },
+    "Name": {
+      "Required": true,
+      "Length": {
+        "Max": 100
+      }
+    }
+  }
+}

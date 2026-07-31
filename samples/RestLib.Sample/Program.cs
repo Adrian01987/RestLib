@@ -34,7 +34,10 @@ builder.Services.AddRestLibInMemoryWithData(o => o.Id, Guid.NewGuid, SeedData.Ge
 builder.Services.AddDbContext<SampleDbContext>(options =>
     options.UseSqlite("Data Source=restlib-sample.db"));
 builder.Services.AddRestLibEfCore<SampleDbContext, Customer, Guid>();
+builder.Services.AddRestLibEfCore<SampleDbContext, Customer, string>(options =>
+    options.KeySelector = customer => customer.Email);
 builder.Services.AddRestLibMapper<CustomerDto, Customer, CustomerMapper>();
+builder.Services.AddRestLibMapper<CustomerDirectoryEntry, Customer, CustomerDirectoryMapper>();
 
 builder.Services.AddNamedHook<Product, Guid>(HookNames.SetUpdatedAt, ctx =>
 {
