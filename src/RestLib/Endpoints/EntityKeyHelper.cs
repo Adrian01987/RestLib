@@ -156,6 +156,37 @@ internal static class EntityKeyHelper
     }
 
     /// <summary>
+    /// Resolves the CLR properties that constitute the externally visible resource key.
+    /// </summary>
+    /// <typeparam name="TEntity">The entity type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="keyRouteParts">The configured key-route parts.</param>
+    /// <returns>The ordered key-property names that could be resolved.</returns>
+    internal static IReadOnlyList<string> GetEntityKeyPropertyNames<TEntity, TKey>(
+        IReadOnlyList<RestLibKeyRoutePart<TKey>> keyRouteParts)
+        where TEntity : class
+        where TKey : notnull
+    {
+        ArgumentNullException.ThrowIfNull(keyRouteParts);
+
+        if (keyRouteParts.Count > 1)
+        {
+            return keyRouteParts
+                .Select(part => part.PropertyName)
+                .Where(propertyName => !string.IsNullOrWhiteSpace(propertyName))
+                .ToArray();
+        }
+
+        var preferredPropertyName = keyRouteParts.FirstOrDefault()?.PropertyName;
+        var property = ResolveKeyProperty(
+            typeof(TEntity),
+            typeof(TKey),
+            preferredPropertyName);
+
+        return property is null ? [] : [property.Name];
+    }
+
+    /// <summary>
     /// Formats a key for logs and problem details using configured route-part metadata.
     /// </summary>
     /// <typeparam name="TKey">The key type.</typeparam>
@@ -209,6 +240,15 @@ internal static class EntityKeyHelper
         Type keyType,
         string? preferredPropertyName)
     {
+        var property = ResolveKeyProperty(entityType, keyType, preferredPropertyName);
+        return property?.CanWrite == true ? property : null;
+    }
+
+    private static PropertyInfo? ResolveKeyProperty(
+        Type entityType,
+        Type keyType,
+        string? preferredPropertyName)
+    {
         if (!string.IsNullOrWhiteSpace(preferredPropertyName))
         {
             var preferredProperty = entityType.GetProperty(
@@ -220,19 +260,17 @@ internal static class EntityKeyHelper
                 return null;
             }
 
-            return preferredProperty.CanWrite && preferredProperty.PropertyType == keyType
-                ? preferredProperty
-                : null;
+            return preferredProperty.PropertyType == keyType ? preferredProperty : null;
         }
 
         var idProperty = entityType.GetProperty("Id", BindingFlags.Public | BindingFlags.Instance);
-        if (idProperty is not null && idProperty.CanWrite && idProperty.PropertyType == keyType)
+        if (idProperty is not null && idProperty.PropertyType == keyType)
         {
             return idProperty;
         }
 
         var candidates = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(property => property.CanWrite && property.PropertyType == keyType)
+            .Where(property => property.CanRead && property.PropertyType == keyType)
             .ToArray();
 
         return candidates.Length == 1 ? candidates[0] : null;

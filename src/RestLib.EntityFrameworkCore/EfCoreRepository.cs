@@ -367,7 +367,9 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         try
         {
             CopyPrimaryKeyValues(existing, entity);
-            _context.Entry(existing).CurrentValues.SetValues(entity);
+            var entry = _context.Entry(existing);
+            entry.CurrentValues.SetValues(entity);
+            SetResourceKeyValues(entry, id);
             await _context.SaveChangesAsync(ct);
         }
         catch (DbUpdateConcurrencyException)
@@ -398,6 +400,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         var keyPropertyNames = primaryKey.Properties
             .Select(property => property.Name)
             .ToHashSet(StringComparer.Ordinal);
+        keyPropertyNames.UnionWith(GetKeyPropertyNames());
         var patchPlan = BuildPatchPlan(
             existing,
             patchDocument,
@@ -557,6 +560,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         var keyPropertyNames = GetPrimaryKey().Properties
             .Select(property => property.Name)
             .ToHashSet(StringComparer.Ordinal);
+        keyPropertyNames.UnionWith(GetKeyPropertyNames());
         var patchPlans = new List<PatchPlan>(patches.Count);
         var plannedValuesByEntity = new Dictionary<TEntity, Dictionary<string, object?>>(
             ReferenceEqualityComparer.Instance);
@@ -1332,8 +1336,8 @@ public class EfCoreRepository<TContext, TEntity, TKey>
 
             if (keyPropertyNames.Contains(propertyInfo.Name))
             {
-                ThrowIfStrictUnknownField(unknownFieldBehavior, patchProperty.Name, "forbidden");
-                continue;
+                throw new EfCorePatchValidationException(
+                    $"PATCH cannot modify immutable resource key field '{patchProperty.Name}'.");
             }
 
             var currentValue = plannedValues.TryGetValue(propertyInfo.Name, out var plannedValue)
@@ -1440,6 +1444,14 @@ public class EfCoreRepository<TContext, TEntity, TKey>
 
             var keyValue = keyProperty.PropertyInfo.GetValue(source);
             keyProperty.PropertyInfo.SetValue(target, keyValue);
+        }
+    }
+
+    private void SetResourceKeyValues(EntityEntry<TEntity> entry, TKey key)
+    {
+        foreach (var keyPart in _keyMetadata.KeyParts)
+        {
+            entry.Property(keyPart.PropertyName).CurrentValue = keyPart.GetKeyValue(key);
         }
     }
 

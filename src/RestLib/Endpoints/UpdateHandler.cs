@@ -75,6 +75,7 @@ internal static class UpdateHandler
                 var onValidatedResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
                 if (onValidatedResult is not null) return onValidatedResult;
                 if (hookContext is not null) entity = hookContext.Entity ?? entity;
+                _ = EntityKeyHelper.TrySetEntityKeyParts(entity, id, config.KeyRouteParts);
 
                 // Check for ETag precondition (If-Match header)
                 var (etagEntity, etagError) = await ETagHelper.CheckIfMatchPreconditionAsync(
@@ -98,6 +99,7 @@ internal static class UpdateHandler
                 var beforePersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
                 if (beforePersistResult is not null) return beforePersistResult;
                 if (hookContext is not null) entity = hookContext.Entity ?? entity;
+                _ = EntityKeyHelper.TrySetEntityKeyParts(entity, id, config.KeyRouteParts);
 
                 var updated = await repository.UpdateAsync(id, entity, ct);
 
@@ -117,6 +119,7 @@ internal static class UpdateHandler
                 if (hookContext is not null) hookContext.Entity = updated;
                 var afterPersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
                 if (afterPersistResult is not null) return afterPersistResult;
+                _ = EntityKeyHelper.TrySetEntityKeyParts(updated, id, config.KeyRouteParts);
 
                 // Add ETag header when enabled
                 if (options.EnableETagSupport)
@@ -128,6 +131,7 @@ internal static class UpdateHandler
                 // BeforeResponse hook
                 var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
                 if (beforeResponseResult is not null) return beforeResponseResult;
+                _ = EntityKeyHelper.TrySetEntityKeyParts(updated, id, config.KeyRouteParts);
 
                 // Inject HATEOAS links into updated entity response
                 if (options.EnableHateoas)
@@ -456,6 +460,8 @@ internal static class UpdateHandler
             }
         }
 
+        _ = EntityKeyHelper.TrySetEntityKeyParts(updatedApi, id, config.KeyRouteParts);
+
         if (options.EnableETagSupport)
         {
             var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
@@ -484,6 +490,8 @@ internal static class UpdateHandler
                 updatedApi = (TApiModel)(object)(hookContext.Entity ?? (THookModel)(object)updatedApi);
             }
         }
+
+        _ = EntityKeyHelper.TrySetEntityKeyParts(updatedApi, id, config.KeyRouteParts);
 
         if (options.EnableHateoas)
         {

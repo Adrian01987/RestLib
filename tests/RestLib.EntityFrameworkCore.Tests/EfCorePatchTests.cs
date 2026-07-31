@@ -176,14 +176,12 @@ public class EfCorePatchTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Patch_UnknownAndKeyFields_DefaultPermissive_IgnoresThem()
+    public async Task Patch_UnknownField_DefaultPermissive_IgnoresIt()
     {
         // Arrange
         var original = _seededProducts[0];
-        var originalId = original.Id;
         var patch = new
         {
-            id = Guid.NewGuid(),
             unknown_field = "ignored",
             product_name = "Permissive Patch"
         };
@@ -196,8 +194,39 @@ public class EfCorePatchTests : IAsyncLifetime
 
         var patched = await DeserializeProductAsync(response);
         patched.Should().NotBeNull();
-        patched!.Id.Should().Be(originalId);
+        patched!.Id.Should().Be(original.Id);
         patched.ProductName.Should().Be("Permissive Patch");
+    }
+
+    [Fact]
+    public async Task Patch_KeyField_DefaultPermissive_Returns400AndDoesNotPersist()
+    {
+        // Arrange
+        var original = _seededProducts[0];
+        var patch = new
+        {
+            id = Guid.NewGuid(),
+            product_name = "Should Not Persist"
+        };
+
+        // Act
+        var response = await _client.PatchAsJsonAsync($"/api/products/{original.Id}", patch);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var problem = JsonSerializer.Deserialize<RestLibProblemDetails>(
+            await response.Content.ReadAsStringAsync(),
+            JsonOptions);
+        problem.Should().NotBeNull();
+        problem!.Type.Should().Be(ProblemTypes.BadRequest);
+        problem.Detail.Should().Contain("id");
+
+        var persisted = await _client.GetFromJsonAsync<ProductEntity>(
+            $"/api/products/{original.Id}",
+            JsonOptions);
+        persisted.Should().NotBeNull();
+        persisted!.Id.Should().Be(original.Id);
+        persisted.ProductName.Should().Be(original.ProductName);
     }
 
     private static async Task<ProductEntity?> DeserializeProductAsync(HttpResponseMessage response)

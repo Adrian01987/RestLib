@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using RestLib.Abstractions;
 using RestLib.Filtering;
 using RestLib.Internal;
@@ -138,6 +139,7 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     public Task<TEntity?> UpdateAsync(TKey id, TEntity entity, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(entity);
+        TEntity? normalizedEntity = null;
 
         // Use TryGetValue + TryUpdate in a loop to avoid the TOCTOU race between
         // ContainsKey and the subsequent indexer write. If a concurrent thread
@@ -150,9 +152,10 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
                 return Task.FromResult<TEntity?>(null);
             }
 
-            if (_store.TryUpdate(id, entity, existing))
+            normalizedEntity ??= NormalizeEntityKey(entity, id);
+            if (_store.TryUpdate(id, normalizedEntity, existing))
             {
-                return Task.FromResult<TEntity?>(entity);
+                return Task.FromResult<TEntity?>(normalizedEntity);
             }
 
             // Another thread changed the value — retry to verify the key still exists.
@@ -162,6 +165,8 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     /// <inheritdoc />
     public Task<TEntity?> PatchAsync(TKey id, JsonElement patchDocument, CancellationToken cancellationToken = default)
     {
+        ThrowIfPatchModifiesKey(patchDocument);
+
         // Use TryGetValue + TryUpdate in a loop to prevent lost-update races.
         // If a concurrent thread modifies the entity between our read and write,
         // TryUpdate detects the stale comparison value and we retry with the
@@ -290,6 +295,8 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
         var results = new List<TEntity>(patches.Count);
         foreach (var (id, patchDocument) in patches)
         {
+            ThrowIfPatchModifiesKey(patchDocument);
+
             // Use TryGetValue + TryUpdate in a loop to prevent lost-update races.
             while (true)
             {
@@ -672,11 +679,60 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
         {
             var keyJson = JsonSerializer.Serialize(key, _jsonOptions);
             using var keyDoc = JsonDocument.Parse(keyJson);
-            dict[keyPropertyName] = keyDoc.RootElement.Clone();
+            var property = typeof(TEntity).GetProperty(
+                keyPropertyName,
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+            var jsonPropertyName = property?.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name
+                ?? _jsonOptions.PropertyNamingPolicy?.ConvertName(keyPropertyName)
+                ?? keyPropertyName;
+            dict[jsonPropertyName] = keyDoc.RootElement.Clone();
         }
 
         var mergedJson = JsonSerializer.Serialize(dict, _jsonOptions);
         return JsonSerializer.Deserialize<TEntity>(mergedJson, _jsonOptions)!;
+    }
+
+    private TEntity NormalizeEntityKey(TEntity entity, TKey key)
+    {
+        var normalized = SetKeyOnEntity(entity, key);
+        if (!EqualityComparer<TKey>.Default.Equals(_keySelector(normalized), key))
+        {
+            throw new InvalidOperationException(
+                $"The configured resource key for '{typeof(TEntity).Name}' could not be set to '{key}'.");
+        }
+
+        return normalized;
+    }
+
+    private void ThrowIfPatchModifiesKey(JsonElement patchDocument)
+    {
+        if (patchDocument.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        var keyPropertyName = FindKeyPropertyName();
+        if (keyPropertyName is null)
+        {
+            return;
+        }
+
+        var property = typeof(TEntity).GetProperty(
+            keyPropertyName,
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+        var jsonPropertyName = property?.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name
+            ?? _jsonOptions.PropertyNamingPolicy?.ConvertName(keyPropertyName)
+            ?? keyPropertyName;
+
+        foreach (var patchProperty in patchDocument.EnumerateObject())
+        {
+            if (string.Equals(patchProperty.Name, keyPropertyName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(patchProperty.Name, jsonPropertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"PATCH cannot modify immutable resource key field '{patchProperty.Name}'.");
+            }
+        }
     }
 
     private PropertyInfo? GetCachedKeyProperty()

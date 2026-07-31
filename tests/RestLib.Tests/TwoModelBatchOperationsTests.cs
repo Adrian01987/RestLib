@@ -651,7 +651,18 @@ public class TwoModelBatchOperationsTests : IAsyncLifetime
             action = "update",
             items = new object[]
             {
-                new { id, body = new { name = "Updated", price = 20m, category = "hardware", is_active = true } }
+                new
+                {
+                    id,
+                    body = new
+                    {
+                        code = Guid.NewGuid(),
+                        name = "Updated",
+                        price = 20m,
+                        category = "hardware",
+                        is_active = true
+                    }
+                }
             }
         };
 
@@ -685,6 +696,30 @@ public class TwoModelBatchOperationsTests : IAsyncLifetime
         patched.Should().NotBeNull();
         patched!.Code.Should().Be(id);
         patched.Price.Should().Be(30m);
+
+        var keyPatchPayload = new
+        {
+            action = "patch",
+            items = new object[]
+            {
+                new { id, body = new { code = Guid.NewGuid(), price = 40m } }
+            }
+        };
+
+        // Act
+        var keyPatchResponse = await _client.PostAsync("/api/items/batch", BatchJson(keyPatchPayload));
+
+        // Assert
+        keyPatchResponse.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+        var keyPatchJson = await keyPatchResponse.Content.ReadFromJsonAsync<JsonElement>();
+        keyPatchJson.GetProperty("items")[0].GetProperty("status").GetInt32().Should().Be(400);
+        keyPatchJson.GetProperty("items")[0].GetProperty("error").GetProperty("detail").GetString()
+            .Should().Contain("code");
+        batchSpy.UpdateManyCallCount.Should().Be(2);
+        var unchanged = await repository.GetByIdAsync(id);
+        unchanged.Should().NotBeNull();
+        unchanged!.Code.Should().Be(id);
+        unchanged.Price.Should().Be(30m);
     }
 
     private static StringContent BatchJson(object payload)

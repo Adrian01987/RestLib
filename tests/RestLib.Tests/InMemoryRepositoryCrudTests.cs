@@ -133,6 +133,27 @@ public partial class InMemoryRepositoryTests
     }
 
     [Fact]
+    public async Task UpdateAsync_BodyKeyDiffersFromRouteKey_PreservesRouteIdentity()
+    {
+        // Arrange
+        var repository = CreateRepository();
+        var entity = CreateEntity("Original", 100);
+        await repository.CreateAsync(entity);
+        var bodyKey = Guid.NewGuid();
+        var replacement = entity with { Id = bodyKey, Name = "Updated" };
+
+        // Act
+        var result = await repository.UpdateAsync(entity.Id, replacement);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Id.Should().Be(entity.Id);
+        result.Name.Should().Be("Updated");
+        (await repository.GetByIdAsync(entity.Id)).Should().BeEquivalentTo(result);
+        (await repository.GetByIdAsync(bodyKey)).Should().BeNull();
+    }
+
+    [Fact]
     public async Task UpdateAsync_WithNonExistingId_ReturnsNull()
     {
         // Arrange

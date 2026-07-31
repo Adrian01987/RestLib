@@ -34,6 +34,18 @@ internal sealed class MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>
             return (BadRequestResult(index, $"Item at index {index} could not be deserialized.", context.HttpContext.Request.Path), default);
         }
 
+        if (PatchHelper.TryGetPatchedKeyProperty<TApiModel, TKey>(
+            item.Body,
+            context.EndpointConfig.KeyRouteParts,
+            context.JsonOptions,
+            out var patchedKeyProperty))
+        {
+            return (BadRequestResult(
+                index,
+                PatchHelper.KeyModificationError(patchedKeyProperty!),
+                context.HttpContext.Request.Path), default);
+        }
+
         var existingDb = await context.Repository.GetByIdAsync(item.Id, context.CancellationToken);
         if (existingDb is null)
         {

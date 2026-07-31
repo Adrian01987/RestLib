@@ -41,6 +41,20 @@ internal static class PatchHandler
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
             var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.Patch");
 
+            if (PatchHelper.TryGetPatchedKeyProperty<TEntity, TKey>(
+                patchDocument,
+                config.KeyRouteParts,
+                jsonOptions,
+                out var patchedKeyProperty))
+            {
+                return Responses.ProblemDetailsResult.BadRequest(
+                    PatchHelper.KeyModificationError(patchedKeyProperty!),
+                    httpContext.Request.Path,
+                    jsonOptions,
+                    logger,
+                    options);
+            }
+
             RestLibLogMessages.PatchRequestReceived(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
             // Initialize hook pipeline and run OnRequestReceived
@@ -116,6 +130,11 @@ internal static class PatchHandler
                 var beforePersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
                 if (beforePersistResult is not null) return beforePersistResult;
 
+                if (originalEntity is not null)
+                {
+                    _ = EntityKeyHelper.TrySetEntityKeyParts(originalEntity, id, config.KeyRouteParts);
+                }
+
                 var patched = await repository.PatchAsync(id, patchDocument, ct);
 
                 if (patched is null)
@@ -134,6 +153,7 @@ internal static class PatchHandler
                 if (hookContext is not null) hookContext.Entity = patched;
                 var afterPersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
                 if (afterPersistResult is not null) return afterPersistResult;
+                _ = EntityKeyHelper.TrySetEntityKeyParts(patched, id, config.KeyRouteParts);
 
                 // Add ETag header when enabled
                 if (options.EnableETagSupport)
@@ -145,6 +165,7 @@ internal static class PatchHandler
                 // BeforeResponse hook
                 var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
                 if (beforeResponseResult is not null) return beforeResponseResult;
+                _ = EntityKeyHelper.TrySetEntityKeyParts(patched, id, config.KeyRouteParts);
 
                 // Inject HATEOAS links into patched entity response
                 if (options.EnableHateoas)
@@ -209,6 +230,20 @@ internal static class PatchHandler
                 config.MapperName,
                 config.UseAutoMapper,
                 config.ResourceName);
+
+            if (PatchHelper.TryGetPatchedKeyProperty<TApiModel, TKey>(
+                patchDocument,
+                config.KeyRouteParts,
+                jsonOptions,
+                out var patchedKeyProperty))
+            {
+                return Responses.ProblemDetailsResult.BadRequest(
+                    PatchHelper.KeyModificationError(patchedKeyProperty!),
+                    httpContext.Request.Path,
+                    jsonOptions,
+                    logger,
+                    options);
+            }
 
             RestLibLogMessages.PatchRequestReceived(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
@@ -536,6 +571,8 @@ internal static class PatchHandler
             }
         }
 
+        _ = EntityKeyHelper.TrySetEntityKeyParts(updatedApi, id, config.KeyRouteParts);
+
         if (options.EnableETagSupport)
         {
             var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
@@ -564,6 +601,8 @@ internal static class PatchHandler
                 updatedApi = (TApiModel)(object)(hookContext.Entity ?? (THookModel)(object)updatedApi);
             }
         }
+
+        _ = EntityKeyHelper.TrySetEntityKeyParts(updatedApi, id, config.KeyRouteParts);
 
         if (options.EnableHateoas)
         {

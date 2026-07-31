@@ -62,6 +62,25 @@ public partial class InMemoryRepositoryTests
     }
 
     [Fact]
+    public async Task PatchAsync_PatchContainsKey_RejectsPatchAndPreservesEntity()
+    {
+        // Arrange
+        var repository = CreateRepository();
+        var entity = CreateEntity("Original", 100);
+        await repository.CreateAsync(entity);
+        var patch = JsonDocument.Parse(
+            $$"""{"id":"{{Guid.NewGuid()}}","name":"Changed"}""").RootElement;
+
+        // Act
+        var act = () => repository.PatchAsync(entity.Id, patch);
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*immutable resource key field 'id'*");
+        (await repository.GetByIdAsync(entity.Id)).Should().BeEquivalentTo(entity);
+    }
+
+    [Fact]
     public async Task PatchAsync_PreservesUnspecifiedFields()
     {
         // Arrange

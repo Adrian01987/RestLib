@@ -40,6 +40,7 @@ public interface IBatchRepository<TEntity, TKey>
 
     /// <summary>
     /// Patches (partially updates) multiple entities in a single operation.
+    /// Resource-key fields are immutable and must not be modified by a patch.
     /// </summary>
     /// <param name="patches">A list of tuples, each containing the entity key and a JSON merge-patch document.</param>
     /// <param name="ct">Cancellation token.</param>

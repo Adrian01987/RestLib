@@ -75,9 +75,11 @@ Folder-based loading resolves the composite key CLR type from the declared key p
 
 ### Validation and update semantics
 
-For update paths, RestLib copies route key parts onto the entity before validation. This ensures composite-key resources behave like single-key resources when request bodies omit key fields and prevents validation failures caused only by missing route-derived key values.
+The route or batch-item envelope is authoritative for resource identity. For full replacement updates, RestLib copies every route key part onto the entity before validation and again before persistence. A key omitted from the body is therefore supplied by the route, while a conflicting body key is overwritten consistently instead of allowing the representation and repository lookup key to diverge.
 
 The same rule applies to batch update and mapped batch update flows.
+
+Resource keys are immutable under JSON Merge Patch. Single and batch PATCH requests that name any configured key property are rejected with a client error before hooks or persistence run. Matching follows the resource JSON naming policy, so a CLR property such as `TenantId` is protected when supplied as either `TenantId` or `tenant_id`. The InMemory and EF Core adapters enforce the same invariant when their repository patch methods are called directly.
 
 ### EF Core adapter behavior
 
@@ -114,5 +116,6 @@ Rejected because route identity is part of the public HTTP contract. Requiring e
 - Single-key resources continue to use the existing default `{id}` route shape and `KeyProperty` configuration.
 - Composite-key resources require explicit route metadata, either through `UseCompositeKey(...)` or the JSON `Key` object.
 - OpenAPI, HATEOAS, batch parsing, and Problem Details now depend on ordered key-route metadata instead of assuming one scalar key.
+- PUT and batch update treat route/envelope keys as authoritative; PATCH and batch patch reject attempts to modify any key part.
 - The EF Core adapter supports two-part composite keys but still rejects keys with more than two parts.
 - JSON schema, docs, and examples must keep both single-key and composite-key paths documented clearly.

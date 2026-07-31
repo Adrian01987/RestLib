@@ -36,6 +36,18 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
         if (item is null)
             return (BadRequestResult(index, $"Item at index {index} could not be deserialized.", context.HttpContext.Request.Path), default);
 
+        if (PatchHelper.TryGetPatchedKeyProperty<TEntity, TKey>(
+            item.Body,
+            context.EndpointConfig.KeyRouteParts,
+            context.JsonOptions,
+            out var patchedKeyProperty))
+        {
+            return (BadRequestResult(
+                index,
+                PatchHelper.KeyModificationError(patchedKeyProperty!),
+                context.HttpContext.Request.Path), default);
+        }
+
         // Fetch existing entity (needed for 404 check and hook context)
         var existing = await context.Repository.GetByIdAsync(item.Id, context.CancellationToken);
         if (existing is null)

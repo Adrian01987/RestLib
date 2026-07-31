@@ -37,7 +37,9 @@ public interface IRepository<TEntity, TKey>
     Task<TEntity> CreateAsync(TEntity entity, CancellationToken ct = default);
 
     /// <summary>
-    /// Updates an existing entity (full replacement).
+    /// Updates an existing entity (full replacement). The <paramref name="id"/>
+    /// is authoritative; implementations must not persist a different configured
+    /// resource key supplied by <paramref name="entity"/>.
     /// </summary>
     /// <param name="id">The entity identifier.</param>
     /// <param name="entity">The updated entity data.</param>
@@ -47,9 +49,10 @@ public interface IRepository<TEntity, TKey>
 
     /// <summary>
     /// Partially updates an existing entity (JSON Merge Patch - RFC 7396).
+    /// Resource-key fields are immutable and must not be modified by the patch.
     /// </summary>
     /// <param name="id">The entity identifier.</param>
-    /// <param name="patchDocument">The JSON document containing fields to update.</param>
+    /// <param name="patchDocument">The JSON document containing non-key fields to update.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The updated entity if found; otherwise, null.</returns>
     Task<TEntity?> PatchAsync(TKey id, JsonElement patchDocument, CancellationToken ct = default);

@@ -338,6 +338,12 @@ resource identity for generated endpoints. Use this only for a stable unique key
 an alternate public identifier. Arbitrary expressions and unmapped properties fail when the
 repository is resolved.
 
+That resource identity is immutable. For PUT and batch update, the item route or batch
+envelope key wins when the request body contains a different value. For JSON Merge Patch,
+single and batch requests that include the configured key field are rejected with `400`
+item semantics before persistence. This applies equally when the public `KeySelector`
+points to an EF alternate key while the database keeps a different primary key.
+
 The EF Core adapter supports RestLib's filtering, sorting, counting, pagination,
 batch operations, and hooks on top of EF Core, with server-side query translation
 for filtering, sorting, and counting. Field selection can also be pushed down to SQL

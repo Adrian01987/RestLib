@@ -122,7 +122,7 @@ public class CompositeKeyEndpointTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Update_WithCompositeRouteAndBodyMissingKeyParts_UsesRouteKeyParts()
+    public async Task Update_WithCompositeRouteAndMismatchedBodyKeyParts_UsesRouteKeyParts()
     {
         // Arrange
         var entity = CreateItem(productName: "Original", price: 10m);
@@ -130,6 +130,8 @@ public class CompositeKeyEndpointTests : IAsyncLifetime
 
         var payload = new
         {
+            tenant_id = Guid.NewGuid(),
+            sku = "different-sku",
             product_name = "Updated",
             price = 99.9m
         };
@@ -146,6 +148,63 @@ public class CompositeKeyEndpointTests : IAsyncLifetime
         body.Sku.Should().Be(entity.Sku);
         body.ProductName.Should().Be("Updated");
         body.Price.Should().Be(99.9m);
+    }
+
+    [Fact]
+    public async Task PatchAndBatchPatch_WithCompositeKeyPart_Return400AndPreserveEntity()
+    {
+        // Arrange
+        var entity = CreateItem(productName: "Original", price: 10m);
+        Seed(entity);
+        var patch = new
+        {
+            sku = "different-sku",
+            product_name = "Should not persist"
+        };
+
+        // Act
+        var patchResponse = await _client.PatchAsJsonAsync(GetItemPath(entity), patch, JsonOptions);
+
+        // Assert
+        patchResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var patchProblem = await DeserializeProblemAsync(patchResponse);
+        patchProblem.Should().NotBeNull();
+        patchProblem!.Detail.Should().Contain("sku");
+
+        var batchPayload = new
+        {
+            action = "patch",
+            items = new[]
+            {
+                new
+                {
+                    id = new { tenant_id = entity.TenantId, sku = entity.Sku },
+                    body = new
+                    {
+                        tenant_id = Guid.NewGuid(),
+                        product_name = "Should not persist"
+                    }
+                }
+            }
+        };
+
+        // Act
+        var batchResponse = await _client.PostAsync(
+            "/api/catalog-items/batch",
+            BatchJson(batchPayload));
+
+        // Assert
+        batchResponse.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+        var batchJson = await DeserializeJsonAsync(batchResponse);
+        batchJson.GetProperty("items")[0].GetProperty("status").GetInt32().Should().Be(400);
+        batchJson.GetProperty("items")[0].GetProperty("error").GetProperty("detail").GetString()
+            .Should().Contain("tenant_id");
+        var persisted = await _repository.GetByIdAsync(
+            new RestLibCompositeKey<Guid, string>(entity.TenantId, entity.Sku));
+        persisted.Should().NotBeNull();
+        persisted!.TenantId.Should().Be(entity.TenantId);
+        persisted.Sku.Should().Be(entity.Sku);
+        persisted.ProductName.Should().Be("Original");
     }
 
     [Fact]

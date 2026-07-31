@@ -218,6 +218,9 @@ RestLib supports ordered two-part composite keys through `RestLibCompositeKey<TF
 for both fluent and JSON-backed resources. Item routes use two path segments such as
 `/api/tenant-products/{tenantId}/{sku}`.
 
+Item-route and batch-envelope keys are authoritative for PUT updates, and resource-key fields
+are immutable under JSON Merge Patch. This identity rule also applies to scalar alternate keys.
+
 For complete fluent setup, JSON `Key` examples, and related query behavior, see
 [docs/guides/query-features.md](docs/guides/query-features.md).
 

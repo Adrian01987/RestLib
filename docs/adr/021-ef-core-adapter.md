@@ -139,6 +139,12 @@ its own primary key. Arbitrary expressions and unmapped properties are rejected 
 repository is resolved because the adapter still needs key metadata for lookup predicates,
 batch operations, stable sort tie-breakers, and projection fallback behavior.
 
+The configured resource identity is immutable even when it differs from the EF primary key.
+Replacement updates restore both the existing EF primary key and the route-selected resource
+key after copying request values. Merge patches that name either the resource key or an EF
+primary-key property are rejected before tracked values are changed, independently of the
+unknown-field permissiveness setting.
+
 This was chosen to reduce boilerplate for the common case. In most EF Core applications,
 the model already knows the primary key, so forcing every registration to repeat
 `entity => entity.Id` would add noise without adding meaningful clarity. Auto-detection
