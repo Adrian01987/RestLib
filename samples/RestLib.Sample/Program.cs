@@ -29,6 +29,9 @@ builder.Services.AddRestLib(opts =>
 builder.Services.AddRestLibInMemoryWithData(c => c.Id, Guid.NewGuid, SeedData.GetCategories());
 builder.Services.AddRestLibInMemoryWithData(p => p.Id, Guid.NewGuid, SeedData.GetProducts());
 builder.Services.AddRestLibInMemoryWithData(o => o.Id, Guid.NewGuid, SeedData.GetOrders());
+builder.Services.AddRestLibInMemory<TenantProduct, RestLibCompositeKey<Guid, string>>(
+    product => new RestLibCompositeKey<Guid, string>(product.TenantId, product.Sku),
+    () => new RestLibCompositeKey<Guid, string>(Guid.NewGuid(), $"generated-{Guid.NewGuid():N}"));
 
 // Add EF Core-backed repository for Customers (SQLite)
 builder.Services.AddDbContext<SampleDbContext>(options =>

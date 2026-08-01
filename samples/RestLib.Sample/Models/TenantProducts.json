@@ -1,0 +1,43 @@
+{
+  "$schema": "../../../schemas/restlib-resource.schema.json",
+  "EntityType": "RestLib.Sample.Models.TenantProduct, RestLib.Sample",
+  "Name": "tenant-products",
+  "Route": "/api/tenant-products",
+  "AllowAnonymousAll": true,
+  "Key": {
+    "Properties": ["TenantId", "Sku"],
+    "RouteParameters": ["tenantId", "sku"]
+  },
+  "Sorting": ["ProductName", "Price"],
+  "DefaultSort": "product_name:asc",
+  "FieldSelection": ["TenantId", "Sku", "ProductName", "Price"],
+  "OpenApi": {
+    "Tag": "Tenant Products",
+    "TagDescription": "Demonstrates ordered two-segment composite resource keys",
+    "Summaries": {
+      "GetAll": "List tenant products",
+      "GetById": "Get a product by tenant and SKU",
+      "Create": "Create a tenant product",
+      "Update": "Replace a tenant product by tenant and SKU",
+      "Patch": "Patch a tenant product by tenant and SKU",
+      "Delete": "Delete a tenant product by tenant and SKU"
+    }
+  },
+  "Validation": {
+    "Sku": {
+      "Required": true,
+      "Length": {
+        "Max": 64
+      }
+    },
+    "ProductName": {
+      "Required": true,
+      "Length": {
+        "Max": 200
+      }
+    },
+    "Price": {
+      "Min": 0.01
+    }
+  }
+}

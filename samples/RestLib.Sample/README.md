@@ -25,7 +25,8 @@ probe.
 
 This sample demonstrates the shortest useful RestLib setup:
 
-- in-memory repositories for `Category`, `Product`, and `Order`;
+- in-memory repositories for `Category`, `Product`, `Order`, and the composite-key
+  `TenantProduct` resource;
 - an EF Core SQLite-backed `Customer` resource;
 - an email-keyed customer-directory DTO mapped to the same EF entity, demonstrating
   a public route key that differs from the database primary key;

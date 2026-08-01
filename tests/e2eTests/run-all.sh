@@ -136,6 +136,7 @@ ALL_SUITES=(
   "crud-tests.sh"
   "mapping-tests.sh"
   "alternate-key-tests.sh"
+  "composite-key-tests.sh"
   "pagination-tests.sh"
   "filtering-tests.sh"
   "filter-operator-tests.sh"
