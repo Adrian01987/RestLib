@@ -94,6 +94,116 @@ public partial class InMemoryRepositoryTests
 
     private record SkuEntity(Guid Sku, string Name);
 
+    private sealed record MultiGuidEntity(Guid Id, Guid RelatedId, string Name);
+
+    private sealed record AmbiguousKeyEntity(Guid PrimaryKey, Guid SecondaryKey, string Name);
+
+    private readonly record struct CalculatedKey(Guid PartitionId, int Sequence);
+
+    private sealed record CalculatedKeyEntity(Guid PartitionId, int Sequence, string Name);
+
+    [Fact]
+    public async Task CreateAsync_WithMultipleKeyProperties_InvokesGeneratorExactlyOnce()
+    {
+        // Arrange
+        var generatedId = Guid.NewGuid();
+        var generatorCalls = 0;
+        var repository = new InMemoryRepository<MultiGuidEntity, Guid>(
+            entity => entity.Id,
+            () =>
+            {
+                generatorCalls++;
+                return generatedId;
+            });
+        var entity = new MultiGuidEntity(Guid.Empty, Guid.Empty, "Widget");
+
+        // Act
+        var result = await repository.CreateAsync(entity);
+
+        // Assert
+        generatorCalls.Should().Be(1);
+        result.Id.Should().Be(generatedId);
+        result.RelatedId.Should().BeEmpty();
+        (await repository.GetByIdAsync(generatedId)).Should().Be(result);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithDifferentExplicitKeyAssigners_KeepsRepositoriesIndependent()
+    {
+        // Arrange
+        var primaryKey = Guid.NewGuid();
+        var secondaryKey = Guid.NewGuid();
+        var primaryRepository = new InMemoryRepository<AmbiguousKeyEntity, Guid>(
+            entity => entity.PrimaryKey,
+            () => primaryKey,
+            jsonOptions: null,
+            keyAssigner: (entity, key) => entity with { PrimaryKey = key });
+        var secondaryRepository = new InMemoryRepository<AmbiguousKeyEntity, Guid>(
+            entity => entity.SecondaryKey,
+            () => secondaryKey,
+            jsonOptions: null,
+            keyAssigner: (entity, key) => entity with { SecondaryKey = key });
+
+        // Act
+        var primaryResult = await primaryRepository.CreateAsync(
+            new AmbiguousKeyEntity(Guid.Empty, Guid.Empty, "Primary"));
+        var secondaryResult = await secondaryRepository.CreateAsync(
+            new AmbiguousKeyEntity(Guid.Empty, Guid.Empty, "Secondary"));
+
+        // Assert
+        primaryResult.PrimaryKey.Should().Be(primaryKey);
+        primaryResult.SecondaryKey.Should().BeEmpty();
+        secondaryResult.PrimaryKey.Should().BeEmpty();
+        secondaryResult.SecondaryKey.Should().Be(secondaryKey);
+        (await primaryRepository.GetByIdAsync(primaryKey)).Should().Be(primaryResult);
+        (await secondaryRepository.GetByIdAsync(secondaryKey)).Should().Be(secondaryResult);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithUnassignableCalculatedKey_FailsBeforeInvokingGenerator()
+    {
+        // Arrange
+        var generatorCalls = 0;
+        var repository = new InMemoryRepository<CalculatedKeyEntity, CalculatedKey>(
+            entity => new CalculatedKey(entity.PartitionId, entity.Sequence),
+            () =>
+            {
+                generatorCalls++;
+                return new CalculatedKey(Guid.NewGuid(), 1);
+            });
+        var entity = new CalculatedKeyEntity(Guid.Empty, 0, "Widget");
+
+        // Act
+        var act = () => repository.CreateAsync(entity);
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*explicit key assigner*");
+        generatorCalls.Should().Be(0);
+        repository.Count.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithCalculatedKeyAssigner_ReturnsConsistentEntityAndStorageKey()
+    {
+        // Arrange
+        var generatedKey = new CalculatedKey(Guid.NewGuid(), 42);
+        var repository = new InMemoryRepository<CalculatedKeyEntity, CalculatedKey>(
+            entity => new CalculatedKey(entity.PartitionId, entity.Sequence),
+            () => generatedKey,
+            jsonOptions: null,
+            keyAssigner: (entity, key) => entity with { PartitionId = key.PartitionId, Sequence = key.Sequence });
+        var entity = new CalculatedKeyEntity(Guid.Empty, 0, "Widget");
+
+        // Act
+        var result = await repository.CreateAsync(entity);
+
+        // Assert
+        result.PartitionId.Should().Be(generatedKey.PartitionId);
+        result.Sequence.Should().Be(generatedKey.Sequence);
+        (await repository.GetByIdAsync(generatedKey)).Should().Be(result);
+    }
+
     [Fact]
     public async Task CreateAsync_MultipleEntities_AllAdded()
     {

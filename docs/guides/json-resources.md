@@ -416,8 +416,19 @@ Register the repository in `Program.cs`:
 ```csharp
 builder.Services.AddRestLibInMemory<TenantProduct, RestLibCompositeKey<Guid, string>>(
     p => new RestLibCompositeKey<Guid, string>(p.TenantId, p.Sku),
-    () => new RestLibCompositeKey<Guid, string>(Guid.NewGuid(), $"generated-{Guid.NewGuid():N}"));
+    () => new RestLibCompositeKey<Guid, string>(Guid.NewGuid(), $"generated-{Guid.NewGuid():N}"),
+    (product, key) =>
+    {
+        product.TenantId = key.First;
+        product.Sku = key.Second;
+        return product;
+    });
 ```
+
+The explicit assigner is required when a generated key is composite, calculated,
+or ambiguous. It guarantees that the entity returned from create selects the same
+key used by the repository. A single writable key property or conventional `Id`
+property is assigned automatically.
 
 Then declare `Models/TenantProducts.json`:
 

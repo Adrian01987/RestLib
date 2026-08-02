@@ -51,6 +51,20 @@ public partial class InMemoryRepositoryTests
     }
 
     [Fact]
+    public void Constructor_WithNullKeyAssigner_ThrowsArgumentNullException()
+    {
+        // Act
+        var act = () => new InMemoryRepository<TestEntity, Guid>(
+            entity => entity.Id,
+            Guid.NewGuid,
+            jsonOptions: null,
+            keyAssigner: null!);
+
+        // Assert
+        act.Should().Throw<ArgumentNullException>().WithParameterName("keyAssigner");
+    }
+
+    [Fact]
     public void Constructor_WithValidParameters_CreatesEmptyRepository()
     {
         // Act

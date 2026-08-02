@@ -33,6 +33,33 @@ public static class InMemoryServiceExtensions
     }
 
     /// <summary>
+    /// Registers an in-memory repository with an explicit generated-key assigner.
+    /// </summary>
+    /// <typeparam name="TEntity">The entity type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="keySelector">Function to extract the key from an entity.</param>
+    /// <param name="keyGenerator">Function to generate a new key for entity creation.</param>
+    /// <param name="keyAssigner">
+    /// Function that assigns a generated key and returns the entity instance to store.
+    /// </param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddRestLibInMemory<TEntity, TKey>(
+        this IServiceCollection services,
+        Func<TEntity, TKey> keySelector,
+        Func<TKey> keyGenerator,
+        Func<TEntity, TKey, TEntity> keyAssigner)
+        where TEntity : class
+        where TKey : notnull
+    {
+        var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, null, keyAssigner);
+        services.AddSingleton<IRepository<TEntity, TKey>>(repository);
+        services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
+        services.AddSingleton(repository);
+        return services;
+    }
+
+    /// <summary>
     /// Registers an in-memory repository for the specified entity type with custom JSON options.
     /// </summary>
     /// <typeparam name="TEntity">The entity type.</typeparam>
@@ -51,6 +78,35 @@ public static class InMemoryServiceExtensions
         where TKey : notnull
     {
         var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, jsonOptions);
+        services.AddSingleton<IRepository<TEntity, TKey>>(repository);
+        services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
+        services.AddSingleton(repository);
+        return services;
+    }
+
+    /// <summary>
+    /// Registers an in-memory repository with custom JSON options and an explicit generated-key assigner.
+    /// </summary>
+    /// <typeparam name="TEntity">The entity type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="keySelector">Function to extract the key from an entity.</param>
+    /// <param name="keyGenerator">Function to generate a new key for entity creation.</param>
+    /// <param name="jsonOptions">JSON serializer options for patch operations.</param>
+    /// <param name="keyAssigner">
+    /// Function that assigns a generated key and returns the entity instance to store.
+    /// </param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddRestLibInMemoryWithOptions<TEntity, TKey>(
+        this IServiceCollection services,
+        Func<TEntity, TKey> keySelector,
+        Func<TKey> keyGenerator,
+        JsonSerializerOptions jsonOptions,
+        Func<TEntity, TKey, TEntity> keyAssigner)
+        where TEntity : class
+        where TKey : notnull
+    {
+        var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, jsonOptions, keyAssigner);
         services.AddSingleton<IRepository<TEntity, TKey>>(repository);
         services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
         services.AddSingleton(repository);
@@ -84,6 +140,36 @@ public static class InMemoryServiceExtensions
     }
 
     /// <summary>
+    /// Registers a seeded in-memory repository with an explicit generated-key assigner.
+    /// </summary>
+    /// <typeparam name="TEntity">The entity type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="keySelector">Function to extract the key from an entity.</param>
+    /// <param name="keyGenerator">Function to generate a new key for entity creation.</param>
+    /// <param name="seedData">Initial data to seed the repository with.</param>
+    /// <param name="keyAssigner">
+    /// Function that assigns a generated key and returns the entity instance to store.
+    /// </param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddRestLibInMemoryWithData<TEntity, TKey>(
+        this IServiceCollection services,
+        Func<TEntity, TKey> keySelector,
+        Func<TKey> keyGenerator,
+        IEnumerable<TEntity> seedData,
+        Func<TEntity, TKey, TEntity> keyAssigner)
+        where TEntity : class
+        where TKey : notnull
+    {
+        var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, null, keyAssigner);
+        repository.Seed(seedData);
+        services.AddSingleton<IRepository<TEntity, TKey>>(repository);
+        services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
+        services.AddSingleton(repository);
+        return services;
+    }
+
+    /// <summary>
     /// Registers an in-memory repository for the specified entity type with seeded data and custom JSON options.
     /// </summary>
     /// <typeparam name="TEntity">The entity type.</typeparam>
@@ -104,6 +190,38 @@ public static class InMemoryServiceExtensions
         where TKey : notnull
     {
         var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, jsonOptions);
+        repository.Seed(seedData);
+        services.AddSingleton<IRepository<TEntity, TKey>>(repository);
+        services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
+        services.AddSingleton(repository);
+        return services;
+    }
+
+    /// <summary>
+    /// Registers a seeded in-memory repository with custom JSON options and an explicit generated-key assigner.
+    /// </summary>
+    /// <typeparam name="TEntity">The entity type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="keySelector">Function to extract the key from an entity.</param>
+    /// <param name="keyGenerator">Function to generate a new key for entity creation.</param>
+    /// <param name="seedData">Initial data to seed the repository with.</param>
+    /// <param name="jsonOptions">JSON serializer options for patch operations.</param>
+    /// <param name="keyAssigner">
+    /// Function that assigns a generated key and returns the entity instance to store.
+    /// </param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddRestLibInMemoryWithDataAndOptions<TEntity, TKey>(
+        this IServiceCollection services,
+        Func<TEntity, TKey> keySelector,
+        Func<TKey> keyGenerator,
+        IEnumerable<TEntity> seedData,
+        JsonSerializerOptions jsonOptions,
+        Func<TEntity, TKey, TEntity> keyAssigner)
+        where TEntity : class
+        where TKey : notnull
+    {
+        var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, jsonOptions, keyAssigner);
         repository.Seed(seedData);
         services.AddSingleton<IRepository<TEntity, TKey>>(repository);
         services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);

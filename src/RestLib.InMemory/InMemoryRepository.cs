@@ -24,15 +24,13 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     where TKey : notnull
 {
     private static readonly ConcurrentDictionary<string, PropertyInfo[]> _propertyPathCache = new(StringComparer.OrdinalIgnoreCase);
-    private static PropertyInfo? _cachedKeyProperty;
-    private static bool _keyPropertyResolved;
 
     private readonly ConcurrentDictionary<TKey, TEntity> _store = new();
     private readonly Func<TEntity, TKey> _keySelector;
     private readonly Func<TKey> _keyGenerator;
+    private readonly Func<TEntity, TKey, TEntity>? _keyAssigner;
+    private readonly PropertyInfo? _keyProperty;
     private readonly JsonSerializerOptions _jsonOptions;
-    private string? _cachedKeyPropertyName;
-    private bool _keyPropertyNameResolved;
 
     /// <summary>
     /// Initializes a new instance of <see cref="InMemoryRepository{TEntity, TKey}"/>.
@@ -44,9 +42,46 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
         Func<TEntity, TKey> keySelector,
         Func<TKey> keyGenerator,
         JsonSerializerOptions? jsonOptions = null)
+        : this(keySelector, keyGenerator, jsonOptions, null, hasExplicitKeyAssigner: false)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of <see cref="InMemoryRepository{TEntity, TKey}"/>
+    /// with an explicit generated-key assigner.
+    /// </summary>
+    /// <param name="keySelector">Function to extract the key from an entity.</param>
+    /// <param name="keyGenerator">Function to generate a new key for entity creation.</param>
+    /// <param name="jsonOptions">Optional JSON serializer options for patch operations.</param>
+    /// <param name="keyAssigner">
+    /// Function that assigns a generated key and returns the entity instance to store.
+    /// The function may return a replacement instance for immutable entity types.
+    /// </param>
+    public InMemoryRepository(
+        Func<TEntity, TKey> keySelector,
+        Func<TKey> keyGenerator,
+        JsonSerializerOptions? jsonOptions,
+        Func<TEntity, TKey, TEntity> keyAssigner)
+        : this(
+            keySelector,
+            keyGenerator,
+            jsonOptions,
+            keyAssigner ?? throw new ArgumentNullException(nameof(keyAssigner)),
+            hasExplicitKeyAssigner: true)
+    {
+    }
+
+    private InMemoryRepository(
+        Func<TEntity, TKey> keySelector,
+        Func<TKey> keyGenerator,
+        JsonSerializerOptions? jsonOptions,
+        Func<TEntity, TKey, TEntity>? keyAssigner,
+        bool hasExplicitKeyAssigner)
     {
         _keySelector = keySelector ?? throw new ArgumentNullException(nameof(keySelector));
         _keyGenerator = keyGenerator ?? throw new ArgumentNullException(nameof(keyGenerator));
+        _keyAssigner = hasExplicitKeyAssigner ? keyAssigner : null;
+        _keyProperty = ResolveConventionalKeyProperty();
         _jsonOptions = jsonOptions ?? new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,
@@ -123,8 +158,9 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
         // If key is default, generate a new one and set it on the entity
         if (EqualityComparer<TKey>.Default.Equals(key, default!))
         {
+            EnsureGeneratedKeyCanBeAssigned();
             key = _keyGenerator();
-            entity = SetKeyOnEntity(entity, key);
+            entity = NormalizeEntityKey(entity, key);
         }
 
         if (!_store.TryAdd(key, entity))
@@ -214,8 +250,9 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
 
             if (EqualityComparer<TKey>.Default.Equals(key, default!))
             {
+                EnsureGeneratedKeyCanBeAssigned();
                 key = _keyGenerator();
-                current = SetKeyOnEntity(current, key);
+                current = NormalizeEntityKey(current, key);
             }
 
             if (!_store.TryAdd(key, current))
@@ -655,41 +692,17 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
 
     private TEntity SetKeyOnEntity(TEntity entity, TKey key)
     {
-        // Try the fast path: direct reflection-based property set.
-        var keyProp = GetCachedKeyProperty();
-        if (keyProp is not null && keyProp.CanWrite)
+        if (_keyAssigner is not null)
         {
-            keyProp.SetValue(entity, key);
-            return entity;
+            return _keyAssigner(entity, key)
+                ?? throw new InvalidOperationException(
+                    $"The configured key assigner for '{typeof(TEntity).Name}' returned null.");
         }
 
-        // Fall back to JSON round-trip for entities with init-only key properties.
-        var json = JsonSerializer.Serialize(entity, _jsonOptions);
-        var doc = JsonDocument.Parse(json);
-        var dict = new Dictionary<string, JsonElement>();
-
-        foreach (var prop in doc.RootElement.EnumerateObject())
-        {
-            dict[prop.Name] = prop.Value;
-        }
-
-        // Find the key property name
-        var keyPropertyName = FindKeyPropertyName();
-        if (keyPropertyName != null)
-        {
-            var keyJson = JsonSerializer.Serialize(key, _jsonOptions);
-            using var keyDoc = JsonDocument.Parse(keyJson);
-            var property = typeof(TEntity).GetProperty(
-                keyPropertyName,
-                BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
-            var jsonPropertyName = property?.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name
-                ?? _jsonOptions.PropertyNamingPolicy?.ConvertName(keyPropertyName)
-                ?? keyPropertyName;
-            dict[jsonPropertyName] = keyDoc.RootElement.Clone();
-        }
-
-        var mergedJson = JsonSerializer.Serialize(dict, _jsonOptions);
-        return JsonSerializer.Deserialize<TEntity>(mergedJson, _jsonOptions)!;
+        var keyProperty = _keyProperty
+            ?? throw CreateMissingKeyAssignerException();
+        keyProperty.SetValue(entity, key);
+        return entity;
     }
 
     private TEntity NormalizeEntityKey(TEntity entity, TKey key)
@@ -711,7 +724,7 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
             return;
         }
 
-        var keyPropertyName = FindKeyPropertyName();
+        var keyPropertyName = _keyProperty?.Name;
         if (keyPropertyName is null)
         {
             return;
@@ -735,89 +748,35 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
         }
     }
 
-    private PropertyInfo? GetCachedKeyProperty()
+    private void EnsureGeneratedKeyCanBeAssigned()
     {
-        if (_keyPropertyResolved)
+        if (_keyAssigner is null && _keyProperty is null)
         {
-            return _cachedKeyProperty;
+            throw CreateMissingKeyAssignerException();
         }
-
-        var keyPropertyName = FindKeyPropertyName();
-        if (keyPropertyName is not null)
-        {
-            _cachedKeyProperty = typeof(TEntity).GetProperty(keyPropertyName,
-                BindingFlags.Public | BindingFlags.Instance);
-        }
-
-        _keyPropertyResolved = true;
-        return _cachedKeyProperty;
     }
 
-    private string? FindKeyPropertyName()
+    private InvalidOperationException CreateMissingKeyAssignerException()
     {
-        if (_keyPropertyNameResolved)
-        {
-            return _cachedKeyPropertyName;
-        }
-
-        _cachedKeyPropertyName = DetectKeyPropertyName();
-        _keyPropertyNameResolved = true;
-        return _cachedKeyPropertyName;
+        return new InvalidOperationException(
+            $"A generated key for '{typeof(TEntity).Name}' cannot be assigned unambiguously. " +
+            "Configure an explicit key assigner for calculated, composite, or ambiguous keys.");
     }
 
-    /// <summary>
-    /// Detects the key property name by probing each <typeparamref name="TKey"/>-typed
-    /// property with the <c>_keySelector</c>. Falls back to the <c>Id</c> / <c>{Entity}Id</c>
-    /// naming convention when probing does not yield a result.
-    /// </summary>
-    private string? DetectKeyPropertyName()
+    private PropertyInfo? ResolveConventionalKeyProperty()
     {
-        var properties = typeof(TEntity).GetProperties(
-            BindingFlags.Public | BindingFlags.Instance);
-
-        var candidates = properties
+        var candidates = typeof(TEntity)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.PropertyType == typeof(TKey) && p.CanRead && p.CanWrite)
-            .ToList();
+            .ToArray();
 
-        // Exactly one writable property of the key type — no ambiguity
-        if (candidates.Count == 1)
+        if (candidates.Length == 1)
         {
-            return candidates[0].Name;
+            return candidates[0];
         }
 
-        // Multiple candidates — probe each one using a JSON round-trip:
-        // build a JSON object with only that property set to a generated key,
-        // deserialize it to TEntity, and see if _keySelector returns the same value.
-        if (candidates.Count > 1)
-        {
-            var probeKey = _keyGenerator();
-            var probeKeyJson = JsonSerializer.Serialize(probeKey, _jsonOptions);
-
-            foreach (var candidate in candidates)
-            {
-                try
-                {
-                    var jsonPropertyName = _jsonOptions.PropertyNamingPolicy?.ConvertName(candidate.Name)
-                        ?? candidate.Name;
-                    var json = $"{{\"{jsonPropertyName}\":{probeKeyJson}}}";
-                    var testEntity = JsonSerializer.Deserialize<TEntity>(json, _jsonOptions);
-                    if (testEntity != null && EqualityComparer<TKey>.Default.Equals(_keySelector(testEntity), probeKey))
-                    {
-                        return candidate.Name;
-                    }
-                }
-                catch
-                {
-                    // Deserialization may fail for entities with required members — skip candidate
-                }
-            }
-        }
-
-        // Fall back to naming convention
-        var conventionMatch = properties.FirstOrDefault(p =>
+        return candidates.FirstOrDefault(p =>
             p.Name.Equals("Id", StringComparison.OrdinalIgnoreCase) ||
             p.Name.Equals($"{typeof(TEntity).Name}Id", StringComparison.OrdinalIgnoreCase));
-
-        return conventionMatch?.Name;
     }
 }

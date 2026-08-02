@@ -34,7 +34,13 @@ public class CompositeKeyEndpointTests : IAsyncLifetime
         _repository = new InMemoryRepository<CompositeCatalogItem, RestLibCompositeKey<Guid, string>>(
             static entity => new RestLibCompositeKey<Guid, string>(entity.TenantId, entity.Sku),
             static () => new RestLibCompositeKey<Guid, string>(Guid.NewGuid(), $"generated-{Guid.NewGuid():N}"),
-            JsonOptions);
+            JsonOptions,
+            static (entity, key) =>
+            {
+                entity.TenantId = key.First;
+                entity.Sku = key.Second;
+                return entity;
+            });
     }
 
     public async Task InitializeAsync()

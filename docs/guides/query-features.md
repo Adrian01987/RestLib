@@ -213,7 +213,13 @@ Fluent registration:
 ```csharp
 builder.Services.AddRestLibInMemory<TenantProduct, RestLibCompositeKey<Guid, string>>(
     p => new RestLibCompositeKey<Guid, string>(p.TenantId, p.Sku),
-    () => new RestLibCompositeKey<Guid, string>(Guid.NewGuid(), $"generated-{Guid.NewGuid():N}"));
+    () => new RestLibCompositeKey<Guid, string>(Guid.NewGuid(), $"generated-{Guid.NewGuid():N}"),
+    (product, key) =>
+    {
+        product.TenantId = key.First;
+        product.Sku = key.Second;
+        return product;
+    });
 
 app.MapRestLib<TenantProduct, RestLibCompositeKey<Guid, string>>("/api/tenant-products", config =>
 {
@@ -221,6 +227,11 @@ app.MapRestLib<TenantProduct, RestLibCompositeKey<Guid, string>>("/api/tenant-pr
     config.UseCompositeKey(p => p.TenantId, "tenantId", p => p.Sku, "sku");
 });
 ```
+
+The third delegate explicitly writes generated composite keys back to the entity.
+Simple resources with one writable key property, or a conventional `Id` property,
+do not need this delegate. Calculated, composite, or otherwise ambiguous generated
+keys must provide it so the returned entity and repository storage key cannot diverge.
 
 That produces item routes like:
 

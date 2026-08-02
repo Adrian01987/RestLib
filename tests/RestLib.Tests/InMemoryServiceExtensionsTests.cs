@@ -378,6 +378,8 @@ public class InMemoryServiceExtensionsTests
 
     private record EntityWithIntKey(int Id, string Data);
     private record EntityWithStringKey(string Code, string Name);
+    private readonly record struct GeneratedCompositeKey(Guid PartitionId, int Sequence);
+    private record GeneratedCompositeEntity(Guid PartitionId, int Sequence, string Data);
     private record EntityWithCompositeKey(string Part1, int Part2, string Data)
     {
         public string CompositeKey => $"{Part1}-{Part2}";
@@ -442,6 +444,30 @@ public class InMemoryServiceExtensionsTests
         // Assert
         retrieved.Should().NotBeNull();
         retrieved!.Data.Should().Be("Data");
+    }
+
+    [Fact]
+    public async Task AddRestLibInMemory_WithExplicitKeyAssigner_GeneratesConsistentCalculatedKey()
+    {
+        // Arrange
+        var generatedKey = new GeneratedCompositeKey(Guid.NewGuid(), 7);
+        var services = new ServiceCollection();
+        services.AddRestLibInMemory<GeneratedCompositeEntity, GeneratedCompositeKey>(
+            entity => new GeneratedCompositeKey(entity.PartitionId, entity.Sequence),
+            () => generatedKey,
+            (entity, key) => entity with { PartitionId = key.PartitionId, Sequence = key.Sequence });
+        var provider = services.BuildServiceProvider();
+        var repository = provider.GetRequiredService<IRepository<GeneratedCompositeEntity, GeneratedCompositeKey>>();
+        var entity = new GeneratedCompositeEntity(Guid.Empty, 0, "Data");
+
+        // Act
+        var created = await repository.CreateAsync(entity);
+        var retrieved = await repository.GetByIdAsync(generatedKey);
+
+        // Assert
+        created.PartitionId.Should().Be(generatedKey.PartitionId);
+        created.Sequence.Should().Be(generatedKey.Sequence);
+        retrieved.Should().Be(created);
     }
 
     #endregion

@@ -1666,7 +1666,13 @@ public class JsonResourceConfigurationTests
         var repository = new InMemoryRepository<JsonCompositeEntity, RestLibCompositeKey<Guid, string>>(
             static entity => new RestLibCompositeKey<Guid, string>(entity.TenantId, entity.Sku),
             static () => new RestLibCompositeKey<Guid, string>(Guid.NewGuid(), $"generated-{Guid.NewGuid():N}"),
-            RestLibJsonOptions.CreateDefault());
+            RestLibJsonOptions.CreateDefault(),
+            static (entity, key) =>
+            {
+                entity.TenantId = key.First;
+                entity.Sku = key.Second;
+                return entity;
+            });
 
         var builder = new TestJsonHostBuilder()
             .WithServices(services =>

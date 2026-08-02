@@ -9,6 +9,8 @@ namespace RestLib.Tests;
 
 public partial class InMemoryRepositoryTests
 {
+    private sealed record BatchMultiGuidEntity(Guid Id, Guid RelatedId, string Name);
+
     #region CreateManyAsync Tests
 
     [Fact]
@@ -58,6 +60,31 @@ public partial class InMemoryRepositoryTests
         result.Should().HaveCount(2);
         result[0].Id.Should().Be(generatedIds[0]);
         result[1].Id.Should().Be(generatedIds[1]);
+        repository.Count.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task CreateManyAsync_WithMultipleKeyProperties_InvokesGeneratorOncePerEntity()
+    {
+        // Arrange
+        var generatedIds = new[] { Guid.NewGuid(), Guid.NewGuid() };
+        var generatorCalls = 0;
+        var repository = new InMemoryRepository<BatchMultiGuidEntity, Guid>(
+            entity => entity.Id,
+            () => generatedIds[generatorCalls++]);
+        var entities = new[]
+        {
+            new BatchMultiGuidEntity(Guid.Empty, Guid.Empty, "First"),
+            new BatchMultiGuidEntity(Guid.Empty, Guid.Empty, "Second")
+        };
+
+        // Act
+        var result = await repository.CreateManyAsync(entities);
+
+        // Assert
+        generatorCalls.Should().Be(2);
+        result.Select(entity => entity.Id).Should().Equal(generatedIds);
+        result.Should().OnlyContain(entity => entity.RelatedId == Guid.Empty);
         repository.Count.Should().Be(2);
     }
 
