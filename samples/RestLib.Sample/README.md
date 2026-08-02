@@ -21,6 +21,12 @@ dotnet run --project samples/RestLib.Sample/RestLib.Sample.csproj
 Open the Scalar API reference at the app root and use `/health` as the readiness
 probe.
 
+The named read and write rate-limit policies default to 200 permits per 60-second
+window. For deterministic local verification, override
+`RestLibSample__RateLimiting__ReadPermitLimit`,
+`RestLibSample__RateLimiting__WritePermitLimit`, and
+`RestLibSample__RateLimiting__WindowSeconds`. Positive values are required.
+
 ## Scope
 
 This sample demonstrates the shortest useful RestLib setup:

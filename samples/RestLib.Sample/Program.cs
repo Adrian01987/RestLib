@@ -14,6 +14,14 @@ using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 var useMigrations = builder.Configuration.GetValue<bool>("RestLibSample:UseMigrations");
+var rateLimitingSection = builder.Configuration.GetSection("RestLibSample:RateLimiting");
+var readPermitLimit = rateLimitingSection.GetValue("ReadPermitLimit", 200);
+var writePermitLimit = rateLimitingSection.GetValue("WritePermitLimit", 200);
+var rateLimitWindowSeconds = rateLimitingSection.GetValue("WindowSeconds", 60);
+
+ArgumentOutOfRangeException.ThrowIfNegativeOrZero(readPermitLimit);
+ArgumentOutOfRangeException.ThrowIfNegativeOrZero(writePermitLimit);
+ArgumentOutOfRangeException.ThrowIfNegativeOrZero(rateLimitWindowSeconds);
 
 // Add RestLib services with in-memory repositories (pre-seeded)
 // EnableETagSupport is a global option — applies to all resources (Categories, Products, and Orders)
@@ -63,13 +71,13 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.AddFixedWindowLimiter("restlib-read", limiter =>
     {
-        limiter.PermitLimit = 200;
-        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.PermitLimit = readPermitLimit;
+        limiter.Window = TimeSpan.FromSeconds(rateLimitWindowSeconds);
     });
     options.AddFixedWindowLimiter("restlib-write", limiter =>
     {
-        limiter.PermitLimit = 200;
-        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.PermitLimit = writePermitLimit;
+        limiter.Window = TimeSpan.FromSeconds(rateLimitWindowSeconds);
     });
 });
 

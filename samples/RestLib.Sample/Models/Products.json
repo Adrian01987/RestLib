@@ -24,7 +24,10 @@
     "ByOperation": {
       "Create": "restlib-write",
       "Update": "restlib-write",
-      "Patch": "restlib-write"
+      "Patch": "restlib-write",
+      "BatchCreate": "restlib-write",
+      "BatchPatch": "restlib-write",
+      "BatchDelete": "restlib-write"
     }
   },
   "OpenApi": {
