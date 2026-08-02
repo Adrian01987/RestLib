@@ -147,6 +147,7 @@ ALL_SUITES=(
   "batch-tests.sh"
   "versioning-tests.sh"
   "hateoas-tests.sh"
+  "openapi-tests.sh"
   "rate-limiting-tests.sh"
   "etag-tests.sh"
 )
