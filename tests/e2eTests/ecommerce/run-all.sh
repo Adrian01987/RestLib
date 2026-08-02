@@ -7,6 +7,7 @@
 #   ./tests/e2eTests/ecommerce/run-all.sh              # build, start servers, run all suites
 #   ./tests/e2eTests/ecommerce/run-all.sh --no-build   # skip build, start servers, run suites
 #   ./tests/e2eTests/ecommerce/run-all.sh --no-server  # assume required servers already run
+#   ./tests/e2eTests/ecommerce/run-all.sh --check-inventory  # validate suite registration only
 #
 # Options (via environment):
 #   BASE_URL=http://localhost:5000                       # normal-suite client URL
@@ -28,6 +29,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/../runner-lib.sh"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 SAMPLE_DIR="samples/RestLib.Sample.Ecommerce"
 SAMPLE_PROJECT="${SAMPLE_DIR}/RestLib.Sample.Ecommerce.csproj"
@@ -43,11 +45,13 @@ COMMON_SERVER_REQUIRED=false
 
 NO_BUILD=false
 NO_SERVER=false
+CHECK_INVENTORY=false
 
 for arg in "$@"; do
   case "$arg" in
     --no-build)  NO_BUILD=true ;;
     --no-server) NO_SERVER=true ;;
+    --check-inventory) CHECK_INVENTORY=true ;;
     *)           echo "Unknown flag: $arg"; exit 1 ;;
   esac
 done
@@ -84,6 +88,14 @@ ALL_SUITES=(
   "support-flow.sh"
   "payment-flow.sh"
 )
+
+check_suite_inventory() {
+  if ! validate_suite_inventory "$SCRIPT_DIR" "*.sh" "run-all.sh" "${ALL_SUITES[@]}"; then
+    exit 1
+  fi
+
+  info "Suite inventory valid: ${#ALL_SUITES[@]} registered suite(s)."
+}
 
 available_suites() {
   local suite names=()
@@ -266,6 +278,8 @@ run_suite() {
 
 run_suites() {
   local timestamp logfile total_suites passed_suites failed_suites suite_num suite suite_name
+  local total_scenarios passed_scenarios failed_scenarios skipped_scenarios
+  local suite_output suite_status
 
   timestamp=$(date +"%Y%m%d_%H%M%S")
   logfile="${RESULTS_DIR}/ecommerce_e2e_${timestamp}.log"
@@ -276,6 +290,10 @@ run_suites() {
   passed_suites=0
   failed_suites=0
   suite_num=0
+  total_scenarios=0
+  passed_scenarios=0
+  failed_scenarios=0
+  skipped_scenarios=0
 
   header "Running ${total_suites} ecommerce E2E suite(s)"
   info "Base URL: ${BASE_URL}"
@@ -285,9 +303,28 @@ run_suites() {
   for suite in "${SUITES_TO_RUN[@]}"; do
     suite_num=$((suite_num + 1))
     suite_name="${suite%.sh}"
+    suite_output=$(mktemp)
+    suite_status=0
     echo -e "${BOLD}[${suite_num}/${total_suites}] ${suite_name}${RESET}"
 
-    if run_suite "$suite" 2>&1 | tee -a "$logfile"; then
+    if run_suite "$suite" 2>&1 | tee -a "$logfile" "$suite_output"; then
+      suite_status=0
+    else
+      suite_status=$?
+    fi
+
+    if load_suite_result "$suite_output"; then
+      total_scenarios=$((total_scenarios + SUITE_RESULT_TOTAL))
+      passed_scenarios=$((passed_scenarios + SUITE_RESULT_PASSED))
+      failed_scenarios=$((failed_scenarios + SUITE_RESULT_FAILED))
+      skipped_scenarios=$((skipped_scenarios + SUITE_RESULT_SKIPPED))
+    else
+      error "Suite ${suite_name} did not emit exactly one valid E2E_RESULT summary."
+      suite_status=1
+    fi
+    rm -f "$suite_output"
+
+    if [ "$suite_status" -eq 0 ]; then
       passed_suites=$((passed_suites + 1))
       echo -e "  ${GREEN}Suite PASSED${RESET}"
     else
@@ -302,6 +339,11 @@ run_suites() {
   echo -e "  Suites run:    ${BOLD}${total_suites}${RESET}"
   echo -e "  Suites passed: ${GREEN}${passed_suites}${RESET}"
   echo -e "  Suites failed: ${RED}${failed_suites}${RESET}"
+  echo ""
+  echo -e "  Scenarios run:     ${BOLD}${total_scenarios}${RESET}"
+  echo -e "  Scenarios passed:  ${GREEN}${passed_scenarios}${RESET}"
+  echo -e "  Scenarios failed:  ${RED}${failed_scenarios}${RESET}"
+  echo -e "  Scenarios skipped: ${YELLOW}${skipped_scenarios}${RESET}"
   echo ""
   echo -e "  Full log: ${logfile}"
   echo ""
@@ -319,6 +361,10 @@ run_suites() {
     echo "Suites run:    ${total_suites}"
     echo "Suites passed: ${passed_suites}"
     echo "Suites failed: ${failed_suites}"
+    echo "Scenarios run:     ${total_scenarios}"
+    echo "Scenarios passed:  ${passed_scenarios}"
+    echo "Scenarios failed:  ${failed_scenarios}"
+    echo "Scenarios skipped: ${skipped_scenarios}"
     echo "==================================="
   } >> "$logfile"
 
@@ -354,6 +400,12 @@ if printf "%s\n" "${SUITES_TO_RUN[@]}" | grep -qx "payment-flow.sh"; then
   info "Payment failure server URL: ${PAYMENT_FAILURE_SERVER_URL}"
 fi
 echo ""
+
+check_suite_inventory
+
+if [ "$CHECK_INVENTORY" = true ]; then
+  exit 0
+fi
 
 check_prereqs
 

@@ -513,6 +513,7 @@ print_summary() {
     echo -e "  ${RED}${BOLD}${FAIL_COUNT} TEST(S) FAILED${RESET}"
   fi
   echo ""
+  echo "E2E_RESULT total=${TOTAL_COUNT} passed=${PASS_COUNT} failed=${FAIL_COUNT} skipped=${SKIP_COUNT}"
   return "$FAIL_COUNT"
 }
 

@@ -39,12 +39,18 @@ dotnet test
 
 ### E2E Tests
 
-End-to-end tests live in `tests/e2eTests/` and run against the sample app (`samples/RestLib.Sample`) on `http://localhost:5000`. They use `curl` and `jq`.
+End-to-end tests live in `tests/e2eTests/` and run against the sample applications. They require the .NET 10 SDK, `curl`, and `jq`. See the [E2E test guide](tests/e2eTests/README.md) for both runners, suite selection, prerequisites, and native Windows execution without WSL.
 
 To run all E2E suites (starts the sample app automatically):
 
 ```bash
 bash tests/e2eTests/run-all.sh
+```
+
+From native Windows PowerShell, invoke Git for Windows Bash explicitly:
+
+```powershell
+& 'C:\Program Files\Git\bin\bash.exe' tests/e2eTests/run-all.sh
 ```
 
 To run against an already-running server:

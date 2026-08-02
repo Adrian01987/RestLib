@@ -15,7 +15,7 @@ Compact guidance for OpenCode agents working in RestLib.
 - Focused test class or method: `dotnet test --filter "FullyQualifiedName~RestLib.Tests.SortingTests"`.
 - Story/category tests: `dotnet test --filter "Category=Story4.3"`; categories follow `StoryX.Y` (sometimes with a `.Suffix` like `Story4.3.Operators`) per feature file. Copy the trait from the nearest existing test rather than inventing one.
 - Run one test project: `dotnet test tests/RestLib.Tests/RestLib.Tests.csproj` or `dotnet test tests/RestLib.EntityFrameworkCore.Tests/RestLib.EntityFrameworkCore.Tests.csproj`.
-- E2E: `bash tests/e2eTests/run-all.sh`; requires `curl`, `jq`, `bc`, and dotnet. The script starts the sample on `http://localhost:5000` itself. Options: `--no-build`, `--no-server`, `BASE_URL=http://localhost:5000`, `SUITE=crud`. Suites available in `tests/e2eTests/*-tests.sh` (crud, batch, etag, filtering, filter-operator, field-selection, sorting, pagination, hateoas, versioning, error-handling).
+- E2E: `bash tests/e2eTests/run-all.sh`; requires `curl`, `jq`, and dotnet. On native Windows, explicitly use `& 'C:\Program Files\Git\bin\bash.exe' tests/e2eTests/run-all.sh` from PowerShell so `bash` does not resolve to WSL. The script starts the sample on `http://localhost:5000` itself. Options: `--no-build`, `--no-server`, `--check-inventory`, `BASE_URL=http://localhost:5000`, `SUITE=crud`. See `tests/e2eTests/README.md` for both runners and prerequisite checks.
 - Single E2E suite: `BASE_URL=http://localhost:5000 bash tests/e2eTests/crud-tests.sh`.
 - Benchmarks only for performance-sensitive work: run `dotnet run -c Release` in `benchmarks/RestLib.Benchmarks`.
 

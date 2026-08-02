@@ -74,7 +74,7 @@ jobs:
             ${{ runner.os }}-nuget-
 
       - name: Install prerequisites
-        run: sudo apt-get update && sudo apt-get install -y curl jq bc
+        run: sudo apt-get update && sudo apt-get install -y curl jq
 
       - name: Run E2E tests
         timeout-minutes: 10

@@ -7,6 +7,7 @@
 #   ./tests/e2eTests/run-all.sh              # build, start server, run all suites
 #   ./tests/e2eTests/run-all.sh --no-build   # skip build, just start server + run
 #   ./tests/e2eTests/run-all.sh --no-server  # assume server already running
+#   ./tests/e2eTests/run-all.sh --check-inventory  # validate suite registration only
 #
 # Options (via environment):
 #   BASE_URL=http://localhost:5000  # override server URL
@@ -18,6 +19,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "${SCRIPT_DIR}/runner-lib.sh"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 SAMPLE_DIR="${REPO_ROOT}/samples/RestLib.Sample"
 RESULTS_DIR="${SCRIPT_DIR}/TestResults"
@@ -27,10 +29,12 @@ SERVER_PID=""
 # Parse flags
 NO_BUILD=false
 NO_SERVER=false
+CHECK_INVENTORY=false
 for arg in "$@"; do
   case "$arg" in
     --no-build)  NO_BUILD=true ;;
     --no-server) NO_SERVER=true ;;
+    --check-inventory) CHECK_INVENTORY=true ;;
     *)           echo "Unknown flag: $arg"; exit 1 ;;
   esac
 done
@@ -152,6 +156,14 @@ ALL_SUITES=(
   "etag-tests.sh"
 )
 
+check_suite_inventory() {
+  if ! validate_suite_inventory "$SCRIPT_DIR" "*-tests.sh" "" "${ALL_SUITES[@]}"; then
+    exit 1
+  fi
+
+  info "Suite inventory valid: ${#ALL_SUITES[@]} registered suite(s)."
+}
+
 # ---------------------------------------------------------------------------
 # Run suites
 # ---------------------------------------------------------------------------
@@ -180,6 +192,10 @@ run_suites() {
   local passed_suites=0
   local failed_suites=0
   local suite_num=0
+  local total_scenarios=0
+  local passed_scenarios=0
+  local failed_scenarios=0
+  local skipped_scenarios=0
 
   header "Running ${total_suites} E2E test suite(s)"
   info "Log file: ${logfile}"
@@ -188,9 +204,29 @@ run_suites() {
   for suite in "${suites_to_run[@]}"; do
     suite_num=$((suite_num + 1))
     local suite_name="${suite%.sh}"
+    local suite_output
+    local suite_status=0
+    suite_output=$(mktemp)
     echo -e "${BOLD}[${suite_num}/${total_suites}] ${suite_name}${RESET}"
 
-    if BASE_URL="${BASE_URL}" bash "${SCRIPT_DIR}/${suite}" 2>&1 | tee -a "${logfile}"; then
+    if BASE_URL="${BASE_URL}" bash "${SCRIPT_DIR}/${suite}" 2>&1 | tee -a "${logfile}" "${suite_output}"; then
+      suite_status=0
+    else
+      suite_status=$?
+    fi
+
+    if load_suite_result "$suite_output"; then
+      total_scenarios=$((total_scenarios + SUITE_RESULT_TOTAL))
+      passed_scenarios=$((passed_scenarios + SUITE_RESULT_PASSED))
+      failed_scenarios=$((failed_scenarios + SUITE_RESULT_FAILED))
+      skipped_scenarios=$((skipped_scenarios + SUITE_RESULT_SKIPPED))
+    else
+      error "Suite ${suite_name} did not emit exactly one valid E2E_RESULT summary."
+      suite_status=1
+    fi
+    rm -f "$suite_output"
+
+    if [ "$suite_status" -eq 0 ]; then
       passed_suites=$((passed_suites + 1))
       echo -e "  ${GREEN}Suite PASSED${RESET}"
     else
@@ -209,6 +245,11 @@ run_suites() {
   echo -e "  Suites passed: ${GREEN}${passed_suites}${RESET}"
   echo -e "  Suites failed: ${RED}${failed_suites}${RESET}"
   echo ""
+  echo -e "  Scenarios run:     ${BOLD}${total_scenarios}${RESET}"
+  echo -e "  Scenarios passed:  ${GREEN}${passed_scenarios}${RESET}"
+  echo -e "  Scenarios failed:  ${RED}${failed_scenarios}${RESET}"
+  echo -e "  Scenarios skipped: ${YELLOW}${skipped_scenarios}${RESET}"
+  echo ""
   echo -e "  Full log: ${logfile}"
   echo ""
 
@@ -226,6 +267,10 @@ run_suites() {
     echo "Suites run:    ${total_suites}"
     echo "Suites passed: ${passed_suites}"
     echo "Suites failed: ${failed_suites}"
+    echo "Scenarios run:     ${total_scenarios}"
+    echo "Scenarios passed:  ${passed_scenarios}"
+    echo "Scenarios failed:  ${failed_scenarios}"
+    echo "Scenarios skipped: ${skipped_scenarios}"
     echo "========================="
   } >> "${logfile}"
 
@@ -240,6 +285,12 @@ info "Base URL:  ${BASE_URL}"
 info "Repo root: ${REPO_ROOT}"
 info "Results:   ${RESULTS_DIR}"
 echo ""
+
+check_suite_inventory
+
+if [ "$CHECK_INVENTORY" = true ]; then
+  exit 0
+fi
 
 check_prereqs
 

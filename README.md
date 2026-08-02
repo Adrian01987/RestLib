@@ -532,6 +532,7 @@ Intel Core i3-8130U CPU 2.20GHz (Kaby Lake), 1 CPU, 4 logical and 2 physical cor
 - [Query features guide](docs/guides/query-features.md) - filtering, sorting, field selection, nested paths, search, and composite keys
 - [Extensibility and operations guide](docs/guides/extensibility-and-operations.md) - batch operations, hooks, operation selection, adapters, and versioning
 - [EF Core migrations guide](docs/guides/ef-core-migrations.md) - production EF Core schema and migration workflow
+- [E2E test guide](tests/e2eTests/README.md) - main and ecommerce runners, prerequisites, suite selection, and native Windows execution without WSL
 
 ## Architecture Decisions
 
