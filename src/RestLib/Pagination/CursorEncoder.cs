@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using RestLib.Logging;
@@ -45,14 +44,16 @@ public static class CursorEncoder
             if (bytes is null)
                 return false;
 
-            var json = Encoding.UTF8.GetString(bytes);
-            var payload = JsonSerializer.Deserialize<CursorPayload<T>>(json);
-
-            if (payload is null)
+            using var document = JsonDocument.Parse(bytes);
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("v", out var valueElement)
+                || valueElement.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+            {
                 return false;
+            }
 
-            value = payload.Value;
-            return true;
+            value = JsonSerializer.Deserialize<T>(valueElement.GetRawText());
+            return value is not null;
         }
         catch (Exception ex) when (ex is FormatException or JsonException or ArgumentException
             or InvalidOperationException or NotSupportedException)
@@ -83,9 +84,10 @@ public static class CursorEncoder
             if (bytes is null)
                 return false;
 
-            var json = Encoding.UTF8.GetString(bytes);
-            using var doc = JsonDocument.Parse(json);
-            return doc.RootElement.TryGetProperty("v", out _);
+            using var doc = JsonDocument.Parse(bytes);
+            return doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("v", out var value)
+                && value.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined;
         }
         catch (Exception ex) when (ex is FormatException or JsonException or ArgumentException
             or InvalidOperationException or NotSupportedException)

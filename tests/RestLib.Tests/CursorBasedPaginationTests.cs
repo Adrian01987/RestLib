@@ -83,11 +83,11 @@ public class CursorBasedPaginationTests : IAsyncLifetime
 
     [Fact]
     [Trait("Category", "Story4.1")]
-    public async Task GetAll_WithValidBase64UrlCursor_ReturnsSuccess()
+    public async Task GetAll_WithValidOffsetCursor_ReturnsSuccess()
     {
         // Arrange
         _repository.SeedProducts(50);
-        var cursor = CursorEncoder.Encode(Guid.NewGuid());
+        var cursor = CursorEncoder.Encode(0);
 
         // Act
         var response = await _client.GetAsync($"/api/products?cursor={Uri.EscapeDataString(cursor)}");
@@ -461,6 +461,21 @@ public class CursorBasedPaginationTests : IAsyncLifetime
 
     [Fact]
     [Trait("Category", "Story4.1")]
+    public void CursorEncoder_TryDecode_ReturnsFalseWhenValuePropertyIsMissing()
+    {
+        // Arrange
+        var cursor = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("{\"other\":0}"))
+            .Replace('+', '-').Replace('/', '_').TrimEnd('=');
+
+        // Act
+        var success = CursorEncoder.TryDecode<int>(cursor, out _);
+
+        // Assert
+        success.Should().BeFalse();
+    }
+
+    [Fact]
+    [Trait("Category", "Story4.1")]
     public void CursorEncoder_TryDecode_ReturnsFalseForEmptyString()
     {
         // Act
@@ -532,6 +547,21 @@ public class CursorBasedPaginationTests : IAsyncLifetime
 
     [Fact]
     [Trait("Category", "Story4.1")]
+    public void CursorEncoder_IsValid_ReturnsFalseForNullValue()
+    {
+        // Arrange
+        var cursor = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes("{\"v\":null}"))
+            .Replace('+', '-').Replace('/', '_').TrimEnd('=');
+
+        // Act
+        var isValid = CursorEncoder.IsValid(cursor);
+
+        // Assert
+        isValid.Should().BeFalse();
+    }
+
+    [Fact]
+    [Trait("Category", "Story4.1")]
     public void CursorEncoder_CursorsAreUrlSafe()
     {
         // Arrange - test with values that would produce + and / in standard base64
@@ -565,7 +595,7 @@ public class CursorBasedPaginationTests : IAsyncLifetime
     {
         // Arrange
         _repository.SeedProducts(50);
-        var cursor = CursorEncoder.Encode(Guid.NewGuid());
+        var cursor = CursorEncoder.Encode(0);
 
         // Act
         var response = await _client.GetAsync($"/api/products?cursor={Uri.EscapeDataString(cursor)}&limit=10");
@@ -593,7 +623,7 @@ public class CursorBasedPaginationTests : IAsyncLifetime
     public async Task GetAll_WithValidCursorAndInvalidLimit_Returns400ForLimit()
     {
         // Arrange
-        var validCursor = CursorEncoder.Encode(Guid.NewGuid());
+        var validCursor = CursorEncoder.Encode(0);
 
         // Act
         var response = await _client.GetAsync($"/api/products?cursor={Uri.EscapeDataString(validCursor)}&limit=0");
@@ -722,7 +752,7 @@ public class CursorBasedPaginationTests : IAsyncLifetime
 
     [Fact]
     [Trait("Category", "Story4.1")]
-    public async Task GetAll_CursorWithSpecialCharacters_IsHandledCorrectly()
+    public async Task GetAll_CursorWithWrongPayloadType_Returns400()
     {
         // Arrange - cursor that encodes to base64 with special chars that need URL encoding
         var cursor = CursorEncoder.Encode("test/value+special=chars");
@@ -731,7 +761,7 @@ public class CursorBasedPaginationTests : IAsyncLifetime
         var response = await _client.GetAsync($"/api/products?cursor={Uri.EscapeDataString(cursor)}");
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await response.ShouldBeProblemDetails(HttpStatusCode.BadRequest, "/problems/invalid-cursor");
     }
 
     #endregion
@@ -894,7 +924,7 @@ public class ZalandoPaginationComplianceTests : IAsyncLifetime
     {
         // Arrange
         _repository.SeedProducts(50);
-        var cursor = CursorEncoder.Encode(Guid.NewGuid());
+        var cursor = CursorEncoder.Encode(0);
 
         // Act
         var response = await _client.GetAsync($"/api/products?cursor={Uri.EscapeDataString(cursor)}");

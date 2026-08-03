@@ -134,7 +134,7 @@ public partial class InMemoryRepositoryTests
     #region Edge Cases
 
     [Fact]
-    public async Task GetAllAsync_WithInvalidCursor_StartsFromBeginning()
+    public async Task GetAllAsync_WithInvalidCursor_ThrowsInvalidCursorException()
     {
         // Arrange
         var repository = CreateRepository();
@@ -142,11 +142,56 @@ public partial class InMemoryRepositoryTests
         var request = new PaginationRequest { Limit = 5, Cursor = "invalid-cursor-that-wont-decode" };
 
         // Act
-        var result = await repository.GetAllAsync(request);
+        var act = () => repository.GetAllAsync(request);
 
         // Assert
-        result.Items.Should().HaveCount(5);
-        result.HasMore.Should().BeTrue();
+        await act.Should().ThrowAsync<InvalidCursorException>()
+            .WithMessage("*valid offset cursor*");
+    }
+
+    [Fact]
+    public async Task GetAllAsync_WithNegativeCursor_ThrowsInvalidCursorException()
+    {
+        // Arrange
+        var repository = CreateRepository();
+        var request = new PaginationRequest { Limit = 5, Cursor = CursorEncoder.Encode(-1) };
+
+        // Act
+        var act = () => repository.GetAllAsync(request);
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidCursorException>()
+            .WithMessage("*non-negative*");
+    }
+
+    [Fact]
+    public async Task GetAllAsync_WithNonComparableKeys_UsesConfiguredComparerForStablePagination()
+    {
+        // Arrange
+        var comparer = Comparer<NonComparableKey>.Create(static (left, right) => left.Value.CompareTo(right.Value));
+        var repository = new InMemoryRepository<NonComparableKeyEntity, NonComparableKey>(
+            entity => entity.Id,
+            () => new NonComparableKey(0),
+            jsonOptions: null,
+            comparer);
+        repository.Seed(
+        [
+            new NonComparableKeyEntity(new NonComparableKey(3), "Third"),
+            new NonComparableKeyEntity(new NonComparableKey(1), "First"),
+            new NonComparableKeyEntity(new NonComparableKey(2), "Second")
+        ]);
+
+        // Act
+        var firstPage = await repository.GetAllAsync(new PaginationRequest { Limit = 2 });
+        var secondPage = await repository.GetAllAsync(new PaginationRequest
+        {
+            Limit = 2,
+            Cursor = firstPage.NextCursor
+        });
+
+        // Assert
+        firstPage.Items.Select(entity => entity.Id.Value).Should().Equal(1, 2);
+        secondPage.Items.Select(entity => entity.Id.Value).Should().Equal(3);
     }
 
     [Fact]
@@ -244,4 +289,8 @@ public partial class InMemoryRepositoryTests
     }
 
     #endregion
+
+    private sealed record NonComparableKey(int Value);
+
+    private sealed record NonComparableKeyEntity(NonComparableKey Id, string Name);
 }

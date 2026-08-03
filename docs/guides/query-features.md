@@ -68,6 +68,12 @@ Nested reference-property paths use snake_case per segment joined with dots,
 for example `Customer.Name` becomes `customer.name`.
 Disallowed fields return a 400 Problem Details response.
 
+Cursor payloads are adapter-specific and must be treated as opaque. EF Core uses keyset
+pagination only when every effective sort member is a direct, non-nullable string, number,
+GUID, or date with a supported relational comparison. Nullable, enum, Boolean, nested, and
+other unsupported sorts automatically use offset cursors. Malformed payloads, negative offsets,
+wrong sort signatures, null values, and incorrectly typed values return 400 Invalid Cursor.
+
 ## Field Selection
 
 Return only the fields your client needs with sparse fieldsets:
@@ -211,6 +217,14 @@ RestLib supports ordered two-part composite keys through `RestLibCompositeKey<TF
 Fluent registration:
 
 ```csharp
+var keyComparer = Comparer<RestLibCompositeKey<Guid, string>>.Create(static (left, right) =>
+{
+    var tenantComparison = left.First.CompareTo(right.First);
+    return tenantComparison != 0
+        ? tenantComparison
+        : StringComparer.Ordinal.Compare(left.Second, right.Second);
+});
+
 builder.Services.AddRestLibInMemory<TenantProduct, RestLibCompositeKey<Guid, string>>(
     p => new RestLibCompositeKey<Guid, string>(p.TenantId, p.Sku),
     () => new RestLibCompositeKey<Guid, string>(Guid.NewGuid(), $"generated-{Guid.NewGuid():N}"),
@@ -219,7 +233,8 @@ builder.Services.AddRestLibInMemory<TenantProduct, RestLibCompositeKey<Guid, str
         product.TenantId = key.First;
         product.Sku = key.Second;
         return product;
-    });
+    },
+    keyComparer);
 
 app.MapRestLib<TenantProduct, RestLibCompositeKey<Guid, string>>("/api/tenant-products", config =>
 {
@@ -232,6 +247,8 @@ The third delegate explicitly writes generated composite keys back to the entity
 Simple resources with one writable key property, or a conventional `Id` property,
 do not need this delegate. Calculated, composite, or otherwise ambiguous generated
 keys must provide it so the returned entity and repository storage key cannot diverge.
+The comparer supplies the total key order used for default collection ordering and sort
+tie-breaking; provide one whenever a composite or custom `TKey` has no natural comparer.
 
 That produces item routes like:
 

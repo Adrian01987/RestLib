@@ -86,7 +86,7 @@ Sort parameters are parsed and validated **before** `repository.GetAllAsync()` i
 
 Parsed sort fields are passed to the repository via `PaginationRequest.SortFields` (`IReadOnlyList<SortField>`). Each `SortField` carries the C# `PropertyName`, the `QueryParameterName` (snake_case), and the `Direction`. The repository implementation decides how to apply them (e.g., LINQ `OrderBy` for in-memory, SQL `ORDER BY` for database-backed).
 
-The `InMemoryRepository` additionally appends the entity key as a tie-breaker to ensure stable ordering for cursor pagination.
+The `InMemoryRepository` additionally appends the entity key as a tie-breaker to ensure stable ordering for cursor pagination. It uses `Comparer<TKey>.Default` unless the repository or primary `AddRestLibInMemory` registration receives an explicit `IComparer<TKey>`. Composite or custom key types without a natural total order must supply that comparer.
 
 ### 6. Silently ignored when unconfigured
 

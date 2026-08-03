@@ -414,6 +414,14 @@ public class TenantProduct
 Register the repository in `Program.cs`:
 
 ```csharp
+var keyComparer = Comparer<RestLibCompositeKey<Guid, string>>.Create(static (left, right) =>
+{
+    var tenantComparison = left.First.CompareTo(right.First);
+    return tenantComparison != 0
+        ? tenantComparison
+        : StringComparer.Ordinal.Compare(left.Second, right.Second);
+});
+
 builder.Services.AddRestLibInMemory<TenantProduct, RestLibCompositeKey<Guid, string>>(
     p => new RestLibCompositeKey<Guid, string>(p.TenantId, p.Sku),
     () => new RestLibCompositeKey<Guid, string>(Guid.NewGuid(), $"generated-{Guid.NewGuid():N}"),
@@ -422,13 +430,16 @@ builder.Services.AddRestLibInMemory<TenantProduct, RestLibCompositeKey<Guid, str
         product.TenantId = key.First;
         product.Sku = key.Second;
         return product;
-    });
+    },
+    keyComparer);
 ```
 
 The explicit assigner is required when a generated key is composite, calculated,
 or ambiguous. It guarantees that the entity returned from create selects the same
 key used by the repository. A single writable key property or conventional `Id`
 property is assigned automatically.
+The explicit comparer is required when `TKey` has no natural total order; InMemory uses it
+for deterministic collection ordering and as the final tie-breaker for sorted pages.
 
 Then declare `Models/TenantProducts.json`:
 

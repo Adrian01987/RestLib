@@ -33,6 +33,31 @@ public static class InMemoryServiceExtensions
     }
 
     /// <summary>
+    /// Registers an in-memory repository with an explicit key comparer.
+    /// </summary>
+    /// <typeparam name="TEntity">The entity type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="keySelector">Function to extract the key from an entity.</param>
+    /// <param name="keyGenerator">Function to generate a new key for entity creation.</param>
+    /// <param name="keyComparer">Comparer used for default ordering and sort tie-breaking.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddRestLibInMemory<TEntity, TKey>(
+        this IServiceCollection services,
+        Func<TEntity, TKey> keySelector,
+        Func<TKey> keyGenerator,
+        IComparer<TKey> keyComparer)
+        where TEntity : class
+        where TKey : notnull
+    {
+        var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, null, keyComparer);
+        services.AddSingleton<IRepository<TEntity, TKey>>(repository);
+        services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
+        services.AddSingleton(repository);
+        return services;
+    }
+
+    /// <summary>
     /// Registers an in-memory repository with an explicit generated-key assigner.
     /// </summary>
     /// <typeparam name="TEntity">The entity type.</typeparam>
@@ -53,6 +78,35 @@ public static class InMemoryServiceExtensions
         where TKey : notnull
     {
         var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, null, keyAssigner);
+        services.AddSingleton<IRepository<TEntity, TKey>>(repository);
+        services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
+        services.AddSingleton(repository);
+        return services;
+    }
+
+    /// <summary>
+    /// Registers an in-memory repository with explicit generated-key assignment and key comparison.
+    /// </summary>
+    /// <typeparam name="TEntity">The entity type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="keySelector">Function to extract the key from an entity.</param>
+    /// <param name="keyGenerator">Function to generate a new key for entity creation.</param>
+    /// <param name="keyAssigner">
+    /// Function that assigns a generated key and returns the entity instance to store.
+    /// </param>
+    /// <param name="keyComparer">Comparer used for default ordering and sort tie-breaking.</param>
+    /// <returns>The service collection for chaining.</returns>
+    public static IServiceCollection AddRestLibInMemory<TEntity, TKey>(
+        this IServiceCollection services,
+        Func<TEntity, TKey> keySelector,
+        Func<TKey> keyGenerator,
+        Func<TEntity, TKey, TEntity> keyAssigner,
+        IComparer<TKey> keyComparer)
+        where TEntity : class
+        where TKey : notnull
+    {
+        var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, null, keyAssigner, keyComparer);
         services.AddSingleton<IRepository<TEntity, TKey>>(repository);
         services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
         services.AddSingleton(repository);

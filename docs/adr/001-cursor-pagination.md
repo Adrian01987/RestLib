@@ -39,7 +39,8 @@ Use **cursor-based pagination** as the default.
 - **Response includes navigation links** — `self`, `first`, `next`, `prev` for client convenience
 - **`prev` is structurally present but always null** — simple cursor pagination is forward-only; the `prev` property exists on the response model for future bidirectional cursor support but is not populated in the current implementation
 - **Cursor does not imply keyset pagination** — the HTTP contract is cursor-based, but a repository may still implement that contract with an encoded offset/index rather than last-seen sort keys
-- **Performance and consistency depend on the adapter** — the InMemory adapter currently uses opaque encoded offsets/indexes, while the EF Core adapter uses keyset cursors for supported stable sorts and falls back to offsets for unsupported cases
+- **Performance and consistency depend on the adapter** — the InMemory adapter currently uses opaque encoded non-negative offsets/indexes, while the EF Core adapter uses keyset cursors for supported non-nullable scalar sorts and falls back to offsets for unsupported cases
+- **Adapter validation is authoritative** — base64url/JSON validation only establishes the common cursor envelope. Repositories validate their payload version, shape, sort signature, offset range, nullability, and typed values before executing a query and report failures through `InvalidCursorException`.
 
 ## Security Considerations
 
@@ -58,8 +59,10 @@ not by enforcement**:
 - **Length-limited.** A configurable `MaxCursorLength` (default: 4096 characters) is
   enforced before any decoding attempt. Cursors exceeding this limit are rejected with
   a 400 Problem Details response, preventing large-payload abuse.
-- **Decode failures are safe.** Malformed or tampered cursors that fail base64 decoding
-  or JSON deserialization result in a 400 response. No partial state is applied.
+- **Decode failures are safe.** Malformed or tampered cursors, wrong adapter payloads,
+  negative offsets, unsupported versions, mismatched sort signatures, null keyset values,
+  and incorrectly typed values result in a 400 response before a repository query executes.
+  No partial state is applied.
 
 If a future version requires tamper-proof cursors (e.g., for access-controlled
 pagination windows), the encoding can be extended with HMAC signatures without

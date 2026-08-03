@@ -164,7 +164,7 @@ public class PaginationLinksTests : IAsyncLifetime
     {
         // Arrange
         _repository.SeedProducts(30);
-        var cursor = CursorEncoder.Encode(Guid.NewGuid());
+        var cursor = CursorEncoder.Encode(0);
 
         // Act
         var response = await _client.GetAsync($"/api/products?cursor={Uri.EscapeDataString(cursor)}&limit=10");
@@ -183,7 +183,7 @@ public class PaginationLinksTests : IAsyncLifetime
     {
         // Arrange
         _repository.SeedProducts(30);
-        var cursor = CursorEncoder.Encode(Guid.NewGuid());
+        var cursor = CursorEncoder.Encode(0);
 
         // Act
         var response = await _client.GetAsync($"/api/products?cursor={Uri.EscapeDataString(cursor)}&limit=10");
@@ -352,7 +352,7 @@ public class PaginationLinksTests : IAsyncLifetime
     {
         // Arrange
         _repository.SeedProducts(25);
-        var cursor = CursorEncoder.Encode(Guid.NewGuid());
+        var cursor = CursorEncoder.Encode(0);
 
         // Act - Cursor and limit are pagination params, not filters
         var response = await _client.GetAsync($"/api/products?filter=test&cursor={Uri.EscapeDataString(cursor)}&limit=10");

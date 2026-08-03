@@ -470,5 +470,38 @@ public class InMemoryServiceExtensionsTests
         retrieved.Should().Be(created);
     }
 
+    [Fact]
+    public async Task AddRestLibInMemory_WithExplicitKeyComparer_OrdersNonComparableKeys()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var comparer = Comparer<GeneratedCompositeKey>.Create(static (left, right) =>
+        {
+            var partitionComparison = left.PartitionId.CompareTo(right.PartitionId);
+            return partitionComparison != 0
+                ? partitionComparison
+                : left.Sequence.CompareTo(right.Sequence);
+        });
+        services.AddRestLibInMemory<GeneratedCompositeEntity, GeneratedCompositeKey>(
+            entity => new GeneratedCompositeKey(entity.PartitionId, entity.Sequence),
+            () => new GeneratedCompositeKey(Guid.NewGuid(), 1),
+            (entity, key) => entity with { PartitionId = key.PartitionId, Sequence = key.Sequence },
+            comparer);
+        var provider = services.BuildServiceProvider();
+        var repository = provider.GetRequiredService<InMemoryRepository<GeneratedCompositeEntity, GeneratedCompositeKey>>();
+        var partitionId = Guid.NewGuid();
+        repository.Seed(
+        [
+            new GeneratedCompositeEntity(partitionId, 2, "Second"),
+            new GeneratedCompositeEntity(partitionId, 1, "First")
+        ]);
+
+        // Act
+        var result = await repository.GetAllAsync(new PaginationRequest { Limit = 10 });
+
+        // Assert
+        result.Items.Select(entity => entity.Sequence).Should().Equal(1, 2);
+    }
+
     #endregion
 }

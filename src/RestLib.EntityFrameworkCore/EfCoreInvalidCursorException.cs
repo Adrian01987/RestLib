@@ -1,9 +1,11 @@
+using RestLib.Pagination;
+
 namespace RestLib.EntityFrameworkCore;
 
 /// <summary>
 /// Represents an invalid EF Core adapter pagination cursor.
 /// </summary>
-public sealed class EfCoreInvalidCursorException : Exception
+public sealed class EfCoreInvalidCursorException : InvalidCursorException
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="EfCoreInvalidCursorException"/> class.

@@ -44,10 +44,16 @@ the same `cursor` parameter and `next` link shape, while the EF Core adapter is 
 an adapter-specific payload internally.
 
 The adapter still falls back to offset pagination for unsupported sort shapes. In the current
-implementation, keyset pagination is used only when all effective sort fields resolve to direct,
-database-friendly scalar CLR properties (including strings, numbers, GUIDs, dates, booleans,
-nullable variants, and enums). When that condition is not met, the adapter logs a warning and
-continues with encoded offset cursors so the public API remains usable.
+implementation, keyset pagination is used only when every effective sort field resolves to a
+direct, non-nullable, database-friendly scalar CLR property with a supported relational
+comparison: strings, numbers, GUIDs, and dates. Nullable properties, enums, Booleans, nested
+paths, and other unsupported shapes use encoded offset cursors. This conservative boundary
+prevents the adapter from issuing a keyset cursor whose page-two predicate it cannot construct.
+
+Both cursor strategies validate their full payload before querying. Keyset cursors validate the
+version, sort signature, value count, nullability, and every typed value; offset cursors must
+decode to a non-negative integer. Adapter failures derive from the core `InvalidCursorException`,
+which the endpoint consistently maps to 400 Invalid Cursor Problem Details.
 
 This is intentionally a statement about the EF Core adapter implementation, not a broader
 claim that every RestLib cursor is a keyset cursor. RestLib's public API exposes an opaque

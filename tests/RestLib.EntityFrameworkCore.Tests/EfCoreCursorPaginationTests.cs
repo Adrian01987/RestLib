@@ -3,6 +3,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Hosting;
 using RestLib.EntityFrameworkCore.Tests.Fakes;
+using RestLib.Pagination;
 using RestLib.Serialization;
 using Xunit;
 
@@ -31,7 +32,10 @@ public class EfCoreCursorPaginationTests : IAsyncLifetime
                 config.AllowAnonymous();
                 config.AllowSorting(
                     p => p.UnitPrice,
-                    p => p.ProductName);
+                    p => p.ProductName,
+                    p => p.LastModifiedAt,
+                    p => p.Lifecycle,
+                    p => p.IsActive);
                 config.AllowFiltering(p => p.IsActive);
             })
             .BuildAsync();
@@ -230,6 +234,91 @@ public class EfCoreCursorPaginationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetAll_CursorWithNullableSort_UsesConsumableOffsetCursorsInBothDirections()
+    {
+        // Arrange
+        await SeedProductsAsync(
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "No Modified", UnitPrice = 10m, CreatedAt = DateTime.UtcNow, LastModifiedAt = null, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Modified Later", UnitPrice = 20m, CreatedAt = DateTime.UtcNow, LastModifiedAt = new DateTime(2025, 3, 1, 0, 0, 0, DateTimeKind.Utc), IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Modified Earlier", UnitPrice = 30m, CreatedAt = DateTime.UtcNow, LastModifiedAt = new DateTime(2025, 2, 1, 0, 0, 0, DateTimeKind.Utc), IsActive = true });
+
+        var firstResponse = await _client.GetAsync("/api/products?sort=last_modified_at:asc&limit=1");
+        var firstPage = await DeserializeCollectionResponseAsync(firstResponse);
+        var firstCursor = GetCursorFromNextLink(firstPage.Next);
+
+        // Act
+        var ascending = await CollectAllPagesAsync("last_modified_at:asc", limit: 1);
+        var descending = await CollectAllPagesAsync("last_modified_at:desc", limit: 1);
+
+        // Assert
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        CursorEncoder.TryDecode<int>(firstCursor!, out var offset).Should().BeTrue();
+        offset.Should().Be(1);
+        ascending.Select(product => product.ProductName)
+            .Should().Equal("No Modified", "Modified Earlier", "Modified Later");
+        descending.Select(product => product.ProductName)
+            .Should().Equal("Modified Later", "Modified Earlier", "No Modified");
+    }
+
+    [Fact]
+    public async Task GetAll_CursorWithEnumSort_UsesConsumableOffsetCursorsInBothDirections()
+    {
+        // Arrange
+        await SeedProductsAsync(
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Archived", UnitPrice = 30m, CreatedAt = DateTime.UtcNow, IsActive = true, Lifecycle = ProductLifecycle.Archived },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Draft", UnitPrice = 10m, CreatedAt = DateTime.UtcNow, IsActive = true, Lifecycle = ProductLifecycle.Draft },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Active", UnitPrice = 20m, CreatedAt = DateTime.UtcNow, IsActive = true, Lifecycle = ProductLifecycle.Active });
+
+        // Act
+        var ascending = await CollectAllPagesAsync("lifecycle:asc", limit: 1);
+        var descending = await CollectAllPagesAsync("lifecycle:desc", limit: 1);
+
+        // Assert
+        ascending.Select(product => product.Lifecycle)
+            .Should().Equal(ProductLifecycle.Draft, ProductLifecycle.Active, ProductLifecycle.Archived);
+        descending.Select(product => product.Lifecycle)
+            .Should().Equal(ProductLifecycle.Archived, ProductLifecycle.Active, ProductLifecycle.Draft);
+    }
+
+    [Fact]
+    public async Task GetAll_CursorWithBooleanSort_UsesConsumableOffsetCursorsInBothDirections()
+    {
+        // Arrange
+        await SeedProductsAsync(
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Enabled", UnitPrice = 30m, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Disabled A", UnitPrice = 10m, CreatedAt = DateTime.UtcNow, IsActive = false },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Disabled B", UnitPrice = 20m, CreatedAt = DateTime.UtcNow, IsActive = false });
+
+        // Act
+        var ascending = await CollectAllPagesAsync("is_active:asc", limit: 1);
+        var descending = await CollectAllPagesAsync("is_active:desc", limit: 1);
+
+        // Assert
+        ascending.Select(product => product.IsActive).Should().Equal(false, false, true);
+        descending.Select(product => product.IsActive).Should().Equal(true, false, false);
+        ascending.Select(product => product.Id).Should().OnlyHaveUniqueItems();
+        descending.Select(product => product.Id).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public async Task GetAll_CursorWithStringSort_RemainsConsumableInBothDirections()
+    {
+        // Arrange
+        await SeedProductsAsync(
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Charlie", UnitPrice = 30m, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Alpha", UnitPrice = 10m, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = "Bravo", UnitPrice = 20m, CreatedAt = DateTime.UtcNow, IsActive = true });
+
+        // Act
+        var ascending = await CollectAllPagesAsync("product_name:asc", limit: 1);
+        var descending = await CollectAllPagesAsync("product_name:desc", limit: 1);
+
+        // Assert
+        ascending.Select(product => product.ProductName).Should().Equal("Alpha", "Bravo", "Charlie");
+        descending.Select(product => product.ProductName).Should().Equal("Charlie", "Bravo", "Alpha");
+    }
+
+    [Fact]
     public async Task GetAll_CursorWithSorting_RemainsStableAfterInsertBetweenPages()
     {
         // Arrange
@@ -330,6 +419,89 @@ public class EfCoreCursorPaginationTests : IAsyncLifetime
         json.GetProperty("title").GetString().Should().Be("Invalid Cursor");
     }
 
+    [Fact]
+    public async Task GetAll_NegativeOffsetCursor_Returns400WithProblemDetails()
+    {
+        // Arrange
+        var cursor = CursorEncoder.Encode(-1);
+
+        // Act
+        var response = await _client.GetAsync($"/api/products?sort=lifecycle:asc&cursor={Uri.EscapeDataString(cursor)}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var json = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
+        json.GetProperty("type").GetString().Should().Be("/problems/invalid-cursor");
+    }
+
+    [Fact]
+    public async Task GetAll_KeysetCursorWithWrongValueType_Returns400WithProblemDetails()
+    {
+        // Arrange
+        var cursor = CursorEncoder.Encode(new EfCoreKeysetCursor
+        {
+            Version = 1,
+            SortSignature = "unit_price:Asc,id:Asc",
+            Values =
+            [
+                JsonSerializer.SerializeToElement("not-a-decimal"),
+                JsonSerializer.SerializeToElement(Guid.NewGuid())
+            ]
+        });
+
+        // Act
+        var response = await _client.GetAsync($"/api/products?sort=unit_price:asc&cursor={Uri.EscapeDataString(cursor)}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var json = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
+        json.GetProperty("type").GetString().Should().Be("/problems/invalid-cursor");
+    }
+
+    [Fact]
+    public async Task GetAll_KeysetCursorWithNullValues_Returns400WithProblemDetails()
+    {
+        // Arrange
+        var cursor = CursorEncoder.Encode(new EfCoreKeysetCursor
+        {
+            Version = 1,
+            SortSignature = "unit_price:Asc,id:Asc",
+            Values = null!
+        });
+
+        // Act
+        var response = await _client.GetAsync($"/api/products?sort=unit_price:asc&cursor={Uri.EscapeDataString(cursor)}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var json = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
+        json.GetProperty("type").GetString().Should().Be("/problems/invalid-cursor");
+    }
+
+    [Fact]
+    public async Task GetAll_KeysetCursorWithUnsupportedVersion_Returns400WithProblemDetails()
+    {
+        // Arrange
+        var cursor = CursorEncoder.Encode(new EfCoreKeysetCursor
+        {
+            Version = 2,
+            SortSignature = "unit_price:Asc,id:Asc",
+            Values =
+            [
+                JsonSerializer.SerializeToElement(10m),
+                JsonSerializer.SerializeToElement(Guid.NewGuid())
+            ]
+        });
+
+        // Act
+        var response = await _client.GetAsync($"/api/products?sort=unit_price:asc&cursor={Uri.EscapeDataString(cursor)}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var json = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
+        json.GetProperty("type").GetString().Should().Be("/problems/invalid-cursor");
+    }
+
     private static async Task<CollectionResponse> DeserializeCollectionResponseAsync(HttpResponseMessage response)
     {
         return JsonSerializer.Deserialize<CollectionResponse>(
@@ -360,6 +532,28 @@ public class EfCoreCursorPaginationTests : IAsyncLifetime
         }
 
         return null;
+    }
+
+    private async Task<List<ProductEntity>> CollectAllPagesAsync(string sort, int limit)
+    {
+        var collected = new List<ProductEntity>();
+        string? cursor = null;
+
+        do
+        {
+            var url = cursor is null
+                ? $"/api/products?sort={sort}&limit={limit}"
+                : $"/api/products?sort={sort}&limit={limit}&cursor={Uri.EscapeDataString(cursor)}";
+            var response = await _client.GetAsync(url);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var page = await DeserializeCollectionResponseAsync(response);
+            collected.AddRange(page.Items);
+            cursor = GetCursorFromNextLink(page.Next);
+        }
+        while (cursor is not null);
+
+        return collected;
     }
 
     private async Task SeedProductsAsync(params ProductEntity[] products)

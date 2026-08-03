@@ -201,7 +201,7 @@ internal static class GetAllHandler
                         result = await repository.GetAllAsync(paginationRequest, ct);
                     }
                 }
-                catch (Exception ex) when (IsEfCoreInvalidCursorException(ex))
+                catch (InvalidCursorException ex)
                 {
                     return Responses.ProblemDetailsResult.InvalidCursor(
                         cursor ?? string.Empty,
@@ -553,7 +553,7 @@ internal static class GetAllHandler
         {
             dbResult = await repository.GetAllAsync(paginationRequest, ct);
         }
-        catch (Exception ex) when (IsEfCoreInvalidCursorException(ex))
+        catch (InvalidCursorException ex)
         {
             return Responses.ProblemDetailsResult.InvalidCursor(
                 cursor ?? string.Empty,
@@ -650,11 +650,6 @@ internal static class GetAllHandler
         }
 
         return Results.Json(response, jsonOptions);
-    }
-
-    private static bool IsEfCoreInvalidCursorException(Exception exception)
-    {
-        return exception.GetType().FullName == "RestLib.EntityFrameworkCore.EfCoreInvalidCursorException";
     }
 
     private static bool ShouldUseProjectionPushdown<TEntity, TKey>(

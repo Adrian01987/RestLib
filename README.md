@@ -220,6 +220,8 @@ for both fluent and JSON-backed resources. Item routes use two path segments suc
 
 Item-route and batch-envelope keys are authoritative for PUT updates, and resource-key fields
 are immutable under JSON Merge Patch. This identity rule also applies to scalar alternate keys.
+InMemory resources whose key type does not implement a natural total order must register an
+`IComparer<TKey>` so collection ordering and pagination tie-breaking remain deterministic.
 
 For complete fluent setup, JSON `Key` examples, and related query behavior, see
 [docs/guides/query-features.md](docs/guides/query-features.md).
@@ -585,7 +587,7 @@ Key decisions are documented as Architecture Decision Records:
 ## Known Limitations
 
 - **Forward-only cursor pagination** — cursors support forward traversal only; there is no backward/previous-page navigation.
-- **Cursor contract, adapter-specific implementation** — RestLib exposes an opaque cursor API. The InMemory adapter still uses encoded offsets/indexes, while the EF Core adapter uses keyset cursors for supported stable sorts and falls back to offsets otherwise.
+- **Cursor contract, adapter-specific implementation** — RestLib exposes an opaque cursor API. The InMemory adapter uses validated non-negative offsets/indexes. The EF Core adapter uses keyset cursors only for non-nullable scalar sorts with supported relational comparisons and falls back to validated offsets for nullable, enum, Boolean, or otherwise unsupported sort shapes.
 - **Field selection pushdown is adapter-dependent** — the core endpoint layer can project after retrieval for any repository. The EF Core adapter can opt into conditional SQL projection pushdown for direct scalar fields via `EnableProjectionPushdown`; nested selections and requests using HATEOAS, ETags, or hooks fall back to materialized projection.
 - **Nested query paths are reference-only** — filtering, sorting, and field selection support dotted nested reference-property paths such as `customer.email`, but collection-valued paths are not supported and sparse nested responses use dotted output keys rather than nested objects.
 - **Built-in search is intentionally limited** — RestLib supports configured OR-of-contains search across string fields, but it does not provide full-text indexing, ranking, fuzzy matching, or provider-specific search features.

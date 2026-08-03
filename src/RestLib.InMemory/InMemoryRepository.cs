@@ -30,6 +30,7 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     private readonly Func<TKey> _keyGenerator;
     private readonly Func<TEntity, TKey, TEntity>? _keyAssigner;
     private readonly PropertyInfo? _keyProperty;
+    private readonly IComparer<TKey> _keyComparer;
     private readonly JsonSerializerOptions _jsonOptions;
 
     /// <summary>
@@ -42,7 +43,30 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
         Func<TEntity, TKey> keySelector,
         Func<TKey> keyGenerator,
         JsonSerializerOptions? jsonOptions = null)
-        : this(keySelector, keyGenerator, jsonOptions, null, hasExplicitKeyAssigner: false)
+        : this(keySelector, keyGenerator, jsonOptions, null, null, hasExplicitKeyAssigner: false)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of <see cref="InMemoryRepository{TEntity, TKey}"/>
+    /// with an explicit key comparer for deterministic collection ordering.
+    /// </summary>
+    /// <param name="keySelector">Function to extract the key from an entity.</param>
+    /// <param name="keyGenerator">Function to generate a new key for entity creation.</param>
+    /// <param name="jsonOptions">Optional JSON serializer options for patch operations.</param>
+    /// <param name="keyComparer">Comparer used for default ordering and sort tie-breaking.</param>
+    public InMemoryRepository(
+        Func<TEntity, TKey> keySelector,
+        Func<TKey> keyGenerator,
+        JsonSerializerOptions? jsonOptions,
+        IComparer<TKey> keyComparer)
+        : this(
+            keySelector,
+            keyGenerator,
+            jsonOptions,
+            null,
+            keyComparer ?? throw new ArgumentNullException(nameof(keyComparer)),
+            hasExplicitKeyAssigner: false)
     {
     }
 
@@ -67,6 +91,35 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
             keyGenerator,
             jsonOptions,
             keyAssigner ?? throw new ArgumentNullException(nameof(keyAssigner)),
+            null,
+            hasExplicitKeyAssigner: true)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of <see cref="InMemoryRepository{TEntity, TKey}"/>
+    /// with explicit generated-key assignment and key comparison.
+    /// </summary>
+    /// <param name="keySelector">Function to extract the key from an entity.</param>
+    /// <param name="keyGenerator">Function to generate a new key for entity creation.</param>
+    /// <param name="jsonOptions">Optional JSON serializer options for patch operations.</param>
+    /// <param name="keyAssigner">
+    /// Function that assigns a generated key and returns the entity instance to store.
+    /// The function may return a replacement instance for immutable entity types.
+    /// </param>
+    /// <param name="keyComparer">Comparer used for default ordering and sort tie-breaking.</param>
+    public InMemoryRepository(
+        Func<TEntity, TKey> keySelector,
+        Func<TKey> keyGenerator,
+        JsonSerializerOptions? jsonOptions,
+        Func<TEntity, TKey, TEntity> keyAssigner,
+        IComparer<TKey> keyComparer)
+        : this(
+            keySelector,
+            keyGenerator,
+            jsonOptions,
+            keyAssigner ?? throw new ArgumentNullException(nameof(keyAssigner)),
+            keyComparer ?? throw new ArgumentNullException(nameof(keyComparer)),
             hasExplicitKeyAssigner: true)
     {
     }
@@ -76,12 +129,14 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
         Func<TKey> keyGenerator,
         JsonSerializerOptions? jsonOptions,
         Func<TEntity, TKey, TEntity>? keyAssigner,
+        IComparer<TKey>? keyComparer,
         bool hasExplicitKeyAssigner)
     {
         _keySelector = keySelector ?? throw new ArgumentNullException(nameof(keySelector));
         _keyGenerator = keyGenerator ?? throw new ArgumentNullException(nameof(keyGenerator));
         _keyAssigner = hasExplicitKeyAssigner ? keyAssigner : null;
         _keyProperty = ResolveConventionalKeyProperty();
+        _keyComparer = keyComparer ?? Comparer<TKey>.Default;
         _jsonOptions = jsonOptions ?? new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,
@@ -104,6 +159,9 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     /// <inheritdoc />
     public Task<PagedResult<TEntity>> GetAllAsync(PaginationRequest request, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var startIndex = DecodeOffsetCursor(request.Cursor);
         var items = _store.Values.AsEnumerable();
 
         // Apply filters
@@ -116,12 +174,6 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
         var orderedItems = ApplySorting(items, request.SortFields).ToList();
 
         // Apply cursor-based pagination
-        int startIndex = 0;
-        if (!string.IsNullOrEmpty(request.Cursor) && CursorEncoder.TryDecode<int>(request.Cursor, out var cursorIndex))
-        {
-            startIndex = cursorIndex;
-        }
-
         // Guard against int overflow when taking one extra to detect more items.
         var takeCount = request.Limit == int.MaxValue ? int.MaxValue : request.Limit + 1;
 
@@ -614,7 +666,7 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
         if (sortFields.Count == 0)
         {
             // No sort requested — fall back to key ordering (preserves current behavior)
-            return items.OrderBy(e => _keySelector(e));
+            return items.OrderBy(e => _keySelector(e), _keyComparer);
         }
 
         IOrderedEnumerable<TEntity>? ordered = null;
@@ -642,7 +694,29 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
         }
 
         // Always append key as tie-breaker for stable cursor pagination
-        return ordered!.ThenBy(e => _keySelector(e));
+        return ordered!.ThenBy(e => _keySelector(e), _keyComparer);
+    }
+
+    private int DecodeOffsetCursor(string? cursor)
+    {
+        if (string.IsNullOrEmpty(cursor))
+        {
+            return 0;
+        }
+
+        if (!CursorEncoder.TryDecode<int>(cursor, out var offset))
+        {
+            throw new InvalidCursorException(
+                "The provided cursor is not a valid offset cursor for this result set.");
+        }
+
+        if (offset < 0)
+        {
+            throw new InvalidCursorException(
+                "The provided cursor must contain a non-negative offset.");
+        }
+
+        return offset;
     }
 
     private bool MatchesFilter(TEntity entity, FilterValue filter)

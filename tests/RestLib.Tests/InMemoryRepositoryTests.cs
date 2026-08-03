@@ -65,6 +65,20 @@ public partial class InMemoryRepositoryTests
     }
 
     [Fact]
+    public void Constructor_WithNullKeyComparer_ThrowsArgumentNullException()
+    {
+        // Act
+        var act = () => new InMemoryRepository<TestEntity, Guid>(
+            entity => entity.Id,
+            Guid.NewGuid,
+            jsonOptions: null,
+            keyComparer: null!);
+
+        // Assert
+        act.Should().Throw<ArgumentNullException>().WithParameterName("keyComparer");
+    }
+
+    [Fact]
     public void Constructor_WithValidParameters_CreatesEmptyRepository()
     {
         // Act

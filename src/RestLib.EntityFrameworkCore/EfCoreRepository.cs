@@ -1019,12 +1019,13 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             return 0;
         }
 
-        if (CursorEncoder.TryDecode<int>(cursor, out var cursorIndex))
+        if (CursorEncoder.TryDecode<int>(cursor, out var cursorIndex) && cursorIndex >= 0)
         {
             return cursorIndex;
         }
 
-        throw new EfCoreInvalidCursorException("The provided cursor is not a valid offset cursor for this result set.");
+        throw new EfCoreInvalidCursorException(
+            "The provided cursor is not a valid non-negative offset cursor for this result set.");
     }
 
     private bool TryBuildKeysetPlan(
@@ -1075,7 +1076,13 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         out KeysetPlanPart? part)
     {
         var property = typeof(TEntity).GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
-        if (property is null || !IsKeysetComparableType(property.PropertyType))
+        var mappedProperty = property is null
+            ? null
+            : _context.Model.FindEntityType(typeof(TEntity))?.FindProperty(property.Name);
+        if (property is null
+            || mappedProperty is null
+            || mappedProperty.IsNullable
+            || !IsKeysetComparableType(property.PropertyType))
         {
             part = null;
             return false;
@@ -1119,18 +1126,8 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         return orderedQuery!;
     }
 
-    private Expression<Func<TEntity, bool>> BuildKeysetPredicate(KeysetPlan keysetPlan, EfCoreKeysetCursor cursor)
+    private Expression<Func<TEntity, bool>> BuildKeysetPredicate(KeysetPlan keysetPlan, DecodedKeysetCursor cursor)
     {
-        if (cursor.Version != KeysetCursorVersion)
-        {
-            throw new EfCoreInvalidCursorException("The provided cursor version is not supported.");
-        }
-
-        if (cursor.Values.Count != keysetPlan.Parts.Count)
-        {
-            throw new EfCoreInvalidCursorException("The provided cursor does not match the active sort shape.");
-        }
-
         var parameter = Expression.Parameter(typeof(TEntity), "entity");
         Expression? predicate = null;
 
@@ -1158,13 +1155,11 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     private Expression BuildComparisonExpression(
         ParameterExpression parameter,
         KeysetPlanPart part,
-        JsonElement cursorValue,
+        object cursorValue,
         ExpressionType comparisonType)
     {
         var left = Expression.Property(parameter, part.Property);
-        var typedValue = JsonSerializer.Deserialize(cursorValue.GetRawText(), part.PropertyType)
-            ?? throw new EfCoreInvalidCursorException($"The provided cursor contains an invalid value for '{part.QueryParameterName}'.");
-        var right = Expression.Constant(typedValue, part.PropertyType);
+        var right = Expression.Constant(cursorValue, part.PropertyType);
 
         if (part.PropertyType == typeof(string)
             && comparisonType is ExpressionType.GreaterThan or ExpressionType.LessThan)
@@ -1193,17 +1188,33 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         });
     }
 
-    private EfCoreKeysetCursor DecodeKeysetCursor(string cursor, KeysetPlan keysetPlan)
+    private DecodedKeysetCursor DecodeKeysetCursor(string cursor, KeysetPlan keysetPlan)
     {
         if (CursorEncoder.TryDecode<EfCoreKeysetCursor>(cursor, out var decodedCursor))
         {
             var keysetCursor = decodedCursor ?? throw new EfCoreInvalidCursorException("The provided cursor could not be decoded.");
+            if (keysetCursor.Version != KeysetCursorVersion)
+            {
+                throw new EfCoreInvalidCursorException("The provided cursor version is not supported.");
+            }
+
             if (!string.Equals(keysetCursor.SortSignature, BuildSortSignature(keysetPlan), StringComparison.Ordinal))
             {
                 throw new EfCoreInvalidCursorException("The provided cursor does not match the active sort order.");
             }
 
-            return keysetCursor;
+            if (keysetCursor.Values is null || keysetCursor.Values.Count != keysetPlan.Parts.Count)
+            {
+                throw new EfCoreInvalidCursorException("The provided cursor does not match the active sort shape.");
+            }
+
+            var values = new List<object>(keysetPlan.Parts.Count);
+            for (var i = 0; i < keysetPlan.Parts.Count; i++)
+            {
+                values.Add(DeserializeKeysetCursorValue(keysetCursor.Values[i], keysetPlan.Parts[i]));
+            }
+
+            return new DecodedKeysetCursor(values);
         }
 
         if (CursorEncoder.TryDecode<int>(cursor, out _))
@@ -1212,6 +1223,27 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         }
 
         throw new EfCoreInvalidCursorException("The provided cursor is not a valid EF Core pagination cursor.");
+    }
+
+    private object DeserializeKeysetCursorValue(JsonElement cursorValue, KeysetPlanPart part)
+    {
+        if (cursorValue.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            throw new EfCoreInvalidCursorException(
+                $"The provided cursor contains an invalid value for '{part.QueryParameterName}'.");
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize(cursorValue.GetRawText(), part.PropertyType)
+                ?? throw new EfCoreInvalidCursorException(
+                    $"The provided cursor contains an invalid value for '{part.QueryParameterName}'.");
+        }
+        catch (Exception exception) when (exception is JsonException or NotSupportedException)
+        {
+            throw new EfCoreInvalidCursorException(
+                $"The provided cursor contains an invalid value for '{part.QueryParameterName}'.");
+        }
     }
 
     private IQueryable<TEntity> ApplyComparisonFilters(
@@ -1702,25 +1734,22 @@ public class EfCoreRepository<TContext, TEntity, TKey>
 
     private bool IsKeysetComparableType(Type propertyType)
     {
-        var underlyingType = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
-
-        return underlyingType.IsEnum ||
-            underlyingType == typeof(string) ||
-            underlyingType == typeof(Guid) ||
-            underlyingType == typeof(DateTime) ||
-            underlyingType == typeof(DateTimeOffset) ||
-            underlyingType == typeof(decimal) ||
-            underlyingType == typeof(double) ||
-            underlyingType == typeof(float) ||
-            underlyingType == typeof(long) ||
-            underlyingType == typeof(int) ||
-            underlyingType == typeof(short) ||
-            underlyingType == typeof(byte) ||
-            underlyingType == typeof(ulong) ||
-            underlyingType == typeof(uint) ||
-            underlyingType == typeof(ushort) ||
-            underlyingType == typeof(sbyte) ||
-            underlyingType == typeof(bool);
+        return Nullable.GetUnderlyingType(propertyType) is null
+            && (propertyType == typeof(string)
+                || propertyType == typeof(Guid)
+                || propertyType == typeof(DateTime)
+                || propertyType == typeof(DateTimeOffset)
+                || propertyType == typeof(decimal)
+                || propertyType == typeof(double)
+                || propertyType == typeof(float)
+                || propertyType == typeof(long)
+                || propertyType == typeof(int)
+                || propertyType == typeof(short)
+                || propertyType == typeof(byte)
+                || propertyType == typeof(ulong)
+                || propertyType == typeof(uint)
+                || propertyType == typeof(ushort)
+                || propertyType == typeof(sbyte));
     }
 
     private bool IsProjectableProperty(PropertyInfo property)
@@ -1741,6 +1770,8 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     private sealed record KeysetSortPart(string PropertyName, SortDirection Direction, string QueryParameterName);
 
     private sealed record KeysetPlan(IReadOnlyList<KeysetPlanPart> Parts);
+
+    private sealed record DecodedKeysetCursor(IReadOnlyList<object> Values);
 
     private sealed record PatchOperation(PropertyInfo PropertyInfo, object? Value);
 
