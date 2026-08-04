@@ -54,16 +54,17 @@ processing normally. No previously-persisted items are rolled back.
 
 **Bulk path** (`PersistBulkAsync`): All validated items are passed to a
 single bulk repository method (e.g. `CreateManyAsync`, `UpdateManyAsync`,
-`PatchManyAsync`, `DeleteManyAsync`). If a bulk repository operation throws,
-RestLib does not retry any item because the operation may have partially or
-fully committed. Items that do not already have a validation or hook result
-receive a 500 result for the bulk failure. Whether the bulk method itself is
-transactional depends entirely on the repository implementation — RestLib
-does not impose or assume any transactional guarantee.
+`PatchManyAsync`, `DeleteManyAsync`). The `IBatchRepository` contract requires
+each mutating method to be all-or-nothing with respect to repository
+persistence. If a bulk repository operation throws, RestLib does not retry any
+item; it reports a 500 result for every unresolved item. A retry is still
+unsafe because RestLib cannot verify an external implementation's transaction
+boundary or any side effects outside repository persistence.
 
-Consumers who need all-or-nothing semantics should implement transactional
-logic inside their repository (e.g. wrapping bulk methods in a database
-transaction that rolls back on failure).
+This guarantee applies only to the validated items passed to one bulk
+repository call. It does not make the complete HTTP batch request
+transactional: items can be excluded by validation and hooks, and the
+individual fallback path persists each item independently.
 
 ### Optional IBatchRepository
 `IBatchRepository<TEntity, TKey>` is an optional interface with batch-optimized
@@ -73,6 +74,21 @@ RestLib uses the batch methods for better performance. Otherwise, it falls
 back to looping over `IRepository` methods without first attempting a bulk
 operation. This avoids breaking existing repository implementations.
 
+The batch repository contract also defines adapter-independent item semantics:
+
+- Create returns one result per input in input order and rejects duplicate keys
+  without persisting any item.
+- Update and patch skip missing keys and return matching items in relative input
+  order. Repeated keys are applied in order; the last value is persisted and
+  every matching result represents that final value.
+- Delete ignores missing keys and counts each distinct deleted entity once.
+- `GetByIdsAsync` omits missing keys and coalesces repeated keys in its keyed
+  result.
+
+The built-in InMemory and EF Core adapters implement these semantics. Custom
+batch repositories must provide the same behavior so changing adapters does
+not change endpoint outcomes.
+
 ### Bulk failure handling
 
 Repository calls within `PersistBulkAsync` use an explicit bulk-persistence
@@ -80,9 +96,10 @@ boundary. When one of those calls throws, the base class preserves any
 results already produced during validation or pre-persistence hooks and
 reports the original exception as a per-item failure for every unresolved
 item. It never retries through `PersistIndividuallyAsync`, because RestLib
-cannot know whether the failed operation committed none, some, or all of its
-work. Applications that can prove a retry is safe must initiate that retry
-according to their own repository and idempotency guarantees.
+cannot verify whether a custom implementation honored the atomicity contract
+or performed external side effects. Applications that can prove a retry is
+safe must initiate that retry according to their own repository and
+idempotency guarantees.
 
 Post-persistence processing runs outside the bulk-persistence boundary.
 After-persist hooks, model mapping, HATEOAS providers, and result construction

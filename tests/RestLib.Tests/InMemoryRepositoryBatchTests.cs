@@ -116,20 +116,24 @@ public partial class InMemoryRepositoryTests
     }
 
     [Fact]
-    public async Task CreateManyAsync_WithDuplicateKey_ThrowsInvalidOperationException()
+    public async Task CreateManyAsync_WithLaterDuplicateKey_ThrowsWithoutPersistingAnyInput()
     {
         // Arrange
         var repository = CreateRepository();
         var entity = CreateEntity("Original", 100);
         await repository.CreateAsync(entity);
+        var newEntity = CreateEntity("New", 1);
         var replacement = entity with { Name = "Replaced", Value = 999 };
 
         // Act
-        var act = () => repository.CreateManyAsync(new List<TestEntity> { replacement });
+        var act = () => repository.CreateManyAsync(new List<TestEntity> { newEntity, replacement });
 
-        // Assert — consistent with CreateAsync, which throws on duplicate keys
+        // Assert
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*already exists*");
+        repository.Count.Should().Be(1);
+        (await repository.GetByIdAsync(newEntity.Id)).Should().BeNull();
+        (await repository.GetByIdAsync(entity.Id)).Should().BeEquivalentTo(entity);
     }
 
     #endregion
@@ -162,9 +166,9 @@ public partial class InMemoryRepositoryTests
     }
 
     [Fact]
-    public async Task UpdateManyAsync_WithNonExistingKeys_AddsEntities()
+    public async Task UpdateManyAsync_WithNonExistingKeys_SkipsEntities()
     {
-        // Arrange — UpdateManyAsync uses _store[key] = entity (upsert behavior)
+        // Arrange
         var repository = CreateRepository();
         var entity = CreateEntity("New", 42);
 
@@ -172,11 +176,37 @@ public partial class InMemoryRepositoryTests
         var result = await repository.UpdateManyAsync(new List<TestEntity> { entity });
 
         // Assert
-        result.Should().HaveCount(1);
-        repository.Count.Should().Be(1);
-        var retrieved = await repository.GetByIdAsync(entity.Id);
-        retrieved.Should().NotBeNull();
-        retrieved!.Name.Should().Be("New");
+        result.Should().BeEmpty();
+        repository.Count.Should().Be(0);
+        (await repository.GetByIdAsync(entity.Id)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UpdateManyAsync_WithExistingMissingAndRepeatedKeys_ReturnsMatchesInInputOrder()
+    {
+        // Arrange
+        var repository = CreateRepository();
+        var first = CreateEntity("First", 1);
+        var second = CreateEntity("Second", 2);
+        await repository.CreateManyAsync([first, second]);
+        var secondUpdate = second with { Name = "Second updated", Value = 20 };
+        var missing = CreateEntity("Missing", 99);
+        var firstUpdate = first with { Name = "First updated", Value = 10 };
+        var firstFinalUpdate = first with { Name = "First final", Value = 100 };
+
+        // Act
+        var result = await repository.UpdateManyAsync(
+            [secondUpdate, missing, firstUpdate, firstFinalUpdate]);
+
+        // Assert
+        result.Select(entity => entity.Id).Should().Equal(
+            second.Id,
+            first.Id,
+            first.Id);
+        result[1].Should().BeEquivalentTo(firstFinalUpdate);
+        result[2].Should().BeEquivalentTo(firstFinalUpdate);
+        (await repository.GetByIdAsync(missing.Id)).Should().BeNull();
+        (await repository.GetByIdAsync(first.Id)).Should().BeEquivalentTo(firstFinalUpdate);
     }
 
     [Fact]
@@ -203,6 +233,67 @@ public partial class InMemoryRepositoryTests
 
         // Assert
         result.Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region PatchManyAsync Tests
+
+    [Fact]
+    public async Task PatchManyAsync_WithExistingMissingAndRepeatedKeys_ReturnsMatchesInInputOrder()
+    {
+        // Arrange
+        var repository = CreateRepository();
+        var first = CreateEntity("First", 1);
+        var second = CreateEntity("Second", 2);
+        await repository.CreateManyAsync([first, second]);
+        var missingId = Guid.NewGuid();
+        var secondPatch = JsonDocument.Parse("""{"name":"Second updated"}""").RootElement;
+        var missingPatch = JsonDocument.Parse("""{"name":"Missing"}""").RootElement;
+        var firstPatch = JsonDocument.Parse("""{"name":"First updated"}""").RootElement;
+        var firstFinalPatch = JsonDocument.Parse("""{"value":100}""").RootElement;
+
+        // Act
+        var result = await repository.PatchManyAsync(
+            [
+                (second.Id, secondPatch),
+                (missingId, missingPatch),
+                (first.Id, firstPatch),
+                (first.Id, firstFinalPatch)
+            ]);
+
+        // Assert
+        result.Select(entity => entity.Id).Should().Equal(
+            second.Id,
+            first.Id,
+            first.Id);
+        result[1].Name.Should().Be("First updated");
+        result[1].Value.Should().Be(100);
+        result[2].Should().BeEquivalentTo(result[1]);
+        (await repository.GetByIdAsync(missingId)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task PatchManyAsync_WithLaterInvalidPatch_ThrowsWithoutPersistingAnyPatch()
+    {
+        // Arrange
+        var repository = CreateRepository();
+        var first = CreateEntity("First", 1);
+        var second = CreateEntity("Second", 2);
+        await repository.CreateManyAsync([first, second]);
+        var validPatch = JsonDocument.Parse("""{"name":"Changed"}""").RootElement;
+        var invalidPatch = JsonDocument.Parse(
+            $$"""{"id":"{{Guid.NewGuid()}}","name":"Invalid"}""").RootElement;
+
+        // Act
+        var act = () => repository.PatchManyAsync(
+            [(first.Id, validPatch), (second.Id, invalidPatch)]);
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*immutable resource key field 'id'*");
+        (await repository.GetByIdAsync(first.Id)).Should().BeEquivalentTo(first);
+        (await repository.GetByIdAsync(second.Id)).Should().BeEquivalentTo(second);
     }
 
     #endregion
@@ -255,6 +346,22 @@ public partial class InMemoryRepositoryTests
 
         // Act — one existing key, one non-existing key
         var result = await repository.DeleteManyAsync(new List<Guid> { entity.Id, Guid.NewGuid() });
+
+        // Assert
+        result.Should().Be(1);
+        repository.Count.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task DeleteManyAsync_WithRepeatedKey_CountsEntityOnce()
+    {
+        // Arrange
+        var repository = CreateRepository();
+        var entity = CreateEntity("Existing", 100);
+        await repository.CreateAsync(entity);
+
+        // Act
+        var result = await repository.DeleteManyAsync([entity.Id, entity.Id]);
 
         // Assert
         result.Should().Be(1);

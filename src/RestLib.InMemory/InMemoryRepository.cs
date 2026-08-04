@@ -26,6 +26,7 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     private static readonly ConcurrentDictionary<string, PropertyInfo[]> _propertyPathCache = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly ConcurrentDictionary<TKey, TEntity> _store = new();
+    private readonly object _mutationLock = new();
     private readonly Func<TEntity, TKey> _keySelector;
     private readonly Func<TKey> _keyGenerator;
     private readonly Func<TEntity, TKey, TEntity>? _keyAssigner;
@@ -205,48 +206,42 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     {
         ArgumentNullException.ThrowIfNull(entity);
 
-        var key = _keySelector(entity);
-
-        // If key is default, generate a new one and set it on the entity
-        if (EqualityComparer<TKey>.Default.Equals(key, default!))
+        lock (_mutationLock)
         {
-            EnsureGeneratedKeyCanBeAssigned();
-            key = _keyGenerator();
-            entity = NormalizeEntityKey(entity, key);
-        }
+            var key = _keySelector(entity);
 
-        if (!_store.TryAdd(key, entity))
-        {
-            throw new InvalidOperationException($"An entity with key '{key}' already exists.");
-        }
+            // If key is default, generate a new one and set it on the entity
+            if (EqualityComparer<TKey>.Default.Equals(key, default!))
+            {
+                EnsureGeneratedKeyCanBeAssigned();
+                key = _keyGenerator();
+                entity = NormalizeEntityKey(entity, key);
+            }
 
-        return Task.FromResult(entity);
+            if (!_store.TryAdd(key, entity))
+            {
+                throw new InvalidOperationException($"An entity with key '{key}' already exists.");
+            }
+
+            return Task.FromResult(entity);
+        }
     }
 
     /// <inheritdoc />
     public Task<TEntity?> UpdateAsync(TKey id, TEntity entity, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(entity);
-        TEntity? normalizedEntity = null;
 
-        // Use TryGetValue + TryUpdate in a loop to avoid the TOCTOU race between
-        // ContainsKey and the subsequent indexer write. If a concurrent thread
-        // deletes the key between the two calls, TryUpdate will return false and
-        // we re-check existence rather than silently re-inserting.
-        while (true)
+        lock (_mutationLock)
         {
-            if (!_store.TryGetValue(id, out var existing))
+            if (!_store.ContainsKey(id))
             {
                 return Task.FromResult<TEntity?>(null);
             }
 
-            normalizedEntity ??= NormalizeEntityKey(entity, id);
-            if (_store.TryUpdate(id, normalizedEntity, existing))
-            {
-                return Task.FromResult<TEntity?>(normalizedEntity);
-            }
-
-            // Another thread changed the value — retry to verify the key still exists.
+            var normalizedEntity = NormalizeEntityKey(entity, id);
+            _store[id] = normalizedEntity;
+            return Task.FromResult<TEntity?>(normalizedEntity);
         }
     }
 
@@ -255,11 +250,7 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     {
         ThrowIfPatchModifiesKey(patchDocument);
 
-        // Use TryGetValue + TryUpdate in a loop to prevent lost-update races.
-        // If a concurrent thread modifies the entity between our read and write,
-        // TryUpdate detects the stale comparison value and we retry with the
-        // latest snapshot.
-        while (true)
+        lock (_mutationLock)
         {
             if (!_store.TryGetValue(id, out var existing))
             {
@@ -272,19 +263,18 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
                 throw new InvalidOperationException("Failed to deserialize patched entity.");
             }
 
-            if (_store.TryUpdate(id, updated, existing))
-            {
-                return Task.FromResult<TEntity?>(updated);
-            }
-
-            // Another thread changed the value — retry with the latest snapshot.
+            _store[id] = updated;
+            return Task.FromResult<TEntity?>(updated);
         }
     }
 
     /// <inheritdoc />
     public Task<bool> DeleteAsync(TKey id, CancellationToken cancellationToken = default)
     {
-        return Task.FromResult(_store.TryRemove(id, out _));
+        lock (_mutationLock)
+        {
+            return Task.FromResult(_store.TryRemove(id, out _));
+        }
     }
 
     /// <inheritdoc />
@@ -294,28 +284,39 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     {
         ArgumentNullException.ThrowIfNull(entities);
 
-        var results = new List<TEntity>(entities.Count);
-        foreach (var entity in entities)
+        lock (_mutationLock)
         {
-            var key = _keySelector(entity);
-            var current = entity;
+            var staged = new List<(TKey Key, TEntity Entity)>(entities.Count);
+            var stagedKeys = new HashSet<TKey>();
 
-            if (EqualityComparer<TKey>.Default.Equals(key, default!))
+            foreach (var entity in entities)
             {
-                EnsureGeneratedKeyCanBeAssigned();
-                key = _keyGenerator();
-                current = NormalizeEntityKey(current, key);
+                var key = _keySelector(entity);
+                var current = entity;
+
+                if (EqualityComparer<TKey>.Default.Equals(key, default!))
+                {
+                    EnsureGeneratedKeyCanBeAssigned();
+                    key = _keyGenerator();
+                    current = NormalizeEntityKey(current, key);
+                }
+
+                if (!stagedKeys.Add(key) || _store.ContainsKey(key))
+                {
+                    throw new InvalidOperationException($"An entity with key '{key}' already exists.");
+                }
+
+                staged.Add((key, current));
             }
 
-            if (!_store.TryAdd(key, current))
+            foreach (var (key, entity) in staged)
             {
-                throw new InvalidOperationException($"An entity with key '{key}' already exists.");
+                _store[key] = entity;
             }
 
-            results.Add(current);
+            return Task.FromResult<IReadOnlyList<TEntity>>(
+                staged.Select(item => item.Entity).ToList());
         }
-
-        return Task.FromResult<IReadOnlyList<TEntity>>(results);
     }
 
     /// <inheritdoc />
@@ -325,15 +326,27 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     {
         ArgumentNullException.ThrowIfNull(entities);
 
-        var results = new List<TEntity>(entities.Count);
-        foreach (var entity in entities)
+        lock (_mutationLock)
         {
-            var key = _keySelector(entity);
-            _store[key] = entity;
-            results.Add(entity);
-        }
+            var staged = entities
+                .Select(entity => (Key: _keySelector(entity), Entity: entity))
+                .ToList();
+            var matchedKeys = staged
+                .Where(item => _store.ContainsKey(item.Key))
+                .Select(item => item.Key)
+                .ToList();
 
-        return Task.FromResult<IReadOnlyList<TEntity>>(results);
+            foreach (var (key, entity) in staged)
+            {
+                if (_store.ContainsKey(key))
+                {
+                    _store[key] = entity;
+                }
+            }
+
+            return Task.FromResult<IReadOnlyList<TEntity>>(
+                matchedKeys.Select(key => _store[key]).ToList());
+        }
     }
 
     /// <inheritdoc />
@@ -343,16 +356,20 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     {
         ArgumentNullException.ThrowIfNull(keys);
 
-        var count = 0;
-        foreach (var key in keys)
+        lock (_mutationLock)
         {
-            if (_store.TryRemove(key, out _))
-            {
-                count++;
-            }
-        }
+            var keysToDelete = keys
+                .Distinct()
+                .Where(_store.ContainsKey)
+                .ToList();
 
-        return Task.FromResult(count);
+            foreach (var key in keysToDelete)
+            {
+                _store.TryRemove(key, out _);
+            }
+
+            return Task.FromResult(keysToDelete.Count);
+        }
     }
 
     /// <inheritdoc />
@@ -381,17 +398,19 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     {
         ArgumentNullException.ThrowIfNull(patches);
 
-        var results = new List<TEntity>(patches.Count);
-        foreach (var (id, patchDocument) in patches)
+        lock (_mutationLock)
         {
-            ThrowIfPatchModifiesKey(patchDocument);
+            var stagedById = new Dictionary<TKey, TEntity>();
+            var matchedIds = new List<TKey>(patches.Count);
 
-            // Use TryGetValue + TryUpdate in a loop to prevent lost-update races.
-            while (true)
+            foreach (var (id, patchDocument) in patches)
             {
-                if (!_store.TryGetValue(id, out var existing))
+                ThrowIfPatchModifiesKey(patchDocument);
+
+                if (!stagedById.TryGetValue(id, out var existing) &&
+                    !_store.TryGetValue(id, out existing))
                 {
-                    throw new KeyNotFoundException($"Entity with key '{id}' not found.");
+                    continue;
                 }
 
                 var updated = JsonMergePatch.Apply(existing, patchDocument, _jsonOptions);
@@ -400,17 +419,18 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
                     throw new InvalidOperationException($"Failed to deserialize patched entity with key '{id}'.");
                 }
 
-                if (_store.TryUpdate(id, updated, existing))
-                {
-                    results.Add(updated);
-                    break;
-                }
-
-                // Another thread changed the value — retry with the latest snapshot.
+                stagedById[id] = updated;
+                matchedIds.Add(id);
             }
-        }
 
-        return Task.FromResult<IReadOnlyList<TEntity>>(results);
+            foreach (var (id, entity) in stagedById)
+            {
+                _store[id] = entity;
+            }
+
+            return Task.FromResult<IReadOnlyList<TEntity>>(
+                matchedIds.Select(id => stagedById[id]).ToList());
+        }
     }
 
     /// <inheritdoc />
@@ -435,7 +455,13 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     /// <summary>
     /// Clears all entities from the repository.
     /// </summary>
-    public void Clear() => _store.Clear();
+    public void Clear()
+    {
+        lock (_mutationLock)
+        {
+            _store.Clear();
+        }
+    }
 
     /// <summary>
     /// Seeds the repository with initial data.
@@ -445,10 +471,13 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
     {
         ArgumentNullException.ThrowIfNull(entities);
 
-        foreach (var entity in entities)
+        lock (_mutationLock)
         {
-            var key = _keySelector(entity);
-            _store[key] = entity;
+            foreach (var entity in entities)
+            {
+                var key = _keySelector(entity);
+                _store[key] = entity;
+            }
         }
     }
 

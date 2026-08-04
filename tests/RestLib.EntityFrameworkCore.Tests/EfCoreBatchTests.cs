@@ -136,6 +136,30 @@ public class EfCoreBatchTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task CreateManyAsync_WhenSaveChangesThrows_RestoresTrackingAndPersistsNothing()
+    {
+        // Arrange
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = CreateConcurrencyContext(connection);
+        var repository = CreateConcurrencyBatchRepository(context);
+        var product1 = CreateProduct(name: "Product 1");
+        var product2 = CreateProduct(name: "Product 2");
+        context.ThrowConcurrencyOnNextSave = true;
+
+        // Act
+        var act = () => repository.CreateManyAsync([product1, product2]);
+
+        // Assert
+        await act.Should().ThrowAsync<DbUpdateConcurrencyException>();
+        context.Entry(product1).State.Should().Be(EntityState.Detached);
+        context.Entry(product2).State.Should().Be(EntityState.Detached);
+
+        await context.SaveChangesAsync();
+        context.Products.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task UpdateManyAsync_WithExistingEntities_UpdatesAll()
     {
         // Arrange
@@ -198,7 +222,7 @@ public class EfCoreBatchTests : IAsyncLifetime
 
         // Assert
         result.Should().HaveCount(2);
-        result.Select(product => product.Id).Should().BeEquivalentTo([product1.Id, product2.Id]);
+        result.Select(product => product.Id).Should().Equal(product1.Id, product2.Id);
 
         _db.ChangeTracker.Clear();
 
@@ -210,6 +234,73 @@ public class EfCoreBatchTests : IAsyncLifetime
         persisted2!.ProductName.Should().Be("Updated 2");
         persistedMissing.Should().BeNull();
         _db.Products.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task UpdateManyAsync_WithExistingMissingAndRepeatedKeys_ReturnsMatchesInInputOrder()
+    {
+        // Arrange
+        var product1 = CreateProduct(name: "Original 1", unitPrice: 10m, stockQuantity: 1);
+        var product2 = CreateProduct(name: "Original 2", unitPrice: 20m, stockQuantity: 2);
+        await SeedProductsAsync(product1, product2);
+        var missing = CreateProduct(name: "Missing", unitPrice: 999m, stockQuantity: 99);
+        var product2Update = CreateUpdatedProduct(
+            product2,
+            name: "Updated 2",
+            unitPrice: 200m,
+            stockQuantity: 20);
+        var product1Update = CreateUpdatedProduct(
+            product1,
+            name: "Updated 1",
+            unitPrice: 100m,
+            stockQuantity: 10);
+        var product1FinalUpdate = CreateUpdatedProduct(
+            product1,
+            name: "Final 1",
+            unitPrice: 1000m,
+            stockQuantity: 100);
+
+        // Act
+        var result = await _batchRepository.UpdateManyAsync(
+            [product2Update, missing, product1Update, product1FinalUpdate]);
+
+        // Assert
+        result.Select(product => product.Id).Should().Equal(
+            product2.Id,
+            product1.Id,
+            product1.Id);
+        result[1].ProductName.Should().Be("Final 1");
+        result[1].UnitPrice.Should().Be(1000m);
+        result[2].Should().BeSameAs(result[1]);
+
+        _db.ChangeTracker.Clear();
+        (await _db.Products.FindAsync(missing.Id)).Should().BeNull();
+        (await _db.Products.FindAsync(product1.Id))!.ProductName.Should().Be("Final 1");
+    }
+
+    [Fact]
+    public async Task UpdateManyAsync_WithAllMissingKeys_DoesNotSaveUnrelatedTrackedChanges()
+    {
+        // Arrange
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = CreateConcurrencyContext(connection);
+        var repository = CreateConcurrencyBatchRepository(context);
+        var existing = SeedConcurrencyProduct(
+            context,
+            name: "Original",
+            unitPrice: 10m,
+            stockQuantity: 1);
+        existing.ProductName = "Pending unrelated change";
+        var missing = CreateProduct(name: "Missing");
+
+        // Act
+        var result = await repository.UpdateManyAsync([missing]);
+
+        // Assert
+        result.Should().BeEmpty();
+        context.ChangeTracker.Clear();
+        (await context.Products.FindAsync(existing.Id))!.ProductName.Should().Be("Original");
     }
 
     [Fact]
@@ -292,7 +383,7 @@ public class EfCoreBatchTests : IAsyncLifetime
 
         // Assert
         result.Should().HaveCount(2);
-        result.Select(product => product.Id).Should().BeEquivalentTo([product1.Id, product2.Id]);
+        result.Select(product => product.Id).Should().Equal(product1.Id, product2.Id);
 
         _db.ChangeTracker.Clear();
 
@@ -304,6 +395,62 @@ public class EfCoreBatchTests : IAsyncLifetime
         persisted2!.UnitPrice.Should().Be(77.77m);
         persistedMissing.Should().BeNull();
         _db.Products.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task PatchManyAsync_WithRepeatedKey_AppliesPatchesInOrderAndReturnsFinalEntity()
+    {
+        // Arrange
+        var product = CreateProduct(name: "Original", unitPrice: 10m, stockQuantity: 1);
+        await SeedProductsAsync(product);
+        var namePatch = DeserializeJsonElement("""
+            {"product_name":"Updated"}
+            """);
+        var pricePatch = DeserializeJsonElement("""
+            {"unit_price":99.99}
+            """);
+
+        // Act
+        var result = await _batchRepository.PatchManyAsync(
+            [(product.Id, namePatch), (product.Id, pricePatch)]);
+
+        // Assert
+        result.Should().HaveCount(2);
+        result[0].Should().BeSameAs(result[1]);
+        result.Should().OnlyContain(item =>
+            item.ProductName == "Updated" && item.UnitPrice == 99.99m);
+
+        _db.ChangeTracker.Clear();
+        var persisted = await _db.Products.FindAsync(product.Id);
+        persisted!.ProductName.Should().Be("Updated");
+        persisted.UnitPrice.Should().Be(99.99m);
+    }
+
+    [Fact]
+    public async Task PatchManyAsync_WithAllMissingKeys_DoesNotSaveUnrelatedTrackedChanges()
+    {
+        // Arrange
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = CreateConcurrencyContext(connection);
+        var repository = CreateConcurrencyBatchRepository(context);
+        var existing = SeedConcurrencyProduct(
+            context,
+            name: "Original",
+            unitPrice: 10m,
+            stockQuantity: 1);
+        existing.ProductName = "Pending unrelated change";
+        var patch = DeserializeJsonElement("""
+            {"product_name":"Missing"}
+            """);
+
+        // Act
+        var result = await repository.PatchManyAsync([(Guid.NewGuid(), patch)]);
+
+        // Assert
+        result.Should().BeEmpty();
+        context.ChangeTracker.Clear();
+        (await context.Products.FindAsync(existing.Id))!.ProductName.Should().Be("Original");
     }
 
     [Fact]
@@ -435,6 +582,55 @@ public class EfCoreBatchTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task DeleteManyAsync_WithRepeatedKey_CountsEntityOnce()
+    {
+        // Arrange
+        var product = CreateProduct();
+        await SeedProductsAsync(product);
+
+        // Act
+        var result = await _batchRepository.DeleteManyAsync([product.Id, product.Id]);
+
+        // Assert
+        result.Should().Be(1);
+        _db.ChangeTracker.Clear();
+        _db.Products.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task DeleteManyAsync_WhenSaveChangesThrows_RestoresTrackingAndPersistsNothing()
+    {
+        // Arrange
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        await using var context = CreateConcurrencyContext(connection);
+        var repository = CreateConcurrencyBatchRepository(context);
+        var product1 = SeedConcurrencyProduct(
+            context,
+            name: "Product 1",
+            unitPrice: 10m,
+            stockQuantity: 1);
+        var product2 = SeedConcurrencyProduct(
+            context,
+            name: "Product 2",
+            unitPrice: 20m,
+            stockQuantity: 2);
+        context.ThrowConcurrencyOnNextSave = true;
+
+        // Act
+        var result = await repository.DeleteManyAsync([product1.Id, product2.Id]);
+
+        // Assert
+        result.Should().Be(0);
+        context.Entry(product1).State.Should().Be(EntityState.Unchanged);
+        context.Entry(product2).State.Should().Be(EntityState.Unchanged);
+
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+        context.Products.Should().HaveCount(2);
+    }
+
+    [Fact]
     public async Task UpdateManyAsync_WhenSaveChangesThrowsConcurrencyException_ThrowsAndDoesNotPersist()
     {
         // Arrange
@@ -455,6 +651,16 @@ public class EfCoreBatchTests : IAsyncLifetime
         // Assert
         await act.Should().ThrowAsync<DbUpdateConcurrencyException>();
 
+        var entry1 = context.Entry(product1);
+        var entry2 = context.Entry(product2);
+        entry1.Entity.ProductName.Should().Be("Original 1");
+        entry2.Entity.ProductName.Should().Be("Original 2");
+        entry1.Property(product => product.ProductName).IsModified.Should().BeFalse();
+        entry2.Property(product => product.ProductName).IsModified.Should().BeFalse();
+        entry1.State.Should().Be(EntityState.Unchanged);
+        entry2.State.Should().Be(EntityState.Unchanged);
+
+        await context.SaveChangesAsync();
         context.ChangeTracker.Clear();
         var persisted1 = await context.Products.FindAsync(product1.Id);
         var persisted2 = await context.Products.FindAsync(product2.Id);

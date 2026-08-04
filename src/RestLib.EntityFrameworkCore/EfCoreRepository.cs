@@ -473,6 +473,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             return [];
         }
 
+        var snapshots = CaptureTrackingSnapshot();
         try
         {
             await _context.Set<TEntity>().AddRangeAsync(entities, ct);
@@ -480,11 +481,18 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         }
         catch (DbUpdateConcurrencyException)
         {
+            RestoreTrackingSnapshot(snapshots);
             throw;
         }
         catch (DbUpdateException ex)
         {
+            RestoreTrackingSnapshot(snapshots);
             throw ClassifyConstraintViolation(ex);
+        }
+        catch
+        {
+            RestoreTrackingSnapshot(snapshots);
+            throw;
         }
 
         return entities;
@@ -508,33 +516,44 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         var existingEntities = await _context.Set<TEntity>()
             .Where(predicate)
             .ToListAsync(ct);
-        var existingById = existingEntities.ToDictionary(getKey);
-        var results = new List<TEntity>(existingEntities.Count);
-
-        foreach (var entity in entities)
+        if (existingEntities.Count == 0)
         {
-            var key = getKey(entity);
-            if (!existingById.TryGetValue(key, out var existing))
-            {
-                continue;
-            }
-
-            CopyPrimaryKeyValues(existing, entity);
-            _context.Entry(existing).CurrentValues.SetValues(entity);
-            results.Add(existing);
+            return [];
         }
+
+        var existingById = existingEntities.ToDictionary(getKey);
+        var snapshots = CaptureTrackingSnapshot();
 
         try
         {
+            foreach (var entity in entities)
+            {
+                var key = getKey(entity);
+                if (!existingById.TryGetValue(key, out var existing))
+                {
+                    continue;
+                }
+
+                CopyPrimaryKeyValues(existing, entity);
+                _context.Entry(existing).CurrentValues.SetValues(entity);
+            }
+
             await _context.SaveChangesAsync(ct);
         }
         catch (DbUpdateConcurrencyException)
         {
+            RestoreTrackingSnapshot(snapshots);
             throw;
         }
         catch (DbUpdateException ex)
         {
+            RestoreTrackingSnapshot(snapshots);
             throw ClassifyConstraintViolation(ex);
+        }
+        catch
+        {
+            RestoreTrackingSnapshot(snapshots);
+            throw;
         }
 
         return entities
@@ -557,6 +576,11 @@ public class EfCoreRepository<TContext, TEntity, TKey>
 
         var ids = patches.Select(patch => patch.Id).ToList();
         var existingById = await FetchTrackedEntitiesByIdsAsync(ids, ct);
+        if (existingById.Count == 0)
+        {
+            return [];
+        }
+
         var keyPropertyNames = GetPrimaryKey().Properties
             .Select(property => property.Name)
             .ToHashSet(StringComparer.Ordinal);
@@ -639,19 +663,27 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             return 0;
         }
 
-        _context.Set<TEntity>().RemoveRange(found);
+        var snapshots = CaptureTrackingSnapshot();
 
         try
         {
+            _context.Set<TEntity>().RemoveRange(found);
             await _context.SaveChangesAsync(ct);
         }
         catch (DbUpdateConcurrencyException)
         {
+            RestoreTrackingSnapshot(snapshots);
             return 0;
         }
         catch (DbUpdateException ex)
         {
+            RestoreTrackingSnapshot(snapshots);
             throw ClassifyConstraintViolation(ex);
+        }
+        catch
+        {
+            RestoreTrackingSnapshot(snapshots);
+            throw;
         }
 
         return found.Count;
@@ -1421,6 +1453,55 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         }
     }
 
+    private IReadOnlyList<EntityTrackingSnapshot> CaptureTrackingSnapshot()
+    {
+        return _context.ChangeTracker
+            .Entries()
+            .Select(entry =>
+            {
+                return new EntityTrackingSnapshot(
+                    entry,
+                    entry.State,
+                    entry.CurrentValues.Clone(),
+                    entry.OriginalValues.Clone(),
+                    entry.Properties.ToDictionary(
+                        property => property.Metadata.Name,
+                        property => property.IsModified,
+                        StringComparer.Ordinal));
+            })
+            .ToList();
+    }
+
+    private void RestoreTrackingSnapshot(
+        IEnumerable<EntityTrackingSnapshot> snapshots)
+    {
+        var snapshotList = snapshots.ToList();
+        var previouslyTrackedEntities = snapshotList
+            .Select(snapshot => snapshot.Entry.Entity)
+            .ToHashSet(ReferenceEqualityComparer.Instance);
+        var newlyTrackedEntries = _context.ChangeTracker
+            .Entries()
+            .Where(entry => !previouslyTrackedEntities.Contains(entry.Entity))
+            .ToList();
+
+        foreach (var entry in newlyTrackedEntries)
+        {
+            entry.State = EntityState.Detached;
+        }
+
+        foreach (var snapshot in snapshotList.AsEnumerable().Reverse())
+        {
+            snapshot.Entry.CurrentValues.SetValues(snapshot.CurrentValues!);
+            snapshot.Entry.OriginalValues.SetValues(snapshot.OriginalValues!);
+            snapshot.Entry.State = snapshot.State;
+
+            foreach (var property in snapshot.Entry.Properties)
+            {
+                property.IsModified = snapshot.ModifiedProperties[property.Metadata.Name];
+            }
+        }
+    }
+
     private void ThrowIfStrictUnknownField(
         EfCorePatchUnknownFieldBehavior unknownFieldBehavior,
         string propertyName,
@@ -1784,6 +1865,13 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         string PropertyName,
         object? CurrentValue,
         bool IsModified);
+
+    private sealed record EntityTrackingSnapshot(
+        EntityEntry Entry,
+        EntityState State,
+        PropertyValues CurrentValues,
+        PropertyValues OriginalValues,
+        IReadOnlyDictionary<string, bool> ModifiedProperties);
 
     private sealed record KeyMetadata(
         Expression<Func<TEntity, TKey>> CompositeSelector,
