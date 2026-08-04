@@ -113,7 +113,7 @@ internal static class CreateHandler
 
                 return Results.Json(created, jsonOptions, statusCode: StatusCodes.Status201Created);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.Create), ex);
                 var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Create, ex, entity: entity, logger: logger);
@@ -187,7 +187,7 @@ internal static class CreateHandler
                         pipeline,
                         hookContext);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
                 {
                     RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.Create), ex);
                     var errorResult = await HookHelper.HandleErrorHookAsync(
@@ -230,7 +230,7 @@ internal static class CreateHandler
                     apiPipeline,
                     apiHookContext);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.Create), ex);
                 var errorResult = await HookHelper.HandleErrorHookAsync(

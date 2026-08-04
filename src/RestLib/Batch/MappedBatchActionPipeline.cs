@@ -5,6 +5,7 @@ using RestLib.Configuration;
 using RestLib.Endpoints;
 using RestLib.Hooks;
 using RestLib.Hypermedia;
+using RestLib.Internal;
 using RestLib.Logging;
 using RestLib.Responses;
 using RestLib.Serialization;
@@ -56,6 +57,8 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
         JsonElement itemsElement,
         MappedBatchContext<TApiModel, TDbModel, TKey> context)
     {
+        context.CancellationToken.ThrowIfCancellationRequested();
+
         var items = JsonDeserializationHelper.DeserializeArray<TRawItem>(itemsElement, context.JsonOptions, context.Logger);
         if (items is null)
         {
@@ -72,6 +75,8 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
 
         for (var i = 0; i < items.Count; i++)
         {
+            context.CancellationToken.ThrowIfCancellationRequested();
+
             var (error, validItem) = await ValidateItemAsync(i, items[i], context);
             if (error is not null)
             {
@@ -504,6 +509,8 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
     {
         for (var j = 0; j < validItems.Count; j++)
         {
+            context.CancellationToken.ThrowIfCancellationRequested();
+
             var index = GetIndex(validItems[j]);
             var dbEntity = bulkResults[j];
 
@@ -572,6 +579,8 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
         BatchItemResult?[] results,
         MappedBatchContext<TApiModel, TDbModel, TKey> context)
     {
+        context.CancellationToken.ThrowIfCancellationRequested();
+
         if (validItems.Count == 0)
         {
             return;
@@ -585,6 +594,8 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
             }
             catch (BulkPersistenceException bulkException)
             {
+                context.CancellationToken.ThrowIfCancellationRequested();
+
                 var persistenceException = bulkException.InnerException ?? bulkException;
                 var actionName = Operation.ToString().ToLowerInvariant();
                 RestLibLogMessages.BulkPersistenceFailed(
@@ -599,6 +610,8 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
 
                 foreach (var item in failedItems)
                 {
+                    context.CancellationToken.ThrowIfCancellationRequested();
+
                     var index = GetIndex(item);
                     results[index] = await HandleItemErrorAsync(
                         index,
@@ -623,13 +636,17 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
     {
         foreach (var item in validItems)
         {
+            context.CancellationToken.ThrowIfCancellationRequested();
+
             var index = GetIndex(item);
             try
             {
                 await PersistSingleItemAsync(item, results, context);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!RequestCancellation.IsRequested(ex, context.CancellationToken))
             {
+                context.CancellationToken.ThrowIfCancellationRequested();
+
                 var actionName = Operation.ToString().ToLowerInvariant();
                 RestLibLogMessages.BatchItemPersistenceFailed(context.Logger, actionName, index, ex);
 
@@ -652,6 +669,8 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
         TApiModel? apiEntity = default,
         TDbModel? dbEntity = default)
     {
+        context.CancellationToken.ThrowIfCancellationRequested();
+
         try
         {
             if (context.DbPipeline is not null)
@@ -663,6 +682,7 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
                     resourceId,
                     dbEntity);
                 var (handled, errorResult) = await context.DbPipeline.ExecuteOnErrorAsync(errorContext);
+                context.CancellationToken.ThrowIfCancellationRequested();
                 if (handled && errorResult is not null)
                 {
                     return BuildHandledErrorResult(index, exception, errorResult, context);
@@ -677,13 +697,15 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
                     resourceId,
                     apiEntity);
                 var (handled, errorResult) = await context.ApiPipeline.ExecuteOnErrorAsync(errorContext);
+                context.CancellationToken.ThrowIfCancellationRequested();
                 if (handled && errorResult is not null)
                 {
                     return BuildHandledErrorResult(index, exception, errorResult, context);
                 }
             }
         }
-        catch (Exception hookException)
+        catch (Exception hookException) when (
+            !RequestCancellation.IsRequested(hookException, context.CancellationToken))
         {
             var actionName = Operation.ToString().ToLowerInvariant();
             RestLibLogMessages.BatchErrorHookSwallowed(

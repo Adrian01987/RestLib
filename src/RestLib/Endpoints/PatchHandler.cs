@@ -189,7 +189,7 @@ internal static class PatchHandler
                     logger,
                     options);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.Patch), ex);
                 var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Patch, ex, id, originalEntity, logger);
@@ -283,7 +283,7 @@ internal static class PatchHandler
                         logger,
                         options);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
                 {
                     RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.Patch), ex);
                     var errorResult = await HookHelper.HandleErrorHookAsync(
@@ -332,7 +332,7 @@ internal static class PatchHandler
                     logger,
                     options);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.Patch), ex);
                 var errorResult = await HookHelper.HandleErrorHookAsync(

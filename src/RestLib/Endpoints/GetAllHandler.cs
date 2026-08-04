@@ -282,7 +282,7 @@ internal static class GetAllHandler
 
                 return Results.Json(response, jsonOptions);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.GetAll), ex);
                 var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.GetAll, ex, logger: logger);
@@ -349,7 +349,7 @@ internal static class GetAllHandler
                         pipeline,
                         hookContext);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
                 {
                     RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.GetAll), ex);
                     var errorResult = await HookHelper.HandleErrorHookAsync(
@@ -386,7 +386,7 @@ internal static class GetAllHandler
                     apiPipeline,
                     apiHookContext);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.GetAll), ex);
                 var errorResult = await HookHelper.HandleErrorHookAsync(

@@ -1,3 +1,5 @@
+using RestLib.Internal;
+
 namespace RestLib.Batch;
 
 /// <summary>
@@ -11,14 +13,19 @@ internal static class BulkPersistenceExecutor
     /// </summary>
     /// <typeparam name="TResult">The operation result type.</typeparam>
     /// <param name="operation">The bulk repository operation.</param>
+    /// <param name="cancellationToken">The current request cancellation token.</param>
     /// <returns>The operation result.</returns>
-    internal static async Task<TResult> ExecuteAsync<TResult>(Func<Task<TResult>> operation)
+    internal static async Task<TResult> ExecuteAsync<TResult>(
+        Func<Task<TResult>> operation,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         try
         {
             return await operation();
         }
-        catch (Exception exception)
+        catch (Exception exception) when (!RequestCancellation.IsRequested(exception, cancellationToken))
         {
             throw new BulkPersistenceException(exception);
         }

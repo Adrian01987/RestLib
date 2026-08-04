@@ -94,7 +94,7 @@ internal static class DeleteHandler
 
                 return Results.NoContent();
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.Delete), ex);
                 var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Delete, ex, id, entityToDelete, logger);
@@ -163,7 +163,7 @@ internal static class DeleteHandler
                         pipeline,
                         hookContext);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
                 {
                     RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.Delete), ex);
                     var errorResult = await HookHelper.HandleErrorHookAsync(
@@ -202,7 +202,7 @@ internal static class DeleteHandler
                     apiPipeline,
                     apiHookContext);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.Delete), ex);
                 var errorResult = await HookHelper.HandleErrorHookAsync(

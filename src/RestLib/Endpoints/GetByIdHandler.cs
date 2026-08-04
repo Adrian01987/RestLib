@@ -167,7 +167,7 @@ internal static class GetByIdHandler
 
                 return Results.Json(entity, jsonOptions);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.GetById), ex);
                 var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.GetById, ex, id, logger: logger);
@@ -236,7 +236,7 @@ internal static class GetByIdHandler
                         pipeline,
                         hookContext);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
                 {
                     RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.GetById), ex);
                     var errorResult = await HookHelper.HandleErrorHookAsync(
@@ -275,7 +275,7 @@ internal static class GetByIdHandler
                     apiPipeline,
                     apiHookContext);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.GetById), ex);
                 var errorResult = await HookHelper.HandleErrorHookAsync(

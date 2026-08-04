@@ -146,7 +146,7 @@ internal static class UpdateHandler
 
                 return Results.Json(updated, jsonOptions);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.Update), ex);
                 var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Update, ex, id, entity, logger);
@@ -225,7 +225,7 @@ internal static class UpdateHandler
                         pipeline,
                         hookContext);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
                 {
                     RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.Update), ex);
                     var errorResult = await HookHelper.HandleErrorHookAsync(
@@ -272,7 +272,7 @@ internal static class UpdateHandler
                     apiPipeline,
                     apiHookContext);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.Update), ex);
                 var errorResult = await HookHelper.HandleErrorHookAsync(

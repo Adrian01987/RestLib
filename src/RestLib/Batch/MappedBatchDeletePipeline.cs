@@ -80,11 +80,14 @@ internal sealed class MappedBatchDeletePipeline<TApiModel, TDbModel, TKey>
     {
         var keys = validItems.Select(item => item.Key).ToList();
         var existingEntities = await BulkPersistenceExecutor.ExecuteAsync(
-            () => context.BatchRepository!.GetByIdsAsync(keys, context.CancellationToken));
+            () => context.BatchRepository!.GetByIdsAsync(keys, context.CancellationToken),
+            context.CancellationToken);
         var itemsToDelete = new List<(int Index, TKey Key, TApiModel? ApiEntity, TDbModel? DbEntity)>();
 
         foreach (var (index, key) in validItems)
         {
+            context.CancellationToken.ThrowIfCancellationRequested();
+
             if (!existingEntities.TryGetValue(key, out var existingDb))
             {
                 RestLibLogMessages.BatchDeleteItemNotFound(context.Logger, index, typeof(TApiModel).Name, key!);
@@ -139,12 +142,15 @@ internal sealed class MappedBatchDeletePipeline<TApiModel, TDbModel, TKey>
 
         var keysToDelete = itemsToDelete.Select(item => item.Key).ToList();
         _ = await BulkPersistenceExecutor.ExecuteAsync(
-            () => context.BatchRepository!.DeleteManyAsync(keysToDelete, context.CancellationToken));
+            () => context.BatchRepository!.DeleteManyAsync(keysToDelete, context.CancellationToken),
+            context.CancellationToken);
 
         RestLibLogMessages.BatchDeleteCompleted(context.Logger, keysToDelete.Count);
 
         foreach (var (index, key, apiEntity, dbEntity) in itemsToDelete)
         {
+            context.CancellationToken.ThrowIfCancellationRequested();
+
             if (context.DbPipeline is not null)
             {
                 var afterContext = context.DbPipeline.CreateContext(

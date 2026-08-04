@@ -96,12 +96,15 @@ internal sealed class MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>
     {
         var ids = validItems.Select(item => item.Id).ToList();
         var originals = await BulkPersistenceExecutor.ExecuteAsync(
-            () => context.BatchRepository!.GetByIdsAsync(ids, context.CancellationToken));
+            () => context.BatchRepository!.GetByIdsAsync(ids, context.CancellationToken),
+            context.CancellationToken);
 
         var itemsToPersist = new List<(int Index, TKey Id, TDbModel Entity)>();
 
         foreach (var (index, id, body) in validItems)
         {
+            context.CancellationToken.ThrowIfCancellationRequested();
+
             if (!originals.TryGetValue(id, out var originalDb))
             {
                 RestLibLogMessages.BatchPatchItemNotFound(context.Logger, index, typeof(TApiModel).Name, id!);
@@ -224,10 +227,13 @@ internal sealed class MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>
 
         var entities = itemsToPersist.Select(item => item.Entity).ToList();
         var updated = await BulkPersistenceExecutor.ExecuteAsync(
-            () => context.BatchRepository!.UpdateManyAsync(entities, context.CancellationToken));
+            () => context.BatchRepository!.UpdateManyAsync(entities, context.CancellationToken),
+            context.CancellationToken);
 
         for (var i = 0; i < itemsToPersist.Count; i++)
         {
+            context.CancellationToken.ThrowIfCancellationRequested();
+
             var item = itemsToPersist[i];
             results[item.Index] = await RunAfterPersistAndBuildResultAsync(item.Index, updated[i], item.Id, context);
         }

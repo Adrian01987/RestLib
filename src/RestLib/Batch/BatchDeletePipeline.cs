@@ -67,13 +67,16 @@ internal sealed class BatchDeletePipeline<TEntity, TKey>
         // Use GetByIdsAsync for a single bulk fetch instead of N individual GetByIdAsync calls.
         var keys = validItems.Select(v => v.Key).ToList();
         var existingEntities = await BulkPersistenceExecutor.ExecuteAsync(
-            () => context.BatchRepository!.GetByIdsAsync(keys, context.CancellationToken));
+            () => context.BatchRepository!.GetByIdsAsync(keys, context.CancellationToken),
+            context.CancellationToken);
 
         var itemsToDelete = new List<(int Index, TKey Key)>();
         var entityName = typeof(TEntity).Name;
 
         foreach (var (index, key) in validItems)
         {
+            context.CancellationToken.ThrowIfCancellationRequested();
+
             if (!existingEntities.ContainsKey(key))
             {
                 RestLibLogMessages.BatchDeleteItemNotFound(context.Logger, index, entityName, key!);
@@ -93,13 +96,16 @@ internal sealed class BatchDeletePipeline<TEntity, TKey>
 
         var keysToDelete = itemsToDelete.Select(v => v.Key).ToList();
         _ = await BulkPersistenceExecutor.ExecuteAsync(
-            () => context.BatchRepository!.DeleteManyAsync(keysToDelete, context.CancellationToken));
+            () => context.BatchRepository!.DeleteManyAsync(keysToDelete, context.CancellationToken),
+            context.CancellationToken);
 
         RestLibLogMessages.BatchDeleteCompleted(context.Logger, keysToDelete.Count);
 
         // Run AfterPersist hooks and build 204 results for each deleted item.
         foreach (var (index, key) in itemsToDelete)
         {
+            context.CancellationToken.ThrowIfCancellationRequested();
+
             if (context.Pipeline is not null)
             {
                 var afterContext = context.Pipeline.CreateContext(

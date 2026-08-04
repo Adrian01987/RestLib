@@ -142,14 +142,19 @@ internal static class HookHelper
     {
         if (pipeline is null) return null;
 
+        httpContext.RequestAborted.ThrowIfCancellationRequested();
+
         try
         {
             var errorContext = pipeline.CreateErrorContext(httpContext, operation, exception, resourceId, entity);
             var (handled, errorResult) = await pipeline.ExecuteOnErrorAsync(errorContext);
+            httpContext.RequestAborted.ThrowIfCancellationRequested();
 
             return handled && errorResult is not null ? errorResult : null;
         }
-        catch (Exception hookException)
+        catch (Exception hookException) when (
+            hookException is not OperationCanceledException ||
+            !httpContext.RequestAborted.IsCancellationRequested)
         {
             // If the error hook itself throws, swallow the hook exception so the
             // original exception (which the caller is about to rethrow) is preserved.

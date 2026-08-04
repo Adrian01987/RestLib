@@ -6,6 +6,7 @@ using RestLib.Configuration;
 using RestLib.Endpoints;
 using RestLib.Hooks;
 using RestLib.Hypermedia;
+using RestLib.Internal;
 using RestLib.Logging;
 using RestLib.Responses;
 using RestLib.Serialization;
@@ -63,6 +64,8 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
         JsonElement itemsElement,
         BatchContext<TEntity, TKey> context)
     {
+        context.CancellationToken.ThrowIfCancellationRequested();
+
         var items = JsonDeserializationHelper.DeserializeArray<TRawItem>(itemsElement, context.JsonOptions, context.Logger);
         if (items is null)
         {
@@ -77,6 +80,8 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
 
         for (var i = 0; i < items.Count; i++)
         {
+            context.CancellationToken.ThrowIfCancellationRequested();
+
             var (error, validItem) = await ValidateItemAsync(i, items[i], context);
             if (error is not null)
             {
@@ -463,6 +468,8 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
     {
         for (var j = 0; j < validItems.Count; j++)
         {
+            context.CancellationToken.ThrowIfCancellationRequested();
+
             var index = GetIndex(validItems[j]);
             var entity = bulkResults[j];
 
@@ -505,6 +512,8 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
         BatchItemResult?[] results,
         BatchContext<TEntity, TKey> context)
     {
+        context.CancellationToken.ThrowIfCancellationRequested();
+
         if (validItems.Count == 0) return;
 
         if (HasBulkPath && context.BatchRepository is not null)
@@ -515,6 +524,8 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
             }
             catch (BulkPersistenceException bulkException)
             {
+                context.CancellationToken.ThrowIfCancellationRequested();
+
                 var persistenceException = bulkException.InnerException ?? bulkException;
                 var actionName = Operation.ToString().ToLowerInvariant();
                 RestLibLogMessages.BulkPersistenceFailed(
@@ -526,6 +537,8 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
 
                 foreach (var item in failedItems)
                 {
+                    context.CancellationToken.ThrowIfCancellationRequested();
+
                     var index = GetIndex(item);
                     results[index] = await HandleItemErrorAsync(
                         index,
@@ -552,13 +565,17 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
     {
         foreach (var item in validItems)
         {
+            context.CancellationToken.ThrowIfCancellationRequested();
+
             var index = GetIndex(item);
             try
             {
                 await PersistSingleItemAsync(item, results, context);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!RequestCancellation.IsRequested(ex, context.CancellationToken))
             {
+                context.CancellationToken.ThrowIfCancellationRequested();
+
                 var actionName = Operation.ToString().ToLowerInvariant();
                 RestLibLogMessages.BatchItemPersistenceFailed(context.Logger, actionName, index, ex);
 
@@ -579,6 +596,8 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
         TKey? resourceId = default,
         TEntity? entity = default)
     {
+        context.CancellationToken.ThrowIfCancellationRequested();
+
         if (context.Pipeline is not null)
         {
             try
@@ -586,6 +605,7 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
                 var errorContext = context.Pipeline.CreateErrorContext(
                     context.HttpContext, Operation, ex, resourceId, entity);
                 var (handled, errorResult) = await context.Pipeline.ExecuteOnErrorAsync(errorContext);
+                context.CancellationToken.ThrowIfCancellationRequested();
 
                 if (handled && errorResult is not null)
                 {
@@ -609,7 +629,8 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
                     };
                 }
             }
-            catch (Exception hookException)
+            catch (Exception hookException) when (
+                !RequestCancellation.IsRequested(hookException, context.CancellationToken))
             {
                 // If the error hook itself throws, swallow the hook exception and fall
                 // through to the default ExceptionResult so the original error is reported.

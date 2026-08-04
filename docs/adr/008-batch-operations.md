@@ -106,6 +106,13 @@ After-persist hooks, model mapping, HATEOAS providers, and result construction
 can therefore fail after a successful repository call, but such a failure is
 not classified as a persistence failure and cannot trigger another write.
 
+Request cancellation is also outside ordinary batch failure handling. When an
+`OperationCanceledException` is observed while the request token is cancelled,
+RestLib propagates it immediately: bulk failures are not wrapped, individual
+loops stop before the next item, and error hooks are not invoked. An
+independently cancelled downstream operation remains an ordinary repository
+failure when the request token itself has not been cancelled.
+
 ### Per-item hooks
 Hooks fire once per item with the standard `HookContext`, using batch-specific
 `RestLibOperation` values (`BatchCreate`, `BatchUpdate`, `BatchPatch`,

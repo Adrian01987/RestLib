@@ -156,7 +156,8 @@ internal sealed class MappedBatchCreatePipeline<TApiModel, TDbModel, TKey>
     {
         var entities = validItems.Select(item => item.DbEntity).ToList();
         var created = await BulkPersistenceExecutor.ExecuteAsync(
-            () => context.BatchRepository!.CreateManyAsync(entities, context.CancellationToken));
+            () => context.BatchRepository!.CreateManyAsync(entities, context.CancellationToken),
+            context.CancellationToken);
 
         await ProcessBulkResultsAsync(validItems, created, results, context);
 

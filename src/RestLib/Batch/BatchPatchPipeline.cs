@@ -88,11 +88,14 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
         {
             var ids = validItems.Select(v => v.Id).ToList();
             var originals = await BulkPersistenceExecutor.ExecuteAsync(
-                () => context.BatchRepository!.GetByIdsAsync(ids, context.CancellationToken));
+                () => context.BatchRepository!.GetByIdsAsync(ids, context.CancellationToken),
+                context.CancellationToken);
 
             itemsToPersist = new List<(int Index, TKey Id, JsonElement Body)>();
             foreach (var (index, id, body) in validItems)
             {
+                context.CancellationToken.ThrowIfCancellationRequested();
+
                 if (!originals.TryGetValue(id, out var original))
                 {
                     var entityName = typeof(TEntity).Name;
@@ -161,7 +164,8 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
                 .Select(v => (v.Id, v.Body))
                 .ToList();
             var patched = await BulkPersistenceExecutor.ExecuteAsync(
-                () => context.BatchRepository!.PatchManyAsync(patches, context.CancellationToken));
+                () => context.BatchRepository!.PatchManyAsync(patches, context.CancellationToken),
+                context.CancellationToken);
 
             await ProcessBulkResultsAsync(itemsToPersist, patched, results, context);
 
