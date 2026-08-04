@@ -414,6 +414,8 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
         TKey? resourceId,
         BatchContext<TEntity, TKey> context)
     {
+        var entityKey = EntityKeyHelper.GetEntityKey(entity, context.EndpointConfig.KeySelector);
+
         if (context.Pipeline is not null)
         {
             var afterContext = context.Pipeline.CreateContext(
@@ -424,16 +426,18 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
             {
                 return BuildHookResultItem(index, afterContext.EarlyResult, context.HttpContext);
             }
+
+            entity = afterContext.Entity ?? entity;
+            if (entityKey is not null)
+            {
+                _ = EntityKeyHelper.TrySetEntityKeyParts(entity, entityKey, context.EndpointConfig.KeyRouteParts);
+            }
         }
 
         // Inject HATEOAS links when enabled
         object resultEntity = entity;
         if (context.Options.EnableHateoas)
         {
-            // Always extract the key from the persisted entity via KeySelector.
-            // For Create actions, resourceId is default(TKey) which for value types
-            // (e.g. Guid.Empty) is not null, so we cannot rely on null-coalescing.
-            var entityKey = EntityKeyHelper.GetEntityKey(entity, context.EndpointConfig.KeySelector);
             if (entityKey is not null)
             {
                 var customLinksProvider = context.HttpContext.RequestServices.GetService<IHateoasLinkProvider<TEntity, TKey>>();

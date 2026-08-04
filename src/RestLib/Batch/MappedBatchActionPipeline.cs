@@ -435,6 +435,7 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
         MappedBatchContext<TApiModel, TDbModel, TKey> context)
     {
         var apiEntity = context.Mapper.ToApi(dbEntity);
+        var entityKey = EntityKeyHelper.GetEntityKey(apiEntity, context.EndpointConfig.KeySelector);
 
         if (context.DbPipeline is not null)
         {
@@ -450,6 +451,11 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
             }
 
             dbEntity = afterContext.Entity ?? dbEntity;
+            if (entityKey is not null)
+            {
+                _ = EntityKeyHelper.TrySetEntityKeyParts(dbEntity, entityKey, context.EndpointConfig.KeyRouteParts);
+            }
+
             apiEntity = context.Mapper.ToApi(dbEntity);
         }
         else if (context.ApiPipeline is not null)
@@ -468,10 +474,14 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
             apiEntity = afterContext.Entity ?? apiEntity;
         }
 
+        if (entityKey is not null)
+        {
+            _ = EntityKeyHelper.TrySetEntityKeyParts(apiEntity, entityKey, context.EndpointConfig.KeyRouteParts);
+        }
+
         object resultEntity = apiEntity;
         if (context.Options.EnableHateoas)
         {
-            var entityKey = EntityKeyHelper.GetEntityKey(apiEntity, context.EndpointConfig.KeySelector);
             if (entityKey is not null)
             {
                 var customLinksProvider = context.HttpContext.RequestServices.GetService<IHateoasLinkProvider<TApiModel, TKey>>();

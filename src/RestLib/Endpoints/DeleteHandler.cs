@@ -47,10 +47,6 @@ internal static class DeleteHandler
 
             try
             {
-                // OnRequestValidated hook
-                var onValidatedResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
-                if (onValidatedResult is not null) return onValidatedResult;
-
                 // Check for ETag precondition (If-Match header)
                 var (etagEntity, etagError) = await ETagHelper.CheckIfMatchPreconditionAsync(
                     httpContext, repository, id, entityName, options, jsonOptions, ct, logger);
@@ -63,10 +59,36 @@ internal static class DeleteHandler
                     entityToDelete = await repository.GetByIdAsync(id, ct);
                 }
 
+                if (pipeline is not null && entityToDelete is null)
+                {
+                    return Responses.ProblemDetailsResult.NotFound(
+                        entityName,
+                        id!,
+                        config.KeyRouteParts,
+                        httpContext.Request.Path,
+                        jsonOptions,
+                        logger,
+                        options);
+                }
+
+                if (entityToDelete is not null)
+                {
+                    var validatedStage = await HookHelper.RunEntityHookStageAsync(
+                        pipeline, hookContext, entityToDelete, p => p.ExecuteOnRequestValidatedAsync);
+                    if (validatedStage.EarlyResult is not null) return validatedStage.EarlyResult;
+                    entityToDelete = validatedStage.Entity;
+                    _ = EntityKeyHelper.TrySetEntityKeyParts(entityToDelete, id, config.KeyRouteParts);
+                }
+
                 // BeforePersist hook
-                if (hookContext is not null) hookContext.Entity = entityToDelete;
-                var beforePersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
-                if (beforePersistResult is not null) return beforePersistResult;
+                if (entityToDelete is not null)
+                {
+                    var beforePersistStage = await HookHelper.RunEntityHookStageAsync(
+                        pipeline, hookContext, entityToDelete, p => p.ExecuteBeforePersistAsync);
+                    if (beforePersistStage.EarlyResult is not null) return beforePersistStage.EarlyResult;
+                    entityToDelete = beforePersistStage.Entity;
+                    _ = EntityKeyHelper.TrySetEntityKeyParts(entityToDelete, id, config.KeyRouteParts);
+                }
 
                 var deleted = await repository.DeleteAsync(id, ct);
 
@@ -85,12 +107,23 @@ internal static class DeleteHandler
                 RestLibLogMessages.EntityDeleted(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
                 // AfterPersist hook
-                var afterPersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
-                if (afterPersistResult is not null) return afterPersistResult;
+                if (entityToDelete is not null)
+                {
+                    var afterPersistStage = await HookHelper.RunEntityHookStageAsync(
+                        pipeline, hookContext, entityToDelete, p => p.ExecuteAfterPersistAsync);
+                    if (afterPersistStage.EarlyResult is not null) return afterPersistStage.EarlyResult;
+                    entityToDelete = afterPersistStage.Entity;
+                    _ = EntityKeyHelper.TrySetEntityKeyParts(entityToDelete, id, config.KeyRouteParts);
+                }
 
                 // BeforeResponse hook
-                var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
-                if (beforeResponseResult is not null) return beforeResponseResult;
+                if (entityToDelete is not null)
+                {
+                    var beforeResponseStage = await HookHelper.RunEntityHookStageAsync(
+                        pipeline, hookContext, entityToDelete, p => p.ExecuteBeforeResponseAsync);
+                    if (beforeResponseStage.EarlyResult is not null) return beforeResponseStage.EarlyResult;
+                    entityToDelete = beforeResponseStage.Entity;
+                }
 
                 return Results.NoContent();
             }
@@ -236,9 +269,6 @@ internal static class DeleteHandler
         where THookModel : class
         where TKey : notnull
     {
-        var onValidatedResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
-        if (onValidatedResult is not null) return onValidatedResult;
-
         TDbModel? entityToDeleteDb = null;
         TApiModel? entityToDeleteApi = null;
 
@@ -265,26 +295,59 @@ internal static class DeleteHandler
             entityToDeleteApi = entityToDeleteDb is not null ? mapper.ToApi(entityToDeleteDb) : null;
         }
 
-        if (hookContext is not null)
+        if (pipeline is not null && entityToDeleteDb is null)
         {
-            hookContext.Entity = typeof(THookModel) == typeof(TDbModel)
-                ? (THookModel?)(object?)entityToDeleteDb
-                : (THookModel?)(object?)entityToDeleteApi;
+            return Responses.ProblemDetailsResult.NotFound(
+                entityName,
+                id!,
+                config.KeyRouteParts,
+                httpContext.Request.Path,
+                jsonOptions,
+                logger,
+                options);
         }
 
-        var beforePersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
-        if (beforePersistResult is not null) return beforePersistResult;
-
-        if (hookContext is not null)
+        var validatedHookEntity = typeof(THookModel) == typeof(TDbModel)
+            ? (THookModel?)(object?)entityToDeleteDb
+            : (THookModel?)(object?)entityToDeleteApi;
+        if (validatedHookEntity is not null)
         {
+            var validatedStage = await HookHelper.RunEntityHookStageAsync(
+                pipeline, hookContext, validatedHookEntity, p => p.ExecuteOnRequestValidatedAsync);
+            if (validatedStage.EarlyResult is not null) return validatedStage.EarlyResult;
+
             if (typeof(THookModel) == typeof(TDbModel))
             {
-                entityToDeleteDb = (TDbModel?)(object?)hookContext.Entity;
-                entityToDeleteApi = entityToDeleteDb is not null ? mapper.ToApi(entityToDeleteDb) : entityToDeleteApi;
+                entityToDeleteDb = (TDbModel)(object)validatedStage.Entity;
+                _ = EntityKeyHelper.TrySetEntityKeyParts(entityToDeleteDb, id, config.KeyRouteParts);
+                entityToDeleteApi = mapper.ToApi(entityToDeleteDb);
             }
             else
             {
-                entityToDeleteApi = (TApiModel?)(object?)hookContext.Entity;
+                entityToDeleteApi = (TApiModel)(object)validatedStage.Entity;
+                _ = EntityKeyHelper.TrySetEntityKeyParts(entityToDeleteApi, id, config.KeyRouteParts);
+            }
+        }
+
+        var beforePersistHookEntity = typeof(THookModel) == typeof(TDbModel)
+            ? (THookModel?)(object?)entityToDeleteDb
+            : (THookModel?)(object?)entityToDeleteApi;
+        if (beforePersistHookEntity is not null)
+        {
+            var beforePersistStage = await HookHelper.RunEntityHookStageAsync(
+                pipeline, hookContext, beforePersistHookEntity, p => p.ExecuteBeforePersistAsync);
+            if (beforePersistStage.EarlyResult is not null) return beforePersistStage.EarlyResult;
+
+            if (typeof(THookModel) == typeof(TDbModel))
+            {
+                entityToDeleteDb = (TDbModel)(object)beforePersistStage.Entity;
+                _ = EntityKeyHelper.TrySetEntityKeyParts(entityToDeleteDb, id, config.KeyRouteParts);
+                entityToDeleteApi = mapper.ToApi(entityToDeleteDb);
+            }
+            else
+            {
+                entityToDeleteApi = (TApiModel)(object)beforePersistStage.Entity;
+                _ = EntityKeyHelper.TrySetEntityKeyParts(entityToDeleteApi, id, config.KeyRouteParts);
             }
         }
 
@@ -303,18 +366,22 @@ internal static class DeleteHandler
 
         RestLibLogMessages.EntityDeleted(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
-        if (hookContext is not null)
+        var afterPersistHookEntity = typeof(THookModel) == typeof(TDbModel)
+            ? (THookModel?)(object?)entityToDeleteDb
+            : (THookModel?)(object?)entityToDeleteApi;
+        if (afterPersistHookEntity is not null)
         {
-            hookContext.Entity = typeof(THookModel) == typeof(TDbModel)
-                ? (THookModel?)(object?)entityToDeleteDb
-                : (THookModel?)(object?)entityToDeleteApi;
+            var afterPersistStage = await HookHelper.RunEntityHookStageAsync(
+                pipeline, hookContext, afterPersistHookEntity, p => p.ExecuteAfterPersistAsync);
+            if (afterPersistStage.EarlyResult is not null) return afterPersistStage.EarlyResult;
+
+            var beforeResponseHookEntity = afterPersistStage.Entity;
+            _ = EntityKeyHelper.TrySetEntityKeyParts(beforeResponseHookEntity, id, config.KeyRouteParts);
+
+            var beforeResponseStage = await HookHelper.RunEntityHookStageAsync(
+                pipeline, hookContext, beforeResponseHookEntity, p => p.ExecuteBeforeResponseAsync);
+            if (beforeResponseStage.EarlyResult is not null) return beforeResponseStage.EarlyResult;
         }
-
-        var afterPersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
-        if (afterPersistResult is not null) return afterPersistResult;
-
-        var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
-        if (beforeResponseResult is not null) return beforeResponseResult;
 
         return Results.NoContent();
     }

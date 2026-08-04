@@ -21,6 +21,17 @@ internal readonly record struct PipelineInitResult<TEntity, TKey>(
     where TKey : notnull;
 
 /// <summary>
+/// Result of executing a hook stage that has an effective entity.
+/// </summary>
+/// <typeparam name="TEntity">The entity type being processed.</typeparam>
+/// <param name="Entity">The effective entity after the hook stage.</param>
+/// <param name="EarlyResult">An early result when the hook short-circuited; otherwise <c>null</c>.</param>
+internal readonly record struct EntityHookStageResult<TEntity>(
+    TEntity Entity,
+    IResult? EarlyResult)
+    where TEntity : class;
+
+/// <summary>
 /// Helper methods for hook pipeline initialization, stage execution, and error handling.
 /// </summary>
 internal static class HookHelper
@@ -113,6 +124,36 @@ internal static class HookHelper
         }
 
         return await ExecuteHookAsync(stageSelector(pipeline), hookContext);
+    }
+
+    /// <summary>
+    /// Runs a hook stage with the supplied effective entity and returns the entity selected by the hook.
+    /// Assigning a replacement to <see cref="HookContext{TEntity, TKey}.Entity"/> makes that replacement
+    /// effective for subsequent processing. Assigning <c>null</c> retains the supplied entity.
+    /// </summary>
+    /// <typeparam name="TEntity">The entity type being processed.</typeparam>
+    /// <typeparam name="TKey">The entity key type.</typeparam>
+    /// <param name="pipeline">The hook pipeline, or null if no hooks are configured.</param>
+    /// <param name="hookContext">The hook context, or null if the pipeline was not initialised.</param>
+    /// <param name="entity">The effective entity entering the stage.</param>
+    /// <param name="stageSelector">A function that selects the hook stage to execute.</param>
+    /// <returns>The effective entity and any early result produced by the stage.</returns>
+    internal static async Task<EntityHookStageResult<TEntity>> RunEntityHookStageAsync<TEntity, TKey>(
+        HookPipeline<TEntity, TKey>? pipeline,
+        HookContext<TEntity, TKey>? hookContext,
+        TEntity entity,
+        Func<HookPipeline<TEntity, TKey>, Func<HookContext<TEntity, TKey>, Task<bool>>> stageSelector)
+        where TEntity : class
+        where TKey : notnull
+    {
+        if (pipeline is null || hookContext is null)
+        {
+            return new EntityHookStageResult<TEntity>(entity, null);
+        }
+
+        hookContext.Entity = entity;
+        var earlyResult = await ExecuteHookAsync(stageSelector(pipeline), hookContext);
+        return new EntityHookStageResult<TEntity>(hookContext.Entity ?? entity, earlyResult);
     }
 
     /// <summary>

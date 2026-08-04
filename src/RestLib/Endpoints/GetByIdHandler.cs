@@ -97,27 +97,29 @@ internal static class GetByIdHandler
                         options);
                 }
 
-                // Update hook context with entity
-                if (hookContext is not null)
-                {
-                    hookContext.Entity = entity;
-                }
-
                 // OnRequestValidated hook
-                var onValidatedResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
-                if (onValidatedResult is not null) return onValidatedResult;
+                var validatedStage = await HookHelper.RunEntityHookStageAsync(
+                    pipeline, hookContext, entity, p => p.ExecuteOnRequestValidatedAsync);
+                if (validatedStage.EarlyResult is not null) return validatedStage.EarlyResult;
+                entity = validatedStage.Entity;
+                _ = EntityKeyHelper.TrySetEntityKeyParts(entity, id, config.KeyRouteParts);
 
-                // Handle conditional requests when ETag support is enabled
+                // BeforeResponse hook
+                var beforeResponseStage = await HookHelper.RunEntityHookStageAsync(
+                    pipeline, hookContext, entity, p => p.ExecuteBeforeResponseAsync);
+                if (beforeResponseStage.EarlyResult is not null) return beforeResponseStage.EarlyResult;
+                entity = beforeResponseStage.Entity;
+                _ = EntityKeyHelper.TrySetEntityKeyParts(entity, id, config.KeyRouteParts);
+
+                // Conditional requests use the final response representation, including hook replacements.
                 if (options.EnableETagSupport)
                 {
                     var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
                     var etag = etagGenerator.Generate(entity);
 
-                    // Check If-None-Match header for conditional GET
                     var ifNoneMatch = httpContext.Request.Headers.IfNoneMatch;
                     if (!ETagComparer.IfNoneMatchSucceeds(ifNoneMatch, etag))
                     {
-                        // ETag matches - return 304 Not Modified
                         RestLibLogMessages.GetByIdNotModified(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
                         httpContext.Response.Headers.ETag = etag;
                         return Results.StatusCode(StatusCodes.Status304NotModified);
@@ -125,10 +127,6 @@ internal static class GetByIdHandler
 
                     httpContext.Response.Headers.ETag = etag;
                 }
-
-                // BeforeResponse hook
-                var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
-                if (beforeResponseResult is not null) return beforeResponseResult;
 
                 // Apply field selection projection if requested
                 if (selectedFields.Count > 0)
@@ -365,29 +363,16 @@ internal static class GetByIdHandler
             if (typeof(THookModel) == typeof(TDbModel))
             {
                 dbEntity = (TDbModel)(object)(hookContext.Entity ?? (THookModel)(object)dbEntity);
+                _ = EntityKeyHelper.TrySetEntityKeyParts(dbEntity, id, config.KeyRouteParts);
                 apiEntity = mapper.ToApi(dbEntity);
             }
             else
             {
                 apiEntity = (TApiModel)(object)(hookContext.Entity ?? (THookModel)(object)apiEntity);
+                _ = EntityKeyHelper.TrySetEntityKeyParts(apiEntity, id, config.KeyRouteParts);
             }
         }
-
-        if (options.EnableETagSupport)
-        {
-            var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
-            var etag = etagGenerator.Generate(apiEntity);
-
-            var ifNoneMatch = httpContext.Request.Headers.IfNoneMatch;
-            if (!ETagComparer.IfNoneMatchSucceeds(ifNoneMatch, etag))
-            {
-                RestLibLogMessages.GetByIdNotModified(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
-                httpContext.Response.Headers.ETag = etag;
-                return Results.StatusCode(StatusCodes.Status304NotModified);
-            }
-
-            httpContext.Response.Headers.ETag = etag;
-        }
+        _ = EntityKeyHelper.TrySetEntityKeyParts(apiEntity, id, config.KeyRouteParts);
 
         if (hookContext is not null)
         {
@@ -409,12 +394,31 @@ internal static class GetByIdHandler
             if (typeof(THookModel) == typeof(TDbModel))
             {
                 dbEntity = (TDbModel)(object)(hookContext.Entity ?? (THookModel)(object)dbEntity);
+                _ = EntityKeyHelper.TrySetEntityKeyParts(dbEntity, id, config.KeyRouteParts);
                 apiEntity = mapper.ToApi(dbEntity);
             }
             else
             {
                 apiEntity = (TApiModel)(object)(hookContext.Entity ?? (THookModel)(object)apiEntity);
+                _ = EntityKeyHelper.TrySetEntityKeyParts(apiEntity, id, config.KeyRouteParts);
             }
+        }
+        _ = EntityKeyHelper.TrySetEntityKeyParts(apiEntity, id, config.KeyRouteParts);
+
+        if (options.EnableETagSupport)
+        {
+            var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
+            var etag = etagGenerator.Generate(apiEntity);
+
+            var ifNoneMatch = httpContext.Request.Headers.IfNoneMatch;
+            if (!ETagComparer.IfNoneMatchSucceeds(ifNoneMatch, etag))
+            {
+                RestLibLogMessages.GetByIdNotModified(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
+                httpContext.Response.Headers.ETag = etag;
+                return Results.StatusCode(StatusCodes.Status304NotModified);
+            }
+
+            httpContext.Response.Headers.ETag = etag;
         }
 
         if (selectedFields.Count > 0)

@@ -28,6 +28,13 @@ internal sealed class HookPipeline<TEntity, TKey> where TEntity : class where TK
     }
 
     /// <summary>
+    /// Gets a value indicating whether PATCH must persist an effective entity because a hook can
+    /// replace or modify the merged representation before persistence.
+    /// </summary>
+    internal bool HasPrePersistEntityHooks =>
+        _hooks.OnRequestValidated is not null || _hooks.BeforePersist is not null;
+
+    /// <summary>
     /// Creates a new hook context for the current request.
     /// </summary>
     public HookContext<TEntity, TKey> CreateContext(

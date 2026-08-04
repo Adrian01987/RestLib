@@ -71,10 +71,10 @@ internal static class UpdateHandler
                 }
 
                 // OnRequestValidated hook
-                if (hookContext is not null) hookContext.Entity = entity;
-                var onValidatedResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
-                if (onValidatedResult is not null) return onValidatedResult;
-                if (hookContext is not null) entity = hookContext.Entity ?? entity;
+                var validatedStage = await HookHelper.RunEntityHookStageAsync(
+                    pipeline, hookContext, entity, p => p.ExecuteOnRequestValidatedAsync);
+                if (validatedStage.EarlyResult is not null) return validatedStage.EarlyResult;
+                entity = validatedStage.Entity;
                 _ = EntityKeyHelper.TrySetEntityKeyParts(entity, id, config.KeyRouteParts);
 
                 // Check for ETag precondition (If-Match header)
@@ -90,15 +90,12 @@ internal static class UpdateHandler
                 }
 
                 // BeforePersist hook — update existing context with original entity
-                if (hookContext is not null)
-                {
-                    hookContext.Entity = entity;
-                    hookContext.SetOriginalEntity(originalEntity);
-                }
+                if (hookContext is not null) hookContext.SetOriginalEntity(originalEntity);
 
-                var beforePersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
-                if (beforePersistResult is not null) return beforePersistResult;
-                if (hookContext is not null) entity = hookContext.Entity ?? entity;
+                var beforePersistStage = await HookHelper.RunEntityHookStageAsync(
+                    pipeline, hookContext, entity, p => p.ExecuteBeforePersistAsync);
+                if (beforePersistStage.EarlyResult is not null) return beforePersistStage.EarlyResult;
+                entity = beforePersistStage.Entity;
                 _ = EntityKeyHelper.TrySetEntityKeyParts(entity, id, config.KeyRouteParts);
 
                 var updated = await repository.UpdateAsync(id, entity, ct);
@@ -116,22 +113,25 @@ internal static class UpdateHandler
                 }
 
                 // AfterPersist hook
-                if (hookContext is not null) hookContext.Entity = updated;
-                var afterPersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
-                if (afterPersistResult is not null) return afterPersistResult;
+                var afterPersistStage = await HookHelper.RunEntityHookStageAsync(
+                    pipeline, hookContext, updated, p => p.ExecuteAfterPersistAsync);
+                if (afterPersistStage.EarlyResult is not null) return afterPersistStage.EarlyResult;
+                updated = afterPersistStage.Entity;
                 _ = EntityKeyHelper.TrySetEntityKeyParts(updated, id, config.KeyRouteParts);
 
-                // Add ETag header when enabled
+                // BeforeResponse hook
+                var beforeResponseStage = await HookHelper.RunEntityHookStageAsync(
+                    pipeline, hookContext, updated, p => p.ExecuteBeforeResponseAsync);
+                if (beforeResponseStage.EarlyResult is not null) return beforeResponseStage.EarlyResult;
+                updated = beforeResponseStage.Entity;
+                _ = EntityKeyHelper.TrySetEntityKeyParts(updated, id, config.KeyRouteParts);
+
+                // Generate the ETag from the final response representation.
                 if (options.EnableETagSupport)
                 {
                     var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
                     httpContext.Response.Headers.ETag = etagGenerator.Generate(updated);
                 }
-
-                // BeforeResponse hook
-                var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
-                if (beforeResponseResult is not null) return beforeResponseResult;
-                _ = EntityKeyHelper.TrySetEntityKeyParts(updated, id, config.KeyRouteParts);
 
                 // Inject HATEOAS links into updated entity response
                 if (options.EnableHateoas)
@@ -452,21 +452,17 @@ internal static class UpdateHandler
             if (typeof(THookModel) == typeof(TDbModel))
             {
                 updatedDb = (TDbModel)(object)(hookContext.Entity ?? (THookModel)(object)updatedDb);
+                _ = EntityKeyHelper.TrySetEntityKeyParts(updatedDb, id, config.KeyRouteParts);
                 updatedApi = mapper.ToApi(updatedDb);
             }
             else
             {
                 updatedApi = (TApiModel)(object)(hookContext.Entity ?? (THookModel)(object)updatedApi);
+                _ = EntityKeyHelper.TrySetEntityKeyParts(updatedApi, id, config.KeyRouteParts);
             }
         }
 
         _ = EntityKeyHelper.TrySetEntityKeyParts(updatedApi, id, config.KeyRouteParts);
-
-        if (options.EnableETagSupport)
-        {
-            var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
-            httpContext.Response.Headers.ETag = etagGenerator.Generate(updatedApi);
-        }
 
         if (hookContext is not null)
         {
@@ -483,15 +479,23 @@ internal static class UpdateHandler
             if (typeof(THookModel) == typeof(TDbModel))
             {
                 updatedDb = (TDbModel)(object)(hookContext.Entity ?? (THookModel)(object)updatedDb);
+                _ = EntityKeyHelper.TrySetEntityKeyParts(updatedDb, id, config.KeyRouteParts);
                 updatedApi = mapper.ToApi(updatedDb);
             }
             else
             {
                 updatedApi = (TApiModel)(object)(hookContext.Entity ?? (THookModel)(object)updatedApi);
+                _ = EntityKeyHelper.TrySetEntityKeyParts(updatedApi, id, config.KeyRouteParts);
             }
         }
 
         _ = EntityKeyHelper.TrySetEntityKeyParts(updatedApi, id, config.KeyRouteParts);
+
+        if (options.EnableETagSupport)
+        {
+            var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
+            httpContext.Response.Headers.ETag = etagGenerator.Generate(updatedApi);
+        }
 
         if (options.EnableHateoas)
         {

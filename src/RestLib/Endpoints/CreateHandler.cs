@@ -64,41 +64,54 @@ internal static class CreateHandler
                 }
 
                 // OnRequestValidated hook
-                if (hookContext is not null) hookContext.Entity = entity;
-                var onValidatedResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
-                if (onValidatedResult is not null) return onValidatedResult;
-                if (hookContext is not null) entity = hookContext.Entity ?? entity;
+                var validatedStage = await HookHelper.RunEntityHookStageAsync(
+                    pipeline, hookContext, entity, p => p.ExecuteOnRequestValidatedAsync);
+                if (validatedStage.EarlyResult is not null) return validatedStage.EarlyResult;
+                entity = validatedStage.Entity;
 
                 // BeforePersist hook
-                if (hookContext is not null) hookContext.Entity = entity;
-                var beforePersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
-                if (beforePersistResult is not null) return beforePersistResult;
-                if (hookContext is not null) entity = hookContext.Entity ?? entity;
+                var beforePersistStage = await HookHelper.RunEntityHookStageAsync(
+                    pipeline, hookContext, entity, p => p.ExecuteBeforePersistAsync);
+                if (beforePersistStage.EarlyResult is not null) return beforePersistStage.EarlyResult;
+                entity = beforePersistStage.Entity;
 
                 var created = await repository.CreateAsync(entity, ct);
 
+                // The repository-generated identity remains authoritative for response replacements.
+                var createdId = EntityKeyHelper.GetEntityKey(created, config.KeySelector);
+
                 // AfterPersist hook
-                if (hookContext is not null) hookContext.Entity = created;
-                var afterPersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
-                if (afterPersistResult is not null) return afterPersistResult;
+                var afterPersistStage = await HookHelper.RunEntityHookStageAsync(
+                    pipeline, hookContext, created, p => p.ExecuteAfterPersistAsync);
+                if (afterPersistStage.EarlyResult is not null) return afterPersistStage.EarlyResult;
+                created = afterPersistStage.Entity;
+                if (createdId is not null)
+                {
+                    _ = EntityKeyHelper.TrySetEntityKeyParts(created, createdId, config.KeyRouteParts);
+                }
 
                 // Extract ID from created entity and set Location header
-                var createdId = EntityKeyHelper.GetEntityKey(created, config.KeySelector);
                 var location = $"{httpContext.Request.Path}{EntityKeyHelper.FormatKeyPath(createdId!, config.KeyRouteParts)}";
                 httpContext.Response.Headers.Location = location;
 
                 RestLibLogMessages.EntityCreated(logger, createdId?.ToString() ?? string.Empty, location);
 
-                // Add ETag header when enabled
+                // BeforeResponse hook
+                var beforeResponseStage = await HookHelper.RunEntityHookStageAsync(
+                    pipeline, hookContext, created, p => p.ExecuteBeforeResponseAsync);
+                if (beforeResponseStage.EarlyResult is not null) return beforeResponseStage.EarlyResult;
+                created = beforeResponseStage.Entity;
+                if (createdId is not null)
+                {
+                    _ = EntityKeyHelper.TrySetEntityKeyParts(created, createdId, config.KeyRouteParts);
+                }
+
+                // Generate the ETag from the final response representation.
                 if (options.EnableETagSupport)
                 {
                     var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
                     httpContext.Response.Headers.ETag = etagGenerator.Generate(created);
                 }
-
-                // BeforeResponse hook
-                var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
-                if (beforeResponseResult is not null) return beforeResponseResult;
 
                 // Inject HATEOAS links into created entity response
                 if (options.EnableHateoas && createdId is not null)
@@ -278,28 +291,22 @@ internal static class CreateHandler
             }
         }
 
-        if (hookContext is not null)
+        var validatedHookEntity = typeof(THookModel) == typeof(TDbModel)
+            ? (THookModel)(object)dbEntity
+            : (THookModel)(object)apiEntity;
+        var validatedStage = await HookHelper.RunEntityHookStageAsync(
+            pipeline, hookContext, validatedHookEntity, p => p.ExecuteOnRequestValidatedAsync);
+        if (validatedStage.EarlyResult is not null) return validatedStage.EarlyResult;
+
+        if (typeof(THookModel) == typeof(TDbModel))
         {
-            hookContext.Entity = typeof(THookModel) == typeof(TDbModel)
-                ? (THookModel)(object)dbEntity
-                : (THookModel)(object)apiEntity;
+            dbEntity = (TDbModel)(object)validatedStage.Entity;
+            apiEntity = mapper.ToApi(dbEntity);
         }
-
-        var onValidatedResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
-        if (onValidatedResult is not null) return onValidatedResult;
-
-        if (hookContext is not null)
+        else
         {
-            if (typeof(THookModel) == typeof(TDbModel))
-            {
-                dbEntity = (TDbModel)(object)(hookContext.Entity ?? (THookModel)(object)dbEntity);
-                apiEntity = mapper.ToApi(dbEntity);
-            }
-            else
-            {
-                apiEntity = (TApiModel)(object)(hookContext.Entity ?? (THookModel)(object)apiEntity);
-                dbEntity = mapper.ToDb(apiEntity);
-            }
+            apiEntity = (TApiModel)(object)validatedStage.Entity;
+            dbEntity = mapper.ToDb(apiEntity);
         }
 
         if (options.EnableValidation)
@@ -316,81 +323,90 @@ internal static class CreateHandler
             }
         }
 
-        if (hookContext is not null)
+        var beforePersistHookEntity = typeof(THookModel) == typeof(TDbModel)
+            ? (THookModel)(object)dbEntity
+            : (THookModel)(object)apiEntity;
+        var beforePersistStage = await HookHelper.RunEntityHookStageAsync(
+            pipeline, hookContext, beforePersistHookEntity, p => p.ExecuteBeforePersistAsync);
+        if (beforePersistStage.EarlyResult is not null) return beforePersistStage.EarlyResult;
+
+        if (typeof(THookModel) == typeof(TDbModel))
         {
-            hookContext.Entity = typeof(THookModel) == typeof(TDbModel)
-                ? (THookModel)(object)dbEntity
-                : (THookModel)(object)apiEntity;
+            dbEntity = (TDbModel)(object)beforePersistStage.Entity;
         }
-
-        var beforePersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
-        if (beforePersistResult is not null) return beforePersistResult;
-
-        if (hookContext is not null)
+        else
         {
-            if (typeof(THookModel) == typeof(TDbModel))
-            {
-                dbEntity = (TDbModel)(object)(hookContext.Entity ?? (THookModel)(object)dbEntity);
-            }
-            else
-            {
-                apiEntity = (TApiModel)(object)(hookContext.Entity ?? (THookModel)(object)apiEntity);
-                dbEntity = mapper.ToDb(apiEntity);
-            }
+            apiEntity = (TApiModel)(object)beforePersistStage.Entity;
+            dbEntity = mapper.ToDb(apiEntity);
         }
 
         var createdDb = await repository.CreateAsync(dbEntity, ct);
         var createdApi = mapper.ToApi(createdDb);
+        var createdId = EntityKeyHelper.GetEntityKey(createdApi, config.KeySelector);
 
-        if (hookContext is not null)
+        var afterPersistHookEntity = typeof(THookModel) == typeof(TDbModel)
+            ? (THookModel)(object)createdDb
+            : (THookModel)(object)createdApi;
+        var afterPersistStage = await HookHelper.RunEntityHookStageAsync(
+            pipeline, hookContext, afterPersistHookEntity, p => p.ExecuteAfterPersistAsync);
+        if (afterPersistStage.EarlyResult is not null) return afterPersistStage.EarlyResult;
+
+        if (typeof(THookModel) == typeof(TDbModel))
         {
-            hookContext.Entity = typeof(THookModel) == typeof(TDbModel)
-                ? (THookModel)(object)createdDb
-                : (THookModel)(object)createdApi;
-        }
+            createdDb = (TDbModel)(object)afterPersistStage.Entity;
+            if (createdId is not null)
+            {
+                _ = EntityKeyHelper.TrySetEntityKeyParts(createdDb, createdId, config.KeyRouteParts);
+            }
 
-        var afterPersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
-        if (afterPersistResult is not null) return afterPersistResult;
-
-        if (hookContext is not null && typeof(THookModel) == typeof(TDbModel))
-        {
-            createdDb = (TDbModel)(object)(hookContext.Entity ?? (THookModel)(object)createdDb);
             createdApi = mapper.ToApi(createdDb);
         }
+        else
+        {
+            createdApi = (TApiModel)(object)afterPersistStage.Entity;
+        }
 
-        var createdId = EntityKeyHelper.GetEntityKey(createdApi, config.KeySelector);
+        if (createdId is not null)
+        {
+            _ = EntityKeyHelper.TrySetEntityKeyParts(createdApi, createdId, config.KeyRouteParts);
+        }
+
         var location = $"{httpContext.Request.Path}{EntityKeyHelper.FormatKeyPath(createdId!, config.KeyRouteParts)}";
         httpContext.Response.Headers.Location = location;
 
         RestLibLogMessages.EntityCreated(logger, createdId?.ToString() ?? string.Empty, location);
 
+        var beforeResponseHookEntity = typeof(THookModel) == typeof(TDbModel)
+            ? (THookModel)(object)createdDb
+            : (THookModel)(object)createdApi;
+        var beforeResponseStage = await HookHelper.RunEntityHookStageAsync(
+            pipeline, hookContext, beforeResponseHookEntity, p => p.ExecuteBeforeResponseAsync);
+        if (beforeResponseStage.EarlyResult is not null) return beforeResponseStage.EarlyResult;
+
+        if (typeof(THookModel) == typeof(TDbModel))
+        {
+            createdDb = (TDbModel)(object)beforeResponseStage.Entity;
+            if (createdId is not null)
+            {
+                _ = EntityKeyHelper.TrySetEntityKeyParts(createdDb, createdId, config.KeyRouteParts);
+            }
+
+            createdApi = mapper.ToApi(createdDb);
+        }
+        else
+        {
+            createdApi = (TApiModel)(object)beforeResponseStage.Entity;
+        }
+
+        if (createdId is not null)
+        {
+            _ = EntityKeyHelper.TrySetEntityKeyParts(createdApi, createdId, config.KeyRouteParts);
+        }
+
         if (options.EnableETagSupport)
         {
             var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
             httpContext.Response.Headers.ETag = etagGenerator.Generate(createdApi);
-        }
-
-        if (hookContext is not null)
-        {
-            hookContext.Entity = typeof(THookModel) == typeof(TDbModel)
-                ? (THookModel)(object)createdDb
-                : (THookModel)(object)createdApi;
-        }
-
-        var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
-        if (beforeResponseResult is not null) return beforeResponseResult;
-
-        if (hookContext is not null)
-        {
-            if (typeof(THookModel) == typeof(TDbModel))
-            {
-                createdDb = (TDbModel)(object)(hookContext.Entity ?? (THookModel)(object)createdDb);
-                createdApi = mapper.ToApi(createdDb);
-            }
-            else
-            {
-                createdApi = (TApiModel)(object)(hookContext.Entity ?? (THookModel)(object)createdApi);
-            }
         }
 
         if (options.EnableHateoas && createdId is not null)

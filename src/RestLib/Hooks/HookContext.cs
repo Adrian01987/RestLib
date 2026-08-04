@@ -30,8 +30,14 @@ public class HookContext<TEntity, TKey> where TEntity : class where TKey : notnu
 
     /// <summary>
     /// Gets or sets the entity being processed.
-    /// Can be modified by hooks to alter the entity before persistence.
+    /// Hooks can mutate this instance or assign a replacement. Before persistence,
+    /// the effective entity is persisted; after persistence, it is used for response shaping.
     /// </summary>
+    /// <remarks>
+    /// Assigning <c>null</c> does not remove an entity that is already available; it retains the
+    /// current effective entity. Some stages, such as collection requests and request-received
+    /// hooks for key-only operations, do not have a single entity and therefore expose <c>null</c>.
+    /// </remarks>
     public TEntity? Entity { get; set; }
 
     /// <summary>

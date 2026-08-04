@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http;
 using RestLib.Abstractions;
+using RestLib.Endpoints;
 using RestLib.Logging;
 using RestLib.Responses;
 
@@ -38,13 +39,15 @@ internal sealed class BatchDeletePipeline<TEntity, TKey>
         if (key is null)
             return (BadRequestResult(index, $"Item at index {index} has a null or invalid ID.", context.HttpContext.Request.Path), default);
 
-        // Hooks: OnRequestReceived, OnRequestValidated, BeforePersist
+        // Request hooks run before the bulk existence lookup. BeforePersist runs
+        // after the entity has been loaded so mapped and unmapped modes expose
+        // the same entity-bearing stage.
         if (context.Pipeline is not null)
         {
             var hookContext = context.Pipeline.CreateContext(
                 context.HttpContext, RestLibOperation.BatchDelete, resourceId: key);
 
-            var hookError = await RunPrePersistHooksAsync(index, context.Pipeline, hookContext);
+            var hookError = await RunRequestHooksAsync(index, context.Pipeline, hookContext);
             if (hookError is not null) return (hookError, default);
         }
 
@@ -70,14 +73,14 @@ internal sealed class BatchDeletePipeline<TEntity, TKey>
             () => context.BatchRepository!.GetByIdsAsync(keys, context.CancellationToken),
             context.CancellationToken);
 
-        var itemsToDelete = new List<(int Index, TKey Key)>();
+        var itemsToDelete = new List<(int Index, TKey Key, TEntity Entity)>();
         var entityName = typeof(TEntity).Name;
 
         foreach (var (index, key) in validItems)
         {
             context.CancellationToken.ThrowIfCancellationRequested();
 
-            if (!existingEntities.ContainsKey(key))
+            if (!existingEntities.TryGetValue(key, out var existingEntity))
             {
                 RestLibLogMessages.BatchDeleteItemNotFound(context.Logger, index, entityName, key!);
                 results[index] = new BatchItemResult
@@ -89,7 +92,28 @@ internal sealed class BatchDeletePipeline<TEntity, TKey>
                 continue;
             }
 
-            itemsToDelete.Add((index, key));
+            if (context.Pipeline is not null)
+            {
+                var hookContext = context.Pipeline.CreateContext(
+                    context.HttpContext,
+                    RestLibOperation.BatchDelete,
+                    resourceId: key,
+                    entity: existingEntity);
+                var hookError = await RunBeforePersistHookAsync(index, context.Pipeline, hookContext);
+                if (hookError is not null)
+                {
+                    results[index] = hookError;
+                    continue;
+                }
+
+                existingEntity = hookContext.Entity ?? existingEntity;
+                _ = EntityKeyHelper.TrySetEntityKeyParts(
+                    existingEntity,
+                    key,
+                    context.EndpointConfig.KeyRouteParts);
+            }
+
+            itemsToDelete.Add((index, key, existingEntity));
         }
 
         if (itemsToDelete.Count == 0) return;
@@ -102,14 +126,17 @@ internal sealed class BatchDeletePipeline<TEntity, TKey>
         RestLibLogMessages.BatchDeleteCompleted(context.Logger, keysToDelete.Count);
 
         // Run AfterPersist hooks and build 204 results for each deleted item.
-        foreach (var (index, key) in itemsToDelete)
+        foreach (var (index, key, entity) in itemsToDelete)
         {
             context.CancellationToken.ThrowIfCancellationRequested();
 
             if (context.Pipeline is not null)
             {
                 var afterContext = context.Pipeline.CreateContext(
-                    context.HttpContext, RestLibOperation.BatchDelete, resourceId: key);
+                    context.HttpContext,
+                    RestLibOperation.BatchDelete,
+                    resourceId: key,
+                    entity: entity);
                 var shouldContinue = await context.Pipeline.ExecuteAfterPersistAsync(afterContext);
                 if (!shouldContinue)
                 {
@@ -133,6 +160,47 @@ internal sealed class BatchDeletePipeline<TEntity, TKey>
         BatchContext<TEntity, TKey> context)
     {
         var (index, key) = validItem;
+        TEntity? entityToDelete = null;
+
+        if (context.Pipeline is not null)
+        {
+            entityToDelete = await context.Repository.GetByIdAsync(key, context.CancellationToken);
+            if (entityToDelete is null)
+            {
+                var entityName = typeof(TEntity).Name;
+                RestLibLogMessages.BatchDeleteItemNotFound(context.Logger, index, entityName, key!);
+                results[index] = new BatchItemResult
+                {
+                    Index = index,
+                    Status = StatusCodes.Status404NotFound,
+                    Error = ProblemDetailsFactory.NotFound(
+                        entityName,
+                        key!,
+                        context.EndpointConfig.KeyRouteParts,
+                        context.HttpContext.Request.Path)
+                };
+                return;
+            }
+
+            var hookContext = context.Pipeline.CreateContext(
+                context.HttpContext,
+                RestLibOperation.BatchDelete,
+                resourceId: key,
+                entity: entityToDelete);
+            var hookError = await RunBeforePersistHookAsync(index, context.Pipeline, hookContext);
+            if (hookError is not null)
+            {
+                results[index] = hookError;
+                return;
+            }
+
+            entityToDelete = hookContext.Entity ?? entityToDelete;
+            _ = EntityKeyHelper.TrySetEntityKeyParts(
+                entityToDelete,
+                key,
+                context.EndpointConfig.KeyRouteParts);
+        }
+
         var deleted = await context.Repository.DeleteAsync(key, context.CancellationToken);
         if (!deleted)
         {
@@ -150,7 +218,10 @@ internal sealed class BatchDeletePipeline<TEntity, TKey>
         if (context.Pipeline is not null)
         {
             var afterContext = context.Pipeline.CreateContext(
-                context.HttpContext, RestLibOperation.BatchDelete, resourceId: key);
+                context.HttpContext,
+                RestLibOperation.BatchDelete,
+                resourceId: key,
+                entity: entityToDelete);
             var shouldContinue = await context.Pipeline.ExecuteAfterPersistAsync(afterContext);
             if (!shouldContinue)
             {

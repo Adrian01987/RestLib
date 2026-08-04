@@ -53,6 +53,7 @@ public class RestLibHooks<TEntity, TKey> where TEntity : class where TKey : notn
     ///   <item><description>Custom authentication/authorization</description></item>
     /// </list>
     /// The entity will not be available in this hook for most operations.
+    /// When it is available, an assigned replacement becomes the input to validation.
     /// </remarks>
     public RestLibHookDelegate<TEntity, TKey>? OnRequestReceived { get; set; }
 
@@ -69,6 +70,7 @@ public class RestLibHooks<TEntity, TKey> where TEntity : class where TKey : notn
     /// </list>
     /// The entity is available and can be modified before persistence.
     /// For GET/DELETE operations, this hook is called after OnRequestReceived.
+    /// An assigned replacement becomes the effective entity for subsequent stages.
     /// </remarks>
     public RestLibHookDelegate<TEntity, TKey>? OnRequestValidated { get; set; }
 
@@ -84,6 +86,8 @@ public class RestLibHooks<TEntity, TKey> where TEntity : class where TKey : notn
     ///   <item><description>Preparing related entities</description></item>
     /// </list>
     /// This hook is only called for Create, Update, Patch, and Delete operations.
+    /// Mutating or replacing the entity changes the create, update, or patch persistence input.
+    /// Delete persistence remains keyed by the route or batch-envelope identity.
     /// </remarks>
     public RestLibHookDelegate<TEntity, TKey>? BeforePersist { get; set; }
 
@@ -99,6 +103,8 @@ public class RestLibHooks<TEntity, TKey> where TEntity : class where TKey : notn
     ///   <item><description>Triggering side effects</description></item>
     /// </list>
     /// This hook is only called for Create, Update, Patch, and Delete operations.
+    /// Mutating or replacing the entity does not rewrite completed persistence; it changes the
+    /// entity passed to BeforeResponse and response shaping.
     /// </remarks>
     public RestLibHookDelegate<TEntity, TKey>? AfterPersist { get; set; }
 
@@ -113,6 +119,8 @@ public class RestLibHooks<TEntity, TKey> where TEntity : class where TKey : notn
     ///   <item><description>Logging response information</description></item>
     ///   <item><description>Final modifications before returning</description></item>
     /// </list>
+    /// Mutating or replacing the entity changes response serialization, ETag generation,
+    /// field projection, and HATEOAS inputs. Route or generated identity remains authoritative.
     /// </remarks>
     public RestLibHookDelegate<TEntity, TKey>? BeforeResponse { get; set; }
 

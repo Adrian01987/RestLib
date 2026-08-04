@@ -70,6 +70,22 @@ Each standard stage hook receives a `HookContext<TEntity, TKey>` with:
 
 The `OnError` stage receives an `ErrorHookContext<TEntity, TKey>` which additionally includes the `Exception` and a `Handled` flag.
 
+#### Effective entity and replacement semantics
+
+`Entity` supports both in-place mutation and assignment of a replacement instance. When a stage has an entity, the instance left in `context.Entity` becomes the effective entity for every downstream stage. Assigning `null` retains the effective entity that entered the stage; it does not erase it. Stages that do not have a single entity continue to expose `null`.
+
+| Stage | Entity availability | Effect of replacement |
+| --- | --- | --- |
+| `OnRequestReceived` | The parsed request entity for create/update (including batch create/update); `null` for collection and key/document-only requests | Becomes the input to validation and later stages |
+| `OnRequestValidated` | The validated create/update entity, fetched GET-by-ID/delete entity, or validated PATCH merge preview; `null` for GET-all and for batch-delete request validation before its bulk lookup | Becomes the input to persistence stages; replacements are revalidated where model mapping or merge-patch processing requires it |
+| `BeforePersist` | The effective create/update/PATCH entity or the fetched entity being deleted | Becomes the repository persistence input for create/update/PATCH; delete remains keyed by the authoritative route or batch-envelope key |
+| `AfterPersist` | The repository result, or the deleted entity | Does not rewrite completed storage; becomes the input to `BeforeResponse` and response shaping |
+| `BeforeResponse` | The current effective single-entity response; batch uses one aggregate context rather than per-item contexts | Becomes the serialized/projected representation and the input to ETag and HATEOAS generation |
+
+For mapped resources, API-model hook replacements are mapped to the database model before persistence, while database-model replacements are mapped back to the API model before response processing. Route, batch-envelope, or repository-generated identity remains authoritative and is reapplied after replacement. `Location` and HATEOAS therefore retain the persisted resource identity, while the ETag reflects the final replacement representation.
+
+Batch item hooks follow the same persistence rules. Batch PATCH switches to the update contract when a pre-persistence hook can select an effective merged entity; without such a hook it retains the adapter's native patch contract. Batch responses do not run `BeforeResponse` per item, so an `AfterPersist` replacement is the final item representation.
+
 ### 3. Short-circuit support
 
 Any standard stage hook can stop pipeline execution by setting `context.ShouldContinue = false`. When short-circuiting, the hook can optionally set `context.EarlyResult` to an `IResult` that will be returned as the HTTP response. If `ShouldContinue` is false and no `EarlyResult` is set, the endpoint returns no content.
@@ -125,7 +141,7 @@ Batch operations (batch create, update, patch, delete) fire hooks per-item withi
 3. **Fixed stage order eliminates ambiguity.** Hooks always execute in the same order (OnRequestReceived → OnRequestValidated → BeforePersist → AfterPersist → BeforeResponse). There is no need to specify execution order or priority — the stage name determines when the hook runs.
 4. **Short-circuit enables authorization patterns.** A hook in `OnRequestReceived` can reject unauthorized requests before any validation or persistence occurs, reducing unnecessary work.
 5. **Named hooks enable declarative configuration.** JSON-configured resources (from `appsettings.json`) can reference hooks by name, which are resolved from DI at runtime. This supports scenarios where endpoint configuration is data-driven rather than code-driven.
-6. **Mutable entity enables data transformation.** Hooks can modify the entity (e.g., setting `CreatedBy`, normalizing values) before persistence without requiring the client to send these values.
+6. **Mutable or replaceable entity enables data transformation.** Hooks can mutate the entity or assign a replacement (e.g., setting `CreatedBy`, normalizing values, or projecting a response) without requiring the client to send these values. The effective-entity rules keep this behavior consistent across stages and mapped/unmapped handlers.
 
 ## Consequences
 

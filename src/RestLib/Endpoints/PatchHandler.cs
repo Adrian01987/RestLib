@@ -65,10 +65,6 @@ internal static class PatchHandler
 
             try
             {
-                // OnRequestValidated hook
-                var onValidatedResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
-                if (onValidatedResult is not null) return onValidatedResult;
-
                 // Check for ETag precondition (If-Match header)
                 var (etagEntity, etagError) = await ETagHelper.CheckIfMatchPreconditionAsync(
                     httpContext, repository, id, entityName, options, jsonOptions, ct, logger);
@@ -120,22 +116,47 @@ internal static class PatchHandler
                     }
                 }
 
-                // BeforePersist hook — update existing context with original entity
-                if (hookContext is not null)
+                if (hookContext is not null) hookContext.SetOriginalEntity(originalEntity);
+
+                // OnRequestValidated receives the validated merge preview as its effective entity.
+                var validatedStage = await HookHelper.RunEntityHookStageAsync(
+                    pipeline, hookContext, preview, p => p.ExecuteOnRequestValidatedAsync);
+                if (validatedStage.EarlyResult is not null) return validatedStage.EarlyResult;
+                preview = validatedStage.Entity;
+                _ = EntityKeyHelper.TrySetEntityKeyParts(preview, id, config.KeyRouteParts);
+
+                // A replacement can introduce new invalid state, so validate the effective entity.
+                if (options.EnableValidation)
                 {
-                    hookContext.Entity = originalEntity;
-                    hookContext.SetOriginalEntity(originalEntity);
+                    var validationResult = RestLibResourceValidator.Validate(preview, config, options.JsonNamingPolicy);
+                    if (!validationResult.IsValid)
+                    {
+                        return Responses.ProblemDetailsResult.ValidationFailed(
+                            validationResult.Errors,
+                            httpContext.Request.Path,
+                            jsonOptions,
+                            logger,
+                            options);
+                    }
                 }
 
-                var beforePersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
-                if (beforePersistResult is not null) return beforePersistResult;
+                var beforePersistStage = await HookHelper.RunEntityHookStageAsync(
+                    pipeline, hookContext, preview, p => p.ExecuteBeforePersistAsync);
+                if (beforePersistStage.EarlyResult is not null) return beforePersistStage.EarlyResult;
+                preview = beforePersistStage.Entity;
+                _ = EntityKeyHelper.TrySetEntityKeyParts(preview, id, config.KeyRouteParts);
 
-                if (originalEntity is not null)
+                TEntity? patched;
+                if (pipeline?.HasPrePersistEntityHooks == true)
                 {
-                    _ = EntityKeyHelper.TrySetEntityKeyParts(originalEntity, id, config.KeyRouteParts);
+                    // PATCH repositories accept only the original document, so an effective entity
+                    // selected by hooks must be persisted through the full-update contract.
+                    patched = await repository.UpdateAsync(id, preview, ct);
                 }
-
-                var patched = await repository.PatchAsync(id, patchDocument, ct);
+                else
+                {
+                    patched = await repository.PatchAsync(id, patchDocument, ct);
+                }
 
                 if (patched is null)
                 {
@@ -150,22 +171,24 @@ internal static class PatchHandler
                 }
 
                 // AfterPersist hook
-                if (hookContext is not null) hookContext.Entity = patched;
-                var afterPersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
-                if (afterPersistResult is not null) return afterPersistResult;
+                var afterPersistStage = await HookHelper.RunEntityHookStageAsync(
+                    pipeline, hookContext, patched, p => p.ExecuteAfterPersistAsync);
+                if (afterPersistStage.EarlyResult is not null) return afterPersistStage.EarlyResult;
+                patched = afterPersistStage.Entity;
                 _ = EntityKeyHelper.TrySetEntityKeyParts(patched, id, config.KeyRouteParts);
 
-                // Add ETag header when enabled
+                // BeforeResponse hook
+                var beforeResponseStage = await HookHelper.RunEntityHookStageAsync(
+                    pipeline, hookContext, patched, p => p.ExecuteBeforeResponseAsync);
+                if (beforeResponseStage.EarlyResult is not null) return beforeResponseStage.EarlyResult;
+                patched = beforeResponseStage.Entity;
+                _ = EntityKeyHelper.TrySetEntityKeyParts(patched, id, config.KeyRouteParts);
+
                 if (options.EnableETagSupport)
                 {
                     var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
                     httpContext.Response.Headers.ETag = etagGenerator.Generate(patched);
                 }
-
-                // BeforeResponse hook
-                var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
-                if (beforeResponseResult is not null) return beforeResponseResult;
-                _ = EntityKeyHelper.TrySetEntityKeyParts(patched, id, config.KeyRouteParts);
 
                 // Inject HATEOAS links into patched entity response
                 if (options.EnableHateoas)
@@ -563,21 +586,17 @@ internal static class PatchHandler
             if (typeof(THookModel) == typeof(TDbModel))
             {
                 updatedDb = (TDbModel)(object)(hookContext.Entity ?? (THookModel)(object)updatedDb);
+                _ = EntityKeyHelper.TrySetEntityKeyParts(updatedDb, id, config.KeyRouteParts);
                 updatedApi = mapper.ToApi(updatedDb);
             }
             else
             {
                 updatedApi = (TApiModel)(object)(hookContext.Entity ?? (THookModel)(object)updatedApi);
+                _ = EntityKeyHelper.TrySetEntityKeyParts(updatedApi, id, config.KeyRouteParts);
             }
         }
 
         _ = EntityKeyHelper.TrySetEntityKeyParts(updatedApi, id, config.KeyRouteParts);
-
-        if (options.EnableETagSupport)
-        {
-            var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
-            httpContext.Response.Headers.ETag = etagGenerator.Generate(updatedApi);
-        }
 
         if (hookContext is not null)
         {
@@ -594,15 +613,23 @@ internal static class PatchHandler
             if (typeof(THookModel) == typeof(TDbModel))
             {
                 updatedDb = (TDbModel)(object)(hookContext.Entity ?? (THookModel)(object)updatedDb);
+                _ = EntityKeyHelper.TrySetEntityKeyParts(updatedDb, id, config.KeyRouteParts);
                 updatedApi = mapper.ToApi(updatedDb);
             }
             else
             {
                 updatedApi = (TApiModel)(object)(hookContext.Entity ?? (THookModel)(object)updatedApi);
+                _ = EntityKeyHelper.TrySetEntityKeyParts(updatedApi, id, config.KeyRouteParts);
             }
         }
 
         _ = EntityKeyHelper.TrySetEntityKeyParts(updatedApi, id, config.KeyRouteParts);
+
+        if (options.EnableETagSupport)
+        {
+            var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
+            httpContext.Response.Headers.ETag = etagGenerator.Generate(updatedApi);
+        }
 
         if (options.EnableHateoas)
         {
