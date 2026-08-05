@@ -53,6 +53,16 @@ public class FieldSelectionCustomerProfile
     /// Gets or sets the profile handle.
     /// </summary>
     public string Handle { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the profile display name.
+    /// </summary>
+    public string DisplayName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the profile locale.
+    /// </summary>
+    public string Locale { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -756,6 +766,105 @@ public class FieldSelectionJsonConfigTests : IAsyncLifetime
 }
 
 /// <summary>
+/// Integration tests for nested sparse field-selection response merging.
+/// </summary>
+[Trait("Type", "Integration")]
+[Trait("Feature", "FieldSelectionNested")]
+public class NestedFieldSelectionResponseTests : IAsyncLifetime
+{
+    private static readonly Guid KnownId = Guid.Parse("b8b12417-2645-4ecf-8953-f96a07c72e79");
+
+    private IHost _host = null!;
+    private HttpClient _client = null!;
+    private InMemoryRepository<FieldSelectableEntity, Guid> _repository = null!;
+
+    public async Task InitializeAsync()
+    {
+        _repository = new InMemoryRepository<FieldSelectableEntity, Guid>(
+            entity => entity.Id,
+            Guid.NewGuid);
+
+        (_host, _client) = await new TestHostBuilder<FieldSelectableEntity, Guid>(
+            _repository,
+            "/api/nested-field-items")
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.AllowFieldSelection(fields =>
+                {
+                    fields.AddProperty(entity => entity.Customer!.Email);
+                    fields.AddProperty(entity => entity.Customer!.Profile!.Handle);
+                    fields.AddProperty(entity => entity.Customer!.Profile!.DisplayName);
+                    fields.UseNestedObjectsInResponse();
+                });
+            })
+            .BuildAsync();
+
+        _repository.Seed([
+            new FieldSelectableEntity
+            {
+                Id = KnownId,
+                Customer = new FieldSelectionCustomer
+                {
+                    Email = "customer@example.com",
+                    Profile = new FieldSelectionCustomerProfile
+                    {
+                        Handle = "widget-owner",
+                        DisplayName = "Widget Owner"
+                    }
+                }
+            }
+        ]);
+    }
+
+    public async Task DisposeAsync()
+    {
+        _client.Dispose();
+        await _host.StopAsync();
+        _host.Dispose();
+    }
+
+    [Fact]
+    [Trait("Category", "StoryD.1")]
+    public async Task GetById_WithNestedSiblingAndCousinFields_PreservesEverySelectedField()
+    {
+        // Act
+        var response = await _client.GetAsync(
+            $"/api/nested-field-items/{KnownId}?fields=customer.profile.handle,customer.profile.display_name,customer.email");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var customer = json.GetProperty("customer");
+        var profile = customer.GetProperty("profile");
+        customer.GetProperty("email").GetString().Should().Be("customer@example.com");
+        profile.GetProperty("handle").GetString().Should().Be("widget-owner");
+        profile.GetProperty("display_name").GetString().Should().Be("Widget Owner");
+        profile.EnumerateObject().Should().HaveCount(2);
+    }
+
+    [Fact]
+    [Trait("Category", "StoryD.1")]
+    public async Task GetAll_WithReversedNestedSiblingFields_PreservesBothSelectedFields()
+    {
+        // Act
+        var response = await _client.GetAsync(
+            "/api/nested-field-items?fields=customer.profile.display_name,customer.profile.handle");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var item = json.GetProperty("items")[0];
+        var customer = item.GetProperty("customer");
+        var profile = customer.GetProperty("profile");
+        customer.TryGetProperty("email", out _).Should().BeFalse();
+        profile.GetProperty("handle").GetString().Should().Be("widget-owner");
+        profile.GetProperty("display_name").GetString().Should().Be("Widget Owner");
+        profile.EnumerateObject().Should().HaveCount(2);
+    }
+}
+
+/// <summary>
 /// Unit tests for <see cref="FieldProjector"/> cache key correctness.
 /// </summary>
 [Trait("Type", "Unit")]
@@ -929,6 +1038,127 @@ public class FieldProjectorCacheTests
         result!.Should().ContainKey("customer");
         result.Should().NotContainKey("customer.email");
         result["customer"].GetProperty("email").GetString().Should().Be("customer@example.com");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "StoryD.1")]
+    [Trait("Feature", "FieldSelectionNested")]
+    public void FieldProjector_WithNestedShape_DeepSiblingFields_PreservesBothRegardlessOfOrder(
+        bool reverseOrder)
+    {
+        // Arrange
+        var entity = new FieldSelectableEntity
+        {
+            Customer = new FieldSelectionCustomer
+            {
+                Profile = new FieldSelectionCustomerProfile
+                {
+                    Handle = "widget-owner",
+                    DisplayName = "Widget Owner"
+                }
+            }
+        };
+        var handle = new SelectedField
+        {
+            PropertyName = "Customer.Profile.Handle",
+            QueryParameterName = "customer.profile.handle"
+        };
+        var displayName = new SelectedField
+        {
+            PropertyName = "Customer.Profile.DisplayName",
+            QueryParameterName = "customer.profile.display_name"
+        };
+        var selectedFields = reverseOrder
+            ? new List<SelectedField> { displayName, handle }
+            : [handle, displayName];
+
+        // Act
+        var result = FieldProjector.Project(
+            entity,
+            selectedFields,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web),
+            FieldSelectionResponseShape.Nested);
+
+        // Assert
+        var profile = result!["customer"].GetProperty("profile");
+        profile.GetProperty("handle").GetString().Should().Be("widget-owner");
+        profile.GetProperty("display_name").GetString().Should().Be("Widget Owner");
+        profile.EnumerateObject().Should().HaveCount(2);
+    }
+
+    [Fact]
+    [Trait("Category", "StoryD.1")]
+    [Trait("Feature", "FieldSelectionNested")]
+    public void FieldProjector_WithNestedShape_CousinFields_PreservesEachBranch()
+    {
+        // Arrange
+        var entity = new FieldSelectableEntity
+        {
+            Customer = new FieldSelectionCustomer
+            {
+                Email = "customer@example.com",
+                Profile = new FieldSelectionCustomerProfile { Handle = "widget-owner" }
+            }
+        };
+        var selectedFields = new List<SelectedField>
+        {
+            new() { PropertyName = "Customer.Email", QueryParameterName = "customer.email" },
+            new() { PropertyName = "Customer.Profile.Handle", QueryParameterName = "customer.profile.handle" }
+        };
+
+        // Act
+        var result = FieldProjector.Project(
+            entity,
+            selectedFields,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web),
+            FieldSelectionResponseShape.Nested);
+
+        // Assert
+        var customer = result!["customer"];
+        customer.GetProperty("email").GetString().Should().Be("customer@example.com");
+        customer.GetProperty("profile").GetProperty("handle").GetString().Should().Be("widget-owner");
+    }
+
+    [Fact]
+    [Trait("Category", "StoryD.1")]
+    [Trait("Feature", "FieldSelectionNested")]
+    public void FieldProjector_WithNestedShape_RepeatedPrefix_PreservesEverySelectedField()
+    {
+        // Arrange
+        var entity = new FieldSelectableEntity
+        {
+            Customer = new FieldSelectionCustomer
+            {
+                Profile = new FieldSelectionCustomerProfile
+                {
+                    Handle = "widget-owner",
+                    DisplayName = "Widget Owner",
+                    Locale = "en-GB"
+                }
+            }
+        };
+        var selectedFields = new List<SelectedField>
+        {
+            new() { PropertyName = "Customer.Profile.Handle", QueryParameterName = "customer.profile.handle" },
+            new() { PropertyName = "Customer.Profile.DisplayName", QueryParameterName = "customer.profile.display_name" },
+            new() { PropertyName = "Customer.Profile.Locale", QueryParameterName = "customer.profile.locale" }
+        };
+
+        // Act
+        var result = FieldProjector.Project(
+            entity,
+            selectedFields,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web),
+            FieldSelectionResponseShape.Nested);
+
+        // Assert
+        var profile = result!["customer"].GetProperty("profile");
+        profile.GetProperty("handle").GetString().Should().Be("widget-owner");
+        profile.GetProperty("display_name").GetString().Should().Be("Widget Owner");
+        profile.GetProperty("locale").GetString().Should().Be("en-GB");
+        profile.EnumerateObject().Should().HaveCount(3);
     }
 
     [Fact]

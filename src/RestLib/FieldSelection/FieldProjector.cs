@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using RestLib.Internal;
 
@@ -61,6 +62,9 @@ internal static class FieldProjector
         }
 
         var result = new Dictionary<string, JsonElement>(selectedFields.Count);
+        var nestedResult = responseShape == FieldSelectionResponseShape.Nested
+            ? new JsonObject()
+            : null;
 
         foreach (var field in selectedFields)
         {
@@ -71,10 +75,9 @@ internal static class FieldProjector
                     ? NullElement
                     : JsonSerializer.SerializeToElement(value, accessor.PropertyType, jsonOptions);
 
-                if (responseShape == FieldSelectionResponseShape.Nested
-                    && field.QueryParameterName.Contains('.', StringComparison.Ordinal))
+                if (nestedResult is not null)
                 {
-                    SetNestedElement(result, field.QueryParameterName, element, jsonOptions);
+                    SetNestedElement(nestedResult, field.QueryParameterName, element);
                 }
                 else
                 {
@@ -83,7 +86,9 @@ internal static class FieldProjector
             }
         }
 
-        return result;
+        return nestedResult is null
+            ? result
+            : SerializeNestedResult(nestedResult, jsonOptions);
     }
 
     /// <summary>
@@ -254,10 +259,9 @@ internal static class FieldProjector
     }
 
     private static void SetNestedElement(
-        IDictionary<string, JsonElement> result,
+        JsonObject result,
         string queryParameterName,
-        JsonElement value,
-        JsonSerializerOptions jsonOptions)
+        JsonElement value)
     {
         var segments = queryParameterName.Split('.', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Length == 0)
@@ -267,40 +271,41 @@ internal static class FieldProjector
 
         if (segments.Length == 1)
         {
-            result[segments[0]] = value;
+            result[segments[0]] = JsonNode.Parse(value.GetRawText());
             return;
         }
 
-        Dictionary<string, object?> root;
-        if (result.TryGetValue(segments[0], out var existingRoot)
-            && existingRoot.ValueKind == JsonValueKind.Object)
-        {
-            root = JsonSerializer.Deserialize<Dictionary<string, object?>>(existingRoot.GetRawText(), jsonOptions)
-                ?? [];
-        }
-        else
-        {
-            root = [];
-        }
-
-        var current = root;
-        for (var index = 1; index < segments.Length - 1; index++)
+        var current = result;
+        for (var index = 0; index < segments.Length - 1; index++)
         {
             var segment = segments[index];
-            if (current.TryGetValue(segment, out var nested)
-                && nested is Dictionary<string, object?> nestedDictionary)
+            if (current[segment] is JsonObject nestedObject)
             {
-                current = nestedDictionary;
+                current = nestedObject;
                 continue;
             }
 
-            var next = new Dictionary<string, object?>();
+            var next = new JsonObject();
             current[segment] = next;
             current = next;
         }
 
-        current[segments[^1]] = JsonSerializer.Deserialize<object?>(value.GetRawText(), jsonOptions);
-        result[segments[0]] = JsonSerializer.SerializeToElement(root, jsonOptions);
+        current[segments[^1]] = JsonNode.Parse(value.GetRawText());
+    }
+
+    private static Dictionary<string, JsonElement> SerializeNestedResult(
+        JsonObject result,
+        JsonSerializerOptions jsonOptions)
+    {
+        var root = JsonSerializer.SerializeToElement(result, jsonOptions);
+        var projected = new Dictionary<string, JsonElement>(root.GetPropertyCount());
+
+        foreach (var property in root.EnumerateObject())
+        {
+            projected[property.Name] = property.Value.Clone();
+        }
+
+        return projected;
     }
 
     private static JsonElement CreateNullElement()
