@@ -96,6 +96,13 @@ Responses include contextual navigation links:
 Links are CRUD-aware: `update`, `patch`, and `delete` only appear when those
 operations are enabled on the endpoint. Batch responses include per-item links.
 
+Generated pagination and standard HATEOAS URLs include `Request.PathBase`; create
+`Location` headers include the same prefix while remaining root-relative. Behind a reverse
+proxy, run ASP.NET Core forwarded-header middleware before routing and configure only
+trusted proxies/networks plus `AllowedHosts`. RestLib uses the resulting `Scheme`, `Host`,
+and `PathBase` and never interprets raw forwarding headers itself. Custom link-provider
+URLs are left exactly as supplied by the application.
+
 For collection links, the API model must expose a conventional `Id` property of
 the resource key type or configure `config.KeySelector` (JSON resources use their
 configured `KeyProperty` or composite `Key`). RestLib validates this dependency

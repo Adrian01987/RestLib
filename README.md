@@ -407,6 +407,13 @@ to point clients at related resources. HATEOAS-enabled collections require eithe
 conventional `Id` property of the resource key type or an explicit `config.KeySelector`;
 link enrichment never removes an entity from a collection response.
 
+Generated pagination and built-in HATEOAS URLs, and create `Location` headers, include
+ASP.NET Core's normalized `Request.PathBase`. When hosting behind a reverse proxy, configure
+forwarded-header middleware for trusted proxies before routing so `Scheme`, `Host`, and
+`PathBase` represent the public URL; restrict forwarded hosts with `AllowedHosts`. RestLib
+does not inspect raw `X-Forwarded-*` headers, and custom link-provider URLs remain
+application-owned.
+
 For full response examples and custom link-provider registration, see
 [docs/guides/extensibility-and-operations.md](docs/guides/extensibility-and-operations.md).
 

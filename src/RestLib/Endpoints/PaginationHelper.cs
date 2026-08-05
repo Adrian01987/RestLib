@@ -40,7 +40,7 @@ internal static class PaginationHelper
 
         if (options.IncludePaginationLinks)
         {
-            var baseUrl = $"{request.Scheme}://{request.Host}{request.Path}";
+            var baseUrl = RequestUrlHelper.BuildAbsoluteCurrentPath(request);
 
             // Extract query filters (all query params except cursor and limit)
             var filterParams = GetFilterQueryParams(request.Query);

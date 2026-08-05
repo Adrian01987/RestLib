@@ -32,9 +32,8 @@ internal static class HateoasLinkBuilder
         where TEntity : class
         where TKey : notnull
     {
-        var baseUrl = $"{request.Scheme}://{request.Host}";
-        var entityUrl = $"{baseUrl}{collectionPath}{EntityKeyHelper.FormatKeyPath(entityKey, config.KeyRouteParts)}";
-        var collectionUrl = $"{baseUrl}{collectionPath}";
+        var collectionUrl = RequestUrlHelper.BuildAbsolute(request, collectionPath);
+        var entityUrl = $"{collectionUrl}{EntityKeyHelper.FormatKeyPath(entityKey, config.KeyRouteParts)}";
 
         var links = new Dictionary<string, HateoasLink>
         {

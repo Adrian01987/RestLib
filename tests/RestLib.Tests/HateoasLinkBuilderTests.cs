@@ -81,6 +81,25 @@ public class HateoasLinkBuilderTests
 
     [Fact]
     [Trait("Category", "Story19")]
+    public void BuildEntityLinks_PathBaseAndEscapedKey_IncludesPathBaseWithoutDoubleEncoding()
+    {
+        // Arrange
+        var request = CreateFakeRequest();
+        request.PathBase = "/edge/app";
+        var config = new RestLibEndpointConfiguration<StringKeyEntity, string>();
+        const string entityKey = "sku/blue 100%";
+
+        // Act
+        var links = HateoasLinkBuilder.BuildEntityLinks(request, "/api/items", entityKey, config);
+
+        // Assert
+        links["self"].Href.Should()
+            .Be("https://api.example.com/edge/app/api/items/sku%2Fblue%20100%25");
+        links["collection"].Href.Should().Be("https://api.example.com/edge/app/api/items");
+    }
+
+    [Fact]
+    [Trait("Category", "Story19")]
     public void BuildEntityLinks_CollectionLink_IsAbsoluteUrlWithoutEntityKey()
     {
         // Arrange
@@ -465,5 +484,10 @@ public class HateoasLinkBuilderTests
     private sealed class MissingGuidKeyEntity
     {
         public required string Name { get; init; }
+    }
+
+    private sealed class StringKeyEntity
+    {
+        public string Id { get; set; } = string.Empty;
     }
 }

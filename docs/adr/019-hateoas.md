@@ -85,8 +85,15 @@ links reference the correct collection URL, not the batch endpoint.
 
 ### URL construction
 Links use absolute URLs following the same pattern as pagination links:
-`{scheme}://{host}{path}`. The scheme and host are taken from the
-current `HttpRequest`, matching the existing `PaginationHelper` approach.
+`{scheme}://{host}{pathBase}{path}`. These values come from the normalized current
+`HttpRequest`, and create `Location` headers use the same application path while remaining
+root-relative. This keeps links navigable when an application is mounted below a subpath.
+
+RestLib does not parse or trust raw `X-Forwarded-*` headers. Applications behind a reverse
+proxy must configure ASP.NET Core forwarded-header middleware before routing, restrict
+trusted proxies/networks and forwarded hosts, and include forwarded proto, host, and prefix
+when those values are supplied by the proxy. User-provided `IHateoasLinkProvider` URLs are
+opaque and are not automatically rebased.
 
 ### Implementation architecture
 HATEOAS logic is isolated in `src/RestLib/Hypermedia/`:
