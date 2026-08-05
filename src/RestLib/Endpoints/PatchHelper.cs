@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using RestLib.Configuration;
 using RestLib.Logging;
@@ -46,23 +45,14 @@ internal static class PatchHelper
             return false;
         }
 
-        var acceptedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var keyPropertyName in keyPropertyNames)
-        {
-            acceptedNames.Add(keyPropertyName);
-
-            var property = typeof(TEntity).GetProperty(keyPropertyName);
-            var jsonPropertyName = property?.GetCustomAttributes(typeof(JsonPropertyNameAttribute), inherit: true)
-                .OfType<JsonPropertyNameAttribute>()
-                .FirstOrDefault()?.Name
-                ?? jsonOptions.PropertyNamingPolicy?.ConvertName(keyPropertyName)
-                ?? keyPropertyName;
-            acceptedNames.Add(jsonPropertyName);
-        }
+        var keyNameSet = keyPropertyNames.ToHashSet(StringComparer.Ordinal);
+        var contract = JsonObjectContract.Get(typeof(TEntity), jsonOptions);
 
         foreach (var patchProperty in patchDocument.EnumerateObject())
         {
-            if (acceptedNames.Contains(patchProperty.Name))
+            if (contract.TryGetPatchMember(patchProperty.Name, out var member)
+                && member.ClrName is not null
+                && keyNameSet.Contains(member.ClrName))
             {
                 patchPropertyName = patchProperty.Name;
                 return true;

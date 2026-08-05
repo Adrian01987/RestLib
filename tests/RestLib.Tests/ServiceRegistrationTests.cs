@@ -131,9 +131,33 @@ public class ServiceRegistrationTests
         restLibJsonOptions.PropertyNamingPolicy.Should().BeSameAs(options.JsonNamingPolicy);
         restLibJsonOptions.PropertyNameCaseInsensitive.Should().BeTrue();
         restLibJsonOptions.DefaultIgnoreCondition.Should().Be(JsonIgnoreCondition.Never);
+        restLibJsonOptions.Should().BeSameAs(httpJsonOptions);
+        restLibJsonOptions.IsReadOnly.Should().BeTrue();
         httpJsonOptions.PropertyNamingPolicy.Should().BeSameAs(options.JsonNamingPolicy);
         httpJsonOptions.PropertyNameCaseInsensitive.Should().BeTrue();
         httpJsonOptions.DefaultIgnoreCondition.Should().Be(JsonIgnoreCondition.Never);
+    }
+
+    [Fact]
+    public void AddRestLib_ConfigureHttpJsonOptions_ExtendsCanonicalSerializerInstance()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var converter = new JsonStringEnumConverter();
+        services.AddRestLib();
+        services.ConfigureHttpJsonOptions(options =>
+            options.SerializerOptions.Converters.Add(converter));
+
+        // Act
+        using var provider = services.BuildServiceProvider();
+        var restLibJsonOptions = provider.GetRequiredService<JsonSerializerOptions>();
+        var httpJsonOptions = provider.GetRequiredService<IOptions<JsonOptions>>()
+            .Value.SerializerOptions;
+
+        // Assert
+        restLibJsonOptions.Should().BeSameAs(httpJsonOptions);
+        restLibJsonOptions.Converters.Should().ContainSingle(item => ReferenceEquals(item, converter));
+        restLibJsonOptions.IsReadOnly.Should().BeTrue();
     }
 
     [Fact]

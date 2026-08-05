@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using RestLib.Abstractions;
+using RestLib.Serialization;
 
 namespace RestLib.InMemory;
 
@@ -25,12 +26,15 @@ public static class InMemoryServiceExtensions
         where TEntity : class
         where TKey : notnull
     {
-        var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, null);
-        services.AddSingleton<IRepository<TEntity, TKey>>(repository);
-        services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
-        services.AddSingleton<IConditionalWriteRepository<TEntity, TKey>>(repository);
-        services.AddSingleton(repository);
-        return services;
+        ArgumentNullException.ThrowIfNull(keySelector);
+        ArgumentNullException.ThrowIfNull(keyGenerator);
+
+        return RegisterRepository(
+            services,
+            serviceProvider => new InMemoryRepository<TEntity, TKey>(
+                keySelector,
+                keyGenerator,
+                ResolveJsonOptions(serviceProvider)));
     }
 
     /// <summary>
@@ -51,12 +55,17 @@ public static class InMemoryServiceExtensions
         where TEntity : class
         where TKey : notnull
     {
-        var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, null, keyComparer);
-        services.AddSingleton<IRepository<TEntity, TKey>>(repository);
-        services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
-        services.AddSingleton<IConditionalWriteRepository<TEntity, TKey>>(repository);
-        services.AddSingleton(repository);
-        return services;
+        ArgumentNullException.ThrowIfNull(keySelector);
+        ArgumentNullException.ThrowIfNull(keyGenerator);
+        ArgumentNullException.ThrowIfNull(keyComparer);
+
+        return RegisterRepository(
+            services,
+            serviceProvider => new InMemoryRepository<TEntity, TKey>(
+                keySelector,
+                keyGenerator,
+                ResolveJsonOptions(serviceProvider),
+                keyComparer));
     }
 
     /// <summary>
@@ -79,12 +88,17 @@ public static class InMemoryServiceExtensions
         where TEntity : class
         where TKey : notnull
     {
-        var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, null, keyAssigner);
-        services.AddSingleton<IRepository<TEntity, TKey>>(repository);
-        services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
-        services.AddSingleton<IConditionalWriteRepository<TEntity, TKey>>(repository);
-        services.AddSingleton(repository);
-        return services;
+        ArgumentNullException.ThrowIfNull(keySelector);
+        ArgumentNullException.ThrowIfNull(keyGenerator);
+        ArgumentNullException.ThrowIfNull(keyAssigner);
+
+        return RegisterRepository(
+            services,
+            serviceProvider => new InMemoryRepository<TEntity, TKey>(
+                keySelector,
+                keyGenerator,
+                ResolveJsonOptions(serviceProvider),
+                keyAssigner));
     }
 
     /// <summary>
@@ -109,12 +123,19 @@ public static class InMemoryServiceExtensions
         where TEntity : class
         where TKey : notnull
     {
-        var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, null, keyAssigner, keyComparer);
-        services.AddSingleton<IRepository<TEntity, TKey>>(repository);
-        services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
-        services.AddSingleton<IConditionalWriteRepository<TEntity, TKey>>(repository);
-        services.AddSingleton(repository);
-        return services;
+        ArgumentNullException.ThrowIfNull(keySelector);
+        ArgumentNullException.ThrowIfNull(keyGenerator);
+        ArgumentNullException.ThrowIfNull(keyAssigner);
+        ArgumentNullException.ThrowIfNull(keyComparer);
+
+        return RegisterRepository(
+            services,
+            serviceProvider => new InMemoryRepository<TEntity, TKey>(
+                keySelector,
+                keyGenerator,
+                ResolveJsonOptions(serviceProvider),
+                keyAssigner,
+                keyComparer));
     }
 
     /// <summary>
@@ -191,13 +212,22 @@ public static class InMemoryServiceExtensions
         where TEntity : class
         where TKey : notnull
     {
-        var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator);
-        repository.Seed(seedData);
-        services.AddSingleton<IRepository<TEntity, TKey>>(repository);
-        services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
-        services.AddSingleton<IConditionalWriteRepository<TEntity, TKey>>(repository);
-        services.AddSingleton(repository);
-        return services;
+        ArgumentNullException.ThrowIfNull(keySelector);
+        ArgumentNullException.ThrowIfNull(keyGenerator);
+        ArgumentNullException.ThrowIfNull(seedData);
+        var initialData = seedData.ToArray();
+
+        return RegisterRepository(
+            services,
+            serviceProvider =>
+            {
+                var repository = new InMemoryRepository<TEntity, TKey>(
+                    keySelector,
+                    keyGenerator,
+                    ResolveJsonOptions(serviceProvider));
+                repository.Seed(initialData);
+                return repository;
+            });
     }
 
     /// <summary>
@@ -222,13 +252,24 @@ public static class InMemoryServiceExtensions
         where TEntity : class
         where TKey : notnull
     {
-        var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, null, keyAssigner);
-        repository.Seed(seedData);
-        services.AddSingleton<IRepository<TEntity, TKey>>(repository);
-        services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
-        services.AddSingleton<IConditionalWriteRepository<TEntity, TKey>>(repository);
-        services.AddSingleton(repository);
-        return services;
+        ArgumentNullException.ThrowIfNull(keySelector);
+        ArgumentNullException.ThrowIfNull(keyGenerator);
+        ArgumentNullException.ThrowIfNull(seedData);
+        ArgumentNullException.ThrowIfNull(keyAssigner);
+        var initialData = seedData.ToArray();
+
+        return RegisterRepository(
+            services,
+            serviceProvider =>
+            {
+                var repository = new InMemoryRepository<TEntity, TKey>(
+                    keySelector,
+                    keyGenerator,
+                    ResolveJsonOptions(serviceProvider),
+                    keyAssigner);
+                repository.Seed(initialData);
+                return repository;
+            });
     }
 
     /// <summary>
@@ -292,4 +333,34 @@ public static class InMemoryServiceExtensions
         services.AddSingleton(repository);
         return services;
     }
+
+    private static IServiceCollection RegisterRepository<TEntity, TKey>(
+        IServiceCollection services,
+        Func<IServiceProvider, InMemoryRepository<TEntity, TKey>> repositoryFactory)
+        where TEntity : class
+        where TKey : notnull
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(repositoryFactory);
+
+        var syncRoot = new object();
+        InMemoryRepository<TEntity, TKey>? repository = null;
+
+        InMemoryRepository<TEntity, TKey> ResolveRepository(IServiceProvider serviceProvider)
+        {
+            lock (syncRoot)
+            {
+                return repository ??= repositoryFactory(serviceProvider);
+            }
+        }
+
+        services.AddSingleton<InMemoryRepository<TEntity, TKey>>(ResolveRepository);
+        services.AddSingleton<IRepository<TEntity, TKey>>(ResolveRepository);
+        services.AddSingleton<IBatchRepository<TEntity, TKey>>(ResolveRepository);
+        services.AddSingleton<IConditionalWriteRepository<TEntity, TKey>>(ResolveRepository);
+        return services;
+    }
+
+    private static JsonSerializerOptions ResolveJsonOptions(IServiceProvider serviceProvider) =>
+        serviceProvider.GetService<JsonSerializerOptions>() ?? RestLibJsonOptions.CreateDefault();
 }

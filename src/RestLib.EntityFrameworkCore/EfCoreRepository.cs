@@ -2,7 +2,6 @@ using System.Data;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -72,7 +71,8 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     private readonly Expression<Func<TEntity, TKey>> _keySelector;
     private readonly KeyMetadata _keyMetadata;
     private readonly JsonSerializerOptions _jsonOptions;
-    private readonly IReadOnlyDictionary<string, PropertyInfo> _patchPropertyMap;
+    private readonly JsonObjectContract _jsonContract;
+    private readonly IReadOnlyDictionary<string, PatchPropertyContract> _patchPropertiesByClrName;
     private readonly bool _usesExplicitKeySelector;
 
     /// <summary>
@@ -99,7 +99,8 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _jsonOptions = jsonOptions ?? throw new ArgumentNullException(nameof(jsonOptions));
-        _patchPropertyMap = BuildPatchPropertyMap(_context, _jsonOptions);
+        _jsonContract = JsonObjectContract.Get(typeof(TEntity), _jsonOptions);
+        _patchPropertiesByClrName = BuildPatchPropertyMap(_context, _jsonContract);
         _usesExplicitKeySelector = _options.KeySelector is not null;
         _keyMetadata = ResolveKeyMetadata();
         _keySelector = _keyMetadata.CompositeSelector;
@@ -881,14 +882,14 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         return countQuery.LongCountAsync(ct);
     }
 
-    private static IReadOnlyDictionary<string, PropertyInfo> BuildPatchPropertyMap(
+    private static IReadOnlyDictionary<string, PatchPropertyContract> BuildPatchPropertyMap(
         TContext context,
-        JsonSerializerOptions jsonOptions)
+        JsonObjectContract jsonContract)
     {
         var entityType = context.Model.FindEntityType(typeof(TEntity))
             ?? throw new InvalidOperationException(
                 $"Entity type '{typeof(TEntity).Name}' is not part of the EF Core model.");
-        var map = new Dictionary<string, PropertyInfo>(StringComparer.OrdinalIgnoreCase);
+        var mappedProperties = new Dictionary<string, PropertyInfo>(StringComparer.Ordinal);
         foreach (var mappedProperty in entityType.GetProperties())
         {
             var property = mappedProperty.PropertyInfo;
@@ -897,20 +898,20 @@ public class EfCoreRepository<TContext, TEntity, TKey>
                 continue;
             }
 
-            map[property.Name] = property;
-            map[JsonNamingPolicy.SnakeCaseLower.ConvertName(property.Name)] = property;
+            mappedProperties[property.Name] = property;
+        }
 
-            var configuredName = jsonOptions.PropertyNamingPolicy?.ConvertName(property.Name);
-            if (configuredName is not null)
+        var map = new Dictionary<string, PatchPropertyContract>(StringComparer.Ordinal);
+        foreach (var jsonMember in jsonContract.Members)
+        {
+            if (!jsonMember.CanDeserialize
+                || jsonMember.ClrName is null
+                || !mappedProperties.TryGetValue(jsonMember.ClrName, out var property))
             {
-                map[configuredName] = property;
+                continue;
             }
 
-            var attributedName = property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name;
-            if (attributedName is not null)
-            {
-                map[attributedName] = property;
-            }
+            map[property.Name] = new PatchPropertyContract(property, jsonMember);
         }
 
         return map;
@@ -1612,12 +1613,17 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         var operations = new List<PatchOperation>();
         foreach (var patchProperty in patchDocument.EnumerateObject())
         {
-            if (!_patchPropertyMap.TryGetValue(patchProperty.Name, out var propertyInfo))
+            if (!_jsonContract.TryGetPatchMember(patchProperty.Name, out var jsonMember)
+                || jsonMember.ClrName is null
+                || !_patchPropertiesByClrName.TryGetValue(
+                    jsonMember.ClrName,
+                    out var propertyContract))
             {
                 ThrowIfStrictUnknownField(unknownFieldBehavior, patchProperty.Name, "unknown");
                 continue;
             }
 
+            var propertyInfo = propertyContract.PropertyInfo;
             if (keyPropertyNames.Contains(propertyInfo.Name))
             {
                 throw new EfCorePatchValidationException(
@@ -1631,7 +1637,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
                 currentValue,
                 propertyInfo.PropertyType,
                 patchProperty.Value,
-                _jsonOptions);
+                propertyContract.JsonMember.ValueSerializerOptions);
 
             operations.Add(new PatchOperation(propertyInfo, value));
             plannedValues[propertyInfo.Name] = value;
@@ -2073,6 +2079,10 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     private sealed record KeysetPlan(IReadOnlyList<KeysetPlanPart> Parts);
 
     private sealed record DecodedKeysetCursor(IReadOnlyList<object> Values);
+
+    private sealed record PatchPropertyContract(
+        PropertyInfo PropertyInfo,
+        JsonMemberContract JsonMember);
 
     private sealed record PatchOperation(PropertyInfo PropertyInfo, object? Value);
 

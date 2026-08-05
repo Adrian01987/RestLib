@@ -1,17 +1,18 @@
 using System.Reflection;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.OpenApi;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using RestLib.Abstractions;
 using RestLib.Caching;
 using RestLib.Configuration;
 using RestLib.Hooks;
 using RestLib.Hypermedia;
 using RestLib.Mapping;
-using RestLib.Serialization;
 
 namespace RestLib;
 
@@ -85,19 +86,7 @@ public static class RestLibServiceExtensions
             openApiOptions.AddDocumentTransformer(new TagDescriptionDocumentTransformer(tagDescriptionRegistry));
         });
 
-        // Register JSON serializer options configured per RestLib settings
-        var jsonOptions = RestLibJsonOptions.Create(options);
-        services.TryAddSingleton(jsonOptions);
-        services.TryAddSingleton(new RestLibJsonResourceRegistry());
-
-        // Register default ETag generator when ETag support is enabled.
-        // Uses TryAddSingleton so custom IETagGenerator registrations take precedence.
-        if (options.EnableETagSupport)
-        {
-            services.TryAddSingleton<IETagGenerator>(new HashBasedETagGenerator(jsonOptions));
-        }
-
-        // Configure HTTP JSON options for request deserialization (Minimal APIs)
+        // Configure the canonical HTTP JSON options used by Minimal APIs and RestLib.
         services.Configure<JsonOptions>(httpJsonOptions =>
         {
             httpJsonOptions.SerializerOptions.PropertyNamingPolicy = options.JsonNamingPolicy;
@@ -106,6 +95,25 @@ public static class RestLibServiceExtensions
               ? JsonIgnoreCondition.WhenWritingNull
               : JsonIgnoreCondition.Never;
         });
+
+        services.RemoveAll<JsonSerializerOptions>();
+        services.AddSingleton(serviceProvider =>
+        {
+            var serializerOptions = serviceProvider
+                .GetRequiredService<IOptions<JsonOptions>>()
+                .Value.SerializerOptions;
+            serializerOptions.MakeReadOnly(populateMissingResolver: true);
+            return serializerOptions;
+        });
+        services.TryAddSingleton(new RestLibJsonResourceRegistry());
+
+        // Register default ETag generator when ETag support is enabled.
+        // Uses TryAddSingleton so custom IETagGenerator registrations take precedence.
+        if (options.EnableETagSupport)
+        {
+            services.TryAddSingleton<IETagGenerator>(serviceProvider =>
+                new HashBasedETagGenerator(serviceProvider.GetRequiredService<JsonSerializerOptions>()));
+        }
 
         services.AddSingleton(new RestLibRegistrationMarker());
 

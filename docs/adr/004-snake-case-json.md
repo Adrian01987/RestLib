@@ -1,7 +1,7 @@
 # ADR-004: snake_case JSON Naming
 
-**Status:** Accepted  
-**Date:** 2026-01-25
+**Status:** Amended
+**Date:** 2026-01-25 (amended 2026-08-05)
 
 ## Context
 
@@ -23,7 +23,7 @@ RestLib needs a consistent JSON naming strategy for request/response serializati
 
 ## Decision
 
-Use **snake_case** for all JSON property names.
+Use **snake_case** by default for all JSON property names.
 
 ```json
 {
@@ -34,6 +34,19 @@ Use **snake_case** for all JSON property names.
   "is_active": true
 }
 ```
+
+ASP.NET Core's `JsonOptions.SerializerOptions` is the single canonical serializer
+instance for a normally registered RestLib application. RestLib applies its defaults to
+that instance and exposes the same object through dependency injection. Minimal API request
+binding and response writing, core PATCH preview, field projection, the standard InMemory
+and EF Core adapters, and the default ETag generator therefore interpret one effective
+`System.Text.Json` contract.
+
+Applications extend or override those defaults with `ConfigureHttpJsonOptions`. Configured
+naming and case policies, `TypeInfoResolver` metadata, converters, ignore rules, and number
+handling flow to every standard RestLib serialization path. RestLib makes the finalized
+instance read-only when it is resolved, so configuration must be completed during service
+registration.
 
 ## Rationale
 
@@ -58,13 +71,32 @@ Use **snake_case** for all JSON property names.
 ## Implementation
 
 ```csharp
-var jsonOptions = new JsonSerializerOptions
+builder.Services.AddRestLib(options =>
 {
-    PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    PropertyNameCaseInsensitive = true // Accept any casing on input
-};
+    options.JsonNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
+    options.OmitNullValues = true;
+});
+
+builder.Services.ConfigureHttpJsonOptions(httpJson =>
+{
+    // Optional application-wide additions to the same serializer instance.
+    httpJson.SerializerOptions.NumberHandling = JsonNumberHandling.AllowReadingFromString;
+    httpJson.SerializerOptions.Converters.Add(
+        new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower));
+});
 ```
+
+Call `ConfigureHttpJsonOptions` after `AddRestLib` when overriding a RestLib default, because
+.NET applies options configuration delegates in registration order. Standard
+`AddRestLibInMemory` registrations resolve the canonical serializer lazily and therefore may
+be registered before or after `AddRestLib`. `AddRestLibInMemoryWithOptions` and
+`AddRestLibInMemoryWithDataAndOptions` deliberately retain their explicit, repository-local
+serializer override.
+
+Internal JSON member metadata is derived from the canonical instance's `JsonTypeInfo`, not
+re-created separately by PATCH or field-selection code. Metadata caches are scoped by exact
+`JsonSerializerOptions` object identity; two instances using the same naming-policy type can
+therefore never share stale resolver or converter state.
 
 ## Example Mapping
 
@@ -82,3 +114,4 @@ var jsonOptions = new JsonSerializerOptions
 - [Zalando RESTful API Guidelines - Rule 118](https://opensource.zalando.com/restful-api-guidelines/#118)
 - [Google JSON Style Guide](https://google.github.io/styleguide/jsoncstyleguide.xml) (uses camelCase, for contrast)
 - [System.Text.Json Naming Policies](https://learn.microsoft.com/en-us/dotnet/standard/serialization/system-text-json/customize-properties#use-a-built-in-naming-policy)
+- [ASP.NET Core HTTP JSON options](https://learn.microsoft.com/en-us/dotnet/api/microsoft.extensions.dependencyinjection.httpjsonserviceextensions.configurehttpjsonoptions)

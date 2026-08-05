@@ -1,9 +1,12 @@
+using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using FluentAssertions;
 using RestLib.Abstractions;
 using RestLib.Filtering;
 using RestLib.InMemory;
 using RestLib.Pagination;
+using RestLib.Serialization;
 using Xunit;
 
 namespace RestLib.Tests;
@@ -97,6 +100,41 @@ public partial class InMemoryRepositoryTests
         // Assert
         await act.Should().ThrowAsync<PatchValidationException>()
             .WithMessage("*immutable resource key field 'id'*");
+        (await repository.GetByIdAsync(entity.Id)).Should().BeEquivalentTo(entity);
+    }
+
+    [Fact]
+    public async Task PatchAsync_ResolverRenamedKey_RejectsPatchAndPreservesEntity()
+    {
+        // Arrange
+        var resolver = new DefaultJsonTypeInfoResolver();
+        resolver.Modifiers.Add(typeInfo =>
+        {
+            if (typeInfo.Type == typeof(TestEntity))
+            {
+                var keyProperty = typeInfo.Properties.Single(property =>
+                    property.AttributeProvider is PropertyInfo propertyInfo
+                    && propertyInfo.Name == nameof(TestEntity.Id));
+                keyProperty.Name = "entity-key";
+            }
+        });
+        var jsonOptions = RestLibJsonOptions.CreateDefault();
+        jsonOptions.TypeInfoResolver = resolver;
+        var repository = new InMemoryRepository<TestEntity, Guid>(
+            entity => entity.Id,
+            Guid.NewGuid,
+            jsonOptions);
+        var entity = CreateEntity("Original", 100);
+        await repository.CreateAsync(entity);
+        using var patchDocument = JsonDocument.Parse(
+            $$"""{"entity-key":"{{Guid.NewGuid()}}","name":"Changed"}""");
+
+        // Act
+        var act = () => repository.PatchAsync(entity.Id, patchDocument.RootElement);
+
+        // Assert
+        await act.Should().ThrowAsync<PatchValidationException>()
+            .WithMessage("*immutable resource key field 'entity-key'*");
         (await repository.GetByIdAsync(entity.Id)).Should().BeEquivalentTo(entity);
     }
 

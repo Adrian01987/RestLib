@@ -97,6 +97,28 @@ RestLib and JSON settings; later calls are no-ops and do not run their configura
 delegates. Keep all global RestLib settings in the first call, even when application
 startup is split across modules.
 
+ASP.NET Core's `JsonOptions.SerializerOptions` instance is also RestLib's canonical
+serializer configuration. Request binding, response writing, PATCH preview and persistence,
+field selection, the standard InMemory and EF Core registrations, and the default ETag
+generator therefore share the same naming policy, case sensitivity, metadata resolver,
+converters, and number-handling rules. Use `ConfigureHttpJsonOptions` after `AddRestLib`
+when an application needs to extend or override the RestLib defaults:
+
+```csharp
+builder.Services.AddRestLib();
+builder.Services.ConfigureHttpJsonOptions(httpJson =>
+{
+    httpJson.SerializerOptions.PropertyNameCaseInsensitive = false;
+    httpJson.SerializerOptions.NumberHandling = JsonNumberHandling.AllowReadingFromString;
+    httpJson.SerializerOptions.Converters.Add(
+        new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower));
+});
+```
+
+Standard `AddRestLibInMemory` registrations resolve that canonical instance lazily, so they
+can appear before or after `AddRestLib`. The explicitly named `WithOptions` InMemory overloads
+remain an intentional repository-local override for callers that need different PATCH rules.
+
 Run the app and open the API reference at `/scalar`:
 
 ```bash
@@ -114,11 +136,14 @@ That gives you:
 
 PATCH applies JSON Merge Patch semantics (RFC 7396) to the resource's serialized
 representation. Nested objects are merged recursively, `null` removes the named
-member, and arrays or non-object values replace the previous value. RestLib uses
-the configured `JsonSerializerOptions` for the merge, including naming policies
-and custom converters, and preserves JSON number tokens without converting them
-through `double`. Because RestLib endpoints expose typed object resources, the
-root patch document must be a JSON object.
+member, and arrays or non-object values replace the previous value. Member names come
+from the effective `System.Text.Json` contract, so naming policies, `[JsonPropertyName]`,
+metadata resolvers, ignored members, member converters, and number-handling rules are
+consistent across preview, InMemory, and EF Core persistence. Canonical JSON names are
+authoritative. For backward compatibility, legacy CLR, snake_case, and camelCase aliases
+are accepted only when `PropertyNameCaseInsensitive` is enabled. JSON number tokens are
+preserved without conversion through `double`. Because RestLib endpoints expose typed
+object resources, the root patch document must be a JSON object.
 
 ### Quick Start (folder convention)
 
@@ -374,6 +399,15 @@ Field selection lets clients request sparse fieldsets such as `?fields=id,name,p
 instead of returning the full entity every time. Unknown or disallowed fields return a
 400 Problem Details response, and nested reference-property paths are supported with
 snake_case dotted query names.
+
+Configured query aliases remain the request vocabulary, while projected response keys use
+the canonical paths from the effective JSON contract. This includes names supplied by
+`[JsonPropertyName]` or a metadata resolver, and sparse member values honor member-level and
+option-registered converters. Explicitly allow-listing a field is also an explicit decision
+to expose it: a selected member is returned even when normal full-object serialization would
+omit it through an ignore rule, a default/null omission rule, or a null intermediate value.
+Converter-owned object representations remain authoritative because their JSON shape cannot
+be reconstructed safely from CLR members.
 
 For full examples, JSON configuration, nested sparse output behavior, and interactions
 with filtering/sorting/pagination, see

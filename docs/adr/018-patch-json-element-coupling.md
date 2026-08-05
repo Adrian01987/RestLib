@@ -1,7 +1,7 @@
 # ADR-018: PatchAsync Accepts System.Text.Json.JsonElement
 
-**Status:** Accepted
-**Date:** 2026-04-07
+**Status:** Amended
+**Date:** 2026-04-07 (amended 2026-08-05)
 
 ## Context
 
@@ -28,6 +28,12 @@ Keep `JsonElement` as the patch document type in v1.x.
 Task<TEntity?> PatchAsync(TKey id, JsonElement patchDocument, CancellationToken ct = default);
 ```
 
+Interpret PATCH members through the effective `JsonTypeInfo` produced by RestLib's canonical
+ASP.NET Core `JsonOptions.SerializerOptions` instance. Canonical JSON member names are
+authoritative. Legacy CLR, snake_case, and camelCase aliases remain accepted for backward
+compatibility only while `PropertyNameCaseInsensitive` is enabled; disabling it makes PATCH
+member resolution exact just as it does for normal request deserialization.
+
 ## Rationale
 
 1. **RestLib is JSON-native:** The library mandates `snake_case` JSON, uses `System.Text.Json`
@@ -40,7 +46,11 @@ Task<TEntity?> PatchAsync(TKey id, JsonElement patchDocument, CancellationToken 
    delegates the original serialized representation and patch document to the shared
    RFC 7396 merge engine. Keeping values as `JsonElement` preserves nested structure
    and exact JSON number tokens without an intermediate object graph.
-4. **Breaking change cost:** Changing the signature would break `IRepository`, `IBatchRepository`,
+4. **One effective contract:** Request binding, core preview, standard InMemory persistence,
+   EF Core patch planning, response writing, and ETag generation resolve the same serializer
+   metadata. Naming policies, `[JsonPropertyName]`, metadata resolvers, ignored members,
+   member converters, and number-handling rules no longer need adapter-specific emulation.
+5. **Breaking change cost:** Changing the signature would break `IRepository`, `IBatchRepository`,
    all handler/helper classes, the `InMemoryRepository` implementation, and every consumer's
    repository. This is disproportionate to the benefit for v1.x.
 
@@ -53,9 +63,20 @@ Task<TEntity?> PatchAsync(TKey id, JsonElement patchDocument, CancellationToken 
 - Core preview validation, InMemory persistence, and EF Core property persistence use
   the same recursive merge algorithm. Objects merge recursively, `null` removes a
   member, and arrays or non-object values replace the previous value.
-- Merge input and output use the configured `JsonSerializerOptions`, including naming
-  policies and custom converters. Typed RestLib resources still require a JSON object
-  at the root of an HTTP PATCH document.
+- Merge input and output use ASP.NET Core's canonical `JsonOptions.SerializerOptions`,
+  including naming and case policies, metadata resolvers, ignore rules, converters, and
+  number handling. Member-level converter and number metadata is retained when EF Core
+  applies a mapped property independently. Typed RestLib resources still require a JSON
+  object at the root of an HTTP PATCH document.
+- Standard InMemory registrations resolve that canonical serializer lazily, regardless of
+  whether they are registered before or after `AddRestLib`. Explicit `WithOptions`
+  registration overloads remain caller-owned repository-local overrides.
+- PATCH metadata caches are keyed by exact serializer-options identity. Separate applications
+  or explicit options instances cannot share a contract merely because their naming policies
+  have the same CLR type.
+- Legacy CLR/snake/camel aliases are a compatibility behavior tied to
+  `PropertyNameCaseInsensitive = true`. With case-insensitive names disabled, only exact
+  canonical JSON member names are recognized.
 - **v2 consideration:** If a future major version introduces pluggable serializers or
   non-JSON transport, this decision should be revisited. The `IDictionary<string, object?>`
   or generic `TPatch` approach would then merit the breaking change cost.

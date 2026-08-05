@@ -1,45 +1,39 @@
 using System.Collections.Concurrent;
-using System.Linq.Expressions;
-using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.Json.Serialization;
-using RestLib.Internal;
+using RestLib.Serialization;
 
 namespace RestLib.FieldSelection;
 
 /// <summary>
-/// Projects entity objects to include only selected fields.
-/// Uses a hybrid strategy: per-property reflection with compiled expression tree getters
-/// for sparse field selections, and serialize-then-pick for dense selections.
-/// Falls back to serialize-then-pick when a type has a class-level <see cref="JsonConverterAttribute"/>.
-/// Both strategies feed the same final response-shape builder.
+/// Projects entity objects to include only selected fields. Effective JSON
+/// contracts provide names, accessors, and member-specific serialization rules.
+/// Sparse selections serialize individual members; dense or converter-owned
+/// selections serialize the entity once and pick the requested JSON paths.
 /// </summary>
 internal static class FieldProjector
 {
     /// <summary>
     /// Threshold ratio of selected fields to total properties above which
-    /// serialize-then-pick is used instead of per-property reflection.
-    /// When selecting more than half the properties, serializing the whole object
-    /// once and picking fields is faster than serializing each property individually.
+    /// serialize-then-pick is used instead of per-property access.
     /// </summary>
     private const double SerializeThresholdRatio = 0.5;
 
-    private static readonly ConcurrentDictionary<(Type EntityType, Type? NamingPolicyType), PropertyAccessorMap> AccessorCache = new();
-    private static readonly ConcurrentDictionary<(Type EntityType, string PropertyPath), PathAccessor> PathAccessorCache = new();
+    private static readonly ConditionalWeakTable<
+        JsonSerializerOptions,
+        ConcurrentDictionary<Type, PropertyAccessorMap>> AccessorCaches = new();
     private static readonly JsonElement NullElement = CreateNullElement();
 
     /// <summary>
     /// Projects a single entity to a dictionary containing only the selected fields.
-    /// Uses a hybrid strategy: per-property reflection for sparse selections,
-    /// serialize-then-pick for dense selections (more than 50% of properties).
     /// </summary>
     /// <typeparam name="TEntity">The entity type.</typeparam>
     /// <param name="entity">The entity instance to project.</param>
     /// <param name="selectedFields">The fields to include.</param>
-    /// <param name="jsonOptions">The JSON serializer options (for naming policy).</param>
+    /// <param name="jsonOptions">The effective JSON serializer options.</param>
     /// <param name="responseShape">The response shape to use for nested selected fields.</param>
-    /// <returns>A dictionary of field name to JSON value, or null if no projection needed.</returns>
+    /// <returns>A dictionary of field name to JSON value, or null if no projection is needed.</returns>
     internal static Dictionary<string, JsonElement>? Project<TEntity>(
         TEntity entity,
         IReadOnlyList<SelectedField> selectedFields,
@@ -52,20 +46,21 @@ internal static class FieldProjector
         }
 
         var accessorMap = GetOrBuildAccessorMap(typeof(TEntity), jsonOptions);
-        var requiresConverterFallback = accessorMap.RequiresSerializeFallback;
-        var useSerializeFallback = requiresConverterFallback ||
-            ShouldUseSerializeFallback(selectedFields.Count, accessorMap.PropertyCount);
+        var converterOwnsSelectedPath = selectedFields.Any(field =>
+            accessorMap.TryGetAccessor(field.PropertyName, out var accessor)
+            && accessor.RequiresWholeEntitySerialization);
+        var useSerializeFallback = accessorMap.RequiresSerializeFallback
+            || converterOwnsSelectedPath
+            || ShouldUseSerializeFallback(selectedFields.Count, accessorMap.PropertyCount);
 
-        // A class converter owns missing-member semantics. The density optimization instead
-        // recovers explicitly selected members that whole-object serialization omitted.
-        var missingValueAccessorMap = requiresConverterFallback ? null : accessorMap;
+        // Converter-owned JSON is authoritative. Density fallback can still recover
+        // an explicitly selected member omitted by normal whole-object serialization.
+        var missingValueAccessorMap = accessorMap.RequiresSerializeFallback
+            ? null
+            : accessorMap;
         var flatResult = useSerializeFallback
-            ? SerializeThenPick(
-                entity,
-                selectedFields,
-                jsonOptions,
-                missingValueAccessorMap)
-            : ProjectWithAccessors(entity, selectedFields, accessorMap, jsonOptions);
+            ? SerializeThenPick(entity, selectedFields, jsonOptions, missingValueAccessorMap)
+            : ProjectWithAccessors(entity, selectedFields, accessorMap);
 
         return ApplyResponseShape(flatResult, responseShape, jsonOptions);
     }
@@ -76,9 +71,9 @@ internal static class FieldProjector
     /// <typeparam name="TEntity">The entity type.</typeparam>
     /// <param name="entities">The entities to project.</param>
     /// <param name="selectedFields">The fields to include.</param>
-    /// <param name="jsonOptions">The JSON serializer options (for naming policy).</param>
+    /// <param name="jsonOptions">The effective JSON serializer options.</param>
     /// <param name="responseShape">The response shape to use for nested selected fields.</param>
-    /// <returns>A list of projected dictionaries, or null if no projection needed.</returns>
+    /// <returns>A list of projected dictionaries, or null if no projection is needed.</returns>
     internal static IReadOnlyList<Dictionary<string, JsonElement>>? ProjectMany<TEntity>(
         IReadOnlyList<TEntity> entities,
         IReadOnlyList<SelectedField> selectedFields,
@@ -91,7 +86,6 @@ internal static class FieldProjector
         }
 
         var results = new List<Dictionary<string, JsonElement>>(entities.Count);
-
         foreach (var entity in entities)
         {
             var projected = Project(entity, selectedFields, jsonOptions, responseShape);
@@ -107,46 +101,31 @@ internal static class FieldProjector
     private static Dictionary<string, JsonElement> ProjectWithAccessors<TEntity>(
         TEntity entity,
         IReadOnlyList<SelectedField> selectedFields,
-        PropertyAccessorMap accessorMap,
-        JsonSerializerOptions jsonOptions)
+        PropertyAccessorMap accessorMap)
     {
         var result = new Dictionary<string, JsonElement>(selectedFields.Count);
-
         foreach (var field in selectedFields)
         {
-            if (TryProjectWithAccessor(entity, field, accessorMap, jsonOptions, out var element))
+            if (accessorMap.TryGetAccessor(field.PropertyName, out var accessor))
             {
-                result[field.QueryParameterName] = element;
+                result[accessor.JsonPath] = ProjectWithAccessor(entity!, accessor);
             }
         }
 
         return result;
     }
 
-    private static bool TryProjectWithAccessor<TEntity>(
-        TEntity entity,
-        SelectedField field,
-        PropertyAccessorMap accessorMap,
-        JsonSerializerOptions jsonOptions,
-        out JsonElement element)
+    private static JsonElement ProjectWithAccessor(object entity, PathAccessor accessor)
     {
-        if (!TryGetAccessor(typeof(TEntity), accessorMap, field.PropertyName, jsonOptions, out var accessor))
-        {
-            element = default;
-            return false;
-        }
-
-        var value = accessor.GetValue(entity!);
-        element = value is null
+        var value = accessor.GetValue(entity);
+        return value is null
             ? NullElement
-            : JsonSerializer.SerializeToElement(value, accessor.PropertyType, jsonOptions);
-        return true;
+            : JsonSerializer.SerializeToElement(
+                value,
+                accessor.PropertyType,
+                accessor.ValueSerializerOptions);
     }
 
-    /// <summary>
-    /// Determines whether the serialize-then-pick approach should be used
-    /// based on the ratio of selected fields to total properties.
-    /// </summary>
     private static bool ShouldUseSerializeFallback(int selectedCount, int totalProperties)
     {
         if (totalProperties == 0)
@@ -157,10 +136,6 @@ internal static class FieldProjector
         return (double)selectedCount / totalProperties > SerializeThresholdRatio;
     }
 
-    /// <summary>
-    /// Serialize-then-pick implementation used as fallback for types with
-    /// class-level <see cref="JsonConverterAttribute"/> or dense field selections.
-    /// </summary>
     private static Dictionary<string, JsonElement> SerializeThenPick<TEntity>(
         TEntity entity,
         IReadOnlyList<SelectedField> selectedFields,
@@ -168,24 +143,25 @@ internal static class FieldProjector
         PropertyAccessorMap? missingValueAccessorMap)
     {
         var json = JsonSerializer.Serialize(entity, jsonOptions);
-        using var doc = JsonDocument.Parse(json);
-
+        using var document = JsonDocument.Parse(json);
         var result = new Dictionary<string, JsonElement>(selectedFields.Count);
 
         foreach (var field in selectedFields)
         {
-            if (TryGetJsonPathValue(doc.RootElement, field.QueryParameterName.Split('.'), out var value))
+            PathAccessor? accessor = null;
+            var hasAccessor = missingValueAccessorMap is not null
+                && missingValueAccessorMap.TryGetAccessor(field.PropertyName, out accessor);
+            var outputPath = hasAccessor ? accessor!.JsonPath : field.QueryParameterName;
+
+            if (TryGetJsonPathValue(document.RootElement, outputPath, out var value)
+                || (!outputPath.Equals(field.QueryParameterName, StringComparison.Ordinal)
+                    && TryGetJsonPathValue(document.RootElement, field.QueryParameterName, out value)))
             {
-                result[field.QueryParameterName] = value.Clone();
+                result[outputPath] = value.Clone();
             }
-            else if (missingValueAccessorMap is not null &&
-                     TryProjectWithAccessor(entity, field, missingValueAccessorMap, jsonOptions, out var element))
+            else if (hasAccessor && !accessor!.RequiresWholeEntitySerialization)
             {
-                result[field.QueryParameterName] = element;
-            }
-            else if (field.QueryParameterName.Contains('.', StringComparison.Ordinal))
-            {
-                result[field.QueryParameterName] = NullElement;
+                result[outputPath] = ProjectWithAccessor(entity!, accessor);
             }
         }
 
@@ -211,86 +187,28 @@ internal static class FieldProjector
         return SerializeNestedResult(nestedResult, jsonOptions);
     }
 
-    private static PropertyAccessorMap GetOrBuildAccessorMap(Type entityType, JsonSerializerOptions jsonOptions)
-    {
-        var key = (entityType, jsonOptions.PropertyNamingPolicy?.GetType());
-        return AccessorCache.GetOrAdd(key, _ => PropertyAccessorMap.Build(entityType, jsonOptions));
-    }
-
-    private static bool TryGetAccessor(
+    private static PropertyAccessorMap GetOrBuildAccessorMap(
         Type entityType,
-        PropertyAccessorMap accessorMap,
+        JsonSerializerOptions jsonOptions)
+    {
+        if (!jsonOptions.IsReadOnly)
+        {
+            return PropertyAccessorMap.Build(entityType, jsonOptions);
+        }
+
+        var cache = AccessorCaches.GetValue(
+            jsonOptions,
+            static _ => new ConcurrentDictionary<Type, PropertyAccessorMap>());
+        return cache.GetOrAdd(entityType, type => PropertyAccessorMap.Build(type, jsonOptions));
+    }
+
+    private static bool TryGetJsonPathValue(
+        JsonElement current,
         string propertyPath,
-        JsonSerializerOptions jsonOptions,
-        out PathAccessor accessor)
-    {
-        if (!propertyPath.Contains('.', StringComparison.Ordinal))
-        {
-            if (accessorMap.TryGetAccessor(propertyPath, out var directAccessor))
-            {
-                accessor = new PathAccessor(directAccessor.GetValue, directAccessor.PropertyType);
-                return true;
-            }
-
-            accessor = null!;
-            return false;
-        }
-
-        var key = (entityType, propertyPath);
-        try
-        {
-            accessor = PathAccessorCache.GetOrAdd(key, _ => BuildPathAccessor(entityType, propertyPath));
-            return true;
-        }
-        catch (InvalidOperationException)
-        {
-            accessor = null!;
-            return false;
-        }
-    }
-
-    private static PathAccessor BuildPathAccessor(Type entityType, string propertyPath)
-    {
-        var resolvedPath = NamingUtils.ResolvePropertyPath(entityType, propertyPath, nameof(propertyPath));
-        var properties = new List<PropertyInfo>(resolvedPath.ClrSegments.Count);
-        var currentType = entityType;
-
-        foreach (var segment in resolvedPath.ClrSegments)
-        {
-            var property = currentType.GetProperty(segment, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
-            if (property is null || !property.CanRead)
-            {
-                throw new InvalidOperationException(
-                    $"Property path '{propertyPath}' could not be projected for entity type '{entityType.Name}'.");
-            }
-
-            properties.Add(property);
-            currentType = property.PropertyType;
-        }
-
-        return new PathAccessor(entity => GetPathValue(entity, properties), resolvedPath.LeafPropertyType);
-    }
-
-    private static object? GetPathValue(object entity, IReadOnlyList<PropertyInfo> properties)
-    {
-        object? current = entity;
-        foreach (var property in properties)
-        {
-            if (current is null)
-            {
-                return null;
-            }
-
-            current = property.GetValue(current);
-        }
-
-        return current;
-    }
-
-    private static bool TryGetJsonPathValue(JsonElement current, IReadOnlyList<string> segments, out JsonElement value)
+        out JsonElement value)
     {
         value = current;
-        foreach (var segment in segments)
+        foreach (var segment in propertyPath.Split('.', StringSplitOptions.RemoveEmptyEntries))
         {
             if (value.ValueKind != JsonValueKind.Object || !value.TryGetProperty(segment, out value))
             {
@@ -303,10 +221,10 @@ internal static class FieldProjector
 
     private static void SetNestedElement(
         JsonObject result,
-        string queryParameterName,
+        string jsonPath,
         JsonElement value)
     {
-        var segments = queryParameterName.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        var segments = jsonPath.Split('.', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Length == 0)
         {
             return;
@@ -342,7 +260,6 @@ internal static class FieldProjector
     {
         var root = JsonSerializer.SerializeToElement(result, jsonOptions);
         var projected = new Dictionary<string, JsonElement>(root.GetPropertyCount());
-
         foreach (var property in root.EnumerateObject())
         {
             projected[property.Name] = property.Value.Clone();
@@ -358,151 +275,143 @@ internal static class FieldProjector
     }
 
     /// <summary>
-    /// Cached map of property accessors for a given entity type.
+    /// Serializer-contract-backed map of field-selection accessors for one entity type.
     /// </summary>
     private sealed class PropertyAccessorMap
     {
-        private readonly Dictionary<string, PropertyAccessor> _accessors;
+        private readonly JsonObjectContract _contract;
+        private readonly ConcurrentDictionary<string, PathAccessor> _pathAccessors = new(StringComparer.Ordinal);
 
-        private PropertyAccessorMap(Dictionary<string, PropertyAccessor> accessors, bool requiresSerializeFallback)
+        private PropertyAccessorMap(
+            JsonObjectContract contract,
+            Dictionary<string, PathAccessor> accessors,
+            bool requiresSerializeFallback)
         {
-            _accessors = accessors;
+            _contract = contract;
+            _pathAccessors = new ConcurrentDictionary<string, PathAccessor>(
+                accessors,
+                StringComparer.Ordinal);
             RequiresSerializeFallback = requiresSerializeFallback;
             PropertyCount = accessors.Count;
         }
 
         /// <summary>
-        /// Gets a value indicating whether this type requires the serialize-then-pick fallback.
+        /// Gets a value indicating whether a converter owns the root JSON representation.
         /// </summary>
-        public bool RequiresSerializeFallback { get; }
+        internal bool RequiresSerializeFallback { get; }
 
         /// <summary>
-        /// Gets the total number of serializable properties on the entity type.
+        /// Gets the total number of directly selectable members.
         /// </summary>
-        public int PropertyCount { get; }
+        internal int PropertyCount { get; }
 
         /// <summary>
-        /// Builds a <see cref="PropertyAccessorMap"/> for the given entity type.
+        /// Builds an accessor map from the effective JSON contract.
         /// </summary>
-        public static PropertyAccessorMap Build(Type entityType, JsonSerializerOptions jsonOptions)
+        internal static PropertyAccessorMap Build(
+            Type entityType,
+            JsonSerializerOptions jsonOptions)
         {
-            // Check for class-level JsonConverter
-            var hasClassConverter = entityType.GetCustomAttribute<JsonConverterAttribute>() is not null;
-            if (hasClassConverter)
+            var contract = JsonObjectContract.Get(entityType, jsonOptions);
+            if (!contract.IsObject)
             {
-                return new PropertyAccessorMap([], requiresSerializeFallback: true);
+                return new PropertyAccessorMap(contract, [], requiresSerializeFallback: true);
             }
 
-            var properties = entityType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
-            var accessors = new Dictionary<string, PropertyAccessor>(properties.Length, StringComparer.Ordinal);
-
-            foreach (var prop in properties)
-            {
-                if (!prop.CanRead)
-                {
-                    continue;
-                }
-
-                // Skip [JsonIgnore] properties
-                var ignoreAttr = prop.GetCustomAttribute<JsonIgnoreAttribute>();
-                if (ignoreAttr is not null && ignoreAttr.Condition == JsonIgnoreCondition.Always)
-                {
-                    continue;
-                }
-
-                // Determine the JSON property name respecting [JsonPropertyName] and naming policy
-                var jsonPropNameAttr = prop.GetCustomAttribute<JsonPropertyNameAttribute>();
-                var jsonName = jsonPropNameAttr?.Name
-                    ?? jsonOptions.PropertyNamingPolicy?.ConvertName(prop.Name)
-                    ?? prop.Name;
-
-                // Build compiled getter
-                var getter = CompileGetter(entityType, prop);
-
-                accessors[prop.Name] = new PropertyAccessor(getter, prop.PropertyType, jsonName);
-            }
-
-            return new PropertyAccessorMap(accessors, requiresSerializeFallback: false);
+            var accessors = contract.Members
+                .Where(member => member.ClrName is not null && member.CanReadForFieldSelection)
+                .GroupBy(member => member.ClrName!, StringComparer.Ordinal)
+                .ToDictionary(
+                    group => group.Key,
+                    group => PathAccessor.Create([group.First()]),
+                    StringComparer.Ordinal);
+            return new PropertyAccessorMap(contract, accessors, requiresSerializeFallback: false);
         }
 
         /// <summary>
-        /// Tries to get a <see cref="PropertyAccessor"/> by C# property name.
+        /// Resolves a configured CLR member path to its effective JSON accessor.
         /// </summary>
-        public bool TryGetAccessor(string propertyName, out PropertyAccessor accessor)
+        internal bool TryGetAccessor(string propertyPath, out PathAccessor accessor)
         {
-            return _accessors.TryGetValue(propertyName, out accessor!);
-        }
+            if (_pathAccessors.TryGetValue(propertyPath, out accessor!))
+            {
+                return true;
+            }
 
-        /// <summary>
-        /// Compiles a fast getter delegate for a property using expression trees.
-        /// </summary>
-        private static Func<object, object?> CompileGetter(Type entityType, PropertyInfo property)
-        {
-            // (object entity) => (object?)((TEntity)entity).PropertyName
-            var parameter = Expression.Parameter(typeof(object), "entity");
-            var castEntity = Expression.Convert(parameter, entityType);
-            var propertyAccess = Expression.Property(castEntity, property);
-            var castResult = Expression.Convert(propertyAccess, typeof(object));
+            if (!_contract.TryResolveClrPath(propertyPath, out var memberPath)
+                || memberPath.Members.Any(member => !member.CanReadForFieldSelection))
+            {
+                accessor = null!;
+                return false;
+            }
 
-            return Expression.Lambda<Func<object, object?>>(castResult, parameter).Compile();
+            accessor = _pathAccessors.GetOrAdd(
+                propertyPath,
+                _ => PathAccessor.Create(memberPath.Members));
+            return true;
         }
     }
 
     /// <summary>
-    /// Holds the compiled getter and metadata for a single property.
+    /// Reads a selected CLR path and retains its effective JSON serialization metadata.
     /// </summary>
-    private sealed class PropertyAccessor
-    {
-        /// <summary>
-        /// Initializes a new instance of the <see cref="PropertyAccessor"/> class.
-        /// </summary>
-        /// <param name="getValue">The compiled getter delegate.</param>
-        /// <param name="propertyType">The property type.</param>
-        /// <param name="jsonName">The JSON property name (after naming policy).</param>
-        public PropertyAccessor(Func<object, object?> getValue, Type propertyType, string jsonName)
-        {
-            GetValue = getValue;
-            PropertyType = propertyType;
-            JsonName = jsonName;
-        }
-
-        /// <summary>
-        /// Gets the compiled getter delegate.
-        /// </summary>
-        public Func<object, object?> GetValue { get; }
-
-        /// <summary>
-        /// Gets the property type (used for serialization).
-        /// </summary>
-        public Type PropertyType { get; }
-
-        /// <summary>
-        /// Gets the JSON property name after applying naming policy and attributes.
-        /// </summary>
-        public string JsonName { get; }
-    }
-
     private sealed class PathAccessor
     {
-        /// <summary>
-        /// Initializes a new instance of the <see cref="PathAccessor"/> class.
-        /// </summary>
-        /// <param name="getValue">The getter delegate.</param>
-        /// <param name="propertyType">The leaf property type.</param>
-        public PathAccessor(Func<object, object?> getValue, Type propertyType)
+        private readonly IReadOnlyList<JsonMemberContract> _members;
+
+        private PathAccessor(IReadOnlyList<JsonMemberContract> members)
         {
-            GetValue = getValue;
-            PropertyType = propertyType;
+            _members = members;
+            JsonPath = string.Join('.', members.Select(member => member.JsonName));
+            PropertyType = members[^1].MemberType;
+            ValueSerializerOptions = members[^1].ValueSerializerOptions;
+            RequiresWholeEntitySerialization = members
+                .Take(members.Count - 1)
+                .Any(member => member.HasMemberSerializationOverrides);
         }
 
         /// <summary>
-        /// Gets the getter delegate.
+        /// Gets the canonical dotted JSON path.
         /// </summary>
-        public Func<object, object?> GetValue { get; }
+        internal string JsonPath { get; }
 
         /// <summary>
-        /// Gets the leaf property type.
+        /// Gets the selected leaf type.
         /// </summary>
-        public Type PropertyType { get; }
+        internal Type PropertyType { get; }
+
+        /// <summary>
+        /// Gets the serializer options carrying leaf member overrides.
+        /// </summary>
+        internal JsonSerializerOptions ValueSerializerOptions { get; }
+
+        /// <summary>
+        /// Gets a value indicating whether a converter owns an intermediate JSON shape.
+        /// </summary>
+        internal bool RequiresWholeEntitySerialization { get; }
+
+        /// <summary>
+        /// Creates an accessor for an ordered member path.
+        /// </summary>
+        internal static PathAccessor Create(IReadOnlyList<JsonMemberContract> members) => new(members);
+
+        /// <summary>
+        /// Reads the selected value, returning null when an intermediate value is null.
+        /// </summary>
+        internal object? GetValue(object entity)
+        {
+            object? current = entity;
+            foreach (var member in _members)
+            {
+                if (current is null)
+                {
+                    return null;
+                }
+
+                current = member.GetValue(current);
+            }
+
+            return current;
+        }
     }
 }

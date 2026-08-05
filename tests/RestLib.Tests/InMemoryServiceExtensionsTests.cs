@@ -1,8 +1,11 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using RestLib.Abstractions;
 using RestLib.InMemory;
 using RestLib.Pagination;
+using RestLib.Serialization;
 using Xunit;
 
 namespace RestLib.Tests;
@@ -12,6 +15,44 @@ namespace RestLib.Tests;
 public class InMemoryServiceExtensionsTests
 {
     private record Product(Guid Id, string Name, decimal Price);
+
+    private sealed class SerializationProduct
+    {
+        public Guid Id { get; set; }
+
+        public string DisplayName { get; set; } = string.Empty;
+
+        public EncodedValue Code { get; set; } = new(string.Empty);
+    }
+
+    private sealed record EncodedValue(string Value);
+
+    private sealed class PrefixNamingPolicy : JsonNamingPolicy
+    {
+        public override string ConvertName(string name) => $"wire_{name}";
+    }
+
+    private sealed class EncodedValueJsonConverter : JsonConverter<EncodedValue>
+    {
+        public override EncodedValue? Read(
+            ref Utf8JsonReader reader,
+            Type typeToConvert,
+            JsonSerializerOptions options)
+        {
+            var encoded = reader.GetString() ?? string.Empty;
+            return new EncodedValue(encoded.StartsWith("encoded:", StringComparison.Ordinal)
+                ? encoded["encoded:".Length..]
+                : encoded);
+        }
+
+        public override void Write(
+            Utf8JsonWriter writer,
+            EncodedValue value,
+            JsonSerializerOptions options)
+        {
+            writer.WriteStringValue($"encoded:{value.Value}");
+        }
+    }
 
     #region Basic Registration Tests
 
@@ -125,6 +166,109 @@ public class InMemoryServiceExtensionsTests
 
         // Assert
         repo1.Should().BeSameAs(repo2);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AddRestLibInMemory_WithEitherCoreRegistrationOrder_UsesCanonicalJsonOptions(
+        bool addRestLibFirst)
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        if (addRestLibFirst)
+        {
+            services.AddRestLib(options => options.JsonNamingPolicy = new PrefixNamingPolicy());
+        }
+
+        services.AddRestLibInMemory<SerializationProduct, Guid>(product => product.Id, Guid.NewGuid);
+
+        if (!addRestLibFirst)
+        {
+            services.AddRestLib(options => options.JsonNamingPolicy = new PrefixNamingPolicy());
+        }
+
+        using var provider = services.BuildServiceProvider();
+        var repository = provider.GetRequiredService<InMemoryRepository<SerializationProduct, Guid>>();
+        var product = new SerializationProduct
+        {
+            Id = Guid.NewGuid(),
+            DisplayName = "Original",
+            Code = new EncodedValue("old")
+        };
+        repository.Seed([product]);
+        using var patchDocument = JsonDocument.Parse("""{"wire_DisplayName":"Updated"}""");
+
+        // Act
+        var patched = await repository.PatchAsync(product.Id, patchDocument.RootElement);
+
+        // Assert
+        patched.Should().NotBeNull();
+        patched!.DisplayName.Should().Be("Updated");
+        provider.GetRequiredService<IRepository<SerializationProduct, Guid>>().Should().BeSameAs(repository);
+        provider.GetRequiredService<IBatchRepository<SerializationProduct, Guid>>().Should().BeSameAs(repository);
+        provider.GetRequiredService<IConditionalWriteRepository<SerializationProduct, Guid>>().Should().BeSameAs(repository);
+    }
+
+    [Fact]
+    public async Task AddRestLibInMemory_WithRegisteredJsonConverter_UsesConverterForPatch()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var jsonOptions = RestLibJsonOptions.CreateDefault();
+        jsonOptions.Converters.Add(new EncodedValueJsonConverter());
+        services.AddSingleton(jsonOptions);
+        services.AddRestLibInMemory<SerializationProduct, Guid>(product => product.Id, Guid.NewGuid);
+
+        using var provider = services.BuildServiceProvider();
+        var repository = provider.GetRequiredService<InMemoryRepository<SerializationProduct, Guid>>();
+        var product = new SerializationProduct
+        {
+            Id = Guid.NewGuid(),
+            DisplayName = "Original",
+            Code = new EncodedValue("old")
+        };
+        repository.Seed([product]);
+        using var patchDocument = JsonDocument.Parse("""{"code":"encoded:new"}""");
+
+        // Act
+        var patched = await repository.PatchAsync(product.Id, patchDocument.RootElement);
+
+        // Assert
+        patched.Should().NotBeNull();
+        patched!.Code.Value.Should().Be("new");
+    }
+
+    [Fact]
+    public async Task InMemoryRepository_WithDefaultOptions_ProtectsSnakeCaseKeyName()
+    {
+        // Arrange
+        var repository = new InMemoryRepository<MultiWordKeyProduct, Guid>(
+            product => product.ProductId,
+            Guid.NewGuid);
+        var product = new MultiWordKeyProduct
+        {
+            ProductId = Guid.NewGuid(),
+            Name = "Original"
+        };
+        repository.Seed([product]);
+        using var patchDocument = JsonDocument.Parse(
+            $$"""{"product_id":"{{Guid.NewGuid()}}","name":"Updated"}""");
+
+        // Act
+        var act = () => repository.PatchAsync(product.ProductId, patchDocument.RootElement);
+
+        // Assert
+        await act.Should().ThrowAsync<PatchValidationException>()
+            .WithMessage("*immutable resource key field 'product_id'*");
+        (await repository.GetByIdAsync(product.ProductId))!.Name.Should().Be("Original");
+    }
+
+    private sealed class MultiWordKeyProduct
+    {
+        public Guid ProductId { get; set; }
+
+        public string Name { get; set; } = string.Empty;
     }
 
     #endregion

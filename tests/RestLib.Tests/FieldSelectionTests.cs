@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -889,6 +890,78 @@ public class FieldProjectorCacheTests
             SnakeCaseLower.ConvertName(name);
     }
 
+    private sealed class PrefixedNamingPolicy(string prefix) : JsonNamingPolicy
+    {
+        private readonly string _prefix = prefix;
+
+        public override string ConvertName(string name) =>
+            $"{_prefix}_{JsonNamingPolicy.SnakeCaseLower.ConvertName(name)}";
+    }
+
+    private sealed class ContractAwareProjectionEntity
+    {
+        public Guid Id { get; init; }
+
+        [JsonPropertyName("wire_name")]
+        public string DisplayName { get; init; } = string.Empty;
+
+        [JsonConverter(typeof(PrefixedStringJsonConverter))]
+        public string Code { get; init; } = string.Empty;
+
+        [JsonNumberHandling(JsonNumberHandling.WriteAsString)]
+        public int Quantity { get; init; }
+    }
+
+    private sealed class ResolverNamedProjectionEntity
+    {
+        public Guid Id { get; init; }
+
+        public string DisplayName { get; init; } = string.Empty;
+
+        public string Description { get; init; } = string.Empty;
+    }
+
+    private sealed class OptionsConverterEntity
+    {
+        public string Name { get; init; } = string.Empty;
+
+        public FieldSelectionCustomer Customer { get; init; } = new();
+    }
+
+    private sealed class PrefixedStringJsonConverter : JsonConverter<string>
+    {
+        public override string? Read(
+            ref Utf8JsonReader reader,
+            Type typeToConvert,
+            JsonSerializerOptions options) => reader.GetString();
+
+        public override void Write(
+            Utf8JsonWriter writer,
+            string value,
+            JsonSerializerOptions options) => writer.WriteStringValue($"converted:{value}");
+    }
+
+    private sealed class OptionsConverterEntityJsonConverter : JsonConverter<OptionsConverterEntity>
+    {
+        public override OptionsConverterEntity? Read(
+            ref Utf8JsonReader reader,
+            Type typeToConvert,
+            JsonSerializerOptions options) => throw new NotSupportedException();
+
+        public override void Write(
+            Utf8JsonWriter writer,
+            OptionsConverterEntity value,
+            JsonSerializerOptions options)
+        {
+            writer.WriteStartObject();
+            writer.WritePropertyName("customer");
+            writer.WriteStartObject();
+            writer.WriteString("email", $"options:{value.Customer.Email}");
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        }
+    }
+
     [JsonConverter(typeof(ConverterBackedEntityJsonConverter))]
     private sealed class ConverterBackedEntity
     {
@@ -980,6 +1053,153 @@ public class FieldProjectorCacheTests
         resultB["name"].GetString().Should().Be("Widget");
         resultA["price"].GetDecimal().Should().Be(9.99m);
         resultB["price"].GetDecimal().Should().Be(9.99m);
+    }
+
+    [Fact]
+    [Trait("Category", "Story7.1")]
+    public void Project_WithStatefulPolicyInstances_UsesEachExactSerializerContract()
+    {
+        // Arrange
+        var entity = new ResolverNamedProjectionEntity { DisplayName = "Widget" };
+        var selectedFields = new List<SelectedField>
+        {
+            new() { PropertyName = "DisplayName", QueryParameterName = "display_name" }
+        };
+        var optionsA = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = new PrefixedNamingPolicy("first")
+        };
+        var optionsB = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = new PrefixedNamingPolicy("second")
+        };
+        optionsA.MakeReadOnly(populateMissingResolver: true);
+        optionsB.MakeReadOnly(populateMissingResolver: true);
+
+        // Act
+        var resultA = FieldProjector.Project(entity, selectedFields, optionsA);
+        var resultB = FieldProjector.Project(entity, selectedFields, optionsB);
+
+        // Assert
+        resultA.Should().ContainKey("first_display_name")
+            .WhoseValue.GetString().Should().Be("Widget");
+        resultB.Should().ContainKey("second_display_name")
+            .WhoseValue.GetString().Should().Be("Widget");
+    }
+
+    [Theory]
+    [InlineData("DisplayName", "display_name", "wire_name", "Widget")]
+    [InlineData("Code", "code", "code", "converted:ABC")]
+    [InlineData("Quantity", "quantity", "quantity", "42")]
+    [Trait("Category", "Story7.1")]
+    public void Project_WithMemberSerializationMetadata_HonorsEffectiveContract(
+        string propertyName,
+        string queryName,
+        string expectedJsonName,
+        string expectedValue)
+    {
+        // Arrange
+        var entity = new ContractAwareProjectionEntity
+        {
+            Id = Guid.NewGuid(),
+            DisplayName = "Widget",
+            Code = "ABC",
+            Quantity = 42
+        };
+        var selectedFields = new List<SelectedField>
+        {
+            new() { PropertyName = propertyName, QueryParameterName = queryName }
+        };
+
+        // Act
+        var result = FieldProjector.Project(
+            entity,
+            selectedFields,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        // Assert
+        result.Should().ContainKey(expectedJsonName);
+        result![expectedJsonName].GetString().Should().Be(expectedValue);
+    }
+
+    [Fact]
+    [Trait("Category", "Story7.1")]
+    public void Project_WithResolverRenamedMember_UsesResolvedJsonName()
+    {
+        // Arrange
+        var resolver = new DefaultJsonTypeInfoResolver();
+        resolver.Modifiers.Add(typeInfo =>
+        {
+            if (typeInfo.Type == typeof(ResolverNamedProjectionEntity))
+            {
+                typeInfo.Properties.Single(property => property.Name == "displayName").Name = "wire_display";
+            }
+        });
+        var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            TypeInfoResolver = resolver
+        };
+        var entity = new ResolverNamedProjectionEntity { DisplayName = "Widget" };
+        var selectedFields = new List<SelectedField>
+        {
+            new() { PropertyName = "DisplayName", QueryParameterName = "display_name" }
+        };
+
+        // Act
+        var result = FieldProjector.Project(entity, selectedFields, jsonOptions);
+
+        // Assert
+        result.Should().ContainKey("wire_display")
+            .WhoseValue.GetString().Should().Be("Widget");
+    }
+
+    [Fact]
+    [Trait("Category", "Story7.1")]
+    public void Project_WithOptionsRegisteredRootConverter_UsesConverterOwnedRepresentation()
+    {
+        // Arrange
+        var entity = new OptionsConverterEntity
+        {
+            Name = "Widget",
+            Customer = new FieldSelectionCustomer { Email = "customer@example.com" }
+        };
+        var selectedFields = new List<SelectedField>
+        {
+            new() { PropertyName = "Customer.Email", QueryParameterName = "customer.email" }
+        };
+        var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        jsonOptions.Converters.Add(new OptionsConverterEntityJsonConverter());
+
+        // Act
+        var result = FieldProjector.Project(
+            entity,
+            selectedFields,
+            jsonOptions,
+            FieldSelectionResponseShape.Nested);
+
+        // Assert
+        result!["customer"].GetProperty("email").GetString()
+            .Should().Be("options:customer@example.com");
+    }
+
+    [Fact]
+    [Trait("Category", "Story7.1")]
+    public void Project_WithOptionsRegisteredRootConverter_DoesNotSynthesizeOmittedMember()
+    {
+        // Arrange
+        var entity = new OptionsConverterEntity { Name = "Not on the wire" };
+        var selectedFields = new List<SelectedField>
+        {
+            new() { PropertyName = "Name", QueryParameterName = "name" }
+        };
+        var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        jsonOptions.Converters.Add(new OptionsConverterEntityJsonConverter());
+
+        // Act
+        var result = FieldProjector.Project(entity, selectedFields, jsonOptions);
+
+        // Assert
+        result.Should().BeEmpty();
     }
 
     [Fact]
@@ -1134,7 +1354,7 @@ public class FieldProjectorCacheTests
         // Assert
         var profile = result!["customer"].GetProperty("profile");
         profile.GetProperty("handle").GetString().Should().Be("widget-owner");
-        profile.GetProperty("display_name").GetString().Should().Be("Widget Owner");
+        profile.GetProperty("displayName").GetString().Should().Be("Widget Owner");
         profile.EnumerateObject().Should().HaveCount(2);
     }
 
@@ -1206,7 +1426,7 @@ public class FieldProjectorCacheTests
         // Assert
         var profile = result!["customer"].GetProperty("profile");
         profile.GetProperty("handle").GetString().Should().Be("widget-owner");
-        profile.GetProperty("display_name").GetString().Should().Be("Widget Owner");
+        profile.GetProperty("displayName").GetString().Should().Be("Widget Owner");
         profile.GetProperty("locale").GetString().Should().Be("en-GB");
         profile.EnumerateObject().Should().HaveCount(3);
     }

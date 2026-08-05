@@ -36,33 +36,43 @@ Two key design decisions arise from this:
 
 **Original decision:** Serialize the full entity to JSON, parse as `JsonDocument`, cherry-pick requested fields.
 
-**Amended decision:** Use a hybrid strategy that selects the fastest approach based on the ratio of selected fields to total properties:
+**Amended decision:** Use a JSON-contract-aware hybrid strategy that selects the fastest
+approach based on the ratio of selected fields to total properties:
 
-- **Sparse selections (≤50% of properties):** Per-property reflection with compiled expression tree getters. Each selected property value is read via a cached compiled delegate and serialized individually with `JsonSerializer.SerializeToElement()`.
+- **Sparse selections (≤50% of properties):** Read each selected member through its effective `JsonPropertyInfo`/CLR accessor and serialize it individually with the member's effective converter and number-handling metadata.
 - **Dense selections (>50% of properties):** Serialize-then-pick. Serialize the entire entity once, parse, and cherry-pick — cheaper than serializing each property individually when most properties are selected.
-- **Class-level `[JsonConverter]` fallback:** Types with a class-level `JsonConverterAttribute` always use serialize-then-pick, because per-property reflection cannot replicate the converter's custom serialization logic.
+- **Converter-owned representation fallback:** When `JsonTypeInfo` reports a converter-owned object representation, or a converter owns an intermediate selected path, serialize-then-pick remains authoritative because CLR traversal cannot reproduce that JSON shape.
 
 The threshold is controlled by the `SerializeThresholdRatio` constant (currently `0.5`) in `FieldProjector.cs`.
 Both strategies first produce the same flat query-path/value map. A single final shape builder
 then applies `FieldSelectionResponseShape`, so the threshold cannot change the public JSON
 schema. When dense whole-object serialization omits an explicitly selected member, the dense
-path recovers that value through the cached accessor; class-level converters remain
-authoritative for converter-backed types.
+path recovers that value through the contract accessor; converter-owned representations
+remain authoritative.
 
 ```csharp
-// Sparse: compiled expression tree getter per property
+// Sparse: effective member accessor and member-level serializer metadata
 var value = accessor.GetValue(entity);
-var element = JsonSerializer.SerializeToElement(value, accessor.PropertyType, jsonOptions);
+var element = JsonSerializer.SerializeToElement(
+    value,
+    accessor.PropertyType,
+    accessor.ValueSerializerOptions);
 
 // Dense: serialize whole entity, pick fields from parsed JSON
 using var doc = JsonDocument.Parse(JsonSerializer.Serialize(entity, jsonOptions));
 ```
 
-The accessor cache is built per entity type and naming-policy type and includes:
-- Compiled `Func<object, object?>` getters via expression trees
-- JSON property name resolution respecting `[JsonPropertyName]` and `JsonNamingPolicy`
-- `[JsonIgnore]` filtering
-- Class-level `[JsonConverter]` detection
+The accessor cache is built per exact `JsonSerializerOptions` instance and entity type. It is
+derived from the effective `JsonTypeInfo` contract and includes:
+
+- Canonical JSON names from naming policies, `[JsonPropertyName]`, and metadata resolvers
+- Serializer-provided getters/setters plus CLR access for explicitly selected ignored members
+- Member-level converters and number handling
+- Converter-owned representation detection, including converters registered in options
+
+Exact serializer-instance identity is part of the cache boundary. Stateful policies or
+resolvers of the same CLR type, and distinct converter collections, cannot contaminate one
+another's projection metadata.
 
 ### 2. Dotted nested reference-property paths with configurable output shape
 
@@ -73,6 +83,11 @@ such as `items.name` are rejected at configuration time.
 Configured query names use `snake_case` per segment joined with dots. For example,
 `Customer.Email` becomes `customer.email`.
 
+Query names and response names serve different contracts. The configured query alias remains
+what a client supplies in `fields`, but the returned key/path is the canonical name from the
+effective JSON member contract. A `[JsonPropertyName]` attribute or metadata resolver can
+therefore change the response path without silently changing the configured query vocabulary.
+
 By default, nested selections use dotted keys instead of rebuilding nested objects:
 
 ```json
@@ -82,6 +97,15 @@ By default, nested selections use dotted keys instead of rebuilding nested objec
 ```
 
 If an intermediate reference is `null`, the dotted field is returned as JSON `null`.
+
+The field-selection allow-list is an explicit exposure decision. Once a CLR path is
+allow-listed and requested, RestLib returns it even if normal full-object serialization would
+omit the member because of `[JsonIgnore]`, `DefaultIgnoreCondition`, a conditional ignore rule,
+or a null/default value. This keeps sparse and dense selection behavior identical and keeps an
+explicitly selected null visible. Applications must not allow-list sensitive members merely
+because another serializer rule normally hides them. The exception is a converter-owned
+representation: its emitted JSON shape is authoritative, so RestLib does not synthesize a CLR
+member that the converter omitted.
 
 Applications can opt field-selection responses into rebuilt nested objects with
 `FieldSelectionResponseShape.Nested`. Nested projection builds one mutable JSON tree for the
@@ -127,9 +151,10 @@ Key observations:
 
 ## Consequences
 
-- **Field projection uses a hybrid strategy.** Sparse selections use per-property reflection with compiled getters; dense selections serialize the full entity. Both feed one final response-shape builder, so the 50% threshold may be tuned without changing the public schema.
-- **Accessor cache grows per entity type.** Each entity type registered with field selection adds one entry to a `ConcurrentDictionary`. This is bounded by the number of entity types and is negligible in practice.
-- **Types with class-level `[JsonConverter]` always use serialize-then-pick.** This is correct because the converter may produce JSON that doesn't correspond to individual properties; the configured final response shape still applies.
+- **Field projection uses a hybrid strategy.** Sparse selections use effective contract accessors and member serializer metadata; dense selections serialize the full entity. Both feed one final response-shape builder, so the 50% threshold may be tuned without changing the public schema.
+- **Accessor caches are serializer-identity scoped.** Each canonical serializer instance owns entries per projected entity type. The cache is held weakly by options identity, preventing cross-configuration reuse while allowing unused option graphs to be collected.
+- **Converter-owned representations use serialize-then-pick.** This includes attribute-based and option-registered converters because the effective `JsonTypeInfo`, rather than attribute reflection alone, decides whether independently addressable members exist.
+- **Explicit selection overrides ordinary omission.** An allow-listed selected ignored, default, or null member is emitted; converter-owned representations remain authoritative.
 - **Clients can select nested reference-property paths.** If an entity has an `Address` property, clients can request `Address.City` when it is explicitly allow-listed. Responses use the dotted key `address.city` by default or a rebuilt nested object when explicitly configured.
 - **Collection-valued paths remain unsupported.** A path such as `Items.Name` is rejected during configuration rather than deferred to request time.
 - **ETag is computed from the full entity before projection.** Two requests with different `?fields=` values for the same entity return the same ETag, which is correct — the ETag represents the resource state, not the representation.

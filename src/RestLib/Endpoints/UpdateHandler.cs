@@ -58,7 +58,10 @@ internal static class UpdateHandler
                 // Validate entity using Data Annotations
                 if (options.EnableValidation)
                 {
-                    var validationResult = RestLibResourceValidator.Validate(entity, config, options.JsonNamingPolicy);
+                    var validationResult = RestLibResourceValidator.Validate(
+                        entity,
+                        config,
+                        jsonOptions.PropertyNamingPolicy);
                     if (!validationResult.IsValid)
                     {
                         return Responses.ProblemDetailsResult.ValidationFailed(
@@ -343,7 +346,10 @@ internal static class UpdateHandler
 
         if (options.EnableValidation)
         {
-            var validationResult = RestLibResourceValidator.Validate(apiEntity, config, options.JsonNamingPolicy);
+            var validationResult = RestLibResourceValidator.Validate(
+                apiEntity,
+                config,
+                jsonOptions.PropertyNamingPolicy);
             if (!validationResult.IsValid)
             {
                 return Responses.ProblemDetailsResult.ValidationFailed(
@@ -384,7 +390,10 @@ internal static class UpdateHandler
 
         if (options.EnableValidation)
         {
-            var validationResult = RestLibResourceValidator.Validate(apiEntity, config, options.JsonNamingPolicy);
+            var validationResult = RestLibResourceValidator.Validate(
+                apiEntity,
+                config,
+                jsonOptions.PropertyNamingPolicy);
             if (!validationResult.IsValid)
             {
                 return Responses.ProblemDetailsResult.ValidationFailed(

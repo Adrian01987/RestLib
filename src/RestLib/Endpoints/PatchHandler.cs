@@ -110,7 +110,10 @@ internal static class PatchHandler
                 // Validate merged entity BEFORE persisting to prevent invalid data in the repository
                 if (options.EnableValidation)
                 {
-                    var validationResult = RestLibResourceValidator.Validate(preview, config, options.JsonNamingPolicy);
+                    var validationResult = RestLibResourceValidator.Validate(
+                        preview,
+                        config,
+                        jsonOptions.PropertyNamingPolicy);
                     if (!validationResult.IsValid)
                     {
                         return Responses.ProblemDetailsResult.ValidationFailed(
@@ -134,7 +137,10 @@ internal static class PatchHandler
                 // A replacement can introduce new invalid state, so validate the effective entity.
                 if (options.EnableValidation)
                 {
-                    var validationResult = RestLibResourceValidator.Validate(preview, config, options.JsonNamingPolicy);
+                    var validationResult = RestLibResourceValidator.Validate(
+                        preview,
+                        config,
+                        jsonOptions.PropertyNamingPolicy);
                     if (!validationResult.IsValid)
                     {
                         return Responses.ProblemDetailsResult.ValidationFailed(
@@ -493,7 +499,10 @@ internal static class PatchHandler
 
         if (options.EnableValidation)
         {
-            var validationResult = RestLibResourceValidator.Validate(patchedApi, config, options.JsonNamingPolicy);
+            var validationResult = RestLibResourceValidator.Validate(
+                patchedApi,
+                config,
+                jsonOptions.PropertyNamingPolicy);
             if (!validationResult.IsValid)
             {
                 return Responses.ProblemDetailsResult.ValidationFailed(
@@ -538,7 +547,10 @@ internal static class PatchHandler
 
         if (options.EnableValidation)
         {
-            var validationResult = RestLibResourceValidator.Validate(patchedApi, config, options.JsonNamingPolicy);
+            var validationResult = RestLibResourceValidator.Validate(
+                patchedApi,
+                config,
+                jsonOptions.PropertyNamingPolicy);
             if (!validationResult.IsValid)
             {
                 return Responses.ProblemDetailsResult.ValidationFailed(

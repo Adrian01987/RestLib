@@ -1,7 +1,5 @@
 using System.Buffers;
-using System.Reflection;
 using System.Text.Json;
-using System.Text.Json.Serialization.Metadata;
 
 namespace RestLib.Serialization;
 
@@ -134,7 +132,7 @@ internal static class JsonMergePatch
                 targetProperty.Value,
                 patchValue,
                 patchProperties[matchingPatchIndex].PropertyType,
-                jsonOptions);
+                patchProperties[matchingPatchIndex].JsonOptions);
         }
 
         for (var i = 0; i < patchProperties.Length; i++)
@@ -150,7 +148,7 @@ internal static class JsonMergePatch
                 default,
                 patchProperties[i].Value,
                 patchProperties[i].PropertyType,
-                jsonOptions);
+                patchProperties[i].JsonOptions);
         }
 
         writer.WriteEndObject();
@@ -190,60 +188,35 @@ internal static class JsonMergePatch
         Type? targetType,
         JsonSerializerOptions jsonOptions)
     {
-        JsonTypeInfo? typeInfo = null;
-        if (targetType is not null)
-        {
-            typeInfo = jsonOptions.GetTypeInfo(targetType);
-        }
+        var contract = targetType is null
+            ? null
+            : JsonObjectContract.Get(targetType, jsonOptions);
 
         return patch.EnumerateObject()
-            .Select(property => ResolvePatchProperty(property, typeInfo, jsonOptions))
+            .Select(property => ResolvePatchProperty(property, contract, jsonOptions))
             .ToArray();
     }
 
     private static ResolvedPatchProperty ResolvePatchProperty(
         JsonProperty patchProperty,
-        JsonTypeInfo? typeInfo,
+        JsonObjectContract? contract,
         JsonSerializerOptions jsonOptions)
     {
-        if (typeInfo?.Kind != JsonTypeInfoKind.Object)
+        if (contract?.IsObject != true
+            || !contract.TryGetPatchMember(patchProperty.Name, out var member))
         {
-            return new ResolvedPatchProperty(patchProperty.Name, patchProperty.Value, null);
+            return new ResolvedPatchProperty(
+                patchProperty.Name,
+                patchProperty.Value,
+                null,
+                jsonOptions);
         }
 
-        var propertyInfo = FindProperty(typeInfo.Properties, patchProperty.Name, jsonOptions);
-        return propertyInfo is null
-            ? new ResolvedPatchProperty(patchProperty.Name, patchProperty.Value, null)
-            : new ResolvedPatchProperty(propertyInfo.Name, patchProperty.Value, propertyInfo.PropertyType);
-    }
-
-    private static JsonPropertyInfo? FindProperty(
-        IList<JsonPropertyInfo> properties,
-        string patchPropertyName,
-        JsonSerializerOptions jsonOptions)
-    {
-        var exactMatch = properties.FirstOrDefault(property =>
-            property.Name.Equals(patchPropertyName, StringComparison.Ordinal));
-        if (exactMatch is not null)
-        {
-            return exactMatch;
-        }
-
-        if (jsonOptions.PropertyNameCaseInsensitive)
-        {
-            var caseInsensitiveMatch = properties.FirstOrDefault(property =>
-                property.Name.Equals(patchPropertyName, StringComparison.OrdinalIgnoreCase));
-            if (caseInsensitiveMatch is not null)
-            {
-                return caseInsensitiveMatch;
-            }
-        }
-
-        return properties.FirstOrDefault(property =>
-        {
-            var memberName = (property.AttributeProvider as MemberInfo)?.Name;
-            return NameMatchesClrMember(patchPropertyName, property.Name, memberName);
-        });
+        return new ResolvedPatchProperty(
+            member.JsonName,
+            patchProperty.Value,
+            member.MemberType,
+            member.ValueSerializerOptions);
     }
 
     private static void ApplyRemovedMemberDefaults(
@@ -257,34 +230,37 @@ internal static class JsonMergePatch
             return;
         }
 
-        var typeInfo = jsonOptions.GetTypeInfo(resultType);
-        if (typeInfo.Kind != JsonTypeInfoKind.Object)
+        var contract = JsonObjectContract.Get(resultType, jsonOptions);
+        if (!contract.IsObject)
         {
             return;
         }
 
         foreach (var patchProperty in patch.EnumerateObject())
         {
-            var propertyInfo = FindProperty(typeInfo.Properties, patchProperty.Name, jsonOptions);
-            if (propertyInfo is null)
+            if (!contract.TryGetPatchMember(patchProperty.Name, out var member))
+            {
+                continue;
+            }
+
+            if (!member.CanDeserialize)
             {
                 continue;
             }
 
             if (patchProperty.Value.ValueKind == JsonValueKind.Null)
             {
-                propertyInfo.Set?.Invoke(result, GetDefaultValue(propertyInfo.PropertyType));
+                member.SetValue(result, GetDefaultValue(member.MemberType));
                 continue;
             }
 
-            if (patchProperty.Value.ValueKind == JsonValueKind.Object &&
-                propertyInfo.Get is not null)
+            if (patchProperty.Value.ValueKind == JsonValueKind.Object)
             {
                 ApplyRemovedMemberDefaults(
-                    propertyInfo.Get(result),
-                    propertyInfo.PropertyType,
+                    member.GetValue(result),
+                    member.MemberType,
                     patchProperty.Value,
-                    jsonOptions);
+                    member.ValueSerializerOptions);
             }
         }
     }
@@ -292,32 +268,9 @@ internal static class JsonMergePatch
     private static object? GetDefaultValue(Type type) =>
         type.IsValueType ? Activator.CreateInstance(type) : null;
 
-    private static bool NameMatchesClrMember(
-        string patchPropertyName,
-        string serializedPropertyName,
-        string? memberName)
-    {
-        if (memberName is not null &&
-            memberName.Equals(patchPropertyName, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        var normalizedPatchName = RemoveUnderscores(patchPropertyName);
-        return normalizedPatchName.Equals(
-                   RemoveUnderscores(serializedPropertyName),
-                   StringComparison.OrdinalIgnoreCase) ||
-               (memberName is not null &&
-                normalizedPatchName.Equals(
-                    RemoveUnderscores(memberName),
-                    StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static string RemoveUnderscores(string value) =>
-        value.Replace("_", string.Empty, StringComparison.Ordinal);
-
     private readonly record struct ResolvedPatchProperty(
         string Name,
         JsonElement Value,
-        Type? PropertyType);
+        Type? PropertyType,
+        JsonSerializerOptions JsonOptions);
 }

@@ -60,6 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Unified Minimal API binding, RestLib results, PATCH preview and persistence, field selection, standard repository adapters, and default ETag generation on ASP.NET Core's canonical `JsonOptions.SerializerOptions`; custom HTTP JSON naming, case, resolver, converter, and number-handling rules now propagate consistently
+- PATCH member resolution now follows effective `JsonTypeInfo` metadata across core, InMemory, and EF Core, while field selection emits canonical JSON contract paths and honors member converters without cache collisions between distinct serializer-option instances
 - Made repeated `AddRestLib` calls fully idempotent so the first successful registration controls RestLib options, JSON behavior, conditional ETag services, and OpenAPI infrastructure consistently.
 - Generated pagination and built-in HATEOAS URLs, plus direct and mapped create `Location` headers, now include the normalized ASP.NET Core `PathBase`; processed forwarded scheme, host, and prefix values are honored without reading raw proxy headers
 - Core PATCH handling no longer recognizes EF Core exceptions by fully qualified type-name strings, and batch dispatch no longer turns arbitrary `InvalidOperationException` failures into client-visible 400 responses

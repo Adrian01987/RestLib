@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using RestLib.Abstractions;
 using RestLib.Filtering;
 using RestLib.Internal;
@@ -143,11 +142,7 @@ public class InMemoryRepository<TEntity, TKey> :
         _keyAssigner = hasExplicitKeyAssigner ? keyAssigner : null;
         _keyProperty = ResolveConventionalKeyProperty();
         _keyComparer = keyComparer ?? Comparer<TKey>.Default;
-        _jsonOptions = jsonOptions ?? new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        };
+        _jsonOptions = jsonOptions ?? RestLibJsonOptions.CreateDefault();
     }
 
     /// <summary>
@@ -928,17 +923,12 @@ public class InMemoryRepository<TEntity, TKey> :
             return;
         }
 
-        var property = typeof(TEntity).GetProperty(
-            keyPropertyName,
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
-        var jsonPropertyName = property?.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name
-            ?? _jsonOptions.PropertyNamingPolicy?.ConvertName(keyPropertyName)
-            ?? keyPropertyName;
+        var contract = JsonObjectContract.Get(typeof(TEntity), _jsonOptions);
 
         foreach (var patchProperty in patchDocument.EnumerateObject())
         {
-            if (string.Equals(patchProperty.Name, keyPropertyName, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(patchProperty.Name, jsonPropertyName, StringComparison.OrdinalIgnoreCase))
+            if (contract.TryGetPatchMember(patchProperty.Name, out var member)
+                && member.ClrName?.Equals(keyPropertyName, StringComparison.Ordinal) == true)
             {
                 throw new PatchValidationException(
                     $"PATCH cannot modify immutable resource key field '{patchProperty.Name}'.");
