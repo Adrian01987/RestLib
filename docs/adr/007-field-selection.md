@@ -21,7 +21,7 @@ Two key design decisions arise from this:
 | Reflection-based (read properties via `PropertyInfo`) | No serialization overhead | Ignores JSON naming policy; must rebuild snake_case mapping; doesn't handle `[JsonIgnore]`, custom converters, or computed JSON properties |
 | Expression tree compilation | Fast after initial compile | Same naming/converter mismatch problems as reflection; complex to implement |
 | Serialize-then-pick (serialize full entity to JSON, parse, cherry-pick fields) | Respects all `System.Text.Json` configuration (naming policy, converters, ignore rules); simple implementation | One extra serialize + parse cycle per entity |
-| **Hybrid (reflection + serialize-then-pick)** | Best-of-both: fast reflection for sparse selections, correct serialize-then-pick for dense selections and edge cases | Slightly more code; two code paths to maintain |
+| **Hybrid (reflection + serialize-then-pick)** | Best-of-both: fast reflection for sparse selections, correct serialize-then-pick for dense selections and edge cases | Slightly more code; two extraction paths must share one shaping contract |
 
 ### Nested Property Support
 
@@ -43,6 +43,11 @@ Two key design decisions arise from this:
 - **Class-level `[JsonConverter]` fallback:** Types with a class-level `JsonConverterAttribute` always use serialize-then-pick, because per-property reflection cannot replicate the converter's custom serialization logic.
 
 The threshold is controlled by the `SerializeThresholdRatio` constant (currently `0.5`) in `FieldProjector.cs`.
+Both strategies first produce the same flat query-path/value map. A single final shape builder
+then applies `FieldSelectionResponseShape`, so the threshold cannot change the public JSON
+schema. When dense whole-object serialization omits an explicitly selected member, the dense
+path recovers that value through the cached accessor; class-level converters remain
+authoritative for converter-backed types.
 
 ```csharp
 // Sparse: compiled expression tree getter per property
@@ -53,7 +58,7 @@ var element = JsonSerializer.SerializeToElement(value, accessor.PropertyType, js
 using var doc = JsonDocument.Parse(JsonSerializer.Serialize(entity, jsonOptions));
 ```
 
-The accessor cache (`ConcurrentDictionary<Type, PropertyAccessorMap>`) is built once per entity type and includes:
+The accessor cache is built per entity type and naming-policy type and includes:
 - Compiled `Func<object, object?>` getters via expression trees
 - JSON property name resolution respecting `[JsonPropertyName]` and `JsonNamingPolicy`
 - `[JsonIgnore]` filtering
@@ -68,7 +73,7 @@ such as `items.name` are rejected at configuration time.
 Configured query names use `snake_case` per segment joined with dots. For example,
 `Customer.Email` becomes `customer.email`.
 
-Nested sparse responses use dotted keys instead of rebuilding nested objects:
+By default, nested selections use dotted keys instead of rebuilding nested objects:
 
 ```json
 {
@@ -78,11 +83,12 @@ Nested sparse responses use dotted keys instead of rebuilding nested objects:
 
 If an intermediate reference is `null`, the dotted field is returned as JSON `null`.
 
-Applications can opt sparse responses into rebuilt nested objects with
+Applications can opt field-selection responses into rebuilt nested objects with
 `FieldSelectionResponseShape.Nested`. Nested projection builds one mutable JSON tree for the
 entire selected field set. Paths that share prefixes are merged into that tree, so selecting
 siblings such as `customer.profile.handle` and `customer.profile.display_name` preserves both
-values regardless of their order in the request.
+values regardless of their order in the request. The selected shape is applied after field
+extraction and is therefore identical for sparse, dense, and class-converter projection paths.
 
 ## Rationale
 
@@ -121,10 +127,10 @@ Key observations:
 
 ## Consequences
 
-- **Field projection uses a hybrid strategy.** Sparse selections use per-property reflection with compiled getters; dense selections serialize the full entity. The 50% threshold may be tuned based on future profiling.
+- **Field projection uses a hybrid strategy.** Sparse selections use per-property reflection with compiled getters; dense selections serialize the full entity. Both feed one final response-shape builder, so the 50% threshold may be tuned without changing the public schema.
 - **Accessor cache grows per entity type.** Each entity type registered with field selection adds one entry to a `ConcurrentDictionary`. This is bounded by the number of entity types and is negligible in practice.
-- **Types with class-level `[JsonConverter]` always use serialize-then-pick.** This is correct because the converter may produce JSON that doesn't correspond to individual properties.
-- **Clients can select nested reference-property paths.** If an entity has an `Address` property, clients can request `Address.City` when it is explicitly allow-listed. Sparse responses use the dotted key `address.city` by default or a rebuilt nested object when explicitly configured.
+- **Types with class-level `[JsonConverter]` always use serialize-then-pick.** This is correct because the converter may produce JSON that doesn't correspond to individual properties; the configured final response shape still applies.
+- **Clients can select nested reference-property paths.** If an entity has an `Address` property, clients can request `Address.City` when it is explicitly allow-listed. Responses use the dotted key `address.city` by default or a rebuilt nested object when explicitly configured.
 - **Collection-valued paths remain unsupported.** A path such as `Items.Name` is rejected during configuration rather than deferred to request time.
 - **ETag is computed from the full entity before projection.** Two requests with different `?fields=` values for the same entity return the same ETag, which is correct — the ETag represents the resource state, not the representation.
 - **Write operations are unaffected.** Create, Update, Patch, and Delete always return the full entity (or appropriate status code). Field selection applies only to GetAll and GetById.

@@ -13,6 +13,7 @@ namespace RestLib.FieldSelection;
 /// Uses a hybrid strategy: per-property reflection with compiled expression tree getters
 /// for sparse field selections, and serialize-then-pick for dense selections.
 /// Falls back to serialize-then-pick when a type has a class-level <see cref="JsonConverterAttribute"/>.
+/// Both strategies feed the same final response-shape builder.
 /// </summary>
 internal static class FieldProjector
 {
@@ -37,7 +38,7 @@ internal static class FieldProjector
     /// <param name="entity">The entity instance to project.</param>
     /// <param name="selectedFields">The fields to include.</param>
     /// <param name="jsonOptions">The JSON serializer options (for naming policy).</param>
-    /// <param name="responseShape">The sparse response shape to use for nested selected fields.</param>
+    /// <param name="responseShape">The response shape to use for nested selected fields.</param>
     /// <returns>A dictionary of field name to JSON value, or null if no projection needed.</returns>
     internal static Dictionary<string, JsonElement>? Project<TEntity>(
         TEntity entity,
@@ -51,44 +52,22 @@ internal static class FieldProjector
         }
 
         var accessorMap = GetOrBuildAccessorMap(typeof(TEntity), jsonOptions);
-        // Fall back to serialize-then-pick for types with class-level JsonConverter
-        // or when selecting a large fraction of properties (cheaper to serialize once).
-        // Dense fallback intentionally keeps the flat dotted output shape even when
-        // nested sparse responses are enabled.
-        if (accessorMap.RequiresSerializeFallback ||
-            ShouldUseSerializeFallback(selectedFields.Count, accessorMap.PropertyCount))
-        {
-            return SerializeThenPick(entity, selectedFields, jsonOptions);
-        }
+        var requiresConverterFallback = accessorMap.RequiresSerializeFallback;
+        var useSerializeFallback = requiresConverterFallback ||
+            ShouldUseSerializeFallback(selectedFields.Count, accessorMap.PropertyCount);
 
-        var result = new Dictionary<string, JsonElement>(selectedFields.Count);
-        var nestedResult = responseShape == FieldSelectionResponseShape.Nested
-            ? new JsonObject()
-            : null;
+        // A class converter owns missing-member semantics. The density optimization instead
+        // recovers explicitly selected members that whole-object serialization omitted.
+        var missingValueAccessorMap = requiresConverterFallback ? null : accessorMap;
+        var flatResult = useSerializeFallback
+            ? SerializeThenPick(
+                entity,
+                selectedFields,
+                jsonOptions,
+                missingValueAccessorMap)
+            : ProjectWithAccessors(entity, selectedFields, accessorMap, jsonOptions);
 
-        foreach (var field in selectedFields)
-        {
-            if (TryGetAccessor(typeof(TEntity), accessorMap, field.PropertyName, jsonOptions, out var accessor))
-            {
-                var value = accessor.GetValue(entity!);
-                var element = value is null
-                    ? NullElement
-                    : JsonSerializer.SerializeToElement(value, accessor.PropertyType, jsonOptions);
-
-                if (nestedResult is not null)
-                {
-                    SetNestedElement(nestedResult, field.QueryParameterName, element);
-                }
-                else
-                {
-                    result[field.QueryParameterName] = element;
-                }
-            }
-        }
-
-        return nestedResult is null
-            ? result
-            : SerializeNestedResult(nestedResult, jsonOptions);
+        return ApplyResponseShape(flatResult, responseShape, jsonOptions);
     }
 
     /// <summary>
@@ -98,7 +77,7 @@ internal static class FieldProjector
     /// <param name="entities">The entities to project.</param>
     /// <param name="selectedFields">The fields to include.</param>
     /// <param name="jsonOptions">The JSON serializer options (for naming policy).</param>
-    /// <param name="responseShape">The sparse response shape to use for nested selected fields.</param>
+    /// <param name="responseShape">The response shape to use for nested selected fields.</param>
     /// <returns>A list of projected dictionaries, or null if no projection needed.</returns>
     internal static IReadOnlyList<Dictionary<string, JsonElement>>? ProjectMany<TEntity>(
         IReadOnlyList<TEntity> entities,
@@ -125,6 +104,45 @@ internal static class FieldProjector
         return results;
     }
 
+    private static Dictionary<string, JsonElement> ProjectWithAccessors<TEntity>(
+        TEntity entity,
+        IReadOnlyList<SelectedField> selectedFields,
+        PropertyAccessorMap accessorMap,
+        JsonSerializerOptions jsonOptions)
+    {
+        var result = new Dictionary<string, JsonElement>(selectedFields.Count);
+
+        foreach (var field in selectedFields)
+        {
+            if (TryProjectWithAccessor(entity, field, accessorMap, jsonOptions, out var element))
+            {
+                result[field.QueryParameterName] = element;
+            }
+        }
+
+        return result;
+    }
+
+    private static bool TryProjectWithAccessor<TEntity>(
+        TEntity entity,
+        SelectedField field,
+        PropertyAccessorMap accessorMap,
+        JsonSerializerOptions jsonOptions,
+        out JsonElement element)
+    {
+        if (!TryGetAccessor(typeof(TEntity), accessorMap, field.PropertyName, jsonOptions, out var accessor))
+        {
+            element = default;
+            return false;
+        }
+
+        var value = accessor.GetValue(entity!);
+        element = value is null
+            ? NullElement
+            : JsonSerializer.SerializeToElement(value, accessor.PropertyType, jsonOptions);
+        return true;
+    }
+
     /// <summary>
     /// Determines whether the serialize-then-pick approach should be used
     /// based on the ratio of selected fields to total properties.
@@ -146,7 +164,8 @@ internal static class FieldProjector
     private static Dictionary<string, JsonElement> SerializeThenPick<TEntity>(
         TEntity entity,
         IReadOnlyList<SelectedField> selectedFields,
-        JsonSerializerOptions jsonOptions)
+        JsonSerializerOptions jsonOptions,
+        PropertyAccessorMap? missingValueAccessorMap)
     {
         var json = JsonSerializer.Serialize(entity, jsonOptions);
         using var doc = JsonDocument.Parse(json);
@@ -159,6 +178,11 @@ internal static class FieldProjector
             {
                 result[field.QueryParameterName] = value.Clone();
             }
+            else if (missingValueAccessorMap is not null &&
+                     TryProjectWithAccessor(entity, field, missingValueAccessorMap, jsonOptions, out var element))
+            {
+                result[field.QueryParameterName] = element;
+            }
             else if (field.QueryParameterName.Contains('.', StringComparison.Ordinal))
             {
                 result[field.QueryParameterName] = NullElement;
@@ -166,6 +190,25 @@ internal static class FieldProjector
         }
 
         return result;
+    }
+
+    private static Dictionary<string, JsonElement> ApplyResponseShape(
+        Dictionary<string, JsonElement> flatResult,
+        FieldSelectionResponseShape responseShape,
+        JsonSerializerOptions jsonOptions)
+    {
+        if (responseShape != FieldSelectionResponseShape.Nested)
+        {
+            return flatResult;
+        }
+
+        var nestedResult = new JsonObject();
+        foreach (var field in flatResult)
+        {
+            SetNestedElement(nestedResult, field.Key, field.Value);
+        }
+
+        return SerializeNestedResult(nestedResult, jsonOptions);
     }
 
     private static PropertyAccessorMap GetOrBuildAccessorMap(Type entityType, JsonSerializerOptions jsonOptions)

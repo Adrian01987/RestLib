@@ -94,8 +94,8 @@ fields return a 400 Problem Details response. If no `fields` parameter is sent,
 the full entity is returned.
 
 Nested reference-property selections are also supported. Query names use
-snake_case per segment joined with dots, and nested sparse responses use dotted
-keys instead of rebuilding nested JSON objects:
+snake_case per segment joined with dots. By default, nested sparse responses use
+dotted keys instead of rebuilding nested JSON objects:
 
 ```http
 GET /api/orders?fields=order_number,customer.email
@@ -138,7 +138,7 @@ The same opt-in is available in JSON resources:
 }
 ```
 
-With that opt-in, sparse nested selections render as nested objects:
+With that opt-in, nested selections render as nested objects:
 
 ```json
 {
@@ -149,8 +149,9 @@ With that opt-in, sparse nested selections render as nested objects:
 }
 ```
 
-The default remains flat dotted keys for backward compatibility. This opt-in only
-affects sparse field selection; dense fallback projection continues to use flat output.
+The default remains flat dotted keys for backward compatibility. Once a resource opts
+into `Nested`, that shape is stable across sparse selections, dense selections, and
+converter-backed projection; internal projection optimizations do not alter the schema.
 
 Field selection works with both GetAll (collection) and GetById (single entity)
 endpoints, and combines with filtering, sorting, and pagination.

@@ -274,16 +274,19 @@ test_batch_patch_product() {
 }
 
 # =============================================================================
-# TEST 8: Admin field selection returns stock and nested category shape
+# TEST 8: Dense admin field selection preserves the configured nested category shape
 # =============================================================================
 test_admin_nested_field_selection() {
-  http_get_admin "${ADMIN_PRODUCTS_URL}?fields=id,stock_on_hand,category.name,category.slug&limit=1"
+  http_get_admin "${ADMIN_PRODUCTS_URL}?fields=id,sku,stock_on_hand,category.name,category.slug&limit=1"
 
   assert_http_status "200"                               || return 1
   assert_json_field_exists ".items[0].id"                || return 1
+  assert_json_field_exists ".items[0].sku"               || return 1
   assert_json_field_exists ".items[0].stock_on_hand"     || return 1
   assert_json_field_exists ".items[0].category.name"     || return 1
   assert_json_field_exists ".items[0].category.slug"     || return 1
+  assert_json_field_null '.items[0]["category.name"]'    || return 1
+  assert_json_field_null '.items[0]["category.slug"]'    || return 1
 }
 
 # =============================================================================

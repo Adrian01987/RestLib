@@ -375,8 +375,8 @@ with filtering/sorting/pagination, see
 
 Sparse field selection defaults to flat dotted keys for backward compatibility, but
 resources can opt into rebuilt nested objects when that response shape is a better fit
-for clients. The opt-in applies only to sparse responses; dense fallback projection
-continues to use flat output.
+for clients. The configured shape is stable regardless of how many fields are selected
+or which internal projection strategy is used.
 
 For the fluent and JSON opt-in shapes plus concrete examples of both response modes,
 see [docs/guides/query-features.md](docs/guides/query-features.md#nested-object-responses-opt-in).
@@ -444,7 +444,7 @@ For production migration workflow, see
 - **At most two key parts** - the adapter supports scalar keys and ordered two-part composite keys via `RestLibCompositeKey<TFirst, TSecond>`. Keys with more than two parts are not supported.
 - **Keyset pagination with offset fallback** - the EF Core adapter uses last-seen sort values plus the key for supported stable sorts, but falls back to encoded offset cursors for unsupported sort shapes.
 - **Projection pushdown is opt-in and conditional** - when enabled, EF Core pushes down direct scalar field selections and still includes key/filter/sort columns in SQL. Nested field selections currently fall back to post-fetch projection, and any non-projectable selection still falls back when HATEOAS, ETag, or hooks are active.
-- **Nested query paths are reference-only** - filtering, sorting, and field selection support dot-separated nested reference-property paths such as `customer.email`. Collection-valued paths are not supported and nested sparse responses use dotted output keys. EF PATCH selects direct mapped entity properties, but applies recursive JSON Merge Patch semantics inside a mapped JSON/value-converted property.
+- **Nested query paths are reference-only** - filtering, sorting, and field selection support dot-separated nested reference-property paths such as `customer.email`. Collection-valued paths are not supported. Field selection uses dotted output keys by default, while the `Nested` response opt-in consistently rebuilds nested objects. EF PATCH selects direct mapped entity properties, but applies recursive JSON Merge Patch semantics inside a mapped JSON/value-converted property.
 - **Constraint mapping is provider-limited** - database constraint classification still relies primarily on exception-message inspection and is not yet specialized per provider.
 
 Use the adapter when you want the standard RestLib endpoint surface over a typical
@@ -591,7 +591,7 @@ Key decisions are documented as Architecture Decision Records:
 - **Forward-only cursor pagination** — cursors support forward traversal only; there is no backward/previous-page navigation.
 - **Cursor contract, adapter-specific implementation** — RestLib exposes an opaque cursor API. The InMemory adapter uses validated non-negative offsets/indexes. The EF Core adapter uses keyset cursors only for non-nullable scalar sorts with supported relational comparisons and falls back to validated offsets for nullable, enum, Boolean, or otherwise unsupported sort shapes.
 - **Field selection pushdown is adapter-dependent** — the core endpoint layer can project after retrieval for any repository. The EF Core adapter can opt into conditional SQL projection pushdown for direct scalar fields via `EnableProjectionPushdown`; nested selections and requests using HATEOAS, ETags, or hooks fall back to materialized projection.
-- **Nested query paths are reference-only** — filtering, sorting, and field selection support dotted nested reference-property paths such as `customer.email`, but collection-valued paths are not supported and sparse nested responses use dotted output keys rather than nested objects.
+- **Nested query paths are reference-only** — filtering, sorting, and field selection support dotted nested reference-property paths such as `customer.email`, but collection-valued paths are not supported. Field selection returns dotted keys by default and can opt into a stable rebuilt nested-object response shape.
 - **Built-in search is intentionally limited** — RestLib supports configured OR-of-contains search across string fields, but it does not provide full-text indexing, ranking, fuzzy matching, or provider-specific search features.
 - **Row-level scoping is application-owned** — apply tenant/user scoping in EF Core global query filters, database policies, or custom repositories before generated endpoints query data.
 - **Cross-resource transactions are application-owned** — use custom endpoints or transactional repositories for workflows such as checkout, payment capture, or multi-resource state changes.

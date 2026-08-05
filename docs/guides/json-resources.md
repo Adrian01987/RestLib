@@ -176,7 +176,7 @@ nested objects:
 }
 ```
 
-You can opt sparse responses into nested objects with the additive object form:
+You can opt field-selection responses into nested objects with the additive object form:
 
 ```json
 {
@@ -189,7 +189,7 @@ You can opt sparse responses into nested objects with the additive object form:
 }
 ```
 
-That changes sparse nested output to:
+That changes nested output to:
 
 ```json
 {
@@ -200,9 +200,9 @@ That changes sparse nested output to:
 }
 ```
 
-The default remains flat dotted keys for backward compatibility, and dense
-serialize-then-pick fallback responses continue to use the flat shape even when
-`Response` is set to `Nested`.
+The default remains flat dotted keys for backward compatibility. When `Response`
+is set to `Nested`, the rebuilt nested-object shape remains stable regardless of
+selection density or the internal projection strategy.
 
 ### Collection search
 

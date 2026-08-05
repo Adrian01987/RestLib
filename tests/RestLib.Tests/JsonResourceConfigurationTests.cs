@@ -1542,7 +1542,7 @@ public class JsonResourceConfigurationTests
               "Route": "/api/orders",
               "AllowAnonymousAll": true,
               "FieldSelection": {
-                "Properties": ["OrderNumber", "Customer.Email"],
+                "Properties": ["Id", "OrderNumber", "Customer.Email"],
                 "Response": "Nested"
               }
             }
@@ -1561,12 +1561,13 @@ public class JsonResourceConfigurationTests
         repository.Seed([CreateNestedOrder("A-100", "Adam", "adam@example.com")]);
 
         // Act
-        var response = await client.GetAsync("/api/orders?fields=order_number,customer.email");
+        var response = await client.GetAsync("/api/orders?fields=id,order_number,customer.email");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var item = document.RootElement.GetProperty("items")[0];
+        item.GetProperty("id").GetGuid().Should().NotBeEmpty();
         item.GetProperty("order_number").GetString().Should().Be("A-100");
         item.GetProperty("customer").GetProperty("email").GetString().Should().Be("adam@example.com");
         item.TryGetProperty("customer.email", out _).Should().BeFalse();

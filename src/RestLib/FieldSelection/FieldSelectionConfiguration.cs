@@ -16,8 +16,7 @@ public enum FieldSelectionResponseShape
 
     /// <summary>
     /// Nested selections render as rebuilt nested JSON objects (for example,
-    /// <c>{"customer":{"email":"..."}}</c>) when the sparse projector path is used.
-    /// Dense fallback responses continue to render flat dotted keys.
+    /// <c>{"customer":{"email":"..."}}</c>), regardless of the internal projection strategy.
     /// </summary>
     Nested,
 }
@@ -49,8 +48,7 @@ public class FieldSelectionConfiguration<TEntity> where TEntity : class
     /// <summary>
     /// Gets or sets how sparse field-selection responses render nested property paths.
     /// Defaults to <see cref="FieldSelectionResponseShape.Flat"/> for backward compatibility.
-    /// Dense fallback responses continue to use flat dotted output even when
-    /// <see cref="FieldSelectionResponseShape.Nested"/> is selected.
+    /// The configured shape is applied consistently across all projection strategies.
     /// </summary>
     public FieldSelectionResponseShape ResponseShape { get; set; } = FieldSelectionResponseShape.Flat;
 
@@ -62,8 +60,7 @@ public class FieldSelectionConfiguration<TEntity> where TEntity : class
     /// <summary>
     /// Configures sparse field-selection responses to render nested property paths as
     /// nested JSON objects instead of flat dotted keys.
-    /// This opt-in affects only the sparse projection path; dense fallback responses
-    /// continue to use flat dotted output.
+    /// The selected response shape is independent of the internal projection strategy.
     /// </summary>
     /// <returns>This configuration instance for chaining.</returns>
     public FieldSelectionConfiguration<TEntity> UseNestedObjectsInResponse()

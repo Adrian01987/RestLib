@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -792,6 +793,8 @@ public class NestedFieldSelectionResponseTests : IAsyncLifetime
                 config.AllowAnonymous();
                 config.AllowFieldSelection(fields =>
                 {
+                    fields.AddProperty(entity => entity.Id);
+                    fields.AddProperty(entity => entity.Name);
                     fields.AddProperty(entity => entity.Customer!.Email);
                     fields.AddProperty(entity => entity.Customer!.Profile!.Handle);
                     fields.AddProperty(entity => entity.Customer!.Profile!.DisplayName);
@@ -804,6 +807,7 @@ public class NestedFieldSelectionResponseTests : IAsyncLifetime
             new FieldSelectableEntity
             {
                 Id = KnownId,
+                Name = "Widget",
                 Customer = new FieldSelectionCustomer
                 {
                     Email = "customer@example.com",
@@ -826,15 +830,16 @@ public class NestedFieldSelectionResponseTests : IAsyncLifetime
 
     [Fact]
     [Trait("Category", "StoryD.1")]
-    public async Task GetById_WithNestedSiblingAndCousinFields_PreservesEverySelectedField()
+    public async Task GetById_WithDenseNestedSiblingAndCousinFields_PreservesEverySelectedField()
     {
         // Act
         var response = await _client.GetAsync(
-            $"/api/nested-field-items/{KnownId}?fields=customer.profile.handle,customer.profile.display_name,customer.email");
+            $"/api/nested-field-items/{KnownId}?fields=name,customer.profile.handle,customer.profile.display_name,customer.email");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        json.GetProperty("name").GetString().Should().Be("Widget");
         var customer = json.GetProperty("customer");
         var profile = customer.GetProperty("profile");
         customer.GetProperty("email").GetString().Should().Be("customer@example.com");
@@ -845,16 +850,18 @@ public class NestedFieldSelectionResponseTests : IAsyncLifetime
 
     [Fact]
     [Trait("Category", "StoryD.1")]
-    public async Task GetAll_WithReversedNestedSiblingFields_PreservesBothSelectedFields()
+    public async Task GetAll_WithDenseReversedNestedSiblingFields_PreservesBothSelectedFields()
     {
         // Act
         var response = await _client.GetAsync(
-            "/api/nested-field-items?fields=customer.profile.display_name,customer.profile.handle");
+            "/api/nested-field-items?fields=id,name,customer.profile.display_name,customer.profile.handle");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var json = await response.Content.ReadFromJsonAsync<JsonElement>();
         var item = json.GetProperty("items")[0];
+        item.GetProperty("id").GetGuid().Should().Be(KnownId);
+        item.GetProperty("name").GetString().Should().Be("Widget");
         var customer = item.GetProperty("customer");
         var profile = customer.GetProperty("profile");
         customer.TryGetProperty("email", out _).Should().BeFalse();
@@ -880,6 +887,49 @@ public class FieldProjectorCacheTests
         /// <inheritdoc />
         public override string ConvertName(string name) =>
             SnakeCaseLower.ConvertName(name);
+    }
+
+    [JsonConverter(typeof(ConverterBackedEntityJsonConverter))]
+    private sealed class ConverterBackedEntity
+    {
+        public string Name { get; init; } = string.Empty;
+
+        public FieldSelectionCustomer Customer { get; init; } = new();
+    }
+
+    private sealed class ConverterBackedEntityJsonConverter : JsonConverter<ConverterBackedEntity>
+    {
+        public override ConverterBackedEntity? Read(
+            ref Utf8JsonReader reader,
+            Type typeToConvert,
+            JsonSerializerOptions options)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void Write(
+            Utf8JsonWriter writer,
+            ConverterBackedEntity value,
+            JsonSerializerOptions options)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("name", value.Name);
+            writer.WritePropertyName("customer");
+            writer.WriteStartObject();
+            writer.WriteString("email", $"converted:{value.Customer.Email}");
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        }
+    }
+
+    private sealed class EntityWithIgnoredNavigation
+    {
+        public Guid Id { get; init; }
+
+        public string Name { get; init; } = string.Empty;
+
+        [JsonIgnore]
+        public FieldSelectionCustomer Customer { get; init; } = new();
     }
 
     [Fact]
@@ -1222,10 +1272,13 @@ public class FieldProjectorCacheTests
         result["customer"].GetProperty("email").GetString().Should().Be("customer@example.com");
     }
 
-    [Fact]
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     [Trait("Category", "StoryD.1")]
     [Trait("Feature", "FieldSelectionNested")]
-    public void FieldProjector_WithNestedShapeAndDenseSelection_FallsBackToFlatOutput()
+    public void Project_WithNestedShapeAcrossDensityThreshold_ReturnsStableNestedObject(
+        bool useDenseProjection)
     {
         // Arrange
         var entity = new FieldSelectableEntity
@@ -1242,8 +1295,75 @@ public class FieldProjectorCacheTests
         {
             new() { PropertyName = "Id", QueryParameterName = "id" },
             new() { PropertyName = "Name", QueryParameterName = "name" },
+            new() { PropertyName = "Customer.Email", QueryParameterName = "customer.email" }
+        };
+        if (useDenseProjection)
+        {
+            selectedFields.Add(new SelectedField { PropertyName = "Price", QueryParameterName = "price" });
+        }
+
+        // Act
+        var result = FieldProjector.Project(
+            entity,
+            selectedFields,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web),
+            FieldSelectionResponseShape.Nested);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Should().ContainKey("customer");
+        result.Should().NotContainKey("customer.email");
+        result["customer"].GetProperty("email").GetString().Should().Be("customer@example.com");
+    }
+
+    [Fact]
+    [Trait("Category", "StoryD.1")]
+    [Trait("Feature", "FieldSelectionNested")]
+    public void Project_WithFlatShapeAndDenseSelection_KeepsDottedKey()
+    {
+        // Arrange
+        var entity = new FieldSelectableEntity
+        {
+            Id = Guid.NewGuid(),
+            Name = "Widget",
+            Price = 9.99m,
+            Customer = new FieldSelectionCustomer { Email = "customer@example.com" }
+        };
+        var selectedFields = new List<SelectedField>
+        {
+            new() { PropertyName = "Id", QueryParameterName = "id" },
+            new() { PropertyName = "Name", QueryParameterName = "name" },
             new() { PropertyName = "Price", QueryParameterName = "price" },
-            new() { PropertyName = "Category", QueryParameterName = "category" },
+            new() { PropertyName = "Customer.Email", QueryParameterName = "customer.email" }
+        };
+
+        // Act
+        var result = FieldProjector.Project(
+            entity,
+            selectedFields,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web),
+            FieldSelectionResponseShape.Flat);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!.Should().ContainKey("customer.email");
+        result.Should().NotContainKey("customer");
+        result["customer.email"].GetString().Should().Be("customer@example.com");
+    }
+
+    [Fact]
+    [Trait("Category", "StoryD.1")]
+    [Trait("Feature", "FieldSelectionNested")]
+    public void Project_WithNestedShapeAndClassConverter_ReturnsConvertedNestedObject()
+    {
+        // Arrange
+        var entity = new ConverterBackedEntity
+        {
+            Name = "Widget",
+            Customer = new FieldSelectionCustomer { Email = "customer@example.com" }
+        };
+        var selectedFields = new List<SelectedField>
+        {
             new() { PropertyName = "Customer.Email", QueryParameterName = "customer.email" }
         };
 
@@ -1256,9 +1376,40 @@ public class FieldProjectorCacheTests
 
         // Assert
         result.Should().NotBeNull();
-        result!.Should().ContainKey("customer.email");
-        result.Should().NotContainKey("customer");
-        result["customer.email"].GetString().Should().Be("customer@example.com");
+        result!.Should().ContainKey("customer");
+        result.Should().NotContainKey("customer.email");
+        result["customer"].GetProperty("email").GetString().Should().Be("converted:customer@example.com");
+    }
+
+    [Fact]
+    [Trait("Category", "StoryD.1")]
+    [Trait("Feature", "FieldSelectionNested")]
+    public void Project_WithDenseSelectionAndIgnoredNavigation_PreservesSelectedValue()
+    {
+        // Arrange
+        var entity = new EntityWithIgnoredNavigation
+        {
+            Id = Guid.NewGuid(),
+            Name = "Widget",
+            Customer = new FieldSelectionCustomer { Email = "customer@example.com" }
+        };
+        var selectedFields = new List<SelectedField>
+        {
+            new() { PropertyName = "Name", QueryParameterName = "name" },
+            new() { PropertyName = "Customer.Email", QueryParameterName = "customer.email" }
+        };
+
+        // Act
+        var result = FieldProjector.Project(
+            entity,
+            selectedFields,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web),
+            FieldSelectionResponseShape.Nested);
+
+        // Assert
+        result.Should().NotBeNull();
+        result!["name"].GetString().Should().Be("Widget");
+        result["customer"].GetProperty("email").GetString().Should().Be("customer@example.com");
     }
 }
 
