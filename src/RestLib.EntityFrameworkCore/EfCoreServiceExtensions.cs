@@ -55,6 +55,8 @@ public static class EfCoreServiceExtensions
             sp => sp.GetRequiredService<EfCoreRepository<TContext, TEntity, TKey>>());
         services.AddScoped<IBatchRepository<TEntity, TKey>>(
             sp => sp.GetRequiredService<EfCoreRepository<TContext, TEntity, TKey>>());
+        services.AddScoped<IConditionalWriteRepository<TEntity, TKey>>(
+            sp => sp.GetRequiredService<EfCoreRepository<TContext, TEntity, TKey>>());
         services.AddScoped<ICountableRepository<TEntity, TKey>>(
             sp => sp.GetRequiredService<EfCoreRepository<TContext, TEntity, TKey>>());
 

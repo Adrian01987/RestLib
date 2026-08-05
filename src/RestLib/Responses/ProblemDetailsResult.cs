@@ -310,6 +310,23 @@ public static class ProblemDetailsResult
     }
 
     /// <summary>
+    /// Creates a 501 Not Implemented result when a repository cannot perform an atomic conditional write.
+    /// </summary>
+    /// <param name="detail">The unsupported capability detail message.</param>
+    /// <param name="instance">The request path.</param>
+    /// <param name="jsonOptions">Optional JSON serializer options.</param>
+    /// <param name="logger">Optional logger; when provided, the response is logged at the appropriate level.</param>
+    /// <returns>A Problem Details result.</returns>
+    public static IResult ConditionalWriteNotSupported(
+        string detail,
+        string? instance = null,
+        JsonSerializerOptions? jsonOptions = null,
+        ILogger? logger = null)
+    {
+        return ConditionalWriteNotSupported(detail, instance, jsonOptions, logger, options: null);
+    }
+
+    /// <summary>
     /// Creates a 500 Internal Server Error result.
     /// </summary>
     /// <param name="detail">Optional error detail message.</param>
@@ -646,6 +663,20 @@ public static class ProblemDetailsResult
         RestLibOptions? options)
     {
         var problem = ProblemDetailsFactory.PreconditionFailed(detail, instance);
+        return Create(problem, jsonOptions, logger, options);
+    }
+
+    /// <summary>
+    /// Creates an option-aware 501 Not Implemented result for repositories without atomic conditional writes.
+    /// </summary>
+    internal static IResult ConditionalWriteNotSupported(
+        string detail,
+        string? instance,
+        JsonSerializerOptions? jsonOptions,
+        ILogger? logger,
+        RestLibOptions? options)
+    {
+        var problem = ProblemDetailsFactory.ConditionalWriteNotSupported(detail, instance);
         return Create(problem, jsonOptions, logger, options);
     }
 

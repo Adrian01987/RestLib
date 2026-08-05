@@ -1,7 +1,7 @@
 # ADR-014: ETag Support for Caching and Concurrency
 
-**Status:** Accepted
-**Date:** 2026-04-06
+**Status:** Amended
+**Date:** 2026-04-06 (amended 2026-08-05)
 
 ## Context
 
@@ -65,9 +65,13 @@ ETag support defaults to `false`. When enabled:
 
 - **GetById** — sets the `ETag` response header; checks `If-None-Match` and returns 304 if matched (weak comparison per RFC 9110).
 - **Create** — sets the `ETag` response header on the created entity.
-- **Update / Patch** — sets the `ETag` response header; checks `If-Match` and returns 412 Precondition Failed if mismatched (strong comparison per RFC 9110).
-- **Delete** — checks `If-Match` and returns 412 Precondition Failed if mismatched (strong comparison per RFC 9110).
+- **Update / Patch** — sets the `ETag` response header and evaluates `If-Match` atomically with persistence. A mismatch returns 412 Precondition Failed.
+- **Delete** — evaluates `If-Match` atomically with deletion and returns 412 Precondition Failed on a mismatch.
 - **GetAll** — no collection-level ETag (see decision #5).
+
+Repositories that do not implement the optional atomic conditional-write capability return
+501 Conditional Write Not Supported when an `If-Match` header is supplied. They continue to
+support unconditional writes and conditional GETs.
 
 ### 4. RFC 9110 comparison semantics via `ETagComparer`
 
@@ -82,13 +86,29 @@ Missing headers are treated as "precondition satisfied" (i.e., `If-Match` is opt
 
 ETags are only generated for individual entities. Collection endpoints (`GetAll`) do not produce ETags because any item insertion, update, or deletion would invalidate the collection ETag, making it almost useless with cursor pagination.
 
-### 6. Shared `If-Match` logic
+### 6. Atomic `If-Match` writes through an optional repository capability
 
-The `If-Match` precondition check is implemented once in `EndpointHelpers.CheckIfMatchPreconditionAsync()` and reused by Update, Patch, and Delete handlers, avoiding logic duplication.
+`IConditionalWriteRepository<TEntity, TKey>` exposes conditional update, patch, and delete
+operations. Each method receives a synchronous predicate over the current persisted entity and
+returns `Succeeded`, `NotFound`, or `PreconditionFailed`. Implementations must evaluate the
+predicate and complete a successful mutation in one indivisible persistence scope.
+
+Endpoints may perform an earlier read to reject an already-stale request before hooks run, but
+that read is only an optimization. The repository evaluates the same ETag predicate again inside
+the atomic mutation; this second evaluation is authoritative and closes the check-then-write race.
+
+The InMemory adapter evaluates the predicate and mutation under its shared mutation lock. The EF
+Core adapter uses a Serializable transaction and treats `DbUpdateConcurrencyException` as a
+failed precondition. If an application supplies an existing EF transaction, that transaction must
+also use Serializable isolation.
+
+Mapped resources generate and compare the ETag from the mapped API model while the atomic
+capability receives the current database model. This preserves the public representation contract
+without exposing persistence-only fields through the validator.
 
 ## Rationale
 
-1. **SHA-256 of JSON is universally applicable.** It works with any entity type and any repository, requiring no schema support. The 128-bit truncation produces compact ETags while maintaining negligible collision probability.
+1. **SHA-256 of JSON is universally applicable for generation.** It works with any entity type and requires no schema support. Atomic mutation still requires repository participation because an endpoint-only comparison cannot prevent a lost update.
 2. **Strong ETags are the safe default.** Strong ETags satisfy both `If-Match` (strong comparison) and `If-None-Match` (weak comparison), so a single ETag value works for both use cases.
 3. **Opt-in avoids unnecessary overhead.** Not every API needs caching or concurrency control. The serialization and hashing cost is only incurred when explicitly enabled.
 4. **`TryAddSingleton` enables replacement.** Applications with database-native concurrency tokens (e.g., SQL Server `rowversion`) can register a custom `IETagGenerator` that uses the token directly, avoiding the serialization cost entirely.
@@ -97,6 +117,6 @@ The `If-Match` precondition check is implemented once in `EndpointHelpers.CheckI
 
 - Every response from GetById, Create, Update, and Patch includes an `ETag` header when enabled, increasing response size by ~30 bytes.
 - Each single-resource response incurs one JSON serialization + SHA-256 hash. For GetAll, each entity in the collection gets an ETag in its response envelope.
-- Repository implementations do not need to change — ETag generation is handled at the endpoint layer.
+- Custom repositories must implement `IConditionalWriteRepository<TEntity, TKey>` to accept `If-Match` on write endpoints. Without it, RestLib returns a 501 Problem Details response instead of claiming unsafe optimistic-concurrency protection.
 - Clients must send `If-Match` headers for optimistic concurrency; without them, updates proceed unconditionally.
 - The `ETagComparer` correctly handles comma-separated ETag lists and wildcard (`*`) values per RFC 9110.

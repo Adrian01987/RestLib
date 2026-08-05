@@ -53,6 +53,12 @@ internal static class DeleteHandler
                 if (etagError is not null) return etagError;
                 if (etagEntity is not null) entityToDelete = etagEntity;
 
+                var ifMatchPrecondition = ETagHelper.CreateIfMatchPrecondition<TEntity>(httpContext, options);
+                if (ifMatchPrecondition is not null && repository is not IConditionalWriteRepository<TEntity, TKey>)
+                {
+                    return ETagHelper.ConditionalWriteNotSupported(httpContext, jsonOptions, options, logger);
+                }
+
                 // Fetch entity for hooks if pipeline exists and not already fetched
                 if (entityToDelete is null && pipeline is not null)
                 {
@@ -90,18 +96,36 @@ internal static class DeleteHandler
                     _ = EntityKeyHelper.TrySetEntityKeyParts(entityToDelete, id, config.KeyRouteParts);
                 }
 
-                var deleted = await repository.DeleteAsync(id, ct);
-
-                if (!deleted)
+                if (ifMatchPrecondition is null)
                 {
-                    return Responses.ProblemDetailsResult.NotFound(
+                    var deleted = await repository.DeleteAsync(id, ct);
+                    if (!deleted)
+                    {
+                        return Responses.ProblemDetailsResult.NotFound(
+                            entityName,
+                            id!,
+                            config.KeyRouteParts,
+                            httpContext.Request.Path,
+                            jsonOptions,
+                            logger,
+                            options);
+                    }
+                }
+                else
+                {
+                    var conditionalResult = await ((IConditionalWriteRepository<TEntity, TKey>)repository)
+                        .DeleteConditionallyAsync(id, ifMatchPrecondition, ct);
+                    var conditionalError = ETagHelper.ToErrorResult(
+                        conditionalResult,
+                        httpContext,
+                        id,
                         entityName,
-                        id!,
                         config.KeyRouteParts,
-                        httpContext.Request.Path,
                         jsonOptions,
-                        logger,
-                        options);
+                        options,
+                        logger);
+                    if (conditionalError is not null) return conditionalError;
+                    entityToDelete = conditionalResult.Entity!;
                 }
 
                 RestLibLogMessages.EntityDeleted(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
@@ -289,6 +313,15 @@ internal static class DeleteHandler
             entityToDeleteApi = etagApi;
         }
 
+        var ifMatchPrecondition = ETagHelper.CreateIfMatchPrecondition<TApiModel, TDbModel>(
+            httpContext,
+            options,
+            mapper);
+        if (ifMatchPrecondition is not null && repository is not IConditionalWriteRepository<TDbModel, TKey>)
+        {
+            return ETagHelper.ConditionalWriteNotSupported(httpContext, jsonOptions, options, logger);
+        }
+
         if (entityToDeleteDb is null && pipeline is not null)
         {
             entityToDeleteDb = await repository.GetByIdAsync(id, ct);
@@ -351,17 +384,37 @@ internal static class DeleteHandler
             }
         }
 
-        var deleted = await repository.DeleteAsync(id, ct);
-        if (!deleted)
+        if (ifMatchPrecondition is null)
         {
-            return Responses.ProblemDetailsResult.NotFound(
+            var deleted = await repository.DeleteAsync(id, ct);
+            if (!deleted)
+            {
+                return Responses.ProblemDetailsResult.NotFound(
+                    entityName,
+                    id!,
+                    config.KeyRouteParts,
+                    httpContext.Request.Path,
+                    jsonOptions,
+                    logger,
+                    options);
+            }
+        }
+        else
+        {
+            var conditionalResult = await ((IConditionalWriteRepository<TDbModel, TKey>)repository)
+                .DeleteConditionallyAsync(id, ifMatchPrecondition, ct);
+            var conditionalError = ETagHelper.ToErrorResult(
+                conditionalResult,
+                httpContext,
+                id,
                 entityName,
-                id!,
                 config.KeyRouteParts,
-                httpContext.Request.Path,
                 jsonOptions,
-                logger,
-                options);
+                options,
+                logger);
+            if (conditionalError is not null) return conditionalError;
+            entityToDeleteDb = conditionalResult.Entity!;
+            entityToDeleteApi = mapper.ToApi(entityToDeleteDb);
         }
 
         RestLibLogMessages.EntityDeleted(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));

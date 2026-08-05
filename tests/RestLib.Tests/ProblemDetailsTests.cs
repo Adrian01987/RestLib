@@ -432,6 +432,20 @@ public class ProblemDetailsTests : IAsyncLifetime
     }
 
     [Fact]
+    public void ProblemDetailsFactory_ConditionalWriteNotSupported_CreatesCorrectProblem()
+    {
+        // Act
+        var problem = ProblemDetailsFactory.ConditionalWriteNotSupported(
+            "Atomic write unavailable",
+            "/api/products/1");
+
+        // Assert
+        problem.Type.Should().Be(ProblemTypes.ConditionalWriteNotSupported);
+        problem.Title.Should().Be("Conditional Write Not Supported");
+        problem.Status.Should().Be(501);
+    }
+
+    [Fact]
     public void ProblemDetailsFactory_InternalError_CreatesCorrectProblem()
     {
         // Act
@@ -505,6 +519,13 @@ public class ProblemDetailsTests : IAsyncLifetime
     {
         // Act & Assert
         ProblemTypes.PreconditionFailed.Should().Be("/problems/precondition-failed");
+    }
+
+    [Fact]
+    public void ProblemTypes_ConditionalWriteNotSupported_IsRelativeUri()
+    {
+        // Act & Assert
+        ProblemTypes.ConditionalWriteNotSupported.Should().Be("/problems/conditional-write-not-supported");
     }
 
     [Fact]

@@ -111,6 +111,7 @@ public partial class OpenApiDocumentationTests
         updateOp.Responses.Should().ContainKey("403"); // Forbidden
         updateOp.Responses.Should().ContainKey("404"); // Not Found
         updateOp.Responses.Should().ContainKey("412"); // Precondition Failed (ETag)
+        updateOp.Responses.Should().ContainKey("501"); // Atomic conditional write unavailable
     }
 
     [Fact]
@@ -131,6 +132,7 @@ public partial class OpenApiDocumentationTests
         patchOp.Responses.Should().ContainKey("403"); // Forbidden
         patchOp.Responses.Should().ContainKey("404"); // Not Found
         patchOp.Responses.Should().ContainKey("412"); // Precondition Failed
+        patchOp.Responses.Should().ContainKey("501"); // Atomic conditional write unavailable
     }
 
     [Fact]
@@ -150,6 +152,7 @@ public partial class OpenApiDocumentationTests
         deleteOp.Responses.Should().ContainKey("403"); // Forbidden
         deleteOp.Responses.Should().ContainKey("404"); // Not Found
         deleteOp.Responses.Should().ContainKey("412"); // Precondition Failed
+        deleteOp.Responses.Should().ContainKey("501"); // Atomic conditional write unavailable
     }
 
     [Fact]

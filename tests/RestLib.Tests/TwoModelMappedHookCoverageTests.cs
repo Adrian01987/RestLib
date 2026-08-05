@@ -208,6 +208,58 @@ public class TwoModelMappedHookCoverageTests
     }
 
     [Fact]
+    public async Task PutMappedEndpoint_EntityChangesBeforeAtomicWrite_ReturnsPreconditionFailed()
+    {
+        // Arrange
+        var repository = new TrackingRepo();
+        var existingId = Guid.NewGuid();
+        repository.Seed(new DbItem
+        {
+            Id = existingId,
+            Name = "Original",
+            Price = 1m,
+            Category = "hardware",
+            IsActive = true,
+            InternalToken = "db-original",
+        });
+        var (host, client) = await CreateHostAsync(
+            repository,
+            configureOptions: options => options.EnableETagSupport = true);
+        using var hostHandle = host;
+        using var clientHandle = client;
+        var get = await client.GetAsync($"/api/items/{existingId}");
+        var etag = get.Headers.ETag!.Tag;
+        repository.ReplaceBeforeConditionalUpdate = new DbItem
+        {
+            Id = existingId,
+            Name = "Concurrent",
+            Price = 3m,
+            Category = "hardware",
+            IsActive = true,
+            InternalToken = "db-concurrent",
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"/api/items/{existingId}")
+        {
+            Content = JsonContent.Create(new
+            {
+                name = "Stale",
+                price = 2m,
+                category = "hardware",
+                is_active = true,
+            }),
+        };
+        request.Headers.TryAddWithoutValidation("If-Match", etag);
+
+        // Act
+        var response = await client.SendAsync(request);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.PreconditionFailed);
+        var persisted = await repository.GetByIdAsync(existingId);
+        persisted!.Name.Should().Be("Concurrent");
+    }
+
+    [Fact]
     public async Task DeleteMappedEndpoint_WithApiHooks_RunsApiHookPipelineAndDeletes()
     {
         // Arrange
@@ -676,7 +728,10 @@ public class TwoModelMappedHookCoverageTests
         }
     }
 
-    private sealed class TrackingRepo : IRepository<DbItem, Guid>, ICountableRepository<DbItem, Guid>
+    private sealed class TrackingRepo :
+        IRepository<DbItem, Guid>,
+        IConditionalWriteRepository<DbItem, Guid>,
+        ICountableRepository<DbItem, Guid>
     {
         private readonly InMemoryRepository<DbItem, Guid> _inner =
             new(item => item.Id, Guid.NewGuid);
@@ -684,6 +739,8 @@ public class TwoModelMappedHookCoverageTests
         public int UpdateCallCount { get; private set; }
 
         public DbItem? LastUpdatedEntity { get; private set; }
+
+        public DbItem? ReplaceBeforeConditionalUpdate { get; set; }
 
         public Task<long> CountAsync(IReadOnlyList<RestLib.Filtering.FilterValue> filters, CancellationToken ct = default)
         {
@@ -725,6 +782,43 @@ public class TwoModelMappedHookCoverageTests
             UpdateCallCount++;
             LastUpdatedEntity = entity;
             return await _inner.UpdateAsync(id, entity, ct);
+        }
+
+        public async Task<ConditionalWriteResult<DbItem>> UpdateConditionallyAsync(
+            Guid id,
+            DbItem entity,
+            Func<DbItem, bool> precondition,
+            CancellationToken ct = default)
+        {
+            UpdateCallCount++;
+            LastUpdatedEntity = entity;
+            if (ReplaceBeforeConditionalUpdate is not null)
+            {
+                await _inner.UpdateAsync(id, ReplaceBeforeConditionalUpdate, ct);
+                ReplaceBeforeConditionalUpdate = null;
+            }
+
+            return await ((IConditionalWriteRepository<DbItem, Guid>)_inner)
+                .UpdateConditionallyAsync(id, entity, precondition, ct);
+        }
+
+        public Task<ConditionalWriteResult<DbItem>> PatchConditionallyAsync(
+            Guid id,
+            JsonElement patchDocument,
+            Func<DbItem, bool> precondition,
+            CancellationToken ct = default)
+        {
+            return ((IConditionalWriteRepository<DbItem, Guid>)_inner)
+                .PatchConditionallyAsync(id, patchDocument, precondition, ct);
+        }
+
+        public Task<ConditionalWriteResult<DbItem>> DeleteConditionallyAsync(
+            Guid id,
+            Func<DbItem, bool> precondition,
+            CancellationToken ct = default)
+        {
+            return ((IConditionalWriteRepository<DbItem, Guid>)_inner)
+                .DeleteConditionallyAsync(id, precondition, ct);
         }
     }
 }

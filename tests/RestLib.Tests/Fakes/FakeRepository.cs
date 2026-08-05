@@ -266,82 +266,166 @@ public class TestEntityRepository : IRepository<TestEntity, Guid>
 /// <summary>
 /// A fake in-memory repository for ProductEntity used in JSON serialization tests.
 /// </summary>
-public class ProductEntityRepository : IRepository<ProductEntity, Guid>
+public class ProductEntityRepository :
+    IRepository<ProductEntity, Guid>,
+    IConditionalWriteRepository<ProductEntity, Guid>
 {
     private readonly Dictionary<Guid, ProductEntity> _store = new();
+    private readonly object _mutationLock = new();
 
     public Task<ProductEntity?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
-        _store.TryGetValue(id, out var entity);
-        return Task.FromResult(entity);
+        lock (_mutationLock)
+        {
+            _store.TryGetValue(id, out var entity);
+            return Task.FromResult(entity);
+        }
     }
 
     public Task<PagedResult<ProductEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default)
     {
-        var items = _store.Values.Take(pagination.Limit).ToList();
-        return Task.FromResult(new PagedResult<ProductEntity>
+        lock (_mutationLock)
         {
-            Items = items,
-            NextCursor = null
-        });
+            var items = _store.Values.Take(pagination.Limit).ToList();
+            return Task.FromResult(new PagedResult<ProductEntity>
+            {
+                Items = items,
+                NextCursor = null
+            });
+        }
     }
 
     public Task<ProductEntity> CreateAsync(ProductEntity entity, CancellationToken ct = default)
     {
-        if (entity.Id == Guid.Empty)
-            entity.Id = Guid.NewGuid();
+        lock (_mutationLock)
+        {
+            if (entity.Id == Guid.Empty)
+                entity.Id = Guid.NewGuid();
 
-        _store[entity.Id] = entity;
-        return Task.FromResult(entity);
+            _store[entity.Id] = entity;
+            return Task.FromResult(entity);
+        }
     }
 
     public Task<ProductEntity?> UpdateAsync(Guid id, ProductEntity entity, CancellationToken ct = default)
     {
-        if (!_store.ContainsKey(id))
-            return Task.FromResult<ProductEntity?>(null);
+        lock (_mutationLock)
+        {
+            if (!_store.ContainsKey(id))
+                return Task.FromResult<ProductEntity?>(null);
 
-        entity.Id = id;
-        _store[id] = entity;
-        return Task.FromResult<ProductEntity?>(entity);
+            entity.Id = id;
+            _store[id] = entity;
+            return Task.FromResult<ProductEntity?>(entity);
+        }
     }
 
     public Task<ProductEntity?> PatchAsync(Guid id, JsonElement patchDocument, CancellationToken ct = default)
     {
-        if (!_store.TryGetValue(id, out var existing))
-            return Task.FromResult<ProductEntity?>(null);
+        lock (_mutationLock)
+        {
+            if (!_store.TryGetValue(id, out var existing))
+                return Task.FromResult<ProductEntity?>(null);
 
-        // Simple merge patch implementation for ProductEntity
-        if (patchDocument.TryGetProperty("product_name", out var nameElement))
-            existing.ProductName = nameElement.GetString() ?? existing.ProductName;
+            // Simple merge patch implementation for ProductEntity
+            if (patchDocument.TryGetProperty("product_name", out var nameElement))
+                existing.ProductName = nameElement.GetString() ?? existing.ProductName;
 
-        if (patchDocument.TryGetProperty("unit_price", out var priceElement))
-            existing.UnitPrice = priceElement.GetDecimal();
+            if (patchDocument.TryGetProperty("unit_price", out var priceElement))
+                existing.UnitPrice = priceElement.GetDecimal();
 
-        if (patchDocument.TryGetProperty("stock_quantity", out var stockElement))
-            existing.StockQuantity = stockElement.GetInt32();
+            if (patchDocument.TryGetProperty("stock_quantity", out var stockElement))
+                existing.StockQuantity = stockElement.GetInt32();
 
-        if (patchDocument.TryGetProperty("is_active", out var activeElement))
-            existing.IsActive = activeElement.GetBoolean();
+            if (patchDocument.TryGetProperty("is_active", out var activeElement))
+                existing.IsActive = activeElement.GetBoolean();
 
-        _store[id] = existing;
-        return Task.FromResult<ProductEntity?>(existing);
+            _store[id] = existing;
+            return Task.FromResult<ProductEntity?>(existing);
+        }
     }
 
     public Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
     {
-        return Task.FromResult(_store.Remove(id));
+        lock (_mutationLock)
+        {
+            return Task.FromResult(_store.Remove(id));
+        }
+    }
+
+    public Task<ConditionalWriteResult<ProductEntity>> UpdateConditionallyAsync(
+        Guid id,
+        ProductEntity entity,
+        Func<ProductEntity, bool> precondition,
+        CancellationToken ct = default)
+    {
+        lock (_mutationLock)
+        {
+            if (!_store.TryGetValue(id, out var current))
+                return Task.FromResult(ConditionalWriteResult<ProductEntity>.NotFound());
+            if (!precondition(current))
+                return Task.FromResult(ConditionalWriteResult<ProductEntity>.PreconditionFailed());
+
+            entity.Id = id;
+            _store[id] = entity;
+            return Task.FromResult(ConditionalWriteResult<ProductEntity>.Success(entity));
+        }
+    }
+
+    public Task<ConditionalWriteResult<ProductEntity>> PatchConditionallyAsync(
+        Guid id,
+        JsonElement patchDocument,
+        Func<ProductEntity, bool> precondition,
+        CancellationToken ct = default)
+    {
+        lock (_mutationLock)
+        {
+            if (!_store.TryGetValue(id, out var current))
+                return Task.FromResult(ConditionalWriteResult<ProductEntity>.NotFound());
+            if (!precondition(current))
+                return Task.FromResult(ConditionalWriteResult<ProductEntity>.PreconditionFailed());
+
+            var patched = PatchAsync(id, patchDocument, ct).GetAwaiter().GetResult()!;
+            return Task.FromResult(ConditionalWriteResult<ProductEntity>.Success(patched));
+        }
+    }
+
+    public Task<ConditionalWriteResult<ProductEntity>> DeleteConditionallyAsync(
+        Guid id,
+        Func<ProductEntity, bool> precondition,
+        CancellationToken ct = default)
+    {
+        lock (_mutationLock)
+        {
+            if (!_store.TryGetValue(id, out var current))
+                return Task.FromResult(ConditionalWriteResult<ProductEntity>.NotFound());
+            if (!precondition(current))
+                return Task.FromResult(ConditionalWriteResult<ProductEntity>.PreconditionFailed());
+
+            _store.Remove(id);
+            return Task.FromResult(ConditionalWriteResult<ProductEntity>.Success(current));
+        }
     }
 
     // Helper methods for test setup
     public void Seed(params ProductEntity[] entities)
     {
-        foreach (var entity in entities)
+        lock (_mutationLock)
         {
-            _store[entity.Id] = entity;
+            foreach (var entity in entities)
+            {
+                _store[entity.Id] = entity;
+            }
         }
     }
 
-    public void Clear() => _store.Clear();
+    public void Clear()
+    {
+        lock (_mutationLock)
+        {
+            _store.Clear();
+        }
+    }
 
     public int Count => _store.Count;
 }

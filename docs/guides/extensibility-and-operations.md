@@ -311,6 +311,12 @@ public class ProductRepository : IRepository<Product, Guid>
 builder.Services.AddRepository<Product, Guid, ProductRepository>();
 ```
 
+When ETag support is enabled, conditional GETs work with the base repository contract. To accept
+`If-Match` on PUT, PATCH, or DELETE, a custom repository must also implement
+`IConditionalWriteRepository<TEntity, TKey>` and evaluate its supplied predicate atomically with
+the mutation. RestLib returns 501 Conditional Write Not Supported for an `If-Match` write when
+that optional capability is absent; it never falls back to a race-prone read-then-write sequence.
+
 ## EF Core Adapter
 
 Use the official EF Core adapter instead of writing a custom repository:

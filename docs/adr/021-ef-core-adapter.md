@@ -1,7 +1,7 @@
 # ADR-021: EF Core Repository Adapter
 
-**Status:** Accepted
-**Date:** 2026-04-15
+**Status:** Amended
+**Date:** 2026-04-15 (amended 2026-08-05)
 
 ## Context
 RestLib's core abstractions are intentionally persistence-agnostic. The library defines
@@ -180,6 +180,15 @@ tracking, batching, and exception handling. A request sees one repository, one c
 and one consistent view of tracked state, while concurrent requests remain isolated from
 one another.
 
+### Atomic conditional writes for `If-Match`
+
+The adapter implements `IConditionalWriteRepository<TEntity, TKey>`. It starts a Serializable
+transaction, loads the current entity, evaluates RestLib's ETag predicate, and persists update,
+patch, or delete before ending that transaction. A false predicate performs no mutation, while an
+EF concurrency exception is surfaced as `PreconditionFailed` so the endpoint returns 412 instead
+of allowing a stale write. An application-owned transaction may be reused only when it already
+uses Serializable isolation; weaker isolation would not satisfy the capability contract.
+
 ## Consequences
 - The adapter satisfies RestLib's repository contracts without requiring changes to core
   RestLib source code.
@@ -190,6 +199,8 @@ one another.
   need tracked reads must opt out explicitly.
 - Partial updates integrate cleanly with EF Core and persist only modified properties, but
   patch behavior remains tied to EF Core change tracking.
+- Conditional update, patch, and delete operations use Serializable transactions to bind
+  `If-Match` validation to persistence atomically.
 - Nested filtering and sorting execute server-side through EF Core navigation translation,
   while nested field selection currently uses a conservative include-plus-post-projection
   fallback instead of SQL projection pushdown.

@@ -389,7 +389,8 @@ internal static class OpenApiEndpointConfiguration
                 ["401"] = CreateProblemDetailsResponse("Unauthorized - Authentication required"),
                 ["403"] = CreateProblemDetailsResponse("Forbidden - Insufficient permissions"),
                 ["404"] = CreateProblemDetailsResponse($"{entityName} not found"),
-                ["412"] = CreateProblemDetailsResponse("Precondition Failed - ETag mismatch (resource was modified)")
+                ["412"] = CreateProblemDetailsResponse("Precondition Failed - ETag mismatch (resource was modified)"),
+                ["501"] = CreateProblemDetailsResponse("Conditional Write Not Supported - Repository cannot atomically process If-Match")
             };
 
             return Task.CompletedTask;
@@ -485,7 +486,8 @@ internal static class OpenApiEndpointConfiguration
                 ["401"] = CreateProblemDetailsResponse("Unauthorized - Authentication required"),
                 ["403"] = CreateProblemDetailsResponse("Forbidden - Insufficient permissions"),
                 ["404"] = CreateProblemDetailsResponse($"{entityName} not found"),
-                ["412"] = CreateProblemDetailsResponse("Precondition Failed - ETag mismatch (resource was modified)")
+                ["412"] = CreateProblemDetailsResponse("Precondition Failed - ETag mismatch (resource was modified)"),
+                ["501"] = CreateProblemDetailsResponse("Conditional Write Not Supported - Repository cannot atomically process If-Match")
             };
 
             return Task.CompletedTask;
@@ -533,7 +535,8 @@ internal static class OpenApiEndpointConfiguration
                 ["401"] = CreateProblemDetailsResponse("Unauthorized - Authentication required"),
                 ["403"] = CreateProblemDetailsResponse("Forbidden - Insufficient permissions"),
                 ["404"] = CreateProblemDetailsResponse($"{entityName} not found"),
-                ["412"] = CreateProblemDetailsResponse("Precondition Failed - ETag mismatch (resource was modified)")
+                ["412"] = CreateProblemDetailsResponse("Precondition Failed - ETag mismatch (resource was modified)"),
+                ["501"] = CreateProblemDetailsResponse("Conditional Write Not Supported - Repository cannot atomically process If-Match")
             };
 
             return Task.CompletedTask;

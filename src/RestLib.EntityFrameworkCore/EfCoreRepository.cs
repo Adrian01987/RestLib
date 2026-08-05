@@ -1,9 +1,11 @@
+using System.Data;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using RestLib.Abstractions;
 using RestLib.FieldSelection;
@@ -25,6 +27,7 @@ namespace RestLib.EntityFrameworkCore;
 public class EfCoreRepository<TContext, TEntity, TKey>
     : IRepository<TEntity, TKey>,
       IBatchRepository<TEntity, TKey>,
+      IConditionalWriteRepository<TEntity, TKey>,
       ICountableRepository<TEntity, TKey>,
       IQueryCountableRepository<TEntity, TKey>,
       IFieldSelectionProjectionRepository<TEntity, TKey>
@@ -462,6 +465,136 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     }
 
     /// <inheritdoc />
+    public Task<ConditionalWriteResult<TEntity>> UpdateConditionallyAsync(
+        TKey id,
+        TEntity entity,
+        Func<TEntity, bool> precondition,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+        ArgumentNullException.ThrowIfNull(precondition);
+
+        return ExecuteConditionalWriteAsync(
+            id,
+            precondition,
+            async current =>
+            {
+                CopyPrimaryKeyValues(current, entity);
+                var entry = TrackCurrentEntity(current, id);
+                entry.CurrentValues.SetValues(entity);
+                SetResourceKeyValues(entry, id);
+
+                try
+                {
+                    await _context.SaveChangesAsync(ct);
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    RestoreConditionalEntry(entry);
+                    return ConditionalWriteResult<TEntity>.PreconditionFailed();
+                }
+                catch (DbUpdateException ex)
+                {
+                    RestoreConditionalEntry(entry);
+                    throw ClassifyConstraintViolation(ex);
+                }
+
+                return ConditionalWriteResult<TEntity>.Success(entry.Entity);
+            },
+            ct);
+    }
+
+    /// <inheritdoc />
+    public Task<ConditionalWriteResult<TEntity>> PatchConditionallyAsync(
+        TKey id,
+        JsonElement patchDocument,
+        Func<TEntity, bool> precondition,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(precondition);
+
+        return ExecuteConditionalWriteAsync(
+            id,
+            precondition,
+            async current =>
+            {
+                var entry = TrackCurrentEntity(current, id);
+                var primaryKey = GetPrimaryKey();
+                var keyPropertyNames = primaryKey.Properties
+                    .Select(property => property.Name)
+                    .ToHashSet(StringComparer.Ordinal);
+                keyPropertyNames.UnionWith(GetKeyPropertyNames());
+                var patchPlan = BuildPatchPlan(
+                    current,
+                    patchDocument,
+                    keyPropertyNames,
+                    _options.PatchUnknownFieldBehavior,
+                    new Dictionary<string, object?>(StringComparer.Ordinal));
+                var snapshots = new List<PatchPropertySnapshot>(patchPlan.Count);
+
+                try
+                {
+                    ApplyPatchPlan(entry, patchPlan, snapshots);
+                    await _context.SaveChangesAsync(ct);
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    RestorePatchChanges(snapshots);
+                    return ConditionalWriteResult<TEntity>.PreconditionFailed();
+                }
+                catch (DbUpdateException ex)
+                {
+                    RestorePatchChanges(snapshots);
+                    throw ClassifyConstraintViolation(ex);
+                }
+                catch
+                {
+                    RestorePatchChanges(snapshots);
+                    throw;
+                }
+
+                return ConditionalWriteResult<TEntity>.Success(entry.Entity);
+            },
+            ct);
+    }
+
+    /// <inheritdoc />
+    public Task<ConditionalWriteResult<TEntity>> DeleteConditionallyAsync(
+        TKey id,
+        Func<TEntity, bool> precondition,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(precondition);
+
+        return ExecuteConditionalWriteAsync(
+            id,
+            precondition,
+            async current =>
+            {
+                var entry = TrackCurrentEntity(current, id);
+                entry.State = EntityState.Deleted;
+
+                try
+                {
+                    await _context.SaveChangesAsync(ct);
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    entry.State = EntityState.Unchanged;
+                    return ConditionalWriteResult<TEntity>.PreconditionFailed();
+                }
+                catch (DbUpdateException ex)
+                {
+                    entry.State = EntityState.Unchanged;
+                    throw ClassifyConstraintViolation(ex);
+                }
+
+                return ConditionalWriteResult<TEntity>.Success(entry.Entity);
+            },
+            ct);
+    }
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<TEntity>> CreateManyAsync(
         IReadOnlyList<TEntity> entities,
         CancellationToken ct = default)
@@ -838,6 +971,93 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         var property = Expression.Property(keyParameter, propertyName);
         var box = Expression.Convert(property, typeof(object));
         return Expression.Lambda<Func<TCompositeKey, object?>>(box, keyParameter).Compile();
+    }
+
+    private static void RestoreConditionalEntry(EntityEntry<TEntity> entry)
+    {
+        entry.CurrentValues.SetValues(entry.OriginalValues);
+        entry.State = EntityState.Unchanged;
+    }
+
+    private async Task<ConditionalWriteResult<TEntity>> ExecuteConditionalWriteAsync(
+        TKey id,
+        Func<TEntity, bool> precondition,
+        Func<TEntity, Task<ConditionalWriteResult<TEntity>>> mutation,
+        CancellationToken ct)
+    {
+        var currentTransaction = _context.Database.CurrentTransaction;
+        if (currentTransaction is not null)
+        {
+            if (currentTransaction.GetDbTransaction().IsolationLevel != IsolationLevel.Serializable)
+            {
+                throw new InvalidOperationException(
+                    "Atomic conditional writes require an existing EF Core transaction to use Serializable isolation.");
+            }
+
+            return await ExecuteConditionalWriteCoreAsync(id, precondition, mutation, ct);
+        }
+
+        await using var transaction = await _context.Database.BeginTransactionAsync(
+            IsolationLevel.Serializable,
+            ct);
+        try
+        {
+            var result = await ExecuteConditionalWriteCoreAsync(id, precondition, mutation, ct);
+            if (result.Status == ConditionalWriteStatus.Succeeded)
+            {
+                await transaction.CommitAsync(ct);
+            }
+            else
+            {
+                await transaction.RollbackAsync(ct);
+            }
+
+            return result;
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    private async Task<ConditionalWriteResult<TEntity>> ExecuteConditionalWriteCoreAsync(
+        TKey id,
+        Func<TEntity, bool> precondition,
+        Func<TEntity, Task<ConditionalWriteResult<TEntity>>> mutation,
+        CancellationToken ct)
+    {
+        var current = await _context.Set<TEntity>()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(BuildKeyEqualsPredicate(id), ct);
+        if (current is null)
+        {
+            return ConditionalWriteResult<TEntity>.NotFound();
+        }
+
+        if (!precondition(current))
+        {
+            return ConditionalWriteResult<TEntity>.PreconditionFailed();
+        }
+
+        return await mutation(current);
+    }
+
+    private EntityEntry<TEntity> TrackCurrentEntity(TEntity current, TKey id)
+    {
+        var trackedEntry = _context.ChangeTracker
+            .Entries<TEntity>()
+            .FirstOrDefault(entry =>
+                EqualityComparer<TKey>.Default.Equals(_keyMetadata.KeyAccessor(entry.Entity), id));
+        if (trackedEntry is null)
+        {
+            return _context.Attach(current);
+        }
+
+        trackedEntry.State = EntityState.Unchanged;
+        trackedEntry.CurrentValues.SetValues(current);
+        trackedEntry.OriginalValues.SetValues(current);
+        return trackedEntry;
     }
 
     private bool TryBuildProjectionPlan(

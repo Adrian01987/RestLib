@@ -55,6 +55,9 @@ public static class ProblemTypes
     /// <summary>Precondition failed / ETag mismatch (412).</summary>
     public const string PreconditionFailed = "/problems/precondition-failed";
 
+    /// <summary>The repository cannot perform an atomic conditional write (501).</summary>
+    public const string ConditionalWriteNotSupported = "/problems/conditional-write-not-supported";
+
     /// <summary>Unauthorized / missing authentication (401).</summary>
     public const string Unauthorized = "/problems/unauthorized";
 

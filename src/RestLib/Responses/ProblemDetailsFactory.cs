@@ -376,6 +376,25 @@ public static class ProblemDetailsFactory
     }
 
     /// <summary>
+    /// Creates a 501 Not Implemented problem details response for a repository that does not
+    /// support atomic conditional writes.
+    /// </summary>
+    /// <param name="detail">Description of the unsupported conditional-write capability.</param>
+    /// <param name="instance">The request path.</param>
+    /// <returns>A configured Problem Details response.</returns>
+    public static RestLibProblemDetails ConditionalWriteNotSupported(string detail, string? instance = null)
+    {
+        return new RestLibProblemDetails
+        {
+            Type = ProblemTypes.Resolve(ProblemTypes.ConditionalWriteNotSupported),
+            Title = "Conditional Write Not Supported",
+            Status = StatusCodes.Status501NotImplemented,
+            Detail = detail,
+            Instance = instance
+        };
+    }
+
+    /// <summary>
     /// Creates a 500 Internal Server Error problem details response.
     /// </summary>
     /// <param name="detail">Optional detail (only include in development).</param>

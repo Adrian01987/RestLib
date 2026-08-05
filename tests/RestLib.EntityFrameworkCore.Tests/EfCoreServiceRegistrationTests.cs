@@ -96,10 +96,13 @@ public class EfCoreServiceRegistrationTests
 
         var repository = scope.ServiceProvider.GetRequiredService<IRepository<RegistrationTestEntity, Guid>>();
         var batchRepository = scope.ServiceProvider.GetRequiredService<IBatchRepository<RegistrationTestEntity, Guid>>();
+        var conditionalWriteRepository = scope.ServiceProvider
+            .GetRequiredService<IConditionalWriteRepository<RegistrationTestEntity, Guid>>();
         var countableRepository = scope.ServiceProvider.GetRequiredService<ICountableRepository<RegistrationTestEntity, Guid>>();
 
         // Assert
         batchRepository.Should().BeSameAs(repository);
+        conditionalWriteRepository.Should().BeSameAs(repository);
         countableRepository.Should().BeSameAs(repository);
     }
 

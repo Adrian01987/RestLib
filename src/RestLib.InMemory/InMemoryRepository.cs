@@ -19,7 +19,12 @@ namespace RestLib.InMemory;
 /// </summary>
 /// <typeparam name="TEntity">The entity type.</typeparam>
 /// <typeparam name="TKey">The key type.</typeparam>
-public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBatchRepository<TEntity, TKey>, ICountableRepository<TEntity, TKey>, IQueryCountableRepository<TEntity, TKey>
+public class InMemoryRepository<TEntity, TKey> :
+    IRepository<TEntity, TKey>,
+    IBatchRepository<TEntity, TKey>,
+    IConditionalWriteRepository<TEntity, TKey>,
+    ICountableRepository<TEntity, TKey>,
+    IQueryCountableRepository<TEntity, TKey>
     where TEntity : class
     where TKey : notnull
 {
@@ -274,6 +279,88 @@ public class InMemoryRepository<TEntity, TKey> : IRepository<TEntity, TKey>, IBa
         lock (_mutationLock)
         {
             return Task.FromResult(_store.TryRemove(id, out _));
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<ConditionalWriteResult<TEntity>> UpdateConditionallyAsync(
+        TKey id,
+        TEntity entity,
+        Func<TEntity, bool> precondition,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+        ArgumentNullException.ThrowIfNull(precondition);
+
+        lock (_mutationLock)
+        {
+            if (!_store.TryGetValue(id, out var current))
+            {
+                return Task.FromResult(ConditionalWriteResult<TEntity>.NotFound());
+            }
+
+            if (!precondition(current))
+            {
+                return Task.FromResult(ConditionalWriteResult<TEntity>.PreconditionFailed());
+            }
+
+            var normalizedEntity = NormalizeEntityKey(entity, id);
+            _store[id] = normalizedEntity;
+            return Task.FromResult(ConditionalWriteResult<TEntity>.Success(normalizedEntity));
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<ConditionalWriteResult<TEntity>> PatchConditionallyAsync(
+        TKey id,
+        JsonElement patchDocument,
+        Func<TEntity, bool> precondition,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(precondition);
+        ThrowIfPatchModifiesKey(patchDocument);
+
+        lock (_mutationLock)
+        {
+            if (!_store.TryGetValue(id, out var current))
+            {
+                return Task.FromResult(ConditionalWriteResult<TEntity>.NotFound());
+            }
+
+            if (!precondition(current))
+            {
+                return Task.FromResult(ConditionalWriteResult<TEntity>.PreconditionFailed());
+            }
+
+            var updated = JsonMergePatch.Apply(current, patchDocument, _jsonOptions)
+                ?? throw new InvalidOperationException("Failed to deserialize patched entity.");
+            _store[id] = updated;
+            return Task.FromResult(ConditionalWriteResult<TEntity>.Success(updated));
+        }
+    }
+
+    /// <inheritdoc />
+    public Task<ConditionalWriteResult<TEntity>> DeleteConditionallyAsync(
+        TKey id,
+        Func<TEntity, bool> precondition,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(precondition);
+
+        lock (_mutationLock)
+        {
+            if (!_store.TryGetValue(id, out var current))
+            {
+                return Task.FromResult(ConditionalWriteResult<TEntity>.NotFound());
+            }
+
+            if (!precondition(current))
+            {
+                return Task.FromResult(ConditionalWriteResult<TEntity>.PreconditionFailed());
+            }
+
+            _store.TryRemove(id, out _);
+            return Task.FromResult(ConditionalWriteResult<TEntity>.Success(current));
         }
     }
 

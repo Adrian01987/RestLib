@@ -83,6 +83,12 @@ internal static class UpdateHandler
                 if (etagError is not null) return etagError;
                 if (etagEntity is not null) originalEntity = etagEntity;
 
+                var ifMatchPrecondition = ETagHelper.CreateIfMatchPrecondition<TEntity>(httpContext, options);
+                if (ifMatchPrecondition is not null && repository is not IConditionalWriteRepository<TEntity, TKey>)
+                {
+                    return ETagHelper.ConditionalWriteNotSupported(httpContext, jsonOptions, options, logger);
+                }
+
                 // Fetch original entity if not already fetched (for hooks)
                 if (originalEntity is null && pipeline is not null)
                 {
@@ -98,7 +104,27 @@ internal static class UpdateHandler
                 entity = beforePersistStage.Entity;
                 _ = EntityKeyHelper.TrySetEntityKeyParts(entity, id, config.KeyRouteParts);
 
-                var updated = await repository.UpdateAsync(id, entity, ct);
+                TEntity? updated;
+                if (ifMatchPrecondition is null)
+                {
+                    updated = await repository.UpdateAsync(id, entity, ct);
+                }
+                else
+                {
+                    var conditionalResult = await ((IConditionalWriteRepository<TEntity, TKey>)repository)
+                        .UpdateConditionallyAsync(id, entity, ifMatchPrecondition, ct);
+                    var conditionalError = ETagHelper.ToErrorResult(
+                        conditionalResult,
+                        httpContext,
+                        id,
+                        entityName,
+                        config.KeyRouteParts,
+                        jsonOptions,
+                        options,
+                        logger);
+                    if (conditionalError is not null) return conditionalError;
+                    updated = conditionalResult.Entity!;
+                }
 
                 if (updated is null)
                 {
@@ -387,6 +413,15 @@ internal static class UpdateHandler
             originalApi = etagApi;
         }
 
+        var ifMatchPrecondition = ETagHelper.CreateIfMatchPrecondition<TApiModel, TDbModel>(
+            httpContext,
+            options,
+            mapper);
+        if (ifMatchPrecondition is not null && repository is not IConditionalWriteRepository<TDbModel, TKey>)
+        {
+            return ETagHelper.ConditionalWriteNotSupported(httpContext, jsonOptions, options, logger);
+        }
+
         if (originalDb is null && pipeline is not null)
         {
             originalDb = await repository.GetByIdAsync(id, ct);
@@ -422,7 +457,27 @@ internal static class UpdateHandler
 
         _ = EntityKeyHelper.TrySetEntityKeyParts(dbEntity, id, config.KeyRouteParts);
 
-        var updatedDb = await repository.UpdateAsync(id, dbEntity, ct);
+        TDbModel? updatedDb;
+        if (ifMatchPrecondition is null)
+        {
+            updatedDb = await repository.UpdateAsync(id, dbEntity, ct);
+        }
+        else
+        {
+            var conditionalResult = await ((IConditionalWriteRepository<TDbModel, TKey>)repository)
+                .UpdateConditionallyAsync(id, dbEntity, ifMatchPrecondition, ct);
+            var conditionalError = ETagHelper.ToErrorResult(
+                conditionalResult,
+                httpContext,
+                id,
+                entityName,
+                config.KeyRouteParts,
+                jsonOptions,
+                options,
+                logger);
+            if (conditionalError is not null) return conditionalError;
+            updatedDb = conditionalResult.Entity!;
+        }
         if (updatedDb is null)
         {
             return Responses.ProblemDetailsResult.NotFound(

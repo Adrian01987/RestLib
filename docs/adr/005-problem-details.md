@@ -91,6 +91,7 @@ baseUri)` to obtain the full URI that matches configured runtime output.
 | 409         | `/problems/insufficient-stock`  | Insufficient Stock    | Requested quantity exceeds available stock |
 | 409         | `/problems/invalid-status-transition` | Invalid Status Transition | Requested status change is not allowed |
 | 412         | `/problems/precondition-failed` | Precondition Failed   |                                      |
+| 501         | `/problems/conditional-write-not-supported` | Conditional Write Not Supported | Repository lacks atomic `If-Match` mutation support |
 | 500         | `/problems/internal-error`      | Internal Server Error |                                      |
 
 The `unauthorized` and `forbidden` types are defined as constants for OpenAPI response documentation but are not constructed by RestLib — ASP.NET Core's authentication/authorization middleware produces the actual 401/403 responses.

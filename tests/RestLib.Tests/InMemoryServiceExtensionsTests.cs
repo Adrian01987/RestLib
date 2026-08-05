@@ -89,11 +89,13 @@ public class InMemoryServiceExtensionsTests
         // Act
         var iRepository = provider.GetService<IRepository<Product, Guid>>();
         var iBatchRepository = provider.GetService<IBatchRepository<Product, Guid>>();
+        var conditionalWriteRepository = provider.GetService<IConditionalWriteRepository<Product, Guid>>();
         var concrete = provider.GetService<InMemoryRepository<Product, Guid>>();
 
         // Assert
         iRepository.Should().BeSameAs(concrete);
         iBatchRepository.Should().BeSameAs(concrete);
+        conditionalWriteRepository.Should().BeSameAs(concrete);
     }
 
     [Fact]

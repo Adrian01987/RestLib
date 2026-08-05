@@ -71,6 +71,12 @@ internal static class PatchHandler
                 if (etagError is not null) return etagError;
                 if (etagEntity is not null) originalEntity = etagEntity;
 
+                var ifMatchPrecondition = ETagHelper.CreateIfMatchPrecondition<TEntity>(httpContext, options);
+                if (ifMatchPrecondition is not null && repository is not IConditionalWriteRepository<TEntity, TKey>)
+                {
+                    return ETagHelper.ConditionalWriteNotSupported(httpContext, jsonOptions, options, logger);
+                }
+
                 // Fetch original entity if not already fetched. PATCH preview uses the
                 // current entity as the merge base so malformed patch documents can be
                 // rejected before repository persistence runs.
@@ -147,7 +153,25 @@ internal static class PatchHandler
                 _ = EntityKeyHelper.TrySetEntityKeyParts(preview, id, config.KeyRouteParts);
 
                 TEntity? patched;
-                if (pipeline?.HasPrePersistEntityHooks == true)
+                if (ifMatchPrecondition is not null)
+                {
+                    var conditionalRepository = (IConditionalWriteRepository<TEntity, TKey>)repository;
+                    var conditionalResult = pipeline?.HasPrePersistEntityHooks == true
+                        ? await conditionalRepository.UpdateConditionallyAsync(id, preview, ifMatchPrecondition, ct)
+                        : await conditionalRepository.PatchConditionallyAsync(id, patchDocument, ifMatchPrecondition, ct);
+                    var conditionalError = ETagHelper.ToErrorResult(
+                        conditionalResult,
+                        httpContext,
+                        id,
+                        entityName,
+                        config.KeyRouteParts,
+                        jsonOptions,
+                        options,
+                        logger);
+                    if (conditionalError is not null) return conditionalError;
+                    patched = conditionalResult.Entity!;
+                }
+                else if (pipeline?.HasPrePersistEntityHooks == true)
                 {
                     // PATCH repositories accept only the original document, so an effective entity
                     // selected by hooks must be persisted through the full-update contract.
@@ -410,6 +434,15 @@ internal static class PatchHandler
             originalApi = etagApi;
         }
 
+        var ifMatchPrecondition = ETagHelper.CreateIfMatchPrecondition<TApiModel, TDbModel>(
+            httpContext,
+            options,
+            mapper);
+        if (ifMatchPrecondition is not null && repository is not IConditionalWriteRepository<TDbModel, TKey>)
+        {
+            return ETagHelper.ConditionalWriteNotSupported(httpContext, jsonOptions, options, logger);
+        }
+
         if (originalDb is null && (pipeline is not null || options.EnableValidation))
         {
             originalDb = await repository.GetByIdAsync(id, ct);
@@ -556,7 +589,27 @@ internal static class PatchHandler
 
         _ = EntityKeyHelper.TrySetEntityKeyParts(persistedDb, id, config.KeyRouteParts);
 
-        var updatedDb = await repository.UpdateAsync(id, persistedDb, ct);
+        TDbModel? updatedDb;
+        if (ifMatchPrecondition is null)
+        {
+            updatedDb = await repository.UpdateAsync(id, persistedDb, ct);
+        }
+        else
+        {
+            var conditionalResult = await ((IConditionalWriteRepository<TDbModel, TKey>)repository)
+                .UpdateConditionallyAsync(id, persistedDb, ifMatchPrecondition, ct);
+            var conditionalError = ETagHelper.ToErrorResult(
+                conditionalResult,
+                httpContext,
+                id,
+                entityName,
+                config.KeyRouteParts,
+                jsonOptions,
+                options,
+                logger);
+            if (conditionalError is not null) return conditionalError;
+            updatedDb = conditionalResult.Entity!;
+        }
         if (updatedDb is null)
         {
             return Responses.ProblemDetailsResult.NotFound(
