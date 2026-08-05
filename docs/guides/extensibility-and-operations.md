@@ -76,6 +76,13 @@ Responses include contextual navigation links:
 Links are CRUD-aware: `update`, `patch`, and `delete` only appear when those
 operations are enabled on the endpoint. Batch responses include per-item links.
 
+For collection links, the API model must expose a conventional `Id` property of
+the resource key type or configure `config.KeySelector` (JSON resources use their
+configured `KeyProperty` or composite `Key`). RestLib validates this dependency
+when endpoints are mapped. If a selector nevertheless returns `null` for an
+individual item at runtime, the item is retained in its original position without
+`_links`; collection counts and pagination metadata remain unchanged.
+
 For custom link relations (e.g., related resources), implement
 `IHateoasLinkProvider<TEntity, TKey>`:
 

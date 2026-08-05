@@ -172,6 +172,15 @@ public static class RestLibEndpointExtensions
                              ?? new RestLibOptions();
         var keyRouteTemplate = config.KeyRouteTemplate;
 
+        // Fail before mapping any routes when an enabled response feature needs
+        // to extract the representation key. Create needs it for Location, while
+        // collection HATEOAS needs it for per-item links.
+        if (config.IsOperationEnabled(RestLibOperation.Create) ||
+            (restLibOptions.EnableHateoas && config.IsOperationEnabled(RestLibOperation.GetAll)))
+        {
+            EntityKeyHelper.ValidateKeyExtraction<TApiModel, TKey>(config.KeySelector);
+        }
+
         // GET /prefix - Get all (paginated)
         if (config.IsOperationEnabled(RestLibOperation.GetAll))
         {
@@ -273,10 +282,6 @@ public static class RestLibEndpointExtensions
         // POST /prefix - Create
         if (config.IsOperationEnabled(RestLibOperation.Create))
         {
-            // Fail fast if we can't extract a key from the entity — prevents
-            // broken Location headers (e.g. "/api/entities/" or "/api/entities/null").
-            EntityKeyHelper.ValidateKeyExtraction<TApiModel, TKey>(config.KeySelector);
-
             var createEndpoint = typeof(TApiModel) == typeof(TDbModel)
                 ? group.MapPost("", CreateHandler.CreateDelegate<TApiModel, TKey>(config))
                 : group.MapPost("", CreateHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config));

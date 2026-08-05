@@ -1,6 +1,6 @@
 # ADR-019: HATEOAS Hypermedia Links
 
-**Status:** Accepted
+**Status:** Accepted (amended 2026-08-05)
 **Date:** 2026-04-10
 
 ## Context
@@ -64,6 +64,12 @@ GetById, GetAll (per item), Create, Update, Patch, and Batch operations
 (create, update, patch items). Delete returns 204 No Content and has no
 links.
 
+Link enrichment is metadata-only and must not change primary response
+data. Collection wrapping preserves the repository page's cardinality and
+order. If a configured selector returns `null` for an individual entity at
+runtime, that entity remains in the response without `_links`; its siblings,
+`total_count`, and pagination links are unchanged.
+
 ### Field selection compatibility
 When `?fields=` is active, entities are projected to
 `Dictionary<string, JsonElement>`. The `_links` property is injected
@@ -90,9 +96,11 @@ HATEOAS logic is isolated in `src/RestLib/Hypermedia/`:
 - `HateoasHelper` — Injection helpers for entities and projected dicts
 - `IHateoasLinkProvider<TEntity, TKey>` — Custom link interface
 
-Each handler checks `options.EnableHateoas` at request time (not at
-registration time), keeping map-time logic unchanged. The link injection
-is a final step before serialization, after hooks and field projection.
+Handlers inject links as a final step before serialization, after hooks and
+field projection. Endpoint registration also validates representation-key
+extraction when HATEOAS and GetAll are enabled. The API model must expose a
+public `Id` property of `TKey` or configure `KeySelector`; mapped resources
+validate the API model because that is the response and link-provider model.
 
 ## Consequences
 - New `RestLibOptions.EnableHateoas` property (additive, no breaking change)
@@ -114,7 +122,8 @@ expansion.
 
 ### Entity key extraction dependency
 Link construction requires extracting the entity key via
-`EntityKeyHelper.GetEntityKey`, which uses the configured `KeySelector`
-or falls back to reflection on an `Id` property. Entities without a
-discoverable key will not receive HATEOAS links in batch responses
-(the entity is returned without `_links` rather than failing).
+the configured `KeySelector` or reflection on an `Id` property. RestLib fails
+endpoint registration when an enabled Create or HATEOAS GetAll operation has
+no structurally discoverable representation key. A runtime `null` key does not
+fail or filter a response: collection and batch entities are returned without
+`_links`.

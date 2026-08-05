@@ -579,7 +579,8 @@ public class OperationSelectionTests
     public async Task MapRestLib_CreateExcluded_NoKeySelectorAndNoIdProperty_Succeeds()
     {
         // Arrange — CustomKeyEntity has no 'Id' and no KeySelector,
-        // but Create is excluded so key extraction validation is skipped
+        // but Create is excluded and HATEOAS is disabled, so no enabled
+        // feature needs to extract a key from collection entities.
         var repository = new CustomKeyEntityRepository();
 
         // Act
@@ -596,6 +597,29 @@ public class OperationSelectionTests
 
         // Assert — no exception means success
         host.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task MapRestLib_ReadOnlyHateoasWithoutDiscoverableKey_ThrowsInvalidOperationException()
+    {
+        // Arrange
+        var repository = new CustomKeyEntityRepository();
+
+        // Act
+        var act = async () => await new TestHostBuilder<CustomKeyEntity, Guid>(repository, "/api/custom")
+            .WithOptions(options => options.EnableHateoas = true)
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.IncludeOperations(RestLibOperation.GetAll);
+            })
+            .BuildAsync();
+
+        // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*CustomKeyEntity*")
+            .WithMessage("*Id*")
+            .WithMessage("*KeySelector*");
     }
 
     #endregion

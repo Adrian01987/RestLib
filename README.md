@@ -394,7 +394,9 @@ For request examples, batch limits, and hook/validation behavior, see
 
 Enable HATEOAS to add CRUD-aware `_links` metadata to entity responses. RestLib can also
 merge in custom link relations through `IHateoasLinkProvider<TEntity, TKey>` when you want
-to point clients at related resources.
+to point clients at related resources. HATEOAS-enabled collections require either a
+conventional `Id` property of the resource key type or an explicit `config.KeySelector`;
+link enrichment never removes an entity from a collection response.
 
 For full response examples and custom link-provider registration, see
 [docs/guides/extensibility-and-operations.md](docs/guides/extensibility-and-operations.md).

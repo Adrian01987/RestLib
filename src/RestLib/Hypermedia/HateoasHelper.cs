@@ -35,15 +35,8 @@ internal static class HateoasHelper
         where TEntity : class
         where TKey : notnull
     {
-        var element = JsonSerializer.SerializeToElement(entity, jsonOptions);
-
-        var result = new Dictionary<string, JsonElement>();
-        foreach (var property in element.EnumerateObject())
-        {
-            result[property.Name] = property.Value;
-        }
-
-        result[LinksPropertyName] = JsonSerializer.SerializeToElement(links, jsonOptions);
+        var result = EntityToDictionary(entity, jsonOptions);
+        InjectLinksIntoProjected(result, links, jsonOptions);
 
         return result;
     }
@@ -88,8 +81,7 @@ internal static class HateoasHelper
     {
         for (var i = 0; i < projectedItems.Count && i < originalEntities.Count; i++)
         {
-            var entityKey = EntityKeyHelper.GetEntityKey(originalEntities[i], config.KeySelector);
-            if (entityKey is null)
+            if (!EntityKeyHelper.TryGetEntityKey(originalEntities[i], config.KeySelector, out var entityKey))
             {
                 continue;
             }
@@ -112,7 +104,10 @@ internal static class HateoasHelper
     /// <param name="collectionPath">The collection route path.</param>
     /// <param name="jsonOptions">The JSON serializer options.</param>
     /// <param name="customLinksProvider">Optional custom link provider.</param>
-    /// <returns>A list of dictionaries, each containing entity properties plus <c>_links</c>.</returns>
+    /// <returns>
+    /// A cardinality- and order-preserving list of entity dictionaries. Items whose
+    /// key is unavailable are retained without a <c>_links</c> property.
+    /// </returns>
     internal static IReadOnlyList<Dictionary<string, JsonElement>> WrapCollectionWithLinks<TEntity, TKey>(
         IReadOnlyList<TEntity> entities,
         RestLibEndpointConfiguration<TEntity, TKey> config,
@@ -127,18 +122,35 @@ internal static class HateoasHelper
 
         foreach (var entity in entities)
         {
-            var entityKey = EntityKeyHelper.GetEntityKey(entity, config.KeySelector);
-            if (entityKey is null)
+            var wrapped = EntityToDictionary(entity, jsonOptions);
+            if (!EntityKeyHelper.TryGetEntityKey(entity, config.KeySelector, out var entityKey))
             {
+                results.Add(wrapped);
                 continue;
             }
 
             var customLinks = customLinksProvider?.GetLinks(entity, entityKey);
             var links = HateoasLinkBuilder.BuildEntityLinks(request, collectionPath, entityKey, config, customLinks);
-            var wrapped = EntityWithLinks<TEntity, TKey>(entity, links, jsonOptions);
+            InjectLinksIntoProjected(wrapped, links, jsonOptions);
             results.Add(wrapped);
         }
 
         return results;
+    }
+
+    private static Dictionary<string, JsonElement> EntityToDictionary<TEntity>(
+        TEntity entity,
+        JsonSerializerOptions jsonOptions)
+        where TEntity : class
+    {
+        var element = JsonSerializer.SerializeToElement(entity, jsonOptions);
+        var result = new Dictionary<string, JsonElement>();
+
+        foreach (var property in element.EnumerateObject())
+        {
+            result[property.Name] = property.Value;
+        }
+
+        return result;
     }
 }

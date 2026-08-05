@@ -64,19 +64,43 @@ internal static class EntityKeyHelper
         where TEntity : class
         where TKey : notnull
     {
+        return TryGetEntityKey(entity, keySelector, out var key) ? key : default;
+    }
+
+    /// <summary>
+    /// Attempts to extract the key from an entity using the configured key selector
+    /// or reflection. Unlike <see cref="GetEntityKey{TEntity, TKey}"/>, this method
+    /// distinguishes a missing key source from the default value of a value-type key.
+    /// </summary>
+    /// <typeparam name="TEntity">The entity type.</typeparam>
+    /// <typeparam name="TKey">The key type.</typeparam>
+    /// <param name="entity">The entity to extract the key from.</param>
+    /// <param name="keySelector">An optional key selector function.</param>
+    /// <param name="key">The extracted key when this method returns <c>true</c>.</param>
+    /// <returns><c>true</c> when a non-null key was extracted; otherwise <c>false</c>.</returns>
+    internal static bool TryGetEntityKey<TEntity, TKey>(
+        TEntity entity,
+        Func<TEntity, TKey>? keySelector,
+        out TKey key)
+        where TEntity : class
+        where TKey : notnull
+    {
         if (keySelector is not null)
         {
-            return keySelector(entity);
+            key = keySelector(entity);
+            return key is not null;
         }
 
         // Fall back to reflection: look for 'Id' property (cached)
         var idProperty = IdPropertyCache.GetOrAdd(typeof(TEntity), t => t.GetProperty("Id"));
         if (idProperty is not null && idProperty.PropertyType == typeof(TKey))
         {
-            return (TKey?)idProperty.GetValue(entity);
+            key = (TKey)idProperty.GetValue(entity)!;
+            return key is not null;
         }
 
-        return default;
+        key = default!;
+        return false;
     }
 
     /// <summary>

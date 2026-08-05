@@ -355,6 +355,68 @@ public class HateoasLinkBuilderTests
 
     #endregion
 
+    // ──────────────────────── HateoasHelper.WrapCollectionWithLinks ────────────────────────
+
+    #region WrapCollectionWithLinks
+
+    [Fact]
+    [Trait("Category", "Story19")]
+    public void WrapCollectionWithLinks_SelectorReturnsNull_PreservesEntityOrderWithoutLinks()
+    {
+        // Arrange
+        var request = CreateFakeRequest();
+        var config = new RestLibEndpointConfiguration<NullableKeyEntity, string>
+        {
+            KeySelector = entity => entity.ResourceKey!
+        };
+        NullableKeyEntity[] entities =
+        [
+            new() { ResourceKey = "linked", Name = "Linked" },
+            new() { ResourceKey = null, Name = "Unlinked" }
+        ];
+
+        // Act
+        var result = HateoasHelper.WrapCollectionWithLinks(
+            entities,
+            config,
+            request,
+            "/api/items",
+            JsonOptions);
+
+        // Assert
+        result.Should().HaveCount(2);
+        result.Select(item => item["name"].GetString()).Should().Equal("Linked", "Unlinked");
+        result[0].Should().ContainKey("_links");
+        result[0]["_links"].GetProperty("self").GetProperty("href").GetString()
+            .Should().EndWith("/api/items/linked");
+        result[1].Should().NotContainKey("_links");
+    }
+
+    [Fact]
+    [Trait("Category", "Story19")]
+    public void WrapCollectionWithLinks_ValueTypeKeySourceMissing_PreservesEntityWithoutDefaultKeyLink()
+    {
+        // Arrange
+        var request = CreateFakeRequest();
+        var config = new RestLibEndpointConfiguration<MissingGuidKeyEntity, Guid>();
+        MissingGuidKeyEntity[] entities = [new() { Name = "Unlinked" }];
+
+        // Act
+        var result = HateoasHelper.WrapCollectionWithLinks(
+            entities,
+            config,
+            request,
+            "/api/items",
+            JsonOptions);
+
+        // Assert
+        result.Should().ContainSingle();
+        result[0]["name"].GetString().Should().Be("Unlinked");
+        result[0].Should().NotContainKey("_links");
+    }
+
+    #endregion
+
     // ──────────────────────── HateoasLink JSON serialization ────────────────────────
 
     #region HateoasLink Serialization
@@ -392,4 +454,16 @@ public class HateoasLinkBuilderTests
     }
 
     #endregion
+
+    private sealed class NullableKeyEntity
+    {
+        public string? ResourceKey { get; init; }
+
+        public required string Name { get; init; }
+    }
+
+    private sealed class MissingGuidKeyEntity
+    {
+        public required string Name { get; init; }
+    }
 }
