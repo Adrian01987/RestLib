@@ -99,7 +99,7 @@ internal sealed class MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>
             () => context.BatchRepository!.GetByIdsAsync(ids, context.CancellationToken),
             context.CancellationToken);
 
-        var itemsToPersist = new List<(int Index, TKey Id, TDbModel Entity)>();
+        var itemsToPersist = new List<(int Index, TKey Id, JsonElement Body, TDbModel Entity)>();
 
         foreach (var (index, id, body) in validItems)
         {
@@ -217,7 +217,7 @@ internal sealed class MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>
             }
 
             _ = TrySetDbEntityKey(persistedDb, id, context);
-            itemsToPersist.Add((index, id, persistedDb));
+            itemsToPersist.Add((index, id, body, persistedDb));
         }
 
         if (itemsToPersist.Count == 0)
@@ -230,13 +230,15 @@ internal sealed class MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>
             () => context.BatchRepository!.UpdateManyAsync(entities, context.CancellationToken),
             context.CancellationToken);
 
-        for (var i = 0; i < itemsToPersist.Count; i++)
-        {
-            context.CancellationToken.ThrowIfCancellationRequested();
-
-            var item = itemsToPersist[i];
-            results[item.Index] = await RunAfterPersistAndBuildResultAsync(item.Index, updated[i], item.Id, context);
-        }
+        var persistedItems = itemsToPersist
+            .Select(item => (item.Index, item.Id, item.Body))
+            .ToList();
+        await ProcessBulkResultsAsync(
+            persistedItems,
+            updated,
+            results,
+            context,
+            allowMissingResults: true);
 
         RestLibLogMessages.BatchPatchCompleted(context.Logger, updated.Count);
     }

@@ -464,21 +464,109 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
     /// <param name="bulkResults">The entities returned from the bulk operation.</param>
     /// <param name="results">The results array to populate.</param>
     /// <param name="context">The batch context.</param>
+    /// <param name="allowMissingResults">
+    /// Whether the repository may omit entities that no longer exist. Omitted
+    /// update and patch results are correlated by key and returned as 404 items.
+    /// </param>
+    /// <param name="expectedResultKeys">
+    /// Caller-supplied create keys captured before persistence, indexed by input position.
+    /// Generated default keys are omitted because their result order is not observable.
+    /// </param>
     protected async Task ProcessBulkResultsAsync(
         List<TValidItem> validItems,
         IReadOnlyList<TEntity> bulkResults,
         BatchItemResult?[] results,
-        BatchContext<TEntity, TKey> context)
+        BatchContext<TEntity, TKey> context,
+        bool allowMissingResults = false,
+        IReadOnlyDictionary<int, TKey>? expectedResultKeys = null)
     {
+        var actionName = Operation.ToString().ToLowerInvariant();
+        IReadOnlyList<int?> correlations;
+
+        if (allowMissingResults)
+        {
+            BatchRepositoryResultContract.ValidateNonNull(bulkResults, actionName);
+
+            var submittedKeys = new List<TKey>(validItems.Count);
+            foreach (var validItem in validItems)
+            {
+                var resourceId = GetResourceId(validItem);
+                if (resourceId is null)
+                {
+                    throw new BatchRepositoryContractException(
+                        $"The '{actionName}' batch pipeline could not determine a submitted resource key.");
+                }
+
+                submittedKeys.Add(resourceId);
+            }
+
+            var returnedKeys = new List<TKey>(bulkResults.Count);
+            foreach (var entity in bulkResults)
+            {
+                if (!EntityKeyHelper.TryGetEntityKey(entity, context.EndpointConfig.KeySelector, out var key))
+                {
+                    throw new BatchRepositoryContractException(
+                        $"The batch repository contract was violated for '{actionName}': " +
+                        "a returned entity did not expose its resource key.");
+                }
+
+                returnedKeys.Add(key);
+            }
+
+            correlations = BatchRepositoryResultContract.CorrelateByKey(
+                submittedKeys,
+                returnedKeys,
+                actionName);
+        }
+        else
+        {
+            BatchRepositoryResultContract.ValidateComplete(bulkResults, validItems.Count, actionName);
+            if (expectedResultKeys is not null)
+            {
+                foreach (var (index, expectedKey) in expectedResultKeys)
+                {
+                    var entity = bulkResults[index];
+                    if (!EntityKeyHelper.TryGetEntityKey(
+                            entity,
+                            context.EndpointConfig.KeySelector,
+                            out var returnedKey) ||
+                        !EqualityComparer<TKey>.Default.Equals(returnedKey, expectedKey))
+                    {
+                        throw new BatchRepositoryContractException(
+                            $"The batch repository contract was violated for '{actionName}': " +
+                            "a caller-supplied key was returned at a different position.");
+                    }
+                }
+            }
+
+            correlations = Enumerable.Range(0, validItems.Count)
+                .Select(static index => (int?)index)
+                .ToArray();
+        }
+
         for (var j = 0; j < validItems.Count; j++)
         {
             context.CancellationToken.ThrowIfCancellationRequested();
 
-            var index = GetIndex(validItems[j]);
-            var entity = bulkResults[j];
+            var validItem = validItems[j];
+            var index = GetIndex(validItem);
+            var resultIndex = correlations[j];
+            if (resultIndex is null)
+            {
+                var resourceId = GetResourceId(validItem)!;
+                results[index] = NotFoundResult(
+                    index,
+                    typeof(TEntity).Name,
+                    resourceId,
+                    context.HttpContext.Request.Path,
+                    context.EndpointConfig.KeyRouteParts);
+                continue;
+            }
+
+            var entity = bulkResults[resultIndex.Value];
 
             results[index] = await RunAfterPersistAndBuildResultAsync(
-                index, entity, GetResourceId(validItems[j]), context);
+                index, entity, GetResourceId(validItem), context);
         }
     }
 
@@ -526,14 +614,25 @@ internal abstract class BatchActionPipeline<TEntity, TKey, TRawItem, TValidItem>
             {
                 await PersistBulkAsync(validItems, results, context);
             }
-            catch (BulkPersistenceException bulkException)
+            catch (Exception bulkException) when (
+                bulkException is BulkPersistenceException or BatchRepositoryContractException)
             {
                 context.CancellationToken.ThrowIfCancellationRequested();
 
-                var persistenceException = bulkException.InnerException ?? bulkException;
+                var persistenceException = bulkException is BulkPersistenceException
+                    ? bulkException.InnerException ?? bulkException
+                    : bulkException;
                 var actionName = Operation.ToString().ToLowerInvariant();
-                RestLibLogMessages.BulkPersistenceFailed(
-                    context.Logger, actionName, validItems.Count, persistenceException);
+                if (persistenceException is BatchRepositoryContractException)
+                {
+                    RestLibLogMessages.BatchRepositoryContractViolated(
+                        context.Logger, actionName, validItems.Count, persistenceException);
+                }
+                else
+                {
+                    RestLibLogMessages.BulkPersistenceFailed(
+                        context.Logger, actionName, validItems.Count, persistenceException);
+                }
 
                 var failedItems = validItems
                     .Where(item => results[GetIndex(item)] is null)

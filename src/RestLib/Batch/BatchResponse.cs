@@ -5,11 +5,15 @@ namespace RestLib.Batch;
 
 /// <summary>
 /// Represents the batch response envelope containing per-item results.
+/// For a successfully parsed request items array, the envelope contains one
+/// result per request item in the same order as the request.
 /// </summary>
 public class BatchResponse
 {
     /// <summary>
-    /// Gets or sets the per-item results.
+    /// Gets or sets the per-item results in original request order.
+    /// Each entry's <see cref="BatchItemResult.Index"/> identifies the
+    /// corresponding zero-based request position.
     /// </summary>
     [JsonPropertyName("items")]
     public required IReadOnlyList<BatchItemResult> Items { get; init; }
@@ -22,6 +26,8 @@ public class BatchItemResult
 {
     /// <summary>
     /// Gets or sets the zero-based index of this item in the original request.
+    /// In a per-item batch response, this also matches the entry's position in
+    /// <see cref="BatchResponse.Items"/>.
     /// </summary>
     [JsonPropertyName("index")]
     public required int Index { get; init; }

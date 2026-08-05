@@ -101,7 +101,7 @@ internal sealed class BatchUpdatePipeline<TEntity, TKey>
             () => context.BatchRepository!.UpdateManyAsync(entities, context.CancellationToken),
             context.CancellationToken);
 
-        await ProcessBulkResultsAsync(validItems, updated, results, context);
+        await ProcessBulkResultsAsync(validItems, updated, results, context, allowMissingResults: true);
     }
 
     /// <inheritdoc/>

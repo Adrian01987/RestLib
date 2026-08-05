@@ -30,6 +30,7 @@ public partial class InMemoryRepositoryTests
 
         // Assert
         result.Should().HaveCount(3);
+        result.Select(entity => entity.Id).Should().Equal(entities.Select(entity => entity.Id));
         repository.Count.Should().Be(3);
         foreach (var entity in entities)
         {

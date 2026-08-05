@@ -42,6 +42,26 @@ Content-Type: application/json
 The response reports per-item status. All succeeded returns 200; mixed results
 return 207 Multi-Status with individual status codes per item.
 
+For a successfully parsed `items` array, the response contains one entry per
+request item in the same order. The entry's `index` is its original zero-based
+request position. Update and patch repositories may omit resources that are
+missing at persistence time; RestLib correlates returned entities by resource
+key, so the missing input receives a 404 in its own slot without shifting the
+entities returned for later inputs.
+
+Custom `IBatchRepository<TEntity, TKey>` implementations must honor the public
+cardinality, ordering, key, and duplicate-key rules. Create returns exactly one
+non-null entity per input in input order; this is essential when keys are
+generated during the call because RestLib cannot reconstruct a different order
+from pre-persistence keys. RestLib does compare caller-supplied non-default
+create keys with the returned entity at each response position. Update and patch
+return non-null matching entities in relative input order while omitting missing
+keys. RestLib validates observable bulk-result invariants before after-persist
+hooks run. If a result cannot be associated safely, affected unresolved items
+enter per-item error handling and default to internal errors (configured error
+hooks may replace that response). RestLib does not retry the write because the
+repository may already have committed it.
+
 Batch size is limited to 100 items by default (configurable via
 `RestLibOptions.MaxBatchSize`). Hooks fire once per item, and validation runs
 per item with errors reported individually.

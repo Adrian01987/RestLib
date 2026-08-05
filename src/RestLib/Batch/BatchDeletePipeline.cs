@@ -119,11 +119,15 @@ internal sealed class BatchDeletePipeline<TEntity, TKey>
         if (itemsToDelete.Count == 0) return;
 
         var keysToDelete = itemsToDelete.Select(v => v.Key).ToList();
-        _ = await BulkPersistenceExecutor.ExecuteAsync(
+        var deletedCount = await BulkPersistenceExecutor.ExecuteAsync(
             () => context.BatchRepository!.DeleteManyAsync(keysToDelete, context.CancellationToken),
             context.CancellationToken);
 
-        RestLibLogMessages.BatchDeleteCompleted(context.Logger, keysToDelete.Count);
+        BatchRepositoryResultContract.ValidateDeletedCount(
+            keysToDelete.Distinct().Count(),
+            deletedCount);
+
+        RestLibLogMessages.BatchDeleteCompleted(context.Logger, deletedCount);
 
         // Run AfterPersist hooks and build 204 results for each deleted item.
         foreach (var (index, key, entity) in itemsToDelete)

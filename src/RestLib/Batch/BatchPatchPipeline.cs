@@ -213,7 +213,12 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
                         context.CancellationToken);
                 }
 
-                await ProcessBulkResultsAsync(itemsToPersist, patched, results, context);
+                await ProcessBulkResultsAsync(
+                    itemsToPersist,
+                    patched,
+                    results,
+                    context,
+                    allowMissingResults: true);
 
                 RestLibLogMessages.BatchPatchCompleted(context.Logger, patched.Count);
             }

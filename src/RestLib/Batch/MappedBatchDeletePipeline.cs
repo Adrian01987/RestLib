@@ -141,11 +141,15 @@ internal sealed class MappedBatchDeletePipeline<TApiModel, TDbModel, TKey>
         }
 
         var keysToDelete = itemsToDelete.Select(item => item.Key).ToList();
-        _ = await BulkPersistenceExecutor.ExecuteAsync(
+        var deletedCount = await BulkPersistenceExecutor.ExecuteAsync(
             () => context.BatchRepository!.DeleteManyAsync(keysToDelete, context.CancellationToken),
             context.CancellationToken);
 
-        RestLibLogMessages.BatchDeleteCompleted(context.Logger, keysToDelete.Count);
+        BatchRepositoryResultContract.ValidateDeletedCount(
+            keysToDelete.Distinct().Count(),
+            deletedCount);
+
+        RestLibLogMessages.BatchDeleteCompleted(context.Logger, deletedCount);
 
         foreach (var (index, key, apiEntity, dbEntity) in itemsToDelete)
         {

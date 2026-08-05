@@ -1,6 +1,6 @@
 # ADR-008: Batch Operations
 
-**Status:** Accepted
+**Status:** Accepted (amended 2026-08-05)
 **Date:** 2026-03-25
 
 ## Context
@@ -41,6 +41,12 @@ succeed, 207 Multi-Status when results are mixed. Each item in the response
 carries its own `status`, `entity` (on success), and `error` (on failure).
 This is more practical than all-or-nothing for large imports.
 
+Once the request `items` array has been parsed successfully, the response has
+exactly one entry per request item in the same order. Each entry's `index` is
+the zero-based position of that item in the original request. Validation,
+not-found, hook, persistence, and repository-contract failures therefore stay
+attached to the request item that produced them.
+
 ### Non-transactional processing
 
 Batch operations are **non-transactional by design**. There is no rollback
@@ -77,10 +83,14 @@ operation. This avoids breaking existing repository implementations.
 The batch repository contract also defines adapter-independent item semantics:
 
 - Create returns one result per input in input order and rejects duplicate keys
-  without persisting any item.
+  without persisting any item. Entries are non-null. Input order is especially
+  important when the repository generates keys: no pre-persistence key exists
+  from which RestLib could reconstruct a reordered association.
 - Update and patch skip missing keys and return matching items in relative input
   order. Repeated keys are applied in order; the last value is persisted and
-  every matching result represents that final value.
+  every matching result represents that final value. Each returned entity is
+  identified by its resource key, so an omitted key becomes a 404 at that key's
+  original request position without shifting later results.
 - Delete ignores missing keys and counts each distinct deleted entity once.
 - `GetByIdsAsync` omits missing keys and coalesces repeated keys in its keyed
   result.
@@ -88,6 +98,32 @@ The batch repository contract also defines adapter-independent item semantics:
 The built-in InMemory and EF Core adapters implement these semantics. Custom
 batch repositories must provide the same behavior so changing adapters does
 not change endpoint outcomes.
+
+### Bulk result contract validation
+
+RestLib validates a bulk repository's returned result set before running
+after-persist hooks or building response entities. It checks every observable
+invariant needed for safe association, including null entries, cardinality,
+requested resource keys, and duplicate-key multiplicity. Update and patch
+results are correlated by key so their documented omission behavior is not
+mistaken for positional output. Create results retain their documented
+same-order contract; when every key is generated during persistence, that
+ordering cannot be independently proven and remains the repository's
+responsibility. Caller-supplied non-default create keys are captured before the
+repository call and compared with the key returned at each position.
+
+If a result set cannot be associated safely, RestLib does not guess, shift
+entities between request positions, or run after-persist hooks against a
+possibly wrong entity. Unresolved items enter the normal per-item error pipeline
+and default to internal-error outcomes; an application error hook may replace
+that default response. Results already produced by request validation or
+pre-persistence hooks remain intact. A delete count that cannot account for the
+distinct keys submitted for deletion is handled with the same unknown-outcome
+rule.
+
+Contract validation happens after the repository call may have committed.
+RestLib therefore never retries a contract-violating bulk result through the
+individual repository path.
 
 ### Bulk failure handling
 
@@ -105,6 +141,8 @@ Post-persistence processing runs outside the bulk-persistence boundary.
 After-persist hooks, model mapping, HATEOAS providers, and result construction
 can therefore fail after a successful repository call, but such a failure is
 not classified as a persistence failure and cannot trigger another write.
+Bulk result contract validation follows the same no-retry rule because an
+invalid return value does not prove that persistence failed or rolled back.
 
 Request cancellation is also outside ordinary batch failure handling. When an
 `OperationCanceledException` is observed while the request token is cancelled,

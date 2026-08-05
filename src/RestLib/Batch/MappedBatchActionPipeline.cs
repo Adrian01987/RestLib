@@ -427,14 +427,18 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
     /// <param name="dbEntity">The persisted DB entity.</param>
     /// <param name="resourceId">The resource ID for hook context.</param>
     /// <param name="context">The mapped batch context.</param>
+    /// <param name="mappedApiEntity">
+    /// An API entity mapped during bulk-result validation, when available.
+    /// </param>
     /// <returns>The batch item result.</returns>
     protected async Task<BatchItemResult> RunAfterPersistAndBuildResultAsync(
         int index,
         TDbModel dbEntity,
         TKey? resourceId,
-        MappedBatchContext<TApiModel, TDbModel, TKey> context)
+        MappedBatchContext<TApiModel, TDbModel, TKey> context,
+        TApiModel? mappedApiEntity = null)
     {
-        var apiEntity = context.Mapper.ToApi(dbEntity);
+        var apiEntity = mappedApiEntity ?? context.Mapper.ToApi(dbEntity);
         var entityKey = EntityKeyHelper.GetEntityKey(apiEntity, context.EndpointConfig.KeySelector);
 
         if (context.DbPipeline is not null)
@@ -511,24 +515,122 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
     /// <param name="bulkResults">The DB entities returned from the bulk operation.</param>
     /// <param name="results">The results array to populate.</param>
     /// <param name="context">The mapped batch context.</param>
+    /// <param name="allowMissingResults">
+    /// Whether the repository may omit entities that no longer exist. Omitted
+    /// update and patch results are correlated by API-model key and returned as 404 items.
+    /// </param>
+    /// <param name="expectedResultKeys">
+    /// Caller-supplied create keys captured before persistence, indexed by input position.
+    /// Generated default keys are omitted because their result order is not observable.
+    /// </param>
     protected async Task ProcessBulkResultsAsync(
         List<TValidItem> validItems,
         IReadOnlyList<TDbModel> bulkResults,
         BatchItemResult?[] results,
-        MappedBatchContext<TApiModel, TDbModel, TKey> context)
+        MappedBatchContext<TApiModel, TDbModel, TKey> context,
+        bool allowMissingResults = false,
+        IReadOnlyDictionary<int, TKey>? expectedResultKeys = null)
     {
+        var actionName = Operation.ToString().ToLowerInvariant();
+        BatchRepositoryResultContract.ValidateNonNull(bulkResults, actionName);
+
+        IReadOnlyList<int?> correlations;
+        IReadOnlyList<TApiModel?> mappedApiEntities = Array.Empty<TApiModel?>();
+
+        if (allowMissingResults)
+        {
+            var submittedKeys = new List<TKey>(validItems.Count);
+            foreach (var validItem in validItems)
+            {
+                var resourceId = GetResourceId(validItem);
+                if (resourceId is null)
+                {
+                    throw new BatchRepositoryContractException(
+                        $"The '{actionName}' mapped batch pipeline could not determine a submitted resource key.");
+                }
+
+                submittedKeys.Add(resourceId);
+            }
+
+            var apiEntities = bulkResults
+                .Select(context.Mapper.ToApi)
+                .ToList();
+            var returnedKeys = new List<TKey>(apiEntities.Count);
+            foreach (var apiEntity in apiEntities)
+            {
+                if (!EntityKeyHelper.TryGetEntityKey(apiEntity, context.EndpointConfig.KeySelector, out var key))
+                {
+                    throw new BatchRepositoryContractException(
+                        $"The batch repository contract was violated for '{actionName}': " +
+                        "a returned entity did not expose its API resource key.");
+                }
+
+                returnedKeys.Add(key);
+            }
+
+            correlations = BatchRepositoryResultContract.CorrelateByKey(
+                submittedKeys,
+                returnedKeys,
+                actionName);
+            mappedApiEntities = apiEntities;
+        }
+        else
+        {
+            BatchRepositoryResultContract.ValidateComplete(bulkResults, validItems.Count, actionName);
+            if (expectedResultKeys is not null && expectedResultKeys.Count > 0)
+            {
+                var apiEntities = new TApiModel?[bulkResults.Count];
+                foreach (var (index, expectedKey) in expectedResultKeys)
+                {
+                    var apiEntity = context.Mapper.ToApi(bulkResults[index]);
+                    apiEntities[index] = apiEntity;
+                    if (!EntityKeyHelper.TryGetEntityKey(
+                            apiEntity,
+                            context.EndpointConfig.KeySelector,
+                            out var returnedKey) ||
+                        !EqualityComparer<TKey>.Default.Equals(returnedKey, expectedKey))
+                    {
+                        throw new BatchRepositoryContractException(
+                            $"The batch repository contract was violated for '{actionName}': " +
+                            "a caller-supplied key was returned at a different position.");
+                    }
+                }
+
+                mappedApiEntities = apiEntities;
+            }
+
+            correlations = Enumerable.Range(0, validItems.Count)
+                .Select(static index => (int?)index)
+                .ToArray();
+        }
+
         for (var j = 0; j < validItems.Count; j++)
         {
             context.CancellationToken.ThrowIfCancellationRequested();
 
-            var index = GetIndex(validItems[j]);
-            var dbEntity = bulkResults[j];
+            var validItem = validItems[j];
+            var index = GetIndex(validItem);
+            var resultIndex = correlations[j];
+            if (resultIndex is null)
+            {
+                results[index] = NotFoundResult(
+                    index,
+                    GetResourceId(validItem)!,
+                    context.HttpContext.Request.Path);
+                continue;
+            }
+
+            var dbEntity = bulkResults[resultIndex.Value];
+            var apiEntity = resultIndex.Value < mappedApiEntities.Count
+                ? mappedApiEntities[resultIndex.Value]
+                : null;
 
             results[index] = await RunAfterPersistAndBuildResultAsync(
                 index,
                 dbEntity,
-                GetResourceId(validItems[j]),
-                context);
+                GetResourceId(validItem),
+                context,
+                apiEntity);
         }
     }
 
@@ -602,17 +704,31 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
             {
                 await PersistBulkAsync(validItems, results, context);
             }
-            catch (BulkPersistenceException bulkException)
+            catch (Exception bulkException) when (
+                bulkException is BulkPersistenceException or BatchRepositoryContractException)
             {
                 context.CancellationToken.ThrowIfCancellationRequested();
 
-                var persistenceException = bulkException.InnerException ?? bulkException;
+                var persistenceException = bulkException is BulkPersistenceException
+                    ? bulkException.InnerException ?? bulkException
+                    : bulkException;
                 var actionName = Operation.ToString().ToLowerInvariant();
-                RestLibLogMessages.BulkPersistenceFailed(
-                    context.Logger,
-                    actionName,
-                    validItems.Count,
-                    persistenceException);
+                if (persistenceException is BatchRepositoryContractException)
+                {
+                    RestLibLogMessages.BatchRepositoryContractViolated(
+                        context.Logger,
+                        actionName,
+                        validItems.Count,
+                        persistenceException);
+                }
+                else
+                {
+                    RestLibLogMessages.BulkPersistenceFailed(
+                        context.Logger,
+                        actionName,
+                        validItems.Count,
+                        persistenceException);
+                }
 
                 var failedItems = validItems
                     .Where(item => results[GetIndex(item)] is null)

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using RestLib.Endpoints;
 using RestLib.Logging;
 
 namespace RestLib.Batch;
@@ -155,11 +156,20 @@ internal sealed class MappedBatchCreatePipeline<TApiModel, TDbModel, TKey>
         MappedBatchContext<TApiModel, TDbModel, TKey> context)
     {
         var entities = validItems.Select(item => item.DbEntity).ToList();
+        var apiEntities = validItems.Select(item => item.ApiEntity).ToList();
+        var expectedResultKeys = BatchRepositoryResultContract.CaptureObservableCreateKeys(
+            apiEntities,
+            entity => EntityKeyHelper.GetEntityKey(entity, context.EndpointConfig.KeySelector));
         var created = await BulkPersistenceExecutor.ExecuteAsync(
             () => context.BatchRepository!.CreateManyAsync(entities, context.CancellationToken),
             context.CancellationToken);
 
-        await ProcessBulkResultsAsync(validItems, created, results, context);
+        await ProcessBulkResultsAsync(
+            validItems,
+            created,
+            results,
+            context,
+            expectedResultKeys: expectedResultKeys);
 
         RestLibLogMessages.BatchCreateCompleted(context.Logger, created.Count);
     }

@@ -385,7 +385,13 @@ see [docs/guides/query-features.md](docs/guides/query-features.md#nested-object-
 
 Batch endpoints support create, update, patch, and delete actions over multiple
 resources in one request. Responses report per-item status, returning 200 when all
-items succeed and 207 Multi-Status when results are mixed.
+items succeed and 207 Multi-Status when results are mixed. A successfully parsed
+items array produces one response entry per request item in original order; update
+and patch omissions are associated by resource key rather than by shifted list
+position. RestLib validates custom bulk-repository results before after-persist
+processing and sends unsafe associations through per-item error handling, which
+defaults to internal failures, without retrying a write that may already have
+committed.
 
 For request examples, batch limits, and hook/validation behavior, see
 [docs/guides/extensibility-and-operations.md](docs/guides/extensibility-and-operations.md).

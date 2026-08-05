@@ -114,7 +114,7 @@ public class EfCoreBatchTests : IAsyncLifetime
 
         // Assert
         result.Should().HaveCount(5);
-        result.Select(product => product.Id).Should().BeEquivalentTo(products.Select(product => product.Id));
+        result.Select(product => product.Id).Should().Equal(products.Select(product => product.Id));
         _db.Products.Should().HaveCount(5);
 
         var persistedProducts = _db.Products.ToList();

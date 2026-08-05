@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Batch bulk results are now validated and correlated before after-persist processing: responses preserve one original-order slot per request item, update/patch omissions remain attached to their resource keys, and unsafe custom-repository results enter per-item error handling without retrying a potentially committed write
 - Nested field-selection response shape now remains stable across sparse, dense, and class-level converter projection strategies
 - Folder-loaded two-model resources now honor `UnifiedTypeResolver` results without still requiring `Mapping.DbType` in JSON
 - Parallel test runs no longer hit transient `MvcTestingAppManifest.json` file-lock errors; the test projects now use `Microsoft.AspNetCore.TestHost` directly instead of the unused MVC testing manifest pipeline

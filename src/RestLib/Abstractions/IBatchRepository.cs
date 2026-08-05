@@ -11,6 +11,13 @@ namespace RestLib.Abstractions;
 /// when one throws, none of the changes from that call may remain persisted.
 /// RestLib reports the failure and does not retry through
 /// <see cref="IRepository{TEntity, TKey}"/>.
+/// Returned entities are also part of the repository contract: entries must be
+/// non-null, must represent only the supplied inputs, and must follow each
+/// method's documented cardinality and ordering rules. RestLib validates the
+/// observable parts of that contract before associating bulk results with HTTP
+/// response items. A result that cannot be associated safely enters per-item
+/// error handling, defaults to an internal failure, and is never retried because
+/// persistence may have completed.
 /// </summary>
 /// <typeparam name="TEntity">The entity type managed by this repository.</typeparam>
 /// <typeparam name="TKey">The type of the entity's primary key.</typeparam>
@@ -20,7 +27,9 @@ public interface IBatchRepository<TEntity, TKey>
 {
     /// <summary>
     /// Creates multiple entities in a single operation.
-    /// The returned list contains one entity per input in the same order.
+    /// The returned list contains one non-null entity per input in the same order.
+    /// This ordering is mandatory when the repository generates keys because a
+    /// caller has no pre-persistence key with which to reconstruct the association.
     /// Duplicate keys, including collisions produced by key generation, must
     /// reject the entire operation without persisting any input entity.
     /// </summary>
@@ -35,6 +44,8 @@ public interface IBatchRepository<TEntity, TKey>
     /// Updates (fully replaces) multiple entities in a single operation.
     /// Inputs whose keys do not exist are skipped. The returned list contains
     /// one entity for each matching input, preserving their relative input order.
+    /// Every returned entity must carry the key of the input it represents;
+    /// unrelated and null entities are not valid results.
     /// Repeated keys are applied in input order, with the last value persisted;
     /// every returned occurrence represents that final persisted value.
     /// </summary>
@@ -50,6 +61,8 @@ public interface IBatchRepository<TEntity, TKey>
     /// Resource-key fields are immutable and must not be modified by a patch.
     /// Inputs whose keys do not exist are skipped. The returned list contains
     /// one entity for each matching input, preserving their relative input order.
+    /// Every returned entity must carry the key of the input it represents;
+    /// unrelated and null entities are not valid results.
     /// Repeated keys are patched sequentially in input order, and every returned
     /// occurrence represents the final persisted value for that key.
     /// </summary>
@@ -83,6 +96,7 @@ public interface IBatchRepository<TEntity, TKey>
     /// A dictionary mapping each found key to its entity.
     /// Keys that do not exist in the store are omitted from the result.
     /// Repeated input keys are represented once because the result is keyed.
+    /// Each value must be non-null and must represent its dictionary key.
     /// </returns>
     Task<IReadOnlyDictionary<TKey, TEntity>> GetByIdsAsync(
         IReadOnlyList<TKey> ids,

@@ -63,6 +63,15 @@ internal static partial class RestLibLogMessages
     internal static partial void BatchItemPersistenceFailed(
         ILogger logger, string action, int itemIndex, Exception exception);
 
+    /// <summary>
+    /// Logs that a batch repository returned a result that could not be safely
+    /// associated with the submitted items.
+    /// </summary>
+    [LoggerMessage(EventId = 1113, Level = LogLevel.Error,
+        Message = "Batch repository result violated its ordering or cardinality contract; successes suppressed (action: {Action}, item count: {ItemCount})")]
+    internal static partial void BatchRepositoryContractViolated(
+        ILogger logger, string action, int itemCount, Exception exception);
+
     // ──────────────────────────────────────────────────────────────
     //  BatchCreatePipeline (1130–1139)
     // ──────────────────────────────────────────────────────────────
