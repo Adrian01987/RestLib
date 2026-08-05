@@ -92,6 +92,11 @@ app.MapRestLib<Product, Guid>("/api/products", config =>
 app.Run();
 ```
 
+`AddRestLib` is idempotent. The first successful call defines the application's global
+RestLib and JSON settings; later calls are no-ops and do not run their configuration
+delegates. Keep all global RestLib settings in the first call, even when application
+startup is split across modules.
+
 Run the app and open the API reference at `/scalar`:
 
 ```bash

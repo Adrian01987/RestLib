@@ -1,9 +1,17 @@
+using System.Net;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using FluentAssertions;
+using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using RestLib.Abstractions;
+using RestLib.Caching;
 using RestLib.Configuration;
 using RestLib.Hooks;
+using RestLib.Serialization;
 using RestLib.Tests.Fakes;
 using Xunit;
 
@@ -76,6 +84,199 @@ public class ServiceRegistrationTests
         var options = provider.GetService<RestLibOptions>();
         options.Should().NotBeNull();
         options!.DefaultPageSize.Should().Be(10);
+    }
+
+    [Fact]
+    public void AddRestLib_CalledTwice_ResolvedOptionsUseFirstConfigurationConsistently()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddRestLib(options =>
+        {
+            options.JsonNamingPolicy = JsonNamingPolicy.CamelCase;
+            options.OmitNullValues = false;
+            options.DefaultPageSize = 12;
+            options.MaxPageSize = 120;
+            options.RequireAuthorizationByDefault = false;
+            options.EnableETagSupport = false;
+            options.EnableHateoas = true;
+        });
+        services.AddRestLib(options =>
+        {
+            options.JsonNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
+            options.OmitNullValues = true;
+            options.DefaultPageSize = 42;
+            options.MaxPageSize = 420;
+            options.RequireAuthorizationByDefault = true;
+            options.EnableETagSupport = true;
+            options.EnableHateoas = false;
+        });
+        using var provider = services.BuildServiceProvider();
+
+        var options = provider.GetRequiredService<RestLibOptions>();
+        var restLibJsonOptions = provider.GetRequiredService<JsonSerializerOptions>();
+        var httpJsonOptions = provider.GetRequiredService<IOptions<JsonOptions>>().Value.SerializerOptions;
+
+        // Assert
+        options.JsonNamingPolicy.Should().BeSameAs(JsonNamingPolicy.CamelCase);
+        options.OmitNullValues.Should().BeFalse();
+        options.DefaultPageSize.Should().Be(12);
+        options.MaxPageSize.Should().Be(120);
+        options.RequireAuthorizationByDefault.Should().BeFalse();
+        options.EnableETagSupport.Should().BeFalse();
+        options.EnableHateoas.Should().BeTrue();
+
+        restLibJsonOptions.PropertyNamingPolicy.Should().BeSameAs(options.JsonNamingPolicy);
+        restLibJsonOptions.PropertyNameCaseInsensitive.Should().BeTrue();
+        restLibJsonOptions.DefaultIgnoreCondition.Should().Be(JsonIgnoreCondition.Never);
+        httpJsonOptions.PropertyNamingPolicy.Should().BeSameAs(options.JsonNamingPolicy);
+        httpJsonOptions.PropertyNameCaseInsensitive.Should().BeTrue();
+        httpJsonOptions.DefaultIgnoreCondition.Should().Be(JsonIgnoreCondition.Never);
+    }
+
+    [Fact]
+    public void AddRestLib_CalledTwice_SecondCallIsNoOp()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var secondConfigureInvoked = false;
+        services.AddRestLib();
+        var descriptorCountAfterFirstCall = services.Count;
+
+        // Act
+        var result = services.AddRestLib(_ => secondConfigureInvoked = true);
+
+        // Assert
+        result.Should().BeSameAs(services);
+        secondConfigureInvoked.Should().BeFalse();
+        services.Should().HaveCount(descriptorCountAfterFirstCall);
+    }
+
+    [Fact]
+    public void AddRestLib_FirstCallIsInvalid_ValidSecondCallRegistersServices()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        var invalidCall = () => services.AddRestLib(options => options.DefaultPageSize = 0);
+
+        // Act
+        invalidCall.Should().Throw<InvalidOperationException>();
+        services.AddRestLib(options => options.DefaultPageSize = 15);
+        using var provider = services.BuildServiceProvider();
+
+        // Assert
+        provider.GetRequiredService<RestLibOptions>().DefaultPageSize.Should().Be(15);
+        provider.GetRequiredService<JsonSerializerOptions>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddRestLib_CalledTwice_FirstDisablesETags_DefaultGeneratorRemainsAbsent()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddRestLib(options => options.EnableETagSupport = false);
+        services.AddRestLib(options => options.EnableETagSupport = true);
+        using var provider = services.BuildServiceProvider();
+
+        // Assert
+        provider.GetRequiredService<RestLibOptions>().EnableETagSupport.Should().BeFalse();
+        provider.GetService<IETagGenerator>().Should().BeNull();
+    }
+
+    [Fact]
+    public void AddRestLib_CalledTwice_FirstEnablesETags_DefaultGeneratorUsesFirstSerializer()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddRestLib(options =>
+        {
+            options.EnableETagSupport = true;
+            options.JsonNamingPolicy = JsonNamingPolicy.CamelCase;
+            options.OmitNullValues = false;
+        });
+
+        // Act
+        services.AddRestLib(options =>
+        {
+            options.EnableETagSupport = false;
+            options.JsonNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
+            options.OmitNullValues = true;
+        });
+        using var provider = services.BuildServiceProvider();
+
+        var generator = provider.GetServices<IETagGenerator>().Should().ContainSingle().Which;
+        var firstJsonOptions = provider.GetRequiredService<JsonSerializerOptions>();
+        var entity = new ProductEntity
+        {
+            Id = Guid.Parse("84044506-354d-4088-867f-59f089726322"),
+            ProductName = "Configured first",
+            OptionalDescription = null,
+        };
+        var expected = new HashBasedETagGenerator(firstJsonOptions).Generate(entity);
+        var conflictingOptions = RestLibJsonOptions.Create(new RestLibOptions
+        {
+            JsonNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+            OmitNullValues = true,
+        });
+        var conflicting = new HashBasedETagGenerator(conflictingOptions).Generate(entity);
+
+        // Assert
+        provider.GetRequiredService<RestLibOptions>().EnableETagSupport.Should().BeTrue();
+        generator.Should().BeOfType<HashBasedETagGenerator>();
+        generator.Generate(entity).Should().Be(expected);
+        generator.Generate(entity).Should().NotBe(conflicting);
+    }
+
+    [Fact]
+    public async Task AddRestLib_CalledTwice_TypedCreateUsesFirstHttpJsonConfiguration()
+    {
+        // Arrange
+        var repository = new ProductEntityRepository();
+        var id = Guid.NewGuid();
+        var requestBody = $$"""
+            {
+              "id": "{{id}}",
+              "productName": "First configuration",
+              "unitPrice": 19.95,
+              "stockQuantity": 3,
+              "createdAt": "2026-08-05T12:00:00Z",
+              "isActive": true,
+              "optionalDescription": null
+            }
+            """;
+        var (host, client) = await new TestHostBuilder<ProductEntity, Guid>(repository, "/api/products")
+            .WithOptions(options =>
+            {
+                options.JsonNamingPolicy = JsonNamingPolicy.CamelCase;
+                options.OmitNullValues = false;
+            })
+            .WithServices(services => services.AddRestLib(options =>
+            {
+                options.JsonNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
+                options.OmitNullValues = true;
+            }))
+            .WithEndpoint(config => config.AllowAnonymous())
+            .BuildAsync();
+        using var hostLifetime = host;
+        using var clientLifetime = client;
+        using var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
+
+        // Act
+        using var response = await client.PostAsync("/api/products", content);
+        var responseBody = await response.Content.ReadAsStringAsync();
+        var stored = await repository.GetByIdAsync(id);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        stored.Should().NotBeNull();
+        stored!.ProductName.Should().Be("First configuration");
+        responseBody.Should().Contain("\"productName\":\"First configuration\"");
+        responseBody.Should().Contain("\"optionalDescription\":null");
+        responseBody.Should().NotContain("\"product_name\":");
     }
 
     [Fact]

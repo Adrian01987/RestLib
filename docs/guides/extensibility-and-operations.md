@@ -15,6 +15,17 @@ and versioning patterns.
 - [ADR-019: HATEOAS hypermedia links](../adr/019-hateoas.md)
 - [ADR-021: EF Core repository adapter](../adr/021-ef-core-adapter.md)
 
+## Global Service Registration
+
+`AddRestLib` is idempotent and uses a first-successful-call-wins contract. The first call
+registers one coherent `RestLibOptions`, RestLib serializer, Minimal API JSON configuration,
+default ETag service (when enabled), and OpenAPI infrastructure set. Later calls return the
+same service collection without invoking their configuration delegates.
+
+Applications with modular startup should therefore place all global settings in the first
+call. A later module may safely call `AddRestLib()` defensively, but it cannot extend or
+override the established configuration.
+
 ## Batch Operations
 
 Create, update, patch, or delete multiple resources in a single request:

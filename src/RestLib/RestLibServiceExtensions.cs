@@ -49,6 +49,8 @@ public static class RestLibServiceExtensions
 
     /// <summary>
     /// Adds RestLib core services to the service collection.
+    /// The first successful call defines the global RestLib configuration. Subsequent calls
+    /// are idempotent and do not invoke their configuration delegate.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Optional action to configure RestLib options.</param>
@@ -58,6 +60,11 @@ public static class RestLibServiceExtensions
         Action<RestLibOptions>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
+
+        if (services.Any(static descriptor => descriptor.ServiceType == typeof(RestLibRegistrationMarker)))
+        {
+            return services;
+        }
 
         // Register options
         var options = new RestLibOptions();
@@ -99,6 +106,8 @@ public static class RestLibServiceExtensions
               ? JsonIgnoreCondition.WhenWritingNull
               : JsonIgnoreCondition.Never;
         });
+
+        services.AddSingleton(new RestLibRegistrationMarker());
 
         return services;
     }
@@ -694,5 +703,12 @@ public static class RestLibServiceExtensions
                     $"RestLibOptions.ProblemTypeBaseUri must use the http or https scheme. Current value: '{options.ProblemTypeBaseUri}'.");
             }
         }
+    }
+
+    /// <summary>
+    /// Marks a service collection after its first successful RestLib core registration.
+    /// </summary>
+    private sealed class RestLibRegistrationMarker
+    {
     }
 }
