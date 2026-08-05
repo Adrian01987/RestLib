@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FluentAssertions;
+using RestLib.Abstractions;
 using RestLib.Filtering;
 using RestLib.InMemory;
 using RestLib.Pagination;
@@ -291,7 +292,7 @@ public partial class InMemoryRepositoryTests
             [(first.Id, validPatch), (second.Id, invalidPatch)]);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
+        await act.Should().ThrowAsync<PatchValidationException>()
             .WithMessage("*immutable resource key field 'id'*");
         (await repository.GetByIdAsync(first.Id)).Should().BeEquivalentTo(first);
         (await repository.GetByIdAsync(second.Id)).Should().BeEquivalentTo(second);

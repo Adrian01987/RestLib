@@ -99,6 +99,15 @@ can generate an `UPDATE` that reflects the modified columns instead of rewriting
 row. It also keeps patch behavior aligned with the rest of the EF Core persistence model,
 including type conversion, validation integration, and concurrency handling.
 
+Strict unknown-field and immutable-key failures are exposed through
+`EfCorePatchValidationException`, which derives from the core adapter-neutral
+`PatchValidationException`. Core endpoint code catches the base category rather than
+matching an EF type name, so custom adapters and derived exception types receive the same
+400 behavior without creating a core dependency on EF Core. The exception message is part
+of the client response and must therefore be safe to disclose. Bulk repository exceptions
+remain server failures for unresolved items because the endpoint cannot infer which item
+failed or whether persistence occurred.
+
 Alternatives were considered but rejected. Deserializing the patch into a full entity and
 calling `SetValues()` would blur the distinction between full replacement and partial
 update, making it too easy to overwrite properties that were not present in the incoming
@@ -190,8 +199,8 @@ of allowing a stale write. An application-owned transaction may be reused only w
 uses Serializable isolation; weaker isolation would not satisfy the capability contract.
 
 ## Consequences
-- The adapter satisfies RestLib's repository contracts without requiring changes to core
-  RestLib source code.
+- The adapter satisfies RestLib's repository contracts through core-owned exception and
+  result boundaries; core does not reference or recognize EF Core types by name.
 - Cursor pagination remains compatible with the existing opaque cursor contract, but EF Core
   now uses keyset pagination for supported stable sorts and falls back to `Skip`/`Take` only
   for unsupported sort shapes.

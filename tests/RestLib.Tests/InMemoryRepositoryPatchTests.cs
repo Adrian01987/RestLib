@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FluentAssertions;
+using RestLib.Abstractions;
 using RestLib.Filtering;
 using RestLib.InMemory;
 using RestLib.Pagination;
@@ -75,7 +76,26 @@ public partial class InMemoryRepositoryTests
         var act = () => repository.PatchAsync(entity.Id, patch);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
+        await act.Should().ThrowAsync<PatchValidationException>()
+            .WithMessage("*immutable resource key field 'id'*");
+        (await repository.GetByIdAsync(entity.Id)).Should().BeEquivalentTo(entity);
+    }
+
+    [Fact]
+    public async Task PatchConditionallyAsync_PatchContainsKey_RejectsPatchAndPreservesEntity()
+    {
+        // Arrange
+        var repository = CreateRepository();
+        var entity = CreateEntity("Original", 100);
+        await repository.CreateAsync(entity);
+        var patch = JsonDocument.Parse(
+            $$"""{"id":"{{Guid.NewGuid()}}","name":"Changed"}""").RootElement;
+
+        // Act
+        var act = () => repository.PatchConditionallyAsync(entity.Id, patch, _ => true);
+
+        // Assert
+        await act.Should().ThrowAsync<PatchValidationException>()
             .WithMessage("*immutable resource key field 'id'*");
         (await repository.GetByIdAsync(entity.Id)).Should().BeEquivalentTo(entity);
     }

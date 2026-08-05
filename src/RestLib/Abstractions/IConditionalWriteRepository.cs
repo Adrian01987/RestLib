@@ -40,6 +40,9 @@ public interface IConditionalWriteRepository<TEntity, TKey>
     /// <param name="precondition">A synchronous predicate evaluated against the current persisted entity.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The atomic mutation outcome and persisted entity.</returns>
+    /// <exception cref="PatchValidationException">
+    /// Thrown when the patch contains a client-correctable invalid or forbidden field.
+    /// </exception>
     Task<ConditionalWriteResult<TEntity>> PatchConditionallyAsync(
         TKey id,
         JsonElement patchDocument,

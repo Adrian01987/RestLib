@@ -338,6 +338,16 @@ public class ProductRepository : IRepository<Product, Guid>
 builder.Services.AddRepository<Product, Guid, ProductRepository>();
 ```
 
+When a custom repository can determine before persistence that a PATCH document contains
+an invalid or forbidden field, throw `PatchValidationException` with a client-safe message.
+RestLib maps that typed boundary to 400 for direct PATCH and for individually processed
+batch PATCH items. Other repository, mapper, hook, and infrastructure exceptions are not
+client-validation failures and are not reclassified by exception name or by broad CLR
+exception type. A failed bulk operation remains a server failure for every unresolved item
+because neither its per-item cause nor its persistence outcome can be inferred safely.
+The built-in InMemory and EF Core adapters use this same boundary for their strict
+immutable-key or unknown-field validation.
+
 When ETag support is enabled, conditional GETs work with the base repository contract. To accept
 `If-Match` on PUT, PATCH, or DELETE, a custom repository must also implement
 `IConditionalWriteRepository<TEntity, TKey>` and evaluate its supplied predicate atomically with

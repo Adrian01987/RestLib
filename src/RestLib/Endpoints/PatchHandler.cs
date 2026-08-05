@@ -227,7 +227,7 @@ internal static class PatchHandler
 
                 return Results.Json(patched, jsonOptions);
             }
-            catch (Exception ex) when (IsPatchValidationException(ex))
+            catch (PatchValidationException ex)
             {
                 return Responses.ProblemDetailsResult.BadRequest(
                     ex.Message,
@@ -321,7 +321,7 @@ internal static class PatchHandler
                         pipeline,
                         hookContext);
                 }
-                catch (Exception ex) when (IsPatchValidationException(ex))
+                catch (PatchValidationException ex)
                 {
                     return Responses.ProblemDetailsResult.BadRequest(
                         ex.Message,
@@ -370,7 +370,7 @@ internal static class PatchHandler
                     apiPipeline,
                     apiHookContext);
             }
-            catch (Exception ex) when (IsPatchValidationException(ex))
+            catch (PatchValidationException ex)
             {
                 return Responses.ProblemDetailsResult.BadRequest(
                     ex.Message,
@@ -695,10 +695,5 @@ internal static class PatchHandler
         }
 
         return Results.Json(updatedApi, jsonOptions);
-    }
-
-    private static bool IsPatchValidationException(Exception exception)
-    {
-        return exception.GetType().FullName == "RestLib.EntityFrameworkCore.EfCorePatchValidationException";
     }
 }

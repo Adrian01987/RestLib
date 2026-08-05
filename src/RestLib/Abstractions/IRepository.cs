@@ -55,6 +55,9 @@ public interface IRepository<TEntity, TKey>
     /// <param name="patchDocument">The JSON document containing non-key fields to update.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The updated entity if found; otherwise, null.</returns>
+    /// <exception cref="PatchValidationException">
+    /// Thrown when the patch contains a client-correctable invalid or forbidden field.
+    /// </exception>
     Task<TEntity?> PatchAsync(TKey id, JsonElement patchDocument, CancellationToken ct = default);
 
     /// <summary>

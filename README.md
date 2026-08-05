@@ -434,6 +434,11 @@ For fluent and named-hook examples, see
 RestLib stays persistence-agnostic: use the in-memory adapter, the EF Core adapter, or
 your own repository implementation behind the same endpoint surface.
 
+Custom adapters can report a client-correctable PATCH document through the core
+`PatchValidationException` contract. Its message is returned as validation detail for
+direct and individually processed PATCH operations, so it must be safe to disclose. Both
+built-in adapters use this boundary for adapter-detected invalid or immutable fields.
+
 For a custom repository example and guidance on where the EF Core adapter fits, see
 [docs/guides/extensibility-and-operations.md](docs/guides/extensibility-and-operations.md).
 

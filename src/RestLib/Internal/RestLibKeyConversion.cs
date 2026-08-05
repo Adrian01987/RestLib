@@ -87,7 +87,7 @@ internal static class RestLibKeyConversion
         ArgumentNullException.ThrowIfNull(targetType);
 
         return JsonSerializer.Deserialize(value.GetRawText(), targetType, jsonOptions)
-            ?? throw new InvalidOperationException(
+            ?? throw new JsonException(
                 $"RestLib could not deserialize a composite key value to '{targetType.Name}'.");
     }
 

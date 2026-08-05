@@ -64,7 +64,8 @@ internal static class BatchHandler
             }
 
             // Validate action
-            if (!Enum.TryParse<BatchAction>(envelope.Action, ignoreCase: true, out var action))
+            if (!Enum.TryParse<BatchAction>(envelope.Action, ignoreCase: true, out var action)
+                || !Enum.IsDefined(action))
             {
                 var allowedActions = config.EnabledBatchActions
                     .Select(a => a.ToString().ToLowerInvariant());
@@ -177,24 +178,12 @@ internal static class BatchHandler
                 Logger = logger
             };
 
-            BatchResponse response;
+            JsonElement parsedItems;
             try
             {
-                // Dispatch to the appropriate pipeline
-                response = action switch
-                {
-                    BatchAction.Create => await new BatchCreatePipeline<TEntity, TKey>()
-                        .ProcessAsync(envelope.Items, batchContext),
-                    BatchAction.Update => await new BatchUpdatePipeline<TEntity, TKey>()
-                        .ProcessAsync(ParseUpdateItems(envelope.Items, config.KeyRouteParts, jsonOptions), batchContext),
-                    BatchAction.Patch => await new BatchPatchPipeline<TEntity, TKey>()
-                        .ProcessAsync(ParseUpdateItems(envelope.Items, config.KeyRouteParts, jsonOptions), batchContext),
-                    BatchAction.Delete => await new BatchDeletePipeline<TEntity, TKey>()
-                        .ProcessAsync(ParseDeleteItems(envelope.Items, config.KeyRouteParts, jsonOptions), batchContext),
-                    _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
-                };
+                parsedItems = ParseItems(action, envelope.Items, config.KeyRouteParts, jsonOptions);
             }
-            catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+            catch (JsonException ex)
             {
                 return Responses.ProblemDetailsResult.InvalidBatchRequest(
                     ex.Message,
@@ -203,6 +192,21 @@ internal static class BatchHandler
                     logger: logger,
                     options: options);
             }
+
+            // Dispatch only after client-owned JSON parsing has completed. Application,
+            // hook, mapper, and repository exceptions must not be reclassified as 400s.
+            var response = action switch
+            {
+                BatchAction.Create => await new BatchCreatePipeline<TEntity, TKey>()
+                    .ProcessAsync(parsedItems, batchContext),
+                BatchAction.Update => await new BatchUpdatePipeline<TEntity, TKey>()
+                    .ProcessAsync(parsedItems, batchContext),
+                BatchAction.Patch => await new BatchPatchPipeline<TEntity, TKey>()
+                    .ProcessAsync(parsedItems, batchContext),
+                BatchAction.Delete => await new BatchDeletePipeline<TEntity, TKey>()
+                    .ProcessAsync(parsedItems, batchContext),
+                _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
+            };
 
             // BeforeResponse hook — runs once for the entire batch, after all items are processed.
             if (pipeline is not null)
@@ -280,7 +284,8 @@ internal static class BatchHandler
                     options: options);
             }
 
-            if (!Enum.TryParse<BatchAction>(envelope.Action, ignoreCase: true, out var action))
+            if (!Enum.TryParse<BatchAction>(envelope.Action, ignoreCase: true, out var action)
+                || !Enum.IsDefined(action))
             {
                 var allowedActions = config.EnabledBatchActions
                     .Select(a => a.ToString().ToLowerInvariant());
@@ -390,23 +395,12 @@ internal static class BatchHandler
                 Logger = logger
             };
 
-            BatchResponse response;
+            JsonElement parsedItems;
             try
             {
-                response = action switch
-                {
-                    BatchAction.Create => await new MappedBatchCreatePipeline<TApiModel, TDbModel, TKey>()
-                        .ProcessAsync(envelope.Items, batchContext),
-                    BatchAction.Update => await new MappedBatchUpdatePipeline<TApiModel, TDbModel, TKey>()
-                        .ProcessAsync(ParseUpdateItems(envelope.Items, config.KeyRouteParts, jsonOptions), batchContext),
-                    BatchAction.Patch => await new MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>()
-                        .ProcessAsync(ParseUpdateItems(envelope.Items, config.KeyRouteParts, jsonOptions), batchContext),
-                    BatchAction.Delete => await new MappedBatchDeletePipeline<TApiModel, TDbModel, TKey>()
-                        .ProcessAsync(ParseDeleteItems(envelope.Items, config.KeyRouteParts, jsonOptions), batchContext),
-                    _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
-                };
+                parsedItems = ParseItems(action, envelope.Items, config.KeyRouteParts, jsonOptions);
             }
-            catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+            catch (JsonException ex)
             {
                 return Responses.ProblemDetailsResult.InvalidBatchRequest(
                     ex.Message,
@@ -415,6 +409,19 @@ internal static class BatchHandler
                     logger: logger,
                     options: options);
             }
+
+            var response = action switch
+            {
+                BatchAction.Create => await new MappedBatchCreatePipeline<TApiModel, TDbModel, TKey>()
+                    .ProcessAsync(parsedItems, batchContext),
+                BatchAction.Update => await new MappedBatchUpdatePipeline<TApiModel, TDbModel, TKey>()
+                    .ProcessAsync(parsedItems, batchContext),
+                BatchAction.Patch => await new MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>()
+                    .ProcessAsync(parsedItems, batchContext),
+                BatchAction.Delete => await new MappedBatchDeletePipeline<TApiModel, TDbModel, TKey>()
+                    .ProcessAsync(parsedItems, batchContext),
+                _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
+            };
 
             if (dbPipeline is not null)
             {
@@ -467,6 +474,23 @@ internal static class BatchHandler
         }
 
         return batchPath;
+    }
+
+    private static JsonElement ParseItems<TKey>(
+        BatchAction action,
+        JsonElement itemsElement,
+        IReadOnlyList<RestLibKeyRoutePart<TKey>> keyRouteParts,
+        JsonSerializerOptions jsonOptions)
+        where TKey : notnull
+    {
+        return action switch
+        {
+            BatchAction.Create => itemsElement,
+            BatchAction.Update or BatchAction.Patch =>
+                ParseUpdateItems(itemsElement, keyRouteParts, jsonOptions),
+            BatchAction.Delete => ParseDeleteItems(itemsElement, keyRouteParts, jsonOptions),
+            _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
+        };
     }
 
     private static JsonElement ParseUpdateItems<TKey>(

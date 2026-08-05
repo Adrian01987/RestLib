@@ -335,7 +335,7 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
                 ? await context.Repository.UpdateAsync(id, preview, context.CancellationToken)
                 : await context.Repository.PatchAsync(id, body, context.CancellationToken);
         }
-        catch (Exception ex) when (IsPatchValidationException(ex))
+        catch (PatchValidationException ex)
         {
             results[index] = BadRequestResult(index, ex.Message, context.HttpContext.Request.Path);
             return;
@@ -356,7 +356,4 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
 
         results[index] = await RunAfterPersistAndBuildResultAsync(index, patched, id, context);
     }
-
-    private static bool IsPatchValidationException(Exception exception) =>
-        exception.GetType().FullName == "RestLib.EntityFrameworkCore.EfCorePatchValidationException";
 }

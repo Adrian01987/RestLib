@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Repository adapters now report client-correctable PATCH failures through the adapter-neutral `PatchValidationException` contract; the existing EF Core exception remains available as a derived compatibility type, and InMemory immutable-key failures retain `InvalidOperationException` catch compatibility
 - Relational filters now use one portable built-in-adapter type baseline (`byte`, `short`, `int`, `long`, `float`, `double`, `decimal`, and `DateTime`, including nullable forms); unsupported operator/type combinations return Invalid Filter before repository execution
 - Filtering and search documentation now defines literal operands, null behavior, case folding, and the EF Core provider/collation boundary
 - `ProblemDetailsResult` now logs all error responses at appropriate levels (Information for 4xx, Error for 5xx)
@@ -59,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Core PATCH handling no longer recognizes EF Core exceptions by fully qualified type-name strings, and batch dispatch no longer turns arbitrary `InvalidOperationException` failures into client-visible 400 responses
 - EF Core `contains`, `starts_with`, and `ends_with` filters now escape SQL pattern characters and normalize case consistently, so `%`, `_`, brackets, carets, and escape characters are matched literally instead of becoming wildcards
 - EF Core case-insensitive search no longer depends on the server process's ambient culture, and InMemory null values no longer satisfy relational filters
 - Batch bulk results are now validated and correlated before after-persist processing: responses preserve one original-order slot per request item, update/patch omissions remain attached to their resource keys, and unsafe custom-repository results enter per-item error handling without retrying a potentially committed write

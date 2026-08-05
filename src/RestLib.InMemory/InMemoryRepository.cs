@@ -940,7 +940,7 @@ public class InMemoryRepository<TEntity, TKey> :
             if (string.Equals(patchProperty.Name, keyPropertyName, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(patchProperty.Name, jsonPropertyName, StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException(
+                throw new PatchValidationException(
                     $"PATCH cannot modify immutable resource key field '{patchProperty.Name}'.");
             }
         }

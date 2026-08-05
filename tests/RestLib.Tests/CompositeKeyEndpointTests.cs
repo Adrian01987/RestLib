@@ -313,6 +313,35 @@ public class CompositeKeyEndpointTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task BatchPatch_WithNullCompositeKeyPart_ReturnsInvalidBatchRequest()
+    {
+        // Arrange
+        var content = new StringContent(
+            """
+            {
+              "action": "patch",
+              "items": [
+                {
+                  "id": { "tenant_id": "11111111-1111-1111-1111-111111111111", "sku": null },
+                  "body": { "product_name": "Ignored" }
+                }
+              ]
+            }
+            """,
+            Encoding.UTF8,
+            "application/json");
+
+        // Act
+        var response = await _client.PostAsync("/api/catalog-items/batch", content);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var problem = await DeserializeProblemAsync(response);
+        problem.Should().NotBeNull();
+        problem!.Type.Should().Be(ProblemTypes.InvalidBatchRequest);
+    }
+
+    [Fact]
     public async Task OpenApi_GetByIdWithCompositeKey_DocumentsEachPathParameter()
     {
         // Arrange
