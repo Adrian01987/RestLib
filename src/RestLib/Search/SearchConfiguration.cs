@@ -38,8 +38,10 @@ public class RestLibSearchOptions<TEntity>
     public string QueryParameterName { get; set; } = DefaultQueryParameterName;
 
     /// <summary>
-    /// Gets or sets a value indicating whether search uses case-sensitive matching.
-    /// Defaults to <c>false</c>.
+    /// Gets or sets a value indicating whether RestLib disables case folding for search.
+    /// Defaults to <c>false</c>. Database-backed matching ultimately follows the configured
+    /// provider's case functions and collation; a case-insensitive database collation can
+    /// therefore remain case-insensitive when this value is <c>true</c>.
     /// </summary>
     public bool CaseSensitive { get; set; }
 }
@@ -64,7 +66,7 @@ internal sealed class SearchConfiguration<TEntity>
     internal string QueryParameterName { get; private set; } = RestLibSearchOptions<TEntity>.DefaultQueryParameterName;
 
     /// <summary>
-    /// Gets a value indicating whether search uses case-sensitive matching.
+    /// Gets a value indicating whether RestLib disables case folding for search.
     /// </summary>
     internal bool CaseSensitive { get; private set; }
 

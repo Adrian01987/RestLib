@@ -43,6 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Relational filters now use one portable built-in-adapter type baseline (`byte`, `short`, `int`, `long`, `float`, `double`, `decimal`, and `DateTime`, including nullable forms); unsupported operator/type combinations return Invalid Filter before repository execution
+- Filtering and search documentation now defines literal operands, null behavior, case folding, and the EF Core provider/collation boundary
 - `ProblemDetailsResult` now logs all error responses at appropriate levels (Information for 4xx, Error for 5xx)
 - `BatchContext` carries `ILogger` for consistent logging through batch pipeline
 - `HookPipeline` emits Trace-level entry/exit events and Debug-level short-circuit events for all hook stages
@@ -57,6 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- EF Core `contains`, `starts_with`, and `ends_with` filters now escape SQL pattern characters and normalize case consistently, so `%`, `_`, brackets, carets, and escape characters are matched literally instead of becoming wildcards
+- EF Core case-insensitive search no longer depends on the server process's ambient culture, and InMemory null values no longer satisfy relational filters
 - Batch bulk results are now validated and correlated before after-persist processing: responses preserve one original-order slot per request item, update/patch omissions remain attached to their resource keys, and unsafe custom-repository results enter per-item error handling without retrying a potentially committed write
 - Nested field-selection response shape now remains stable across sparse, dense, and class-level converter projection strategies
 - Folder-loaded two-model resources now honor `UnifiedTypeResolver` results without still requiring `Mapping.DbType` in JSON

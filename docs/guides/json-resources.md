@@ -134,6 +134,10 @@ Create `Models/Products.json`:
 `Filtering`, `FilteringOperators`, `Sorting`, and `FieldSelection` can use direct CLR
 property names or dot-separated nested reference-property paths.
 
+Relational filter operators are limited to RestLib's portable numeric and `DateTime`
+types. Partial-string filter values are literal and case-insensitive; `%`, `_`, and other
+SQL pattern characters have no wildcard meaning.
+
 `Search` follows the same path rules, but only for string properties and only on
 collection endpoints.
 
@@ -229,7 +233,10 @@ GET /api/products?query=widget
 ```
 
 Search is intentionally limited to OR-of-contains matching across configured string
-fields. It is not full-text indexing, ranking, fuzzy matching, or a general search engine.
+fields, and every term is treated literally. `CaseSensitive: false` folds case;
+`CaseSensitive: true` disables RestLib's case folding. With EF Core, Unicode and
+case-sensitive behavior ultimately follows the database provider and configured collation.
+Search is not full-text indexing, ranking, fuzzy matching, or a general search engine.
 
 ## 5. Register named hooks when behavior belongs in C#
 

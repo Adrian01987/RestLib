@@ -12,10 +12,13 @@ public static class FilterOperators
         Array.AsReadOnly(new[] { FilterOperator.Eq, FilterOperator.Neq });
 
     /// <summary>
-    /// Comparison operators suitable for numeric, date, and other <see cref="IComparable"/> types:
+    /// Comparison operators suitable for RestLib's portable numeric and <see cref="DateTime"/> types:
     /// <see cref="FilterOperator.Eq"/>, <see cref="FilterOperator.Neq"/>,
     /// <see cref="FilterOperator.Gt"/>, <see cref="FilterOperator.Lt"/>,
     /// <see cref="FilterOperator.Gte"/>, <see cref="FilterOperator.Lte"/>.
+    /// The portable numeric types are <see cref="byte"/>, <see cref="short"/>, <see cref="int"/>,
+    /// <see cref="long"/>, <see cref="float"/>, <see cref="double"/>, and <see cref="decimal"/>;
+    /// nullable forms are also supported.
     /// </summary>
     public static readonly IReadOnlyList<FilterOperator> Comparison = Array.AsReadOnly(new[]
     {
@@ -25,7 +28,7 @@ public static class FilterOperators
     });
 
     /// <summary>
-    /// String operators:
+    /// Literal, case-insensitive string operators:
     /// <see cref="FilterOperator.Eq"/>, <see cref="FilterOperator.Neq"/>,
     /// <see cref="FilterOperator.Contains"/>, <see cref="FilterOperator.StartsWith"/>,
     /// <see cref="FilterOperator.EndsWith"/>.

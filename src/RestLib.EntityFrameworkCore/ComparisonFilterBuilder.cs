@@ -38,6 +38,16 @@ internal static class ComparisonFilterBuilder
 
         var propertyAccess = ExpressionBuilder.BuildPropertyAccess<TEntity>(filter.PropertyName);
         var parameter = propertyAccess.Parameters[0];
+
+        if (FilterOperatorCompatibility.IsRelational(filter.Operator)
+            && !FilterOperatorCompatibility.IsSupported(filter.Operator, propertyAccess.ReturnType))
+        {
+            throw new NotSupportedException(
+                $"Filter operator '{filter.Operator}' cannot be applied to property '{filter.PropertyName}' "
+                + $"of type '{propertyAccess.ReturnType.Name}'. Relational filtering supports only RestLib's "
+                + "portable numeric and date/time types.");
+        }
+
         var filterValue = filter.TypedValue;
         if (filterValue is null && !string.IsNullOrEmpty(filter.RawValue))
         {

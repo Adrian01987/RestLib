@@ -715,7 +715,99 @@ public class FilterParserUnitTests
         // Assert
         result.IsValid.Should().BeFalse();
         result.Errors.Should().HaveCount(1);
-        result.Errors[0].Message.Should().Contain("comparable type");
+        result.Errors[0].Message.Should().Contain("portable numeric and date/time properties");
+    }
+
+    [Theory]
+    [Trait("Category", "Story6.1")]
+    [InlineData(typeof(string), "alpha")]
+    [InlineData(typeof(bool), "true")]
+    [InlineData(typeof(bool?), "true")]
+    [InlineData(typeof(Guid), "00000000-0000-0000-0000-000000000001")]
+    [InlineData(typeof(Guid?), "00000000-0000-0000-0000-000000000001")]
+    [InlineData(typeof(ProductStatus), "Active")]
+    [InlineData(typeof(ProductStatus?), "Active")]
+    [InlineData(typeof(sbyte), "1")]
+    [InlineData(typeof(ushort), "1")]
+    [InlineData(typeof(uint), "1")]
+    [InlineData(typeof(ulong), "1")]
+    [InlineData(typeof(char), "a")]
+    [InlineData(typeof(DateTimeOffset), "2025-06-15T12:00:00Z")]
+    [InlineData(typeof(DateOnly), "2025-06-15")]
+    [InlineData(typeof(TimeOnly), "12:00:00")]
+    [InlineData(typeof(TimeSpan), "12:00:00")]
+    [InlineData(typeof(ComparableFilterValue), "alpha")]
+    public void Parse_RelationalOperatorOnNonPortableType_ReturnsError(Type propertyType, string rawValue)
+    {
+        // Arrange
+        var config = new FilterConfiguration<FilterableEntity>();
+        config.AddProperty("Value", "value", propertyType, [FilterOperator.Gt]);
+        var query = BuildQuery(("value[gt]", rawValue));
+
+        // Act
+        var result = FilterParser.Parse(query, config);
+
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle();
+    }
+
+    [Theory]
+    [Trait("Category", "Story6.1")]
+    [InlineData(typeof(string), "alpha")]
+    [InlineData(typeof(bool), "true")]
+    [InlineData(typeof(Guid), "00000000-0000-0000-0000-000000000001")]
+    [InlineData(typeof(ProductStatus), "Active")]
+    [InlineData(typeof(ComparableFilterValue), "alpha")]
+    public void Parse_EqualityOperatorOnNonRelationalType_ReturnsFilter(Type propertyType, string rawValue)
+    {
+        // Arrange
+        var config = new FilterConfiguration<FilterableEntity>();
+        config.AddProperty("Value", "value", propertyType, [FilterOperator.Eq]);
+        var query = BuildQuery(("value[eq]", rawValue));
+
+        // Act
+        var result = FilterParser.Parse(query, config);
+
+        // Assert
+        result.IsValid.Should().BeTrue();
+        result.Filters.Should().ContainSingle();
+        result.Filters[0].Operator.Should().Be(FilterOperator.Eq);
+    }
+
+    [Theory]
+    [Trait("Category", "Story6.1")]
+    [InlineData(typeof(byte), "1")]
+    [InlineData(typeof(byte?), "1")]
+    [InlineData(typeof(short), "1")]
+    [InlineData(typeof(short?), "1")]
+    [InlineData(typeof(int), "1")]
+    [InlineData(typeof(int?), "1")]
+    [InlineData(typeof(long), "1")]
+    [InlineData(typeof(long?), "1")]
+    [InlineData(typeof(float), "1.5")]
+    [InlineData(typeof(float?), "1.5")]
+    [InlineData(typeof(double), "1.5")]
+    [InlineData(typeof(double?), "1.5")]
+    [InlineData(typeof(decimal), "1.5")]
+    [InlineData(typeof(decimal?), "1.5")]
+    [InlineData(typeof(DateTime), "2025-06-15T12:00:00Z")]
+    [InlineData(typeof(DateTime?), "2025-06-15T12:00:00Z")]
+    public void Parse_RelationalOperatorOnPortableType_ReturnsFilter(Type propertyType, string rawValue)
+    {
+        // Arrange
+        var config = new FilterConfiguration<FilterableEntity>();
+        config.AddProperty("Value", "value", propertyType, [FilterOperator.Gt]);
+        var query = BuildQuery(("value[gt]", rawValue));
+
+        // Act
+        var result = FilterParser.Parse(query, config);
+
+        // Assert
+        result.IsValid.Should().BeTrue();
+        result.Filters.Should().ContainSingle();
+        result.Filters[0].PropertyType.Should().Be(propertyType);
+        result.Filters[0].Operator.Should().Be(FilterOperator.Gt);
     }
 
     [Fact]
@@ -818,6 +910,39 @@ public class FilterParserUnitTests
         }
 
         return new QueryCollection(dict);
+    }
+
+    [System.ComponentModel.TypeConverter(typeof(ComparableFilterValueConverter))]
+    private sealed class ComparableFilterValue(string value) : IComparable
+    {
+        private readonly string _value = value;
+
+        int IComparable.CompareTo(object? obj)
+        {
+            return string.CompareOrdinal(_value, ((ComparableFilterValue)obj!)._value);
+        }
+    }
+
+    private sealed class ComparableFilterValueConverter : System.ComponentModel.TypeConverter
+    {
+        /// <inheritdoc />
+        public override bool CanConvertFrom(
+            System.ComponentModel.ITypeDescriptorContext? context,
+            Type sourceType)
+        {
+            return sourceType == typeof(string) || base.CanConvertFrom(context, sourceType);
+        }
+
+        /// <inheritdoc />
+        public override object? ConvertFrom(
+            System.ComponentModel.ITypeDescriptorContext? context,
+            System.Globalization.CultureInfo? culture,
+            object value)
+        {
+            return value is string text
+                ? new ComparableFilterValue(text)
+                : base.ConvertFrom(context, culture, value);
+        }
     }
 
     #endregion

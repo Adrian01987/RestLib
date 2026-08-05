@@ -208,8 +208,10 @@ properties. The default query parameter is `q`, and JSON resources support the s
 feature with configurable search options.
 
 Search is intentionally limited to lightweight collection queries rather than full-text
-indexing, ranking, or fuzzy matching. For full fluent and JSON examples, nested-path
-usage, and the strict `Mapping.Auto` shortcut, see
+indexing, ranking, or fuzzy matching. Terms are literal and case-insensitive by default;
+EF Core Unicode and case-sensitive behavior ultimately follows the configured provider
+and database collation. For full fluent and JSON examples, nested-path usage, and the
+strict `Mapping.Auto` shortcut, see
 [docs/guides/query-features.md](docs/guides/query-features.md).
 
 ### Composite keys
@@ -308,7 +310,8 @@ RestLib follows the [Zalando REST API Guidelines](https://opensource.zalando.com
 RestLib supports allow-listed query-string filtering for scalar properties and nested
 reference-property paths. Equality filters use direct query parameters, while range,
 string, and membership operators use bracket syntax such as `price[gte]` and
-`name[contains]`.
+`name[contains]`. Relational operators use a portable numeric/`DateTime` type baseline,
+and partial-string values are literal and case-insensitive rather than SQL patterns.
 
 For complete fluent setup, operator coverage, nested-path examples, and JSON equivalents,
 see [docs/guides/query-features.md](docs/guides/query-features.md).

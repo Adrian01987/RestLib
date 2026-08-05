@@ -21,6 +21,28 @@ public class EfCoreComparisonFilterTests : IAsyncLifetime
     private HttpClient _client = null!;
     private TestDbContext _dbContext = null!;
 
+    [Fact]
+    public void BuildPredicate_RelationalOperatorOnString_ThrowsClearNotSupportedException()
+    {
+        // Arrange
+        var filter = new FilterValue
+        {
+            PropertyName = nameof(ProductEntity.ProductName),
+            QueryParameterName = "product_name",
+            PropertyType = typeof(string),
+            RawValue = "Widget",
+            TypedValue = "Widget",
+            Operator = FilterOperator.Gt
+        };
+
+        // Act
+        var act = () => ComparisonFilterBuilder.BuildPredicate<ProductEntity>(filter);
+
+        // Assert
+        act.Should().Throw<NotSupportedException>()
+            .WithMessage("*portable numeric and date/time types*");
+    }
+
     /// <summary>
     /// Sets up the test host with filtering enabled.
     /// </summary>

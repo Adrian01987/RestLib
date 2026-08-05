@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi;
+using RestLib.Filtering;
 using RestLib.InMemory;
 using RestLib.Tests.Fakes;
 using Xunit;
@@ -210,6 +211,37 @@ public partial class OpenApiDocumentationTests
     }
 
     [Fact]
+    public async Task OpenApi_StringFilterWithAllOperators_DocumentsOnlyCompatibleOperators()
+    {
+        // Arrange
+        var nextId = 1;
+        var repository = new InMemoryRepository<OpenApiTestEntity, int>(entity => entity.Id, () => nextId++);
+
+        var (host, client) = await new TestHostBuilder<OpenApiTestEntity, int>(repository, "/api/items")
+            .WithServices(services => services.AddOpenApi())
+            .WithAdditionalEndpoints(endpoints => endpoints.MapOpenApi())
+            .WithEndpoint(config =>
+            {
+                config.AllowAnonymous();
+                config.KeySelector = entity => entity.Id;
+                config.AllowFiltering(entity => entity.Name, FilterOperators.All);
+            })
+            .BuildAsync();
+
+        using var _ = host;
+
+        // Act
+        var openApiDoc = await GetOpenApiDocument(client);
+        var getAllOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!;
+        var nameParameter = getAllOp.Parameters!.Single(parameter => parameter.Name == "name");
+
+        // Assert
+        nameParameter.Description.Should()
+            .Contain("Allowed operators: contains, ends_with, eq, in, neq, starts_with.");
+        nameParameter.Description.Should().Contain("literal and case-insensitive");
+    }
+
+    [Fact]
     public async Task OpenApi_GetAll_WithSearch_Should_Document_SearchParameter()
     {
         // Arrange
@@ -246,6 +278,8 @@ public partial class OpenApiDocumentationTests
         searchParam.Description.Should().Contain("OR-of-contains");
         searchParam.Description.Should().Contain("name");
         searchParam.Description.Should().Contain("description");
+        searchParam.Description.Should().Contain("Case folding is disabled");
+        searchParam.Description.Should().Contain("database collation");
     }
 
     #endregion

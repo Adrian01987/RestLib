@@ -37,27 +37,6 @@ public static partial class FilterParser
     };
 
     /// <summary>
-    /// Operators that require <see cref="IComparable"/> property types.
-    /// </summary>
-    private static readonly HashSet<FilterOperator> ComparisonOperators =
-    [
-        FilterOperator.Gt,
-        FilterOperator.Lt,
-        FilterOperator.Gte,
-        FilterOperator.Lte,
-    ];
-
-    /// <summary>
-    /// Operators that require <see cref="string"/> property types.
-    /// </summary>
-    private static readonly HashSet<FilterOperator> StringOperators =
-    [
-        FilterOperator.Contains,
-        FilterOperator.StartsWith,
-        FilterOperator.EndsWith,
-    ];
-
-    /// <summary>
     /// Parses filter values from a query collection based on configured filter properties.
     /// Supports bracket operator syntax: <c>?field[op]=value</c> and bare equality: <c>?field=value</c>.
     /// </summary>
@@ -381,25 +360,21 @@ public static partial class FilterParser
         FilterPropertyConfiguration property,
         string queryKey)
     {
-        var underlyingType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
-
-        if (ComparisonOperators.Contains(op))
+        if (FilterOperatorCompatibility.IsRelational(op)
+            && !FilterOperatorCompatibility.IsSupported(op, property.PropertyType))
         {
-            // Comparison operators require IComparable
-            if (!typeof(IComparable).IsAssignableFrom(underlyingType))
+            return new FilterValidationError
             {
-                return new FilterValidationError
-                {
-                    ParameterName = queryKey,
-                    ProvidedValue = string.Empty,
-                    ExpectedType = property.PropertyType,
-                    Message = $"Operator '{GetOperatorName(op)}' requires a comparable type, " +
-                              $"but '{property.QueryParameterName}' is of type {GetFriendlyTypeName(property.PropertyType)}.",
-                };
-            }
+                ParameterName = queryKey,
+                ProvidedValue = string.Empty,
+                ExpectedType = property.PropertyType,
+                Message = $"Operator '{GetOperatorName(op)}' is only valid for portable numeric and date/time properties, " +
+                          $"but '{property.QueryParameterName}' is of type {GetFriendlyTypeName(property.PropertyType)}.",
+            };
         }
 
-        if (StringOperators.Contains(op) && underlyingType != typeof(string))
+        if (op is FilterOperator.Contains or FilterOperator.StartsWith or FilterOperator.EndsWith
+            && !FilterOperatorCompatibility.IsSupported(op, property.PropertyType))
         {
             return new FilterValidationError
             {

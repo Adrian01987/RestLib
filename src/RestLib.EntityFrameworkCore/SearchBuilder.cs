@@ -12,9 +12,6 @@ internal static class SearchBuilder
     private static readonly MethodInfo StringContainsMethod = typeof(string)
         .GetMethod(nameof(string.Contains), [typeof(string)])
         ?? throw new InvalidOperationException("RestLib could not resolve string.Contains(string).");
-    private static readonly MethodInfo StringToLowerMethod = typeof(string)
-        .GetMethod(nameof(string.ToLower), Type.EmptyTypes)
-        ?? throw new InvalidOperationException("RestLib could not resolve string.ToLower().");
 
     /// <summary>
     /// Builds a search predicate for the specified search request.
@@ -32,7 +29,7 @@ internal static class SearchBuilder
             return static _ => true;
         }
 
-        var term = search.CaseSensitive ? search.Term : search.Term.ToLower();
+        var term = search.CaseSensitive ? search.Term : StringQuerySemantics.Normalize(search.Term);
         Expression? body = null;
         var parameter = Expression.Parameter(typeof(TEntity), "entity");
 
@@ -45,7 +42,7 @@ internal static class SearchBuilder
             var notNull = Expression.NotEqual(propertyBody, nullConstant);
             var comparisonSource = search.CaseSensitive
                 ? propertyBody
-                : Expression.Call(propertyBody, StringToLowerMethod);
+                : StringQuerySemantics.Normalize(propertyBody);
             var contains = Expression.Call(
                 comparisonSource,
                 StringContainsMethod,

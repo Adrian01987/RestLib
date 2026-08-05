@@ -64,7 +64,7 @@
     },
     "FilteringOperators": {
       "type": "object",
-      "description": "Per-property filter operator configuration. Keys are API model property names or dot-separated nested reference-property paths, values are arrays of allowed operator names or preset names. Query parameter names use snake_case per segment joined with dots. Collection-valued paths are not supported. Valid operators: eq, neq, gt, lt, gte, lte, contains, starts_with, ends_with, in. Valid presets: equality, comparison, string, all.",
+      "description": "Per-property filter operator configuration. Keys are API model property names or dot-separated nested reference-property paths, values are arrays of allowed operator names or preset names. Query parameter names use snake_case per segment joined with dots. Relational operators support RestLib's portable numeric and DateTime types; partial-string operands are literal and case-insensitive. Collection-valued paths are not supported. Valid operators: eq, neq, gt, lt, gte, lte, contains, starts_with, ends_with, in. Valid presets: equality, comparison, string, all.",
       "additionalProperties": {
         "type": "array",
         "items": {
@@ -100,7 +100,7 @@
     },
     "Search": {
       "type": "array",
-      "description": "API model string property names or dot-separated nested reference-property paths that participate in OR-of-contains collection search. Search uses the configured query parameter, which defaults to q. Collection-valued paths are not supported.",
+      "description": "API model string property names or dot-separated nested reference-property paths that participate in literal OR-of-contains collection search. Search uses the configured query parameter, which defaults to q. Collection-valued paths are not supported.",
       "items": { "type": "string" },
       "uniqueItems": true
     },
@@ -291,7 +291,7 @@
         },
         "CaseSensitive": {
           "type": "boolean",
-          "description": "When true, search uses case-sensitive string matching.",
+          "description": "When true, RestLib disables case folding. Database-backed matching still follows the provider and configured database or column collation.",
           "default": false
         }
       },

@@ -77,7 +77,9 @@ public class RestLibJsonResourceConfiguration
     /// Keys are CLR property names or dot-separated nested reference-property
     /// paths, values are lists of operator names (e.g., "eq", "neq", "gt",
     /// "lt", "gte", "lte", "contains", "starts_with", "in"). Query
-    /// parameter names use snake_case per segment joined with dots.
+    /// parameter names use snake_case per segment joined with dots. Relational
+    /// operators use RestLib's portable numeric and date/time type baseline;
+    /// partial-string operands are literal and case-insensitive.
     /// </summary>
     public Dictionary<string, List<string>> FilteringOperators { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
@@ -259,8 +261,9 @@ public class RestLibJsonSearchOptionsConfiguration
     public string? QueryParameter { get; set; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether search uses case-sensitive matching.
-    /// Defaults to <c>false</c>.
+    /// Gets or sets a value indicating whether RestLib disables case folding for search.
+    /// Defaults to <c>false</c>. Database-backed matching also depends on provider
+    /// case functions and the configured database collation.
     /// </summary>
     public bool CaseSensitive { get; set; }
 }

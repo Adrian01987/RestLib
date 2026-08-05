@@ -837,6 +837,14 @@ public class InMemoryRepository<TEntity, TKey> :
 
     private bool MatchesFilter(TEntity entity, FilterValue filter)
     {
+        if (FilterOperatorCompatibility.IsRelational(filter.Operator)
+            && !FilterOperatorCompatibility.IsSupported(filter.Operator, filter.PropertyType))
+        {
+            throw new NotSupportedException(
+                $"Filter operator '{filter.Operator}' cannot be applied to property '{filter.PropertyName}' " +
+                $"of type '{filter.PropertyType.Name}'.");
+        }
+
         if (!TryGetPropertyPathValue(entity, filter.PropertyName, out var entityValue))
         {
             return true; // Skip unknown properties
@@ -848,10 +856,10 @@ public class InMemoryRepository<TEntity, TKey> :
         {
             FilterOperator.Eq => CompareValues(entityValue, filterValue) == 0,
             FilterOperator.Neq => CompareValues(entityValue, filterValue) != 0,
-            FilterOperator.Gt => CompareValues(entityValue, filterValue) > 0,
-            FilterOperator.Lt => CompareValues(entityValue, filterValue) < 0,
-            FilterOperator.Gte => CompareValues(entityValue, filterValue) >= 0,
-            FilterOperator.Lte => CompareValues(entityValue, filterValue) <= 0,
+            FilterOperator.Gt => entityValue is not null && filterValue is not null && CompareValues(entityValue, filterValue) > 0,
+            FilterOperator.Lt => entityValue is not null && filterValue is not null && CompareValues(entityValue, filterValue) < 0,
+            FilterOperator.Gte => entityValue is not null && filterValue is not null && CompareValues(entityValue, filterValue) >= 0,
+            FilterOperator.Lte => entityValue is not null && filterValue is not null && CompareValues(entityValue, filterValue) <= 0,
             FilterOperator.Contains => ContainsString(entityValue, filterValue),
             FilterOperator.StartsWith => StartsWithString(entityValue, filterValue),
             FilterOperator.EndsWith => EndsWithString(entityValue, filterValue),

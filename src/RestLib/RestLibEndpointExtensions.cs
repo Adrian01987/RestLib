@@ -196,15 +196,24 @@ public static class RestLibEndpointExtensions
                 {
                     foreach (var filter in config.FilterConfiguration.Properties)
                     {
-                        var operatorNames = filter.AllowedOperators
-                    .Select(FilterParser.GetOperatorName)
-                    .OrderBy(n => n, StringComparer.Ordinal)
-                    .ToList();
+                        var supportedOperators = filter.AllowedOperators
+                            .Where(filterOperator => FilterOperatorCompatibility.IsSupported(filterOperator, filter.PropertyType))
+                            .ToList();
+                        var operatorNames = supportedOperators
+                            .Select(FilterParser.GetOperatorName)
+                            .OrderBy(n => n, StringComparer.Ordinal)
+                            .ToList();
 
-                        var description = filter.AllowedOperators.Count == 1
-                    ? $"Filter by {filter.PropertyName} (equality only). Example: ?{filter.QueryParameterName}=value"
-                    : $"Filter by {filter.PropertyName}. Allowed operators: {string.Join(", ", operatorNames)}. " +
-                      $"Use bracket syntax for non-equality operators: ?{filter.QueryParameterName}[operator]=value";
+                        var description = supportedOperators.Count == 1
+                            ? $"Filter by {filter.PropertyName} (equality only). Example: ?{filter.QueryParameterName}=value"
+                            : $"Filter by {filter.PropertyName}. Allowed operators: {string.Join(", ", operatorNames)}. " +
+                              $"Use bracket syntax for non-equality operators: ?{filter.QueryParameterName}[operator]=value";
+
+                        if (supportedOperators.Any(filterOperator => filterOperator is
+                            FilterOperator.Contains or FilterOperator.StartsWith or FilterOperator.EndsWith))
+                        {
+                            description += " String-match values are literal and case-insensitive.";
+                        }
 
                         var param = new OpenApiParameter
                         {
@@ -258,7 +267,8 @@ public static class RestLibEndpointExtensions
                 OpenApiEndpointConfiguration.AddSearchTransformer(
                     getAllEndpoint,
                     config.SearchConfiguration.QueryParameterName,
-                    config.SearchConfiguration.Properties);
+                    config.SearchConfiguration.Properties,
+                    config.SearchConfiguration.CaseSensitive);
             }
         } // end GetAll
 

@@ -632,12 +632,17 @@ internal static class OpenApiEndpointConfiguration
     /// <param name="endpoint">The endpoint builder to attach the transformer to.</param>
     /// <param name="queryParameterName">The configured search query parameter name.</param>
     /// <param name="properties">The configured searchable properties.</param>
+    /// <param name="caseSensitive">Whether RestLib disables case folding for the search.</param>
     internal static void AddSearchTransformer(
         RouteHandlerBuilder endpoint,
         string queryParameterName,
-        IReadOnlyList<SearchPropertyConfiguration> properties)
+        IReadOnlyList<SearchPropertyConfiguration> properties,
+        bool caseSensitive)
     {
         var allowedFields = string.Join(", ", properties.Select(p => p.QueryParameterName));
+        var caseDescription = caseSensitive
+            ? "Case folding is disabled; database-backed matching follows the configured database collation."
+            : "Matching is case-insensitive; database-backed Unicode matching follows provider case-mapping rules.";
 
         endpoint.AddOpenApiOperationTransformer((operation, context, ct) =>
         {
@@ -646,7 +651,7 @@ internal static class OpenApiEndpointConfiguration
                 queryParameterName,
                 ParameterLocation.Query,
                 required: false,
-                $"OR-of-contains search across configured fields. Searchable fields: {allowedFields}.",
+                $"Literal OR-of-contains search across configured fields. Searchable fields: {allowedFields}. {caseDescription}",
                 new OpenApiSchema { Type = JsonSchemaType.String });
 
             return Task.CompletedTask;

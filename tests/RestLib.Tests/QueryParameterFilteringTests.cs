@@ -1197,8 +1197,7 @@ public class FilterParserOperatorTests
     [Trait("Category", "Story4.3.Operators")]
     public void Parse_ComparisonOnNonComparable_ReturnsTypeError()
     {
-        // Arrange — CategoryId is a Guid? which does implement IComparable,
-        // but we need a non-comparable type. Use the NullConvertedType which isn't IComparable.
+        // Arrange — NullConvertedType is outside RestLib's portable relational baseline.
         var config = new FilterConfiguration<NullConverterEntity>();
         config.AddProperty(p => p.CustomProp, FilterOperator.Gt);
 
@@ -1213,7 +1212,7 @@ public class FilterParserOperatorTests
 
         // Assert
         result.IsValid.Should().BeFalse();
-        result.Errors[0].Message.Should().Contain("comparable type");
+        result.Errors[0].Message.Should().Contain("portable numeric and date/time properties");
     }
 
     [Fact]
@@ -1658,7 +1657,7 @@ public class FilterOperatorIntegrationTests : IAsyncLifetime
                 config.AllowAnonymous();
                 config.AllowFiltering(p => p.Quantity, FilterOperators.Comparison);
                 config.AllowFiltering(p => p.Price, FilterOperators.Comparison);
-                config.AllowFiltering(p => p.Name, FilterOperators.String);
+                config.AllowFiltering(p => p.Name, FilterOperators.All);
                 config.AllowFiltering(p => p.IsActive, FilterOperator.Neq);
                 config.AllowFiltering(p => p.Status, FilterOperator.In, FilterOperator.Neq);
             })
@@ -1693,6 +1692,21 @@ public class FilterOperatorIntegrationTests : IAsyncLifetime
     }
 
     #region Greater Than / Less Than
+
+    [Fact]
+    [Trait("Category", "Story4.3.Operators")]
+    public async Task GetAll_RelationalOperatorOnString_ReturnsInvalidFilter()
+    {
+        // Act
+        var response = await _client.GetAsync("/api/items?name[gt]=Widget");
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        json.GetProperty("type").GetString().Should().EndWith("/problems/invalid-filter");
+        json.GetProperty("errors").GetProperty("name[gt]")[0].GetString()
+            .Should().Contain("portable numeric and date/time properties");
+    }
 
     [Fact]
     [Trait("Category", "Story4.3.Operators")]

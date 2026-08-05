@@ -80,6 +80,64 @@ public class EfCoreSearchIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Search_CaseInsensitiveUnderTurkishCulture_UsesInvariantTermFolding()
+    {
+        // Arrange
+        var originalCulture = System.Globalization.CultureInfo.CurrentCulture;
+        var originalUiCulture = System.Globalization.CultureInfo.CurrentUICulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("tr-TR");
+            System.Globalization.CultureInfo.CurrentUICulture = new System.Globalization.CultureInfo("tr-TR");
+            await ClearProductsAsync();
+            await SeedProductsAsync(CreateProduct("INDIGO", "Basic item"));
+
+            // Act
+            var response = await _client.GetAsync("/api/products?q=I");
+            var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            json.GetProperty("items").GetArrayLength().Should().Be(1);
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = originalCulture;
+            System.Globalization.CultureInfo.CurrentUICulture = originalUiCulture;
+        }
+    }
+
+    [Theory]
+    [InlineData("%", "Discount 20%", "Discount 20 percent")]
+    [InlineData("_", "part_one", "partXone")]
+    [InlineData("[", "name[part", "nameXpart")]
+    [InlineData("]", "name]part", "nameXpart")]
+    [InlineData("^", "caret^value", "caretXvalue")]
+    [InlineData("\\", "path\\leaf", "path/leaf")]
+    public async Task Search_WithPatternCharacter_TreatsCharacterLiterally(
+        string searchTerm,
+        string matchingName,
+        string nonMatchingName)
+    {
+        // Arrange
+        await ClearProductsAsync();
+        await SeedProductsAsync(
+            CreateProduct(matchingName, "Basic item"),
+            CreateProduct(nonMatchingName, "Basic item"));
+        var encodedSearchTerm = Uri.EscapeDataString(searchTerm);
+
+        // Act
+        var response = await _client.GetAsync($"/api/products?q={encodedSearchTerm}");
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var items = json.GetProperty("items");
+        items.GetArrayLength().Should().Be(1);
+        items[0].GetProperty("product_name").GetString().Should().Be(matchingName);
+    }
+
+    [Fact]
     public async Task Search_ComposesWithFilteringSortingAndPagination()
     {
         // Arrange

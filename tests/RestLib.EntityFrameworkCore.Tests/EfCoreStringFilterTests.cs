@@ -119,6 +119,63 @@ public class EfCoreStringFilterTests : IAsyncLifetime
         json.GetProperty("items").GetArrayLength().Should().Be(2);
     }
 
+    [Theory]
+    [InlineData("%", "Discount 20%", "Discount 20 percent")]
+    [InlineData("_", "part_one", "partXone")]
+    [InlineData("[", "name[part", "nameXpart")]
+    [InlineData("]", "name]part", "nameXpart")]
+    [InlineData("^", "caret^value", "caretXvalue")]
+    [InlineData("\\", "path\\leaf", "path/leaf")]
+    public async Task GetAll_ContainsFilter_WithPatternCharacter_TreatsCharacterLiterally(
+        string searchTerm,
+        string matchingName,
+        string nonMatchingName)
+    {
+        // Arrange
+        await SeedProductsAsync(
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = matchingName, UnitPrice = 10m, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = nonMatchingName, UnitPrice = 20m, StockQuantity = 2, CreatedAt = DateTime.UtcNow, IsActive = true });
+        var encodedSearchTerm = Uri.EscapeDataString(searchTerm);
+
+        // Act
+        var response = await _client.GetAsync($"/api/products?product_name[contains]={encodedSearchTerm}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await ReadJsonAsync(response);
+        var items = json.GetProperty("items");
+        items.GetArrayLength().Should().Be(1);
+        items[0].GetProperty("product_name").GetString().Should().Be(matchingName);
+    }
+
+    [Theory]
+    [InlineData("starts_with", "%prefix", "%", "Xprefix")]
+    [InlineData("starts_with", "_prefix", "_", "Xprefix")]
+    [InlineData("ends_with", "suffix%", "%", "suffixX")]
+    [InlineData("ends_with", "suffix_", "_", "suffixX")]
+    public async Task GetAll_BoundaryStringFilter_WithWildcardCharacter_TreatsCharacterLiterally(
+        string filterOperator,
+        string matchingName,
+        string searchTerm,
+        string nonMatchingName)
+    {
+        // Arrange
+        await SeedProductsAsync(
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = matchingName, UnitPrice = 10m, StockQuantity = 1, CreatedAt = DateTime.UtcNow, IsActive = true },
+            new ProductEntity { Id = Guid.NewGuid(), ProductName = nonMatchingName, UnitPrice = 20m, StockQuantity = 2, CreatedAt = DateTime.UtcNow, IsActive = true });
+        var encodedSearchTerm = Uri.EscapeDataString(searchTerm);
+
+        // Act
+        var response = await _client.GetAsync($"/api/products?product_name[{filterOperator}]={encodedSearchTerm}");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var json = await ReadJsonAsync(response);
+        var items = json.GetProperty("items");
+        items.GetArrayLength().Should().Be(1);
+        items[0].GetProperty("product_name").GetString().Should().Be(matchingName);
+    }
+
     [Fact]
     public async Task GetAll_StartsWithFilter_CaseInsensitive_ReturnsMatchingEntities()
     {

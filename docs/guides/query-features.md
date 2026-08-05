@@ -47,6 +47,16 @@ preset arrays (`FilterOperators.Comparison`, `FilterOperators.String`,
 `FilterOperators.All`) or individual `FilterOperator` values. `Eq` is always
 implicitly allowed.
 
+Relational operators use the common built-in-adapter baseline: `byte`, `short`, `int`,
+`long`, `float`, `double`, `decimal`, and `DateTime`, including nullable forms. Other
+types can still use equality, inequality, and membership filters. An unsupported
+operator/type combination returns 400 before repository query or count execution.
+
+Partial-string operands are literal and case-insensitive. For example,
+`?name[contains]=%25_sale` searches for the text `%_sale`; `%` and `_` are not SQL
+wildcards. Null strings do not match, and null numeric/date values do not satisfy a
+relational operator.
+
 ## Sorting
 
 Control result ordering with an allow-list of sortable properties:
@@ -198,7 +208,17 @@ JSON resources support the same feature:
 ```
 
 Search is intentionally limited to OR-of-contains matching across configured string
-fields. It is not full-text indexing, ranking, fuzzy matching, or a search engine.
+fields. Search terms are literal, so SQL wildcard characters have no special meaning.
+The default mode folds case; `CaseSensitive = true` disables RestLib's case folding.
+
+InMemory matching uses ordinal .NET comparisons. EF Core evaluates matching in the
+database: Unicode case mapping, accents, and case-sensitive mode ultimately follow the
+provider and configured database/column collation. In particular, disabling case folding
+cannot force case-sensitive results from a case-insensitive database collation. Query-side
+case folding can also affect index use, so inspect query plans for large searchable datasets.
+RestLib does not switch these queries to client-side evaluation.
+
+Search is not full-text indexing, ranking, fuzzy matching, or a search engine.
 
 For trivial same-name, same-type models only, JSON can use the built-in strict reflection mapper instead:
 

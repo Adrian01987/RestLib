@@ -437,6 +437,39 @@ public partial class InMemoryRepositoryTests
         result.Items.Should().OnlyContain(e => e.Value <= 200);
     }
 
+    [Theory]
+    [InlineData(FilterOperator.Lt)]
+    [InlineData(FilterOperator.Lte)]
+    public async Task GetAllAsync_RelationalFilterOnNullableProperty_ExcludesNullValues(FilterOperator filterOperator)
+    {
+        // Arrange
+        var repository = CreateFilterTestRepository();
+        await repository.CreateAsync(CreateFilterTestEntity(nullableValue: null));
+        await repository.CreateAsync(CreateFilterTestEntity(nullableValue: 5));
+        await repository.CreateAsync(CreateFilterTestEntity(nullableValue: 15));
+
+        var filters = new List<FilterValue>
+        {
+            new()
+            {
+                PropertyName = "NullableValue",
+                QueryParameterName = "nullable_value",
+                PropertyType = typeof(int?),
+                RawValue = "10",
+                TypedValue = 10,
+                Operator = filterOperator
+            }
+        };
+        var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+        // Act
+        var result = await repository.GetAllAsync(request);
+
+        // Assert
+        result.Items.Should().ContainSingle();
+        result.Items[0].NullableValue.Should().Be(5);
+    }
+
     [Fact]
     public async Task GetAllAsync_WithContainsFilter_FiltersCorrectly()
     {
@@ -474,6 +507,57 @@ public partial class InMemoryRepositoryTests
 
         // Assert
         result.Items.Should().HaveCount(3); // All contain "case" in some form
+    }
+
+    [Theory]
+    [InlineData("%", "Discount 20%", "Discount 20 percent")]
+    [InlineData("_", "part_one", "partXone")]
+    [InlineData("[", "name[part", "nameXpart")]
+    [InlineData("]", "name]part", "nameXpart")]
+    [InlineData("^", "caret^value", "caretXvalue")]
+    [InlineData("\\", "path\\leaf", "path/leaf")]
+    public async Task GetAllAsync_ContainsFilter_WithPatternCharacter_TreatsCharacterLiterally(
+        string searchTerm,
+        string matchingName,
+        string nonMatchingName)
+    {
+        // Arrange
+        var repository = CreateRepository();
+        await repository.CreateAsync(CreateEntity(matchingName, 100));
+        await repository.CreateAsync(CreateEntity(nonMatchingName, 200));
+
+        var filters = new List<FilterValue>
+        {
+            CreateOperatorFilter("Name", searchTerm, FilterOperator.Contains)
+        };
+        var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+        // Act
+        var result = await repository.GetAllAsync(request);
+
+        // Assert
+        result.Items.Should().ContainSingle();
+        result.Items[0].Name.Should().Be(matchingName);
+    }
+
+    [Fact]
+    public async Task GetAllAsync_RelationalFilterOnString_ThrowsClearNotSupportedException()
+    {
+        // Arrange
+        var repository = CreateRepository();
+        await repository.CreateAsync(CreateEntity("Widget", 100));
+        var filters = new List<FilterValue>
+        {
+            CreateOperatorFilter("Name", "Widget", FilterOperator.Gt)
+        };
+        var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+        // Act
+        var act = async () => await repository.GetAllAsync(request);
+
+        // Assert
+        await act.Should().ThrowAsync<NotSupportedException>()
+            .WithMessage("*cannot be applied*Name*String*");
     }
 
     [Fact]
