@@ -16,6 +16,7 @@ STOREFRONT_PRODUCTS_URL="${BASE_URL}/api/v1/storefront/products"
 CARTS_URL="${BASE_URL}/api/storefront/carts"
 CHECKOUT_URL="${BASE_URL}/api/storefront/checkout"
 STOREFRONT_ORDERS_URL="${BASE_URL}/api/storefront/orders"
+ADMIN_PRODUCTS_URL="${BASE_URL}/api/v2/admin/products"
 ADMIN_ORDERS_URL="${BASE_URL}/api/admin/orders"
 
 BOOTSTRAP_KEY="${E2E_ADMIN_BOOTSTRAP_KEY:-dev-bootstrap-key}"
@@ -162,6 +163,33 @@ transition_order_status() {
 
   assert_http_status "200"                               || return 1
   assert_json_field ".status" "$target_status"           || return 1
+}
+
+restore_product_stock() {
+  local stock="$1"
+  local etag body
+
+  http_get_admin "${ADMIN_PRODUCTS_URL}/${PRODUCT_ID}"
+  if [ "$HTTP_STATUS" != "200" ]; then
+    warn "Could not read product ${PRODUCT_ID} while restoring stock (HTTP ${HTTP_STATUS})"
+    return 1
+  fi
+
+  etag=$(get_header "ETag")
+  if [ -z "$etag" ]; then
+    warn "Could not restore product ${PRODUCT_ID}: response did not include an ETag"
+    return 1
+  fi
+
+  body=$(jq -n --argjson stock "$stock" '{stock_on_hand:$stock}')
+  http_patch_admin_if_match "${ADMIN_PRODUCTS_URL}/${PRODUCT_ID}" "$body" "$etag"
+  if [ "$HTTP_STATUS" != "200" ] || [ "$(jq_val '.stock_on_hand')" != "$stock" ]; then
+    warn "Could not restore product ${PRODUCT_ID} stock to ${stock} (HTTP ${HTTP_STATUS})"
+    echo "$HTTP_BODY" | jq . 2>/dev/null || echo "$HTTP_BODY"
+    return 1
+  fi
+
+  pass "restored product stock to ${stock}"
 }
 
 # =============================================================================
@@ -323,7 +351,90 @@ test_admin_login() {
 }
 
 # =============================================================================
-# TEST 9: Admin progresses order to delivery and customer links track status
+# TEST 9: Checkout reports the sample-owned insufficient-stock contract
+# =============================================================================
+test_checkout_insufficient_stock_problem() {
+  local original_stock etag body result=0 stock_was_changed=false
+
+  http_get_admin "${ADMIN_PRODUCTS_URL}/${PRODUCT_ID}"
+  assert_http_status "200"                               || return 1
+  original_stock=$(jq_val ".stock_on_hand")
+  assert_matches "original product stock" "$original_stock" '^[0-9]+$' || return 1
+  etag=$(get_header "ETag")
+  assert_ne "product ETag" "$etag" ""                  || return 1
+
+  body=$(jq -n '{stock_on_hand:1}')
+  http_patch_admin_if_match "${ADMIN_PRODUCTS_URL}/${PRODUCT_ID}" "$body" "$etag"
+  if [ "$HTTP_STATUS" != "200" ]; then
+    assert_http_status "200"
+    return 1
+  fi
+
+  stock_was_changed=true
+  assert_json_field ".stock_on_hand" "1"                || result=1
+
+  if [ "$result" -eq 0 ]; then
+    test_create_active_cart                              || result=1
+  fi
+  if [ "$result" -eq 0 ]; then
+    test_add_product_to_cart                             || result=1
+  fi
+
+  if [ "$result" -eq 0 ]; then
+    http_get_admin "${ADMIN_PRODUCTS_URL}/${PRODUCT_ID}"
+    assert_http_status "200"                             || result=1
+    etag=$(get_header "ETag")
+    assert_ne "product ETag" "$etag" ""                || result=1
+  fi
+
+  if [ "$result" -eq 0 ]; then
+    body=$(jq -n '{stock_on_hand:0}')
+    http_patch_admin_if_match "${ADMIN_PRODUCTS_URL}/${PRODUCT_ID}" "$body" "$etag"
+    assert_http_status "200"                             || result=1
+    assert_json_field ".stock_on_hand" "0"              || result=1
+  fi
+
+  if [ "$result" -eq 0 ]; then
+    http_post_customer "$CHECKOUT_URL" '{"payment_method":"card"}'
+
+    assert_http_status "409"                             || result=1
+    assert_header_contains "Content-Type" "application/problem+json" || result=1
+    assert_json_field ".type" "/problems/insufficient-stock" || result=1
+    assert_json_field ".title" "Insufficient Stock"     || result=1
+    assert_json_field ".status" "409"                   || result=1
+    assert_json_field ".detail" "Product '${PRODUCT_NAME}' has 0 units available; requested 1." || result=1
+    assert_json_field ".instance" "/api/storefront/checkout" || result=1
+    assert_json_field ".product_id" "$PRODUCT_ID"       || result=1
+    assert_json_field ".requested" "1"                  || result=1
+    assert_json_field ".available" "0"                  || result=1
+  fi
+
+  if [ "$stock_was_changed" = true ]; then
+    restore_product_stock "$original_stock"             || result=1
+  fi
+
+  return "$result"
+}
+
+# =============================================================================
+# TEST 10: An invalid customer command reports the sample-owned transition contract
+# =============================================================================
+test_invalid_status_transition_problem() {
+  http_post_customer_empty "${STOREFRONT_ORDERS_URL}/${ORDER_ID}/confirm-delivery"
+
+  assert_http_status "409"                               || return 1
+  assert_header_contains "Content-Type" "application/problem+json" || return 1
+  assert_json_field ".type" "/problems/invalid-status-transition" || return 1
+  assert_json_field ".title" "Invalid Status Transition" || return 1
+  assert_json_field ".status" "409"                     || return 1
+  assert_json_field ".detail" "Status cannot transition from 'ASSIGNED' to 'DELIVERY CONFIRMED'." || return 1
+  assert_json_field ".instance" "/api/storefront/orders/${ORDER_ID}/confirm-delivery" || return 1
+  assert_json_field ".from" "ASSIGNED"                 || return 1
+  assert_json_field ".to" "DELIVERY CONFIRMED"         || return 1
+}
+
+# =============================================================================
+# TEST 11: Admin progresses order to delivery and customer links track status
 # =============================================================================
 test_delivery_status_links() {
   transition_order_status "PAID"                         || return 1
@@ -346,7 +457,7 @@ test_delivery_status_links() {
 }
 
 # =============================================================================
-# TEST 10: Customer confirms delivery through the advertised link
+# TEST 12: Customer confirms delivery through the advertised link
 # =============================================================================
 test_confirm_delivery() {
   local confirm_href confirm_url
@@ -379,6 +490,8 @@ run_test "Add Product to Cart"                           test_add_product_to_car
 run_test "Checkout Cart"                                 test_checkout_cart
 run_test "ASSIGNED Order Links"                          test_assigned_order_links
 run_test "Bootstrap or Login Admin"                      test_admin_login
+run_test "Insufficient Stock Problem Details"            test_checkout_insufficient_stock_problem
+run_test "Invalid Transition Problem Details"            test_invalid_status_transition_problem
 run_test "Delivery Status Links"                         test_delivery_status_links
 run_test "Confirm Delivery"                              test_confirm_delivery
 

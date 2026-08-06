@@ -634,6 +634,7 @@ Key decisions are documented as Architecture Decision Records:
 | [ADR-028](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/028-unit-of-work-application-owned.md) | Unit of work is application-owned |
 | [ADR-030](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/030-single-owner-internal-orchestration-seams.md) | Single-owner internal orchestration seams |
 | [ADR-031](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/031-bounded-performance-caches-and-batch-key-planning.md) | Bounded EF planning, batch-key, and built-in mapping caches |
+| [ADR-032](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/032-application-owned-problem-details.md) | Domain Problem Details are application-owned |
 
 ## Packages
 

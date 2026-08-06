@@ -1,12 +1,11 @@
-using System.Text.Json;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using RestLib.Responses;
 using RestLib.Sample.Ecommerce;
 using RestLib.Sample.Ecommerce.Data;
 using RestLib.Sample.Ecommerce.Identity;
 using RestLib.Sample.Ecommerce.Models;
 using RestLib.Sample.Ecommerce.Payments;
+using RestLib.Sample.Ecommerce.Responses;
 
 namespace RestLib.Sample.Ecommerce.Ordering;
 
@@ -69,27 +68,24 @@ public static class StorefrontOrderEndpoints
 
         if (order.PaidAt is not null || string.Equals(order.Payment?.Status, PaidStatus, StringComparison.Ordinal))
         {
-            return PaymentAlreadyProcessedProblem(order, httpContext.Request.Path.ToString());
+            return EcommerceProblemResults.PaymentAlreadyProcessed(httpContext, order);
         }
 
         var currentStatus = OrderHooks.NormalizeStatus(order.Status, DefaultStatus);
         if (!OrderHooks.CanTransition(currentStatus, PaidStatus))
         {
-            return ProblemDetailsResult.InvalidStatusTransition(
-                currentStatus,
-                PaidStatus,
-                httpContext.Request.Path.ToString());
+            return EcommerceProblemResults.InvalidStatusTransition(httpContext, currentStatus, PaidStatus);
         }
 
         if (!paymentStrategyResolver.TryResolve(order, out var paymentStrategy))
         {
-            return UnsupportedPaymentMethodProblem(order.PaymentMethod, httpContext.Request.Path.ToString());
+            return EcommerceProblemResults.UnsupportedPaymentMethod(httpContext, order.PaymentMethod);
         }
 
         var paymentResult = await paymentStrategy.ProcessAsync(order, ct);
         if (!paymentResult.Succeeded)
         {
-            return PaymentFailedProblem(order, paymentResult, httpContext.Request.Path.ToString());
+            return EcommerceProblemResults.PaymentFailed(httpContext, order, paymentResult);
         }
 
         var now = DateTime.UtcNow;
@@ -157,10 +153,10 @@ public static class StorefrontOrderEndpoints
         var currentStatus = OrderHooks.NormalizeStatus(order.Status, DefaultStatus);
         if (!OrderHooks.CanTransition(currentStatus, DeliveryConfirmedStatus))
         {
-            return ProblemDetailsResult.InvalidStatusTransition(
+            return EcommerceProblemResults.InvalidStatusTransition(
+                httpContext,
                 currentStatus,
-                DeliveryConfirmedStatus,
-                httpContext.Request.Path.ToString());
+                DeliveryConfirmedStatus);
         }
 
         order.Status = DeliveryConfirmedStatus;
@@ -168,71 +164,6 @@ public static class StorefrontOrderEndpoints
         await db.SaveChangesAsync(ct);
 
         return Results.Ok(order);
-    }
-
-    private static IResult PaymentAlreadyProcessedProblem(Order order, string? instance)
-    {
-        return ProblemDetailsResult.Create(new RestLibProblemDetails
-        {
-            Type = "/problems/payment-already-processed",
-            Title = "Payment Already Processed",
-            Status = StatusCodes.Status409Conflict,
-            Detail = $"Order '{order.Id}' has already been paid.",
-            Instance = instance,
-            Extensions = CreateExtensions(
-                ("order_id", order.Id),
-                ("payment_method", order.PaymentMethod)),
-        });
-    }
-
-    private static IResult PaymentFailedProblem(Order order, PaymentStrategyResult paymentResult, string? instance)
-    {
-        var errorCode = NormalizePaymentErrorCode(paymentResult.ErrorCode);
-        return ProblemDetailsResult.Create(new RestLibProblemDetails
-        {
-            Type = $"/problems/{errorCode}",
-            Title = "Payment Failed",
-            Status = StatusCodes.Status402PaymentRequired,
-            Detail = paymentResult.ErrorMessage ?? "The payment strategy failed to process the order.",
-            Instance = instance,
-            Extensions = CreateExtensions(
-                ("error_code", errorCode),
-                ("order_id", order.Id),
-                ("payment_method", order.PaymentMethod),
-                ("amount", order.Total)),
-        });
-    }
-
-    private static IResult UnsupportedPaymentMethodProblem(string paymentMethod, string? instance)
-    {
-        return ProblemDetailsResult.Create(new RestLibProblemDetails
-        {
-            Type = "/problems/unsupported-payment-method",
-            Title = "Unsupported Payment Method",
-            Status = StatusCodes.Status400BadRequest,
-            Detail = $"Payment method '{paymentMethod}' is not supported.",
-            Instance = instance,
-            Extensions = CreateExtensions(("payment_method", paymentMethod)),
-        });
-    }
-
-    private static IDictionary<string, JsonElement> CreateExtensions(
-        params (string Key, object? Value)[] values)
-    {
-        var extensions = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-        foreach (var (key, value) in values)
-        {
-            extensions[key] = JsonSerializer.SerializeToElement(value);
-        }
-
-        return extensions;
-    }
-
-    private static string NormalizePaymentErrorCode(string? errorCode)
-    {
-        return string.IsNullOrWhiteSpace(errorCode)
-            ? "payment_failed"
-            : errorCode.Trim().ToLowerInvariant();
     }
 }
 

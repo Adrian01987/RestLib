@@ -69,7 +69,7 @@ the base URI to the relative path constants defined in `ProblemTypes`. The `Prob
 constants remain available for programmatic comparison; use `ProblemTypes.Resolve(type,
 baseUri)` to obtain the full URI that matches configured runtime output.
 
-## Error Types
+## RestLib Error Types
 
 | HTTP Status | Type                            | Title                 | Notes                                |
 | ----------- | ------------------------------- | --------------------- | ------------------------------------ |
@@ -88,13 +88,17 @@ baseUri)` to obtain the full URI that matches configured runtime output.
 | 403         | `/problems/forbidden`           | Forbidden             | OpenAPI docs only; handled by ASP.NET Core authorization (including action-aware batch evaluation) |
 | 404         | `/problems/not-found`           | Resource Not Found    |                                      |
 | 409         | `/problems/conflict`            | Resource Conflict     |                                      |
-| 409         | `/problems/insufficient-stock`  | Insufficient Stock    | Requested quantity exceeds available stock |
-| 409         | `/problems/invalid-status-transition` | Invalid Status Transition | Requested status change is not allowed |
 | 412         | `/problems/precondition-failed` | Precondition Failed   |                                      |
 | 501         | `/problems/conditional-write-not-supported` | Conditional Write Not Supported | Repository lacks atomic `If-Match` mutation support |
 | 500         | `/problems/internal-error`      | Internal Server Error |                                      |
 
 The `unauthorized` and `forbidden` types are defined as constants for OpenAPI response documentation but are not constructed by RestLib — ASP.NET Core's authentication/authorization middleware produces the actual 401/403 responses.
+
+Business-domain failures are application-owned rather than part of this table.
+Applications create a `RestLibProblemDetails` occurrence with their own type,
+title, status, detail, and extension members, then return it through
+`ProblemDetailsResult.Create`. See ADR-032 for the ownership boundary and
+migration from the former ecommerce-specific core helpers.
 
 ## Validation Error Example
 
@@ -114,9 +118,10 @@ The `unauthorized` and `forbidden` types are defined as constants for OpenAPI re
 
 ## Implementation
 
-The implementation is split across three classes:
+The implementation is split across four components:
 
 - **`RestLibProblemDetails`** — plain data model (POCO) with the RFC 9457 fields
+- **`ProblemCatalog`** — internal data-driven metadata for RestLib-owned problem types
 - **`ProblemDetailsFactory`** — static factory methods that create `RestLibProblemDetails` instances
 - **`ProblemDetailsResult`** — static helper methods that wrap the factory output into `IResult` responses with the `application/problem+json` content type
 
@@ -141,6 +146,20 @@ public static class ProblemDetailsResult
     public static IResult NotFound(string entityName, object id, string? instance = null)
         => Create(ProblemDetailsFactory.NotFound(entityName, id, instance));
 }
+```
+
+Application code uses the same result pipeline without adding domain vocabulary
+to RestLib:
+
+```csharp
+return ProblemDetailsResult.Create(new RestLibProblemDetails
+{
+    Type = "/problems/order-locked",
+    Title = "Order Locked",
+    Status = StatusCodes.Status409Conflict,
+    Detail = "The order can no longer be changed.",
+    Instance = httpContext.Request.Path.ToString(),
+});
 ```
 
 ## References

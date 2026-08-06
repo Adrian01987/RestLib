@@ -2,6 +2,8 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Testing;
 using RestLib.Configuration;
 using RestLib.FieldSelection;
 using RestLib.Filtering;
@@ -55,6 +57,59 @@ public class ProblemDetailsCatalogTests
 
     [Fact]
     [Trait("Category", "Story3.3")]
+    public async Task Create_CustomProblem_PreservesGenericResultBehavior()
+    {
+        // Arrange
+        var services = new ServiceCollection()
+            .AddFakeLogging()
+            .BuildServiceProvider();
+        var httpContext = new DefaultHttpContext
+        {
+            RequestServices = services,
+        };
+        httpContext.Response.Body = new MemoryStream();
+        var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            WriteIndented = true,
+        };
+        var logger = services.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("CustomProblem");
+        var problem = new RestLibProblemDetails
+        {
+            Type = "/problems/domain-rule",
+            Title = "Domain Rule Rejected",
+            Status = StatusCodes.Status409Conflict,
+            Detail = "The requested domain transition is not allowed.",
+            Instance = "/api/domain/1",
+            Extensions = new Dictionary<string, JsonElement>
+            {
+                ["rule"] = JsonSerializer.SerializeToElement("state_transition"),
+            },
+        };
+
+        // Act
+        await ProblemDetailsResult.Create(problem, jsonOptions, logger)
+            .ExecuteAsync(httpContext);
+        httpContext.Response.Body.Position = 0;
+        using var reader = new StreamReader(httpContext.Response.Body);
+        var body = await reader.ReadToEndAsync();
+        using var document = JsonDocument.Parse(body);
+
+        // Assert
+        httpContext.Response.ContentType.Should().StartWith("application/problem+json");
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        body.Should().Contain(Environment.NewLine);
+        document.RootElement.GetProperty("type").GetString().Should().Be("/problems/domain-rule");
+        document.RootElement.GetProperty("title").GetString().Should().Be("Domain Rule Rejected");
+        document.RootElement.GetProperty("rule").GetString().Should().Be("state_transition");
+        services.GetFakeLogCollector().GetSnapshot().Should().ContainSingle(record =>
+            record.Id.Id == 1300
+            && record.Level == LogLevel.Information
+            && record.Message.Contains("/problems/domain-rule", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("Category", "Story3.3")]
     public void Catalog_AllDescriptors_CreateExpectedInvariantMetadata()
     {
         // Arrange
@@ -73,8 +128,6 @@ public class ProblemDetailsCatalogTests
             (ProblemCatalog.BatchSizeExceeded, ProblemTypes.BatchSizeExceeded, "Batch Size Exceeded", StatusCodes.Status400BadRequest, (string?)null),
             (ProblemCatalog.BatchActionNotEnabled, ProblemTypes.BatchActionNotEnabled, "Batch Action Not Enabled", StatusCodes.Status400BadRequest, (string?)null),
             (ProblemCatalog.Conflict, ProblemTypes.Conflict, "Conflict", StatusCodes.Status409Conflict, (string?)null),
-            (ProblemCatalog.InsufficientStock, ProblemTypes.InsufficientStock, "Insufficient Stock", StatusCodes.Status409Conflict, (string?)null),
-            (ProblemCatalog.InvalidStatusTransition, ProblemTypes.InvalidStatusTransition, "Invalid Status Transition", StatusCodes.Status409Conflict, (string?)null),
             (ProblemCatalog.PreconditionFailed, ProblemTypes.PreconditionFailed, "Precondition Failed", StatusCodes.Status412PreconditionFailed, (string?)null),
             (ProblemCatalog.ConditionalWriteNotSupported, ProblemTypes.ConditionalWriteNotSupported, "Conditional Write Not Supported", StatusCodes.Status501NotImplemented, (string?)null),
             (ProblemCatalog.InternalError, ProblemTypes.InternalError, "Internal Server Error", StatusCodes.Status500InternalServerError, "An unexpected error occurred."),
@@ -132,8 +185,6 @@ public class ProblemDetailsCatalogTests
             ProblemDetailsResult.BatchSizeExceeded(2, 1),
             ProblemDetailsResult.BatchActionNotEnabled("patch", ["create"]),
             ProblemDetailsResult.Conflict("bad"),
-            ProblemDetailsResult.InsufficientStock("bad", "1", 2, 1),
-            ProblemDetailsResult.InvalidStatusTransition("new", "done"),
             ProblemDetailsResult.PreconditionFailed("bad"),
             ProblemDetailsResult.ConditionalWriteNotSupported("bad"),
             ProblemDetailsResult.InternalError(),

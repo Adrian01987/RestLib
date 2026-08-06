@@ -254,49 +254,6 @@ public static class ProblemDetailsResult
     }
 
     /// <summary>
-    /// Creates a 409 Insufficient Stock result.
-    /// </summary>
-    /// <param name="detail">The stock conflict detail message.</param>
-    /// <param name="productId">The product identifier.</param>
-    /// <param name="requested">The requested quantity.</param>
-    /// <param name="available">The available quantity.</param>
-    /// <param name="instance">The request path.</param>
-    /// <param name="jsonOptions">Optional JSON serializer options.</param>
-    /// <param name="logger">Optional logger; when provided, the response is logged at the appropriate level.</param>
-    public static IResult InsufficientStock(
-        string detail,
-        string productId,
-        int requested,
-        int available,
-        string? instance = null,
-        JsonSerializerOptions? jsonOptions = null,
-        ILogger? logger = null)
-    {
-        return Create(
-            ProblemDetailsFactory.InsufficientStock(detail, productId, requested, available, instance),
-            jsonOptions,
-            logger);
-    }
-
-    /// <summary>
-    /// Creates a 409 Invalid Status Transition result.
-    /// </summary>
-    /// <param name="fromStatus">The current status.</param>
-    /// <param name="toStatus">The requested target status.</param>
-    /// <param name="instance">The request path.</param>
-    /// <param name="jsonOptions">Optional JSON serializer options.</param>
-    /// <param name="logger">Optional logger; when provided, the response is logged at the appropriate level.</param>
-    public static IResult InvalidStatusTransition(
-        string fromStatus,
-        string toStatus,
-        string? instance = null,
-        JsonSerializerOptions? jsonOptions = null,
-        ILogger? logger = null)
-    {
-        return Create(ProblemDetailsFactory.InvalidStatusTransition(fromStatus, toStatus, instance), jsonOptions, logger);
-    }
-
-    /// <summary>
     /// Creates a 412 Precondition Failed result.
     /// </summary>
     /// <param name="detail">The precondition failure detail message.</param>

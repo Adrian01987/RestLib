@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Removed the ecommerce-only `ProblemTypes.InsufficientStock` and `ProblemTypes.InvalidStatusTransition` constants and their `ProblemDetailsFactory` / `ProblemDetailsResult` convenience methods from the generic core package. Applications should define domain problem metadata locally, construct `RestLibProblemDetails`, and return it with `ProblemDetailsResult.Create`; this removal must ship in the next major version.
+
 ### Added
 
+- ADR-032 defining application ownership of business-domain Problem Details while RestLib retains the generic RFC 9457 model and result pipeline
 - ADR-031 and BenchmarkDotNet coverage for bounded EF planning caches, large scalar/composite batch-key queries, and compiled built-in mapping
 - `RestLib.EntityFrameworkCore` — EF Core repository adapter implementing `IRepository`, `IBatchRepository`, and `ICountableRepository` with server-side filtering, sorting, cursor pagination, batch operations, and `AsNoTracking` default
 - ADR-021: EF Core repository adapter design decisions — cursor pagination strategy, `AsNoTracking` default, JSON Merge Patch via change tracking, key auto-detection, scoped lifetime
@@ -44,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Ecommerce Problem Details descriptors and result helpers now live in the ecommerce sample; the existing insufficient-stock, invalid-transition, and payment HTTP contracts remain unchanged
 - Equivalent EF repository scopes now reuse immutable resource-key metadata and bounded normalized keyset/projection plans by exact model, options, and key-selector identity
 - Large EF batch-key reads now deduplicate and execute bounded sequential queries: scalar keys use `Contains`, while two-part composite keys use balanced predicates under the same 512 key-part budget
 - RestLib-owned identity and reflection mappers now reuse stateless instances and compiled delegates per closed model pair; custom mapper instances continue to follow their registered DI lifetimes

@@ -58,3 +58,8 @@ section to a concrete implementation point in this sample.
   (`Ordering/CheckoutEndpoints.cs:28`, `Ordering/CheckoutEndpoints.cs:54`,
   `Ordering/CheckoutEndpoints.cs:137`). The current RestLib decision is
   documented in `docs/adr/028-unit-of-work-application-owned.md`.
+- Business-domain Problem Details are application-owned. The sample keeps its
+  stock, status-transition, and payment descriptors behind
+  `Responses/EcommerceProblemResults.cs` and writes them through RestLib's
+  generic result pipeline. The ownership boundary is documented in
+  `docs/adr/032-application-owned-problem-details.md`.

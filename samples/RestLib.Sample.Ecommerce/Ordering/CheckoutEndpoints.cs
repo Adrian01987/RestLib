@@ -1,10 +1,10 @@
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using RestLib.Responses;
 using RestLib.Sample.Ecommerce;
 using RestLib.Sample.Ecommerce.Data;
 using RestLib.Sample.Ecommerce.Identity;
 using RestLib.Sample.Ecommerce.Models;
+using RestLib.Sample.Ecommerce.Responses;
 
 namespace RestLib.Sample.Ecommerce.Ordering;
 
@@ -96,13 +96,13 @@ public static class CheckoutEndpoints
             if (!productsById.TryGetValue(cartItem.ProductId, out var product) || !product.IsActive)
             {
                 await transaction.RollbackAsync(ct);
-                return InsufficientStockProblem(cartItem, product, available: 0, httpContext.Request.Path.ToString());
+                return EcommerceProblemResults.InsufficientStock(httpContext, cartItem, product, available: 0);
             }
 
             if (cartItem.Quantity > product.StockOnHand)
             {
                 await transaction.RollbackAsync(ct);
-                return InsufficientStockProblem(cartItem, product, product.StockOnHand, httpContext.Request.Path.ToString());
+                return EcommerceProblemResults.InsufficientStock(httpContext, cartItem, product, product.StockOnHand);
             }
 
             var unitPrice = cartItem.UnitPrice > 0 ? cartItem.UnitPrice : product.Price;
@@ -148,20 +148,5 @@ public static class CheckoutEndpoints
         return Results.Created(
             $"/api/storefront/orders/{order.Id}",
             CheckoutResponse.FromOrder(order, shipment.Id));
-    }
-
-    private static IResult InsufficientStockProblem(
-        CartItem cartItem,
-        Product? product,
-        int available,
-        string? instance)
-    {
-        var productName = product?.Name ?? "Unknown product";
-        return ProblemDetailsResult.InsufficientStock(
-            $"Product '{productName}' has {available} units available; requested {cartItem.Quantity}.",
-            cartItem.ProductId.ToString("D"),
-            cartItem.Quantity,
-            available,
-            instance);
     }
 }

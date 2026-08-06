@@ -4,11 +4,11 @@ using Microsoft.Extensions.DependencyInjection;
 using RestLib;
 using RestLib.Abstractions;
 using RestLib.Hooks;
-using RestLib.Responses;
 using RestLib.Sample.Ecommerce.Data;
 using RestLib.Sample.Ecommerce.Identity;
 using RestLib.Sample.Ecommerce.Models;
 using RestLib.Sample.Ecommerce.Ordering;
+using RestLib.Sample.Ecommerce.Responses;
 
 namespace RestLib.Sample.Ecommerce.Fulfillment;
 
@@ -100,10 +100,10 @@ public static class ShipmentEventHooks
         var currentOrderStatus = OrderHooks.NormalizeStatus(order.Status, PlacedStatus);
         if (!OrderHooks.CanTransition(currentOrderStatus, orderStatus))
         {
-            Stop(context, ProblemDetailsResult.InvalidStatusTransition(
+            Stop(context, EcommerceProblemResults.InvalidStatusTransition(
+                context.HttpContext,
                 currentOrderStatus,
-                orderStatus,
-                context.HttpContext.Request.Path.ToString()));
+                orderStatus));
             return;
         }
 

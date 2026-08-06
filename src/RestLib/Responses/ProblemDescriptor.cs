@@ -130,18 +130,6 @@ internal static class ProblemCatalog
         "Conflict",
         StatusCodes.Status409Conflict);
 
-    /// <summary>Gets the insufficient-stock descriptor.</summary>
-    internal static readonly ProblemDescriptor InsufficientStock = new(
-        ProblemTypes.InsufficientStock,
-        "Insufficient Stock",
-        StatusCodes.Status409Conflict);
-
-    /// <summary>Gets the invalid-status-transition descriptor.</summary>
-    internal static readonly ProblemDescriptor InvalidStatusTransition = new(
-        ProblemTypes.InvalidStatusTransition,
-        "Invalid Status Transition",
-        StatusCodes.Status409Conflict);
-
     /// <summary>Gets the precondition-failed descriptor.</summary>
     internal static readonly ProblemDescriptor PreconditionFailed = new(
         ProblemTypes.PreconditionFailed,
