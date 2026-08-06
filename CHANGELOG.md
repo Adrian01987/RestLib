@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- ADR-031 and BenchmarkDotNet coverage for bounded EF planning caches, large scalar/composite batch-key queries, and compiled built-in mapping
 - `RestLib.EntityFrameworkCore` — EF Core repository adapter implementing `IRepository`, `IBatchRepository`, and `ICountableRepository` with server-side filtering, sorting, cursor pagination, batch operations, and `AsNoTracking` default
 - ADR-021: EF Core repository adapter design decisions — cursor pagination strategy, `AsNoTracking` default, JSON Merge Patch via change tracking, key auto-detection, scoped lifetime
 - Structured logging via `Microsoft.Extensions.Logging` across all endpoints, batch pipelines, hook execution, and error paths
@@ -43,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Equivalent EF repository scopes now reuse immutable resource-key metadata and bounded normalized keyset/projection plans by exact model, options, and key-selector identity
+- Large EF batch-key reads now deduplicate and execute bounded sequential queries: scalar keys use `Contains`, while two-part composite keys use balanced predicates under the same 512 key-part budget
+- RestLib-owned identity and reflection mappers now reuse stateless instances and compiled delegates per closed model pair; custom mapper instances continue to follow their registered DI lifetimes
 - Internal orchestration now has single owners for batch state and HTTP processing, compatible mapped/unmapped CRUD operations, collection-query planning, EF Core key/pagination/projection/PATCH planning, configured comma-list parsing, and Problem Details response metadata/settings; public APIs and HTTP contracts remain unchanged
 - Repository adapters now report client-correctable PATCH failures through the adapter-neutral `PatchValidationException` contract; the existing EF Core exception remains available as a derived compatibility type, and InMemory immutable-key failures retain `InvalidOperationException` catch compatibility
 - Relational filters now use one portable built-in-adapter type baseline (`byte`, `short`, `int`, `long`, `float`, `double`, `decimal`, and `DateTime`, including nullable forms); unsupported operator/type combinations return Invalid Filter before repository execution

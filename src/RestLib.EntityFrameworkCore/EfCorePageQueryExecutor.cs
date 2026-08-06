@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -18,6 +19,7 @@ namespace RestLib.EntityFrameworkCore;
 internal sealed class EfCorePageQueryExecutor<TEntity>
     where TEntity : class
 {
+    private const int DefaultPlanCacheCapacity = 256;
     private const int KeysetCursorVersion = 1;
     private static readonly MethodInfo OrderByMethod = typeof(Queryable)
         .GetMethods()
@@ -53,6 +55,7 @@ internal sealed class EfCorePageQueryExecutor<TEntity>
     private readonly IEntityType _entityType;
     private readonly IReadOnlyList<SortBuilder.SortKeyPart> _keySortParts;
     private readonly Func<ILogger?> _loggerAccessor;
+    private readonly PlanningCache _planningCache;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="EfCorePageQueryExecutor{TEntity}"/> class.
@@ -60,10 +63,12 @@ internal sealed class EfCorePageQueryExecutor<TEntity>
     /// <param name="model">The EF Core model containing the entity metadata.</param>
     /// <param name="keySortParts">The stable key parts used as pagination tie-breakers.</param>
     /// <param name="loggerAccessor">Resolves the optional logger for offset-fallback diagnostics.</param>
+    /// <param name="planningCache">The bounded cache shared by equivalent repository scopes.</param>
     internal EfCorePageQueryExecutor(
         IModel model,
         IReadOnlyList<SortBuilder.SortKeyPart> keySortParts,
-        Func<ILogger?> loggerAccessor)
+        Func<ILogger?> loggerAccessor,
+        PlanningCache? planningCache = null)
     {
         ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(keySortParts);
@@ -73,6 +78,7 @@ internal sealed class EfCorePageQueryExecutor<TEntity>
                 $"Entity type '{typeof(TEntity).Name}' is not part of the EF Core model.");
         _keySortParts = keySortParts;
         _loggerAccessor = loggerAccessor ?? throw new ArgumentNullException(nameof(loggerAccessor));
+        _planningCache = planningCache ?? new PlanningCache();
     }
 
     /// <summary>
@@ -392,6 +398,17 @@ internal sealed class EfCorePageQueryExecutor<TEntity>
         IReadOnlyList<KeysetSortPart> sortFields,
         out KeysetPlan? keysetPlan)
     {
+        var shape = BuildKeysetPlanShape(sortFields);
+        var resolution = _planningCache.GetOrCreate(
+            shape,
+            () => BuildKeysetPlan(sortFields));
+        keysetPlan = resolution.Plan;
+        return resolution.IsSupported;
+    }
+
+    private KeysetPlanResolution BuildKeysetPlan(
+        IReadOnlyList<KeysetSortPart> sortFields)
+    {
         var parts = new List<KeysetPlanPart>();
 
         foreach (var sortField in sortFields)
@@ -402,8 +419,7 @@ internal sealed class EfCorePageQueryExecutor<TEntity>
                     sortField.QueryParameterName,
                     out var part))
             {
-                keysetPlan = null;
-                return false;
+                return KeysetPlanResolution.Unsupported;
             }
 
             parts.Add(part!);
@@ -422,15 +438,13 @@ internal sealed class EfCorePageQueryExecutor<TEntity>
                     JsonNamingPolicy.SnakeCaseLower.ConvertName(keyPart.PropertyName),
                     out var keyPlanPart))
             {
-                keysetPlan = null;
-                return false;
+                return KeysetPlanResolution.Unsupported;
             }
 
             parts.Add(keyPlanPart!);
         }
 
-        keysetPlan = new KeysetPlan(parts);
-        return true;
+        return new KeysetPlanResolution(new KeysetPlan(parts));
     }
 
     private bool TryBuildKeysetPlanPart(
@@ -603,6 +617,24 @@ internal sealed class EfCorePageQueryExecutor<TEntity>
         return string.Join(",", keysetPlan.Parts.Select(part => $"{part.QueryParameterName}:{part.Direction}"));
     }
 
+    private string BuildKeysetPlanShape(IReadOnlyList<KeysetSortPart> sortFields)
+    {
+        var builder = new StringBuilder();
+        foreach (var sortField in sortFields)
+        {
+            AppendShapeValue(builder, sortField.PropertyName);
+            builder.Append((int)sortField.Direction).Append(':');
+            AppendShapeValue(builder, sortField.QueryParameterName);
+        }
+
+        return builder.ToString();
+    }
+
+    private void AppendShapeValue(StringBuilder builder, string value)
+    {
+        builder.Append(value.Length).Append(':').Append(value).Append(';');
+    }
+
     private void LogKeysetFallback(IReadOnlyList<KeysetSortPart> effectiveSortFields)
     {
         var logger = _loggerAccessor();
@@ -618,6 +650,51 @@ internal sealed class EfCorePageQueryExecutor<TEntity>
             "EF Core keyset pagination fallback activated for {EntityType} with sort {SortDescription}; using offset cursor pagination instead.",
             typeof(TEntity).Name,
             sortDescription);
+    }
+
+    /// <summary>
+    /// Retains a bounded set of immutable keyset plans shared by equivalent
+    /// repository scopes.
+    /// </summary>
+    internal sealed class PlanningCache
+    {
+        private readonly BoundedPlanCache<string, object> _plans;
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="PlanningCache"/> class.
+        /// </summary>
+        /// <param name="capacity">The maximum number of query shapes to retain.</param>
+        internal PlanningCache(int capacity = DefaultPlanCacheCapacity)
+        {
+            _plans = new BoundedPlanCache<string, object>(capacity);
+        }
+
+        /// <summary>
+        /// Gets the number of retained keyset planning results.
+        /// </summary>
+        internal int Count => _plans.Count;
+
+        /// <summary>
+        /// Gets or creates the planning result for a normalized query shape.
+        /// </summary>
+        /// <typeparam name="TValue">The immutable planning result type.</typeparam>
+        /// <param name="shape">The normalized query shape.</param>
+        /// <param name="valueFactory">Creates the planning result on a cache miss.</param>
+        /// <returns>The cached or newly-created planning result.</returns>
+        internal TValue GetOrCreate<TValue>(
+            string shape,
+            Func<TValue> valueFactory)
+            where TValue : notnull
+        {
+            return (TValue)_plans.GetOrCreate(shape, () => valueFactory());
+        }
+    }
+
+    private sealed record KeysetPlanResolution(KeysetPlan? Plan)
+    {
+        internal static KeysetPlanResolution Unsupported { get; } = new((KeysetPlan?)null);
+
+        internal bool IsSupported => Plan is not null;
     }
 
     private sealed record KeysetSortPart(

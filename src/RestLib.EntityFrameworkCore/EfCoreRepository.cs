@@ -31,6 +31,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
 {
     private readonly TContext _context;
     private readonly EfCoreRepositoryOptions<TEntity, TKey> _options;
+    private readonly EfCoreBatchKeyQueryExecutor<TEntity, TKey> _batchKeyQueryExecutor;
     private readonly EfCoreKeyMetadata<TEntity, TKey> _keyMetadata;
     private readonly EfCorePatchPlanner<TEntity> _patchPlanner;
     private readonly EfCorePageQueryExecutor<TEntity> _pageQueryExecutor;
@@ -62,16 +63,20 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         ArgumentNullException.ThrowIfNull(jsonOptions);
         var jsonContract = JsonObjectContract.Get(typeof(TEntity), jsonOptions);
         _patchPlanner = new EfCorePatchPlanner<TEntity>(_context.Model, jsonContract);
-        _keyMetadata = new EfCoreKeyMetadata<TEntity, TKey>(
+        var planningBundle = EfCoreRepositoryPlanCache<TEntity, TKey>.GetOrCreate(
             _context.Model,
-            _options.KeySelector);
+            _options);
+        _keyMetadata = planningBundle.KeyMetadata;
+        _batchKeyQueryExecutor = new EfCoreBatchKeyQueryExecutor<TEntity, TKey>(_keyMetadata);
         _pageQueryExecutor = new EfCorePageQueryExecutor<TEntity>(
             _context.Model,
             _keyMetadata.SortKeyParts,
-            () => _options.Logger);
+            () => _options.Logger,
+            planningBundle.PagePlanningCache);
         _projectionPlanner = new EfCoreProjectionPlanner<TEntity>(
             () => _options.EnableProjectionPushdown,
-            _keyMetadata.PropertyNames);
+            _keyMetadata.PropertyNames,
+            planningBundle.ProjectionPlanningCache);
     }
 
     /// <inheritdoc />
@@ -481,10 +486,10 @@ public class EfCoreRepository<TContext, TEntity, TKey>
 
         var getKey = _keyMetadata.KeyAccessor;
         var keys = entities.Select(getKey).ToList();
-        var predicate = _keyMetadata.BuildContainsPredicate(keys);
-        var existingEntities = await _context.Set<TEntity>()
-            .Where(predicate)
-            .ToListAsync(ct);
+        var existingEntities = await _batchKeyQueryExecutor.FetchAsync(
+            _context.Set<TEntity>(),
+            keys,
+            ct);
         if (existingEntities.Count == 0)
         {
             return [];
@@ -669,12 +674,8 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             return new Dictionary<TKey, TEntity>();
         }
 
-        var predicate = _keyMetadata.BuildContainsPredicate(ids);
         var getKey = _keyMetadata.KeyAccessor;
-
-        var entities = await GetBaseQuery()
-            .Where(predicate)
-            .ToListAsync(ct);
+        var entities = await _batchKeyQueryExecutor.FetchAsync(GetBaseQuery(), ids, ct);
 
         return entities.ToDictionary(getKey);
     }
@@ -865,10 +866,10 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         CancellationToken ct)
     {
         var getKey = _keyMetadata.KeyAccessor;
-        var predicate = _keyMetadata.BuildContainsPredicate(ids);
-        var existingEntities = await _context.Set<TEntity>()
-            .Where(predicate)
-            .ToListAsync(ct);
+        var existingEntities = await _batchKeyQueryExecutor.FetchAsync(
+            _context.Set<TEntity>(),
+            ids,
+            ct);
 
         return existingEntities.ToDictionary(getKey);
     }

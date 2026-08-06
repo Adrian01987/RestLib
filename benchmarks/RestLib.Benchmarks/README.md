@@ -23,6 +23,9 @@ Or run specific benchmarks:
 ```bash
 dotnet run -c Release -- --filter "*GetById*"
 dotnet run -c Release -- --filter "*FieldProjection*"
+dotnet run -c Release -- --filter "*Mapping*"
+dotnet run -c Release -- --filter "*EfCorePlanning*"
+dotnet run -c Release -- --filter "*EfCoreBatchKey*"
 ```
 
 ### Quick Test Run (Debug Mode)
@@ -32,6 +35,9 @@ For a quick sanity check (not for accurate measurements):
 ```bash
 dotnet run -c Debug -- --job Dry
 ```
+
+`Dry` verifies that benchmark setup and one workload invocation complete. Its single
+measurement is not a performance result and must not be used for comparisons.
 
 ## Benchmark Suites
 
@@ -76,6 +82,40 @@ The hybrid strategy uses compiled expression tree getters for sparse selections 
 properties) and falls back to serialize-then-pick for dense selections (>50%). See
 [ADR-007](../../docs/adr/007-field-selection.md) for design rationale and benchmark results.
 
+### MappingBenchmarks
+
+Micro-benchmarks compare the former cached-`PropertyInfo` copy loop with the built-in
+mapper's cached compiled delegates. The suite covers steady-state mapping of 1,000 models
+and recurring resolution after the model-pair plan has been warmed.
+
+| Category | Baseline | Cached implementation | What it measures |
+| --- | --- | --- | --- |
+| Mapping_1000 | `PropertyInfo.GetValue/SetValue` | Compiled mapping delegates | Steady-state mapping of 1,000 entities |
+| MapperConstruction | Discover matching properties | Resolve the shared mapper | Recurring built-in mapper resolution |
+
+### EfCorePlanningBenchmarks
+
+Micro-benchmarks isolate the work performed when scoped EF repositories recur over the
+same model and registration. Fresh options identities are compared with the stable options
+identity produced by normal DI registration. Projection planning similarly compares a
+fresh planner with a warmed normalized property-set shape in the shared bounded cache.
+
+These measurements deliberately exclude database query execution. They show cache lookup
+and plan-construction cost for the benchmark model; they are not an end-to-end request
+latency claim.
+
+### EfCoreBatchKeyBenchmarks
+
+SQLite benchmarks execute `GetByIdsAsync` through the real EF repository for 512 and 2,048
+distinct keys, plus duplicate inputs. Scalar resource keys use bounded `Contains` queries;
+two-part composite keys use bounded balanced predicates. At those sizes the 512 key-part
+budget produces one and four scalar queries, versus two and eight composite queries.
+
+The scalar and composite cases intentionally have separate categories and no cross-shape
+baseline: they implement different identity semantics, so a ratio between them would be
+misleading. Capture before/after results from the same machine and provider configuration
+when evaluating a change.
+
 ## Data Seeding
 
 The CRUD benchmarks seed **100 products** to simulate realistic scenarios:
@@ -86,6 +126,11 @@ The CRUD benchmarks seed **100 products** to simulate realistic scenarios:
 
 The field projection benchmarks use a 15-property `RichProduct` entity with collections
 of 1, 10, 100, and 1000 entities to measure scaling behavior.
+
+The mapping benchmarks use 1,000 six-property entity/DTO pairs. EF planning benchmarks
+create an empty SQLite schema because they measure metadata and shape planning only. EF
+batch-key benchmarks seed scalar- and composite-key tables according to the active 512 or
+2,048 key parameter and append duplicate inputs to exercise normalization.
 
 ## Output
 

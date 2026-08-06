@@ -633,6 +633,7 @@ Key decisions are documented as Architecture Decision Records:
 | [ADR-027](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/027-row-level-security-application-owned.md) | Row-level security is application-owned |
 | [ADR-028](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/028-unit-of-work-application-owned.md) | Unit of work is application-owned |
 | [ADR-030](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/030-single-owner-internal-orchestration-seams.md) | Single-owner internal orchestration seams |
+| [ADR-031](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/031-bounded-performance-caches-and-batch-key-planning.md) | Bounded EF planning, batch-key, and built-in mapping caches |
 
 ## Packages
 

@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using System.Reflection;
 using RestLib.Abstractions;
 
@@ -12,26 +13,35 @@ internal sealed class ReflectionRestLibMapper<TApiModel, TDbModel> : IRestLibMap
     where TApiModel : class
     where TDbModel : class
 {
-    private readonly IReadOnlyList<PropertyMapping> _toApiMappings;
-    private readonly IReadOnlyList<PropertyMapping> _toDbMappings;
+    private static readonly Lazy<ReflectionRestLibMapper<TApiModel, TDbModel>> SharedMapper =
+        new(static () => new ReflectionRestLibMapper<TApiModel, TDbModel>());
+    private static readonly Lazy<MappingPlan<TDbModel, TApiModel>> ToApiMapping =
+        new(static () => BuildMapping<TDbModel, TApiModel>());
+    private static readonly Lazy<MappingPlan<TApiModel, TDbModel>> ToDbMapping =
+        new(static () => BuildMapping<TApiModel, TDbModel>());
+    private readonly MappingPlan<TDbModel, TApiModel> _toApi;
+    private readonly MappingPlan<TApiModel, TDbModel> _toDb;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ReflectionRestLibMapper{TApiModel, TDbModel}"/> class.
     /// </summary>
     public ReflectionRestLibMapper()
     {
-        _toApiMappings = BuildMappings<TDbModel, TApiModel>();
-        _toDbMappings = BuildMappings<TApiModel, TDbModel>();
+        _toApi = ToApiMapping.Value;
+        _toDb = ToDbMapping.Value;
     }
+
+    /// <summary>
+    /// Gets the shared built-in mapper for this closed model pair.
+    /// </summary>
+    internal static ReflectionRestLibMapper<TApiModel, TDbModel> Shared => SharedMapper.Value;
 
     /// <inheritdoc />
     public TApiModel ToApi(TDbModel dbModel)
     {
         ArgumentNullException.ThrowIfNull(dbModel);
 
-        var apiModel = CreateInstance<TApiModel>();
-        CopyProperties(dbModel, apiModel, _toApiMappings);
-        return apiModel;
+        return Map(dbModel, _toApi);
     }
 
     /// <inheritdoc />
@@ -39,18 +49,18 @@ internal sealed class ReflectionRestLibMapper<TApiModel, TDbModel> : IRestLibMap
     {
         ArgumentNullException.ThrowIfNull(apiModel);
 
-        var dbModel = CreateInstance<TDbModel>();
-        CopyProperties(apiModel, dbModel, _toDbMappings);
-        return dbModel;
+        return Map(apiModel, _toDb);
     }
 
-    private static IReadOnlyList<PropertyMapping> BuildMappings<TSource, TDestination>()
+    private static MappingPlan<TSource, TDestination> BuildMapping<TSource, TDestination>()
         where TSource : class
         where TDestination : class
     {
         ValidateDestinationType(typeof(TDestination));
 
-        var mappings = new List<PropertyMapping>();
+        var source = Expression.Parameter(typeof(TSource), "source");
+        var destination = Expression.Parameter(typeof(TDestination), "destination");
+        var assignments = new List<Expression>();
         var destinationProperties = typeof(TDestination)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(property => property.GetIndexParameters().Length == 0)
@@ -75,10 +85,45 @@ internal sealed class ReflectionRestLibMapper<TApiModel, TDbModel> : IRestLibMap
                     $"Source type: '{sourceProperty.PropertyType.FullName}'. Destination type: '{destinationProperty.PropertyType.FullName}'.");
             }
 
-            mappings.Add(new PropertyMapping(sourceProperty, destinationProperty));
+            assignments.Add(Expression.Assign(
+                Expression.Property(destination, destinationProperty),
+                Expression.Property(source, sourceProperty)));
         }
 
-        return mappings;
+        var constructor = typeof(TDestination).GetConstructor(Type.EmptyTypes)!;
+        var factory = Expression.Lambda<Func<TDestination>>(Expression.New(constructor)).Compile();
+        Expression copyBody = assignments.Count == 0
+            ? Expression.Empty()
+            : Expression.Block(assignments);
+        var copy = Expression.Lambda<Action<TSource, TDestination>>(
+            copyBody,
+            source,
+            destination).Compile();
+
+        return new MappingPlan<TSource, TDestination>(factory, copy);
+    }
+
+    private static TDestination Map<TSource, TDestination>(
+        TSource source,
+        MappingPlan<TSource, TDestination> plan)
+        where TSource : class
+        where TDestination : class
+    {
+        TDestination destination;
+        try
+        {
+            destination = plan.Factory();
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"Reflection auto mapper could not create destination type '{typeof(TDestination).FullName}'. " +
+                "The type must expose a public parameterless constructor.",
+                ex);
+        }
+
+        plan.Copy(source, destination);
+        return destination;
     }
 
     private static void ValidateDestinationType(Type destinationType)
@@ -96,35 +141,9 @@ internal sealed class ReflectionRestLibMapper<TApiModel, TDbModel> : IRestLibMap
         }
     }
 
-    private static TDestination CreateInstance<TDestination>()
-        where TDestination : class
-    {
-        try
-        {
-            return Activator.CreateInstance<TDestination>();
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException(
-                $"Reflection auto mapper could not create destination type '{typeof(TDestination).FullName}'. " +
-                "The type must expose a public parameterless constructor.",
-                ex);
-        }
-    }
-
-    private static void CopyProperties<TSource, TDestination>(
-        TSource source,
-        TDestination destination,
-        IReadOnlyList<PropertyMapping> mappings)
+    private sealed record MappingPlan<TSource, TDestination>(
+        Func<TDestination> Factory,
+        Action<TSource, TDestination> Copy)
         where TSource : class
-        where TDestination : class
-    {
-        foreach (var mapping in mappings)
-        {
-            var value = mapping.Source.GetValue(source);
-            mapping.Destination.SetValue(destination, value);
-        }
-    }
-
-    private readonly record struct PropertyMapping(PropertyInfo Source, PropertyInfo Destination);
+        where TDestination : class;
 }

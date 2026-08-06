@@ -57,6 +57,11 @@ internal sealed class EfCoreKeyMetadata<TEntity, TKey>
     internal Func<TEntity, TKey> KeyAccessor { get; }
 
     /// <summary>
+    /// Gets the number of mapped properties that compose the resource key.
+    /// </summary>
+    internal int KeyPartCount => _keyParts.Count;
+
+    /// <summary>
     /// Gets the ordered CLR property names that compose the resource key.
     /// </summary>
     internal IReadOnlyList<string> PropertyNames => _keyParts
@@ -111,24 +116,56 @@ internal sealed class EfCoreKeyMetadata<TEntity, TKey>
         ArgumentNullException.ThrowIfNull(keys);
 
         var parameter = Expression.Parameter(typeof(TEntity), "entity");
-        Expression? predicate = null;
-
-        foreach (var key in keys)
+        if (keys.Count == 0)
         {
+            return Expression.Lambda<Func<TEntity, bool>>(Expression.Constant(false), parameter);
+        }
+
+        if (_keyParts.Count == 1)
+        {
+            var property = BuildPropertyAccess(parameter, _keyParts[0].Property);
+            var keyValues = keys.ToArray();
+            Expression<Func<TKey[]>> keyValuesExpression = () => keyValues;
+            var contains = Expression.Call(
+                typeof(Enumerable),
+                nameof(Enumerable.Contains),
+                [typeof(TKey)],
+                keyValuesExpression.Body,
+                property);
+
+            return Expression.Lambda<Func<TEntity, bool>>(contains, parameter);
+        }
+
+        var compositeKeys = keys.ToArray();
+        Expression<Func<TKey[]>> compositeKeysExpression = () => compositeKeys;
+        var keyPredicates = new List<Expression>(keys.Count);
+
+        for (var keyIndex = 0; keyIndex < compositeKeys.Length; keyIndex++)
+        {
+            var compositeKey = Expression.ArrayIndex(
+                compositeKeysExpression.Body,
+                Expression.Constant(keyIndex));
             Expression? keyPredicate = null;
-            foreach (var keyPart in _keyParts)
+            for (var keyPartIndex = 0; keyPartIndex < _keyParts.Count; keyPartIndex++)
             {
+                var keyPart = _keyParts[keyPartIndex];
+                var keyValue = Expression.Property(
+                    compositeKey,
+                    keyPartIndex == 0
+                        ? nameof(RestLibCompositeKey<int, int>.First)
+                        : nameof(RestLibCompositeKey<int, int>.Second));
                 var equals = BuildEntityKeyPartEqualsExpression(
                     parameter,
                     keyPart,
-                    keyPart.GetKeyValue(key));
+                    keyValue);
                 keyPredicate = keyPredicate is null ? equals : Expression.AndAlso(keyPredicate, equals);
             }
 
-            predicate = predicate is null ? keyPredicate : Expression.OrElse(predicate, keyPredicate!);
+            keyPredicates.Add(keyPredicate!);
         }
 
-        return Expression.Lambda<Func<TEntity, bool>>(predicate!, parameter);
+        var predicate = BuildBalancedOrElse(keyPredicates, 0, keyPredicates.Count);
+        return Expression.Lambda<Func<TEntity, bool>>(predicate, parameter);
     }
 
     /// <summary>
@@ -221,9 +258,34 @@ internal sealed class EfCoreKeyMetadata<TEntity, TKey>
         KeyPart keyPart,
         object? keyValue)
     {
-        var left = BuildPropertyAccess(parameter, keyPart.Property);
         var right = Expression.Constant(keyValue, keyPart.Property.ClrType);
+        return BuildEntityKeyPartEqualsExpression(parameter, keyPart, right);
+    }
+
+    private static Expression BuildEntityKeyPartEqualsExpression(
+        ParameterExpression parameter,
+        KeyPart keyPart,
+        Expression keyValue)
+    {
+        var left = BuildPropertyAccess(parameter, keyPart.Property);
+        var right = keyValue;
         return Expression.Equal(left, right);
+    }
+
+    private static Expression BuildBalancedOrElse(
+        IReadOnlyList<Expression> expressions,
+        int start,
+        int count)
+    {
+        if (count == 1)
+        {
+            return expressions[start];
+        }
+
+        var leftCount = count / 2;
+        var left = BuildBalancedOrElse(expressions, start, leftCount);
+        var right = BuildBalancedOrElse(expressions, start + leftCount, count - leftCount);
+        return Expression.OrElse(left, right);
     }
 
     private ResolvedKey ResolveKey(Expression<Func<TEntity, TKey>>? keySelector)

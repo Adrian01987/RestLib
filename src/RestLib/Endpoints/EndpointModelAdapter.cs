@@ -1,6 +1,21 @@
 using RestLib.Abstractions;
+using RestLib.Mapping;
 
 namespace RestLib.Endpoints;
+
+/// <summary>
+/// Caches the stateless identity boundary once per model type.
+/// </summary>
+/// <typeparam name="TModel">The shared API and persistence model type.</typeparam>
+internal static class IdentityEndpointModelAdapter<TModel>
+    where TModel : class
+{
+    /// <summary>
+    /// Gets the shared identity boundary.
+    /// </summary>
+    internal static EndpointModelAdapter<TModel, TModel> Shared { get; } =
+        new(IdentityMapper<TModel>.Shared, isIdentity: true);
+}
 
 /// <summary>
 /// Defines the representation boundary used by endpoint state machines.
@@ -13,7 +28,12 @@ internal sealed class EndpointModelAdapter<TApiModel, TDbModel>
 {
     private readonly IRestLibMapper<TApiModel, TDbModel> _mapper;
 
-    private EndpointModelAdapter(
+    /// <summary>
+    /// Initializes a new instance of the <see cref="EndpointModelAdapter{TApiModel, TDbModel}"/> class.
+    /// </summary>
+    /// <param name="mapper">The active representation mapper.</param>
+    /// <param name="isIdentity">Whether the API and persistence types share an identity representation.</param>
+    internal EndpointModelAdapter(
         IRestLibMapper<TApiModel, TDbModel> mapper,
         bool isIdentity)
     {
@@ -38,7 +58,7 @@ internal sealed class EndpointModelAdapter<TApiModel, TDbModel>
     /// <returns>An identity model adapter.</returns>
     internal static EndpointModelAdapter<TModel, TModel> Identity<TModel>()
         where TModel : class =>
-        new(new IdentityRestLibMapper<TModel>(), isIdentity: true);
+        IdentityEndpointModelAdapter<TModel>.Shared;
 
     /// <summary>
     /// Creates a mapped boundary used by two-model resources.
@@ -62,14 +82,6 @@ internal sealed class EndpointModelAdapter<TApiModel, TDbModel>
     /// <param name="apiModel">The API representation.</param>
     /// <returns>The persistence model.</returns>
     internal TDbModel ToDb(TApiModel apiModel) => _mapper.ToDb(apiModel);
-
-    private sealed class IdentityRestLibMapper<TModel> : IRestLibMapper<TModel, TModel>
-        where TModel : class
-    {
-        public TModel ToApi(TModel dbModel) => dbModel;
-
-        public TModel ToDb(TModel apiModel) => apiModel;
-    }
 }
 
 /// <summary>

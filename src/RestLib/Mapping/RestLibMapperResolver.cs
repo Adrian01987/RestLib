@@ -50,11 +50,11 @@ internal static class RestLibMapperResolver
             {
                 if (typeof(TApiModel) == typeof(TDbModel))
                 {
-                    return (IRestLibMapper<TApiModel, TDbModel>)(object)new IdentityMapper<TApiModel>();
+                    return (IRestLibMapper<TApiModel, TDbModel>)(object)IdentityMapper<TApiModel>.Shared;
                 }
 
                 return services.GetService<ReflectionRestLibMapper<TApiModel, TDbModel>>()
-                    ?? new ReflectionRestLibMapper<TApiModel, TDbModel>();
+                    ?? ReflectionRestLibMapper<TApiModel, TDbModel>.Shared;
             }
             catch (InvalidOperationException ex)
             {
@@ -99,7 +99,7 @@ internal static class RestLibMapperResolver
 
         if (typeof(TApiModel) == typeof(TDbModel))
         {
-            return (IRestLibMapper<TApiModel, TDbModel>)(object)new IdentityMapper<TApiModel>();
+            return (IRestLibMapper<TApiModel, TDbModel>)(object)IdentityMapper<TApiModel>.Shared;
         }
 
         throw new InvalidOperationException(

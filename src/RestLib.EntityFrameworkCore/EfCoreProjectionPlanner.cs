@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using RestLib.FieldSelection;
 using RestLib.Filtering;
@@ -16,8 +17,10 @@ namespace RestLib.EntityFrameworkCore;
 internal sealed class EfCoreProjectionPlanner<TEntity>
     where TEntity : class
 {
+    private const int DefaultPlanCacheCapacity = 256;
     private readonly Func<bool> _projectionPushdownEnabled;
     private readonly IReadOnlyList<string> _keyPropertyNames;
+    private readonly PlanningCache _planningCache;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="EfCoreProjectionPlanner{TEntity}"/> class.
@@ -26,14 +29,17 @@ internal sealed class EfCoreProjectionPlanner<TEntity>
     /// Resolves whether projection pushdown is enabled for the current repository options.
     /// </param>
     /// <param name="keyPropertyNames">The key properties required in every projected entity.</param>
+    /// <param name="planningCache">The bounded cache shared by equivalent repository scopes.</param>
     internal EfCoreProjectionPlanner(
         Func<bool> projectionPushdownEnabled,
-        IReadOnlyList<string> keyPropertyNames)
+        IReadOnlyList<string> keyPropertyNames,
+        PlanningCache? planningCache = null)
     {
         _projectionPushdownEnabled = projectionPushdownEnabled
             ?? throw new ArgumentNullException(nameof(projectionPushdownEnabled));
         _keyPropertyNames = keyPropertyNames
             ?? throw new ArgumentNullException(nameof(keyPropertyNames));
+        _planningCache = planningCache ?? new PlanningCache();
     }
 
     /// <summary>
@@ -89,30 +95,12 @@ internal sealed class EfCoreProjectionPlanner<TEntity>
             requiredProperties.Add(sortField.PropertyName);
         }
 
-        var properties = new List<PropertyInfo>(requiredProperties.Count);
-        foreach (var propertyName in requiredProperties)
-        {
-            var property = typeof(TEntity).GetProperty(
-                propertyName,
-                BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
-            if (property is null || !property.CanRead || !property.CanWrite || !IsProjectableProperty(property))
-            {
-                projectionPlan = null;
-                return false;
-            }
-
-            properties.Add(property);
-        }
-
-        var parameter = Expression.Parameter(typeof(TEntity), "entity");
-        var bindings = properties
-            .Select(property => Expression.Bind(property, Expression.Property(parameter, property)))
-            .ToArray();
-        var body = Expression.MemberInit(Expression.New(typeof(TEntity)), bindings);
-        var selector = Expression.Lambda<Func<TEntity, TEntity>>(body, parameter);
-
-        projectionPlan = new EfCoreProjectionPlan<TEntity>(properties, selector);
-        return true;
+        var shape = ProjectionPlanShape.Create(requiredProperties);
+        var resolution = _planningCache.GetOrCreate(
+            shape,
+            () => BuildProjectionPlan(requiredProperties));
+        projectionPlan = resolution.Plan;
+        return resolution.IsSupported;
     }
 
     /// <summary>
@@ -188,6 +176,37 @@ internal sealed class EfCoreProjectionPlanner<TEntity>
         return includePaths.Count > 0;
     }
 
+    private static ProjectionPlanResolution BuildProjectionPlan(
+        IEnumerable<string> requiredProperties)
+    {
+        var requiredPropertyNames = requiredProperties
+            .Order(StringComparer.Ordinal)
+            .ToList();
+        var properties = new List<PropertyInfo>(requiredPropertyNames.Count);
+        foreach (var propertyName in requiredPropertyNames)
+        {
+            var property = typeof(TEntity).GetProperty(
+                propertyName,
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+            if (property is null || !property.CanRead || !property.CanWrite || !IsProjectableProperty(property))
+            {
+                return ProjectionPlanResolution.Unsupported;
+            }
+
+            properties.Add(property);
+        }
+
+        var parameter = Expression.Parameter(typeof(TEntity), "entity");
+        var bindings = properties
+            .Select(property => Expression.Bind(property, Expression.Property(parameter, property)))
+            .ToArray();
+        var body = Expression.MemberInit(Expression.New(typeof(TEntity)), bindings);
+        var selector = Expression.Lambda<Func<TEntity, TEntity>>(body, parameter);
+
+        return new ProjectionPlanResolution(
+            new EfCoreProjectionPlan<TEntity>(properties, selector));
+    }
+
     private static bool IsNestedPath(string propertyPath)
     {
         return propertyPath.Contains('.', StringComparison.Ordinal);
@@ -206,6 +225,86 @@ internal sealed class EfCoreProjectionPlanner<TEntity>
             || underlyingType == typeof(DateTime)
             || underlyingType == typeof(DateTimeOffset)
             || underlyingType == typeof(TimeSpan);
+    }
+
+    /// <summary>
+    /// Identifies a normalized scalar-projection property set.
+    /// </summary>
+    /// <param name="Value">The length-prefixed property-set signature.</param>
+    internal readonly record struct ProjectionPlanShape(string Value)
+    {
+        /// <summary>
+        /// Creates a normalized shape from the required properties.
+        /// </summary>
+        /// <param name="propertyNames">The required CLR property names.</param>
+        /// <returns>The normalized projection shape.</returns>
+        internal static ProjectionPlanShape Create(IEnumerable<string> propertyNames)
+        {
+            var builder = new StringBuilder();
+            foreach (var propertyName in propertyNames.Order(StringComparer.Ordinal))
+            {
+                builder.Append(propertyName.Length)
+                    .Append(':')
+                    .Append(propertyName)
+                    .Append(';');
+            }
+
+            return new ProjectionPlanShape(builder.ToString());
+        }
+    }
+
+    /// <summary>
+    /// Retains a bounded set of immutable projection plans shared by equivalent
+    /// repository scopes.
+    /// </summary>
+    internal sealed class PlanningCache
+    {
+        private readonly BoundedPlanCache<ProjectionPlanShape, ProjectionPlanResolution> _plans;
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="PlanningCache"/> class.
+        /// </summary>
+        /// <param name="capacity">The maximum number of projection shapes to retain.</param>
+        internal PlanningCache(int capacity = DefaultPlanCacheCapacity)
+        {
+            _plans = new BoundedPlanCache<ProjectionPlanShape, ProjectionPlanResolution>(capacity);
+        }
+
+        /// <summary>
+        /// Gets the number of retained projection planning results.
+        /// </summary>
+        internal int Count => _plans.Count;
+
+        /// <summary>
+        /// Gets or creates the planning result for a normalized projection shape.
+        /// </summary>
+        /// <param name="shape">The normalized projection shape.</param>
+        /// <param name="valueFactory">Creates the planning result on a cache miss.</param>
+        /// <returns>The cached or newly-created planning result.</returns>
+        internal ProjectionPlanResolution GetOrCreate(
+            ProjectionPlanShape shape,
+            Func<ProjectionPlanResolution> valueFactory)
+        {
+            return _plans.GetOrCreate(shape, valueFactory);
+        }
+    }
+
+    /// <summary>
+    /// Represents a supported or unsupported projection planning result.
+    /// </summary>
+    /// <param name="Plan">The immutable plan, or <see langword="null"/> when unsupported.</param>
+    internal sealed record ProjectionPlanResolution(EfCoreProjectionPlan<TEntity>? Plan)
+    {
+        /// <summary>
+        /// Gets the shared unsupported result.
+        /// </summary>
+        internal static ProjectionPlanResolution Unsupported { get; } =
+            new((EfCoreProjectionPlan<TEntity>?)null);
+
+        /// <summary>
+        /// Gets a value indicating whether projection pushdown is supported.
+        /// </summary>
+        internal bool IsSupported => Plan is not null;
     }
 }
 

@@ -10,6 +10,11 @@ public sealed class IdentityMapper<TModel> : IRestLibMapper<TModel, TModel>
     where TModel : class
 {
     /// <summary>
+    /// Gets the shared stateless identity mapper used by RestLib endpoint pipelines.
+    /// </summary>
+    internal static IdentityMapper<TModel> Shared { get; } = new();
+
+    /// <summary>
     /// Returns the same model instance as the API representation.
     /// </summary>
     /// <param name="dbModel">The DB model instance.</param>

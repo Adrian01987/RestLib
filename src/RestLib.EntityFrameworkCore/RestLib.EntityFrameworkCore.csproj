@@ -23,6 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="RestLib.Benchmarks" />
     <InternalsVisibleTo Include="RestLib.EntityFrameworkCore.Tests" />
   </ItemGroup>
 

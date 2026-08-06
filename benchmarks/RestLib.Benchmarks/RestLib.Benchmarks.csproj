@@ -10,10 +10,13 @@
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" />
     <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\RestLib\RestLib.csproj" />
+    <ProjectReference Include="..\..\src\RestLib.EntityFrameworkCore\RestLib.EntityFrameworkCore.csproj" />
     <ProjectReference Include="..\..\src\RestLib.InMemory\RestLib.InMemory.csproj" />
   </ItemGroup>
 
