@@ -1,7 +1,7 @@
 # ADR-023: JSON validation rules
 
-**Status:** Accepted
-**Date:** 2026-05-06
+**Status:** Amended
+**Date:** 2026-05-06 (amended 2026-08-06)
 
 ## Context
 
@@ -44,11 +44,14 @@ These rules supplement Data Annotation validation instead of replacing it.
 
 Invalid JSON validation configuration fails at startup. RestLib validates the configured property names, rule/property type compatibility, numeric and length ranges, and regex syntax before endpoints are mapped.
 
+Pattern rules are resolved into immutable endpoint-specific runtime rules. Each pattern is compiled once with culture-invariant semantics and a fixed 100 millisecond execution timeout. If the startup validation probe times out, endpoint mapping fails with the same resource and property context used for other invalid configuration. If matching client input times out, RestLib treats it as a normal pattern mismatch and returns the existing validation Problem Details response; the input and pattern are not disclosed.
+
 Hooks remain imperative C# behavior. Validation still blocks persistence before `BeforePersist` runs for create/update and before patch persistence for patch/batch patch.
 
 ## Consequences
 
 - A single CLR type can now be exposed by multiple resources with different declarative validation rules.
 - JSON validation remains adapter-neutral because it runs in the core request pipeline, not inside repository implementations.
+- Configured regex execution is bounded per match, preventing pathological patterns or inputs from occupying a request thread indefinitely.
 - Resource JSON still uses CLR property names, so property renames require updating configuration files.
 - Custom validators and cross-property rules stay in C# through Data Annotations, `IValidatableObject`, or hooks.

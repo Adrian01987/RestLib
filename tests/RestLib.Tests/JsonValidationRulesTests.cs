@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -161,6 +162,94 @@ public class JsonValidationRulesTests : IAsyncLifetime
         // Assert
         var problem = await response.ShouldBeProblemDetails(HttpStatusCode.BadRequest, ProblemTypes.ValidationFailed);
         problem.Errors.Should().ContainKey("description");
+    }
+
+    [Fact]
+    public async Task Create_WithMatchingJsonPatternRule_CreatesEntity()
+    {
+        // Arrange
+        await SetupHostAsync(config =>
+        {
+            config.Validation[nameof(ValidatedEntity.Description)] = new RestLibJsonValidationRuleConfiguration
+            {
+                Pattern = "^[A-Z]{3}$",
+            };
+        });
+
+        // Act
+        var response = await _client!.PostAsJsonAsync("/api/validated", new
+        {
+            name = "Valid",
+            unit_price = 10.0,
+            description = "ABC",
+        });
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        _repository!.Count.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Create_WithPathologicalJsonPatternRule_ReturnsValidationProblemWithinBound()
+    {
+        // Arrange
+        await SetupHostAsync(
+            config =>
+            {
+                config.Validation[nameof(ValidatedEntity.Description)] = new RestLibJsonValidationRuleConfiguration
+                {
+                    Pattern = "^(a+)+$",
+                };
+            },
+            registerHook: true);
+
+        // Act
+        var response = await _client!.PostAsJsonAsync("/api/validated", new
+        {
+            name = "Valid",
+            unit_price = 10.0,
+            description = new string('a', 4_096) + "!",
+        }).WaitAsync(TimeSpan.FromSeconds(5));
+
+        // Assert
+        var problem = await response.ShouldBeProblemDetails(HttpStatusCode.BadRequest, ProblemTypes.ValidationFailed);
+        problem.Errors.Should().ContainKey("description");
+        problem.Errors!["description"].Should().ContainSingle()
+            .Which.Should().Be("The Description field is not in the correct format.");
+        _hookCounter!.BeforePersistCalls.Should().Be(0);
+        _repository!.Count.Should().Be(0);
+    }
+
+    [Fact]
+    public void Apply_WithJsonPatternRule_StoresBoundedCompiledSnapshot()
+    {
+        // Arrange
+        var sourceRule = new RestLibJsonValidationRuleConfiguration
+        {
+            Pattern = "^[A-Z]{3}$",
+        };
+        var jsonConfiguration = new RestLibJsonResourceConfiguration
+        {
+            Name = "validated",
+            Route = "/api/validated",
+            Validation =
+            {
+                [nameof(ValidatedEntity.Description)] = sourceRule,
+            },
+        };
+        var endpointConfiguration = new RestLibEndpointConfiguration<ValidatedEntity, Guid>();
+
+        // Act
+        RestLibJsonResourceBuilder.Apply(endpointConfiguration, jsonConfiguration);
+        sourceRule.Pattern = "^changed$";
+
+        // Assert
+        var pattern = endpointConfiguration.JsonValidationRules[nameof(ValidatedEntity.Description)].Pattern;
+        pattern.Should().NotBeNull();
+        pattern!.ToString().Should().Be("^[A-Z]{3}$");
+        pattern.MatchTimeout.Should().Be(TimeSpan.FromMilliseconds(100));
+        (pattern.Options & RegexOptions.Compiled).Should().Be(RegexOptions.Compiled);
+        (pattern.Options & RegexOptions.CultureInvariant).Should().Be(RegexOptions.CultureInvariant);
     }
 
     [Fact]
@@ -557,6 +646,29 @@ public class JsonValidationRulesTests : IAsyncLifetime
         // Assert
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*UnitPrice*Pattern*");
+    }
+
+    [Fact]
+    public async Task AddJsonResource_WithInvalidJsonPattern_ThrowsOnMapping()
+    {
+        // Arrange
+        var act = async () =>
+        {
+            await SetupHostAsync(config =>
+            {
+                config.Validation[nameof(ValidatedEntity.Description)] = new RestLibJsonValidationRuleConfiguration
+                {
+                    Pattern = "[",
+                };
+            });
+        };
+
+        // Act
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+
+        // Assert
+        exception.WithMessage("*validated*Description*Pattern*");
+        exception.Which.InnerException.Should().BeAssignableTo<ArgumentException>();
     }
 
     private async Task SetupHostAsync(

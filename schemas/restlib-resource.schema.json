@@ -430,7 +430,7 @@
         },
         "Pattern": {
           "type": "string",
-          "description": "Regular expression pattern a string value must match."
+          "description": "Regular expression pattern a string value must match. Patterns are compiled once with culture-invariant semantics and a 100 millisecond execution timeout."
         },
         "Email": {
           "type": "boolean",

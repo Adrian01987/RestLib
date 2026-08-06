@@ -3,7 +3,6 @@ using System.Globalization;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using RestLib.Configuration;
 
 namespace RestLib.Validation;
 
@@ -24,7 +23,7 @@ internal static class JsonValidationRuleValidator
     /// <returns>The validation result.</returns>
     internal static EntityValidationResult Validate<TEntity>(
         TEntity entity,
-        IReadOnlyDictionary<string, RestLibJsonValidationRuleConfiguration> rules,
+        IReadOnlyDictionary<string, ResolvedJsonValidationRule> rules,
         JsonNamingPolicy? namingPolicy)
         where TEntity : class
     {
@@ -62,7 +61,7 @@ internal static class JsonValidationRuleValidator
         PropertyInfo property,
         object? value,
         string fieldName,
-        RestLibJsonValidationRuleConfiguration rules,
+        ResolvedJsonValidationRule rules,
         IDictionary<string, List<string>> errors)
     {
         if (rules.Required && IsRequiredFailure(value))
@@ -87,17 +86,17 @@ internal static class JsonValidationRuleValidator
 
         if (value is string stringValue)
         {
-            if (rules.Length?.Min is int minLength && stringValue.Length < minLength)
+            if (rules.MinLength is int minLength && stringValue.Length < minLength)
             {
                 AddError(errors, fieldName, $"The {property.Name} field must be at least {minLength} characters long.");
             }
 
-            if (rules.Length?.Max is int maxLength && stringValue.Length > maxLength)
+            if (rules.MaxLength is int maxLength && stringValue.Length > maxLength)
             {
                 AddError(errors, fieldName, $"The {property.Name} field must be at most {maxLength} characters long.");
             }
 
-            if (!string.IsNullOrWhiteSpace(rules.Pattern) && !Regex.IsMatch(stringValue, rules.Pattern, RegexOptions.CultureInvariant))
+            if (rules.Pattern is not null && !IsPatternMatch(rules.Pattern, stringValue))
             {
                 AddError(errors, fieldName, $"The {property.Name} field is not in the correct format.");
             }
@@ -106,6 +105,18 @@ internal static class JsonValidationRuleValidator
             {
                 AddError(errors, fieldName, $"The {property.Name} field is not a valid email address.");
             }
+        }
+    }
+
+    private static bool IsPatternMatch(Regex pattern, string value)
+    {
+        try
+        {
+            return pattern.IsMatch(value);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return false;
         }
     }
 

@@ -6,6 +6,7 @@ using RestLib.FieldSelection;
 using RestLib.Hooks;
 using RestLib.Internal;
 using RestLib.Search;
+using RestLib.Validation;
 
 namespace RestLib.Configuration;
 
@@ -630,15 +631,14 @@ internal static class RestLibJsonResourceBuilder
             return;
         }
 
-        var resolvedRules = new Dictionary<string, RestLibJsonValidationRuleConfiguration>(StringComparer.OrdinalIgnoreCase);
+        var resolvedRules = new Dictionary<string, ResolvedJsonValidationRule>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in jsonConfiguration.Validation)
         {
             var property = typeof(TEntity).GetProperty(entry.Key, BindingFlags.Public | BindingFlags.Instance)
                 ?? throw new InvalidOperationException(
                     $"Resource '{jsonConfiguration.Name}' property '{entry.Key}' was not found on entity type '{typeof(TEntity).Name}'.");
 
-            ValidateValidationRule(jsonConfiguration.Name, property, entry.Value);
-            resolvedRules[property.Name] = entry.Value;
+            resolvedRules[property.Name] = ResolveValidationRule(jsonConfiguration.Name, property, entry.Value);
         }
 
         endpointConfiguration.UseJsonValidationRules(resolvedRules);
@@ -664,7 +664,7 @@ internal static class RestLibJsonResourceBuilder
         }
     }
 
-    private static void ValidateValidationRule(
+    private static ResolvedJsonValidationRule ResolveValidationRule(
         string resourceName,
         PropertyInfo property,
         RestLibJsonValidationRuleConfiguration rule)
@@ -724,11 +724,23 @@ internal static class RestLibJsonResourceBuilder
                 $"Resource '{resourceName}' property '{property.Name}' has an invalid Min/Max JSON validation rule. Max must not be less than Min.");
         }
 
+        Regex? pattern = null;
         if (!string.IsNullOrWhiteSpace(rule.Pattern))
         {
             try
             {
-                _ = Regex.IsMatch(string.Empty, rule.Pattern, RegexOptions.CultureInvariant);
+                pattern = new Regex(
+                    rule.Pattern,
+                    RegexOptions.CultureInvariant | RegexOptions.Compiled,
+                    ResolvedJsonValidationRule.PatternMatchTimeout);
+                _ = pattern.IsMatch(string.Empty);
+            }
+            catch (RegexMatchTimeoutException ex)
+            {
+                throw new InvalidOperationException(
+                    $"Resource '{resourceName}' property '{property.Name}' has a Pattern JSON validation rule " +
+                    $"that exceeded the {ResolvedJsonValidationRule.PatternMatchTimeoutMilliseconds} ms execution timeout during startup validation.",
+                    ex);
             }
             catch (ArgumentException ex)
             {
@@ -737,6 +749,15 @@ internal static class RestLibJsonResourceBuilder
                     ex);
             }
         }
+
+        return new ResolvedJsonValidationRule(
+            rule.Required,
+            rule.Min,
+            rule.Max,
+            rule.Length?.Min,
+            rule.Length?.Max,
+            pattern,
+            rule.Email);
     }
 
     private static void ApplyRateLimiting<TEntity, TKey>(

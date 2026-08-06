@@ -6,6 +6,7 @@ using RestLib.Hooks;
 using RestLib.Internal;
 using RestLib.Search;
 using RestLib.Sorting;
+using RestLib.Validation;
 
 namespace RestLib.Configuration;
 
@@ -28,8 +29,8 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     private readonly Dictionary<RestLibOperation, string> _rateLimitPolicies = [];
     private readonly HashSet<RestLibOperation> _disabledRateLimitOperations = [];
     private readonly RestLibOpenApiConfiguration _openApi = new();
-    private IReadOnlyDictionary<string, RestLibJsonValidationRuleConfiguration> _jsonValidationRules =
-        new Dictionary<string, RestLibJsonValidationRuleConfiguration>(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyDictionary<string, ResolvedJsonValidationRule> _jsonValidationRules =
+        new Dictionary<string, ResolvedJsonValidationRule>(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<RestLibKeyRoutePart<TKey>>? _keyRouteParts;
     private string? _defaultRateLimitPolicy;
     private RestLibHooks<TEntity, TKey>? _hooks;
@@ -134,7 +135,7 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     /// <summary>
     /// Gets the configured JSON validation rules for this resource.
     /// </summary>
-    internal IReadOnlyDictionary<string, RestLibJsonValidationRuleConfiguration> JsonValidationRules => _jsonValidationRules;
+    internal IReadOnlyDictionary<string, ResolvedJsonValidationRule> JsonValidationRules => _jsonValidationRules;
 
     /// <summary>
     /// Gets a value indicating whether JSON validation rules have been configured.
@@ -756,7 +757,7 @@ public class RestLibEndpointConfiguration<TEntity, TKey>
     /// Stores JSON-declared validation rules for runtime request validation.
     /// </summary>
     /// <param name="rules">The resolved JSON validation rules keyed by CLR property name.</param>
-    internal void UseJsonValidationRules(IReadOnlyDictionary<string, RestLibJsonValidationRuleConfiguration> rules)
+    internal void UseJsonValidationRules(IReadOnlyDictionary<string, ResolvedJsonValidationRule> rules)
     {
         ArgumentNullException.ThrowIfNull(rules);
         _jsonValidationRules = rules;

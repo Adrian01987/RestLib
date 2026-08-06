@@ -178,6 +178,7 @@ public class RestLibJsonValidationRuleConfiguration
 
     /// <summary>
     /// Gets or sets the regular expression pattern the string value must match.
+    /// Configured patterns are compiled once with a 100 millisecond execution timeout.
     /// </summary>
     public string? Pattern { get; set; }
 

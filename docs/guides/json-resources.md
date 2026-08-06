@@ -528,6 +528,8 @@ Set `DbType = null` to register a single-model resource.
 
 JSON validation rules are checked at startup. If a rule targets the wrong CLR property type or contains an invalid regex, startup fails before the app begins serving requests.
 
+`Pattern` rules are compiled once with culture-invariant semantics and a fixed 100 millisecond match timeout. An input that exceeds that bound is rejected through the normal `400 Bad Request` validation Problem Details response, just like any other pattern mismatch; validation hooks and persistence do not run.
+
 ### Relative paths
 
 Folder and file paths are resolved relative to the current content root first, then the app base directory. For published apps, copy `Models/*.json` into the output alongside the application.
