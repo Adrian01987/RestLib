@@ -12,13 +12,21 @@ using RestLib.Sorting;
 namespace RestLib.InMemory;
 
 /// <summary>
-/// Thread-safe in-memory implementation of <see cref="IRepository{TEntity, TKey}"/>,
+/// In-memory implementation of <see cref="IRepository{TEntity, TKey}"/>,
 /// <see cref="IBatchRepository{TEntity, TKey}"/>,
 /// <see cref="IConditionalWriteRepository{TEntity, TKey}"/>,
 /// <see cref="ICountableRepository{TEntity, TKey}"/>, and
 /// <see cref="IQueryCountableRepository{TEntity, TKey}"/>.
+/// Repository methods support safe concurrent calls.
 /// Ideal for testing, prototyping, and scenarios where data persistence is not required.
 /// </summary>
+/// <remarks>
+/// Repository-owned mutations are serialized, and collection reads use shallow snapshots
+/// of store membership. Entity instances are retained and returned by reference; this type
+/// does not clone entities or synchronize mutations made directly to those instances.
+/// Cancellation is cooperative. Mutating batches observe cancellation while planning and
+/// immediately before their atomic storage commit; once that commit begins, it completes.
+/// </remarks>
 /// <typeparam name="TEntity">The entity type.</typeparam>
 /// <typeparam name="TKey">The key type.</typeparam>
 public class InMemoryRepository<TEntity, TKey> :
@@ -151,22 +159,38 @@ public class InMemoryRepository<TEntity, TKey> :
     /// <summary>
     /// Gets the current count of entities in the repository.
     /// </summary>
-    public int Count => _store.Count;
+    public int Count
+    {
+        get
+        {
+            lock (_mutationLock)
+            {
+                return _store.Count;
+            }
+        }
+    }
 
     /// <inheritdoc />
     public Task<TEntity?> GetByIdAsync(TKey id, CancellationToken cancellationToken = default)
     {
-        _store.TryGetValue(id, out var entity);
-        return Task.FromResult(entity);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_mutationLock)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _store.TryGetValue(id, out var entity);
+            return Task.FromResult(entity);
+        }
     }
 
     /// <inheritdoc />
     public Task<PagedResult<TEntity>> GetAllAsync(PaginationRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var startIndex = DecodeOffsetCursor(request.Cursor);
-        var items = _store.Values.AsEnumerable();
+        var items = ObserveCancellation(SnapshotEntities(cancellationToken), cancellationToken);
 
         // Apply filters
         items = ApplyFilters(items, request.Filters);
@@ -175,7 +199,8 @@ public class InMemoryRepository<TEntity, TKey> :
         items = ApplySearch(items, request.Search);
 
         // Apply sorting (dynamic if sort fields provided, otherwise by key)
-        var orderedItems = ApplySorting(items, request.SortFields).ToList();
+        var orderedItems = ApplySorting(items, request.SortFields, cancellationToken).ToList();
+        cancellationToken.ThrowIfCancellationRequested();
 
         // Apply cursor-based pagination
         // Guard against int overflow when taking one extra to detect more items.
@@ -197,6 +222,8 @@ public class InMemoryRepository<TEntity, TKey> :
             ? CursorEncoder.Encode(startIndex + request.Limit)
             : null;
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         return Task.FromResult(new PagedResult<TEntity>
         {
             Items = pagedItems,
@@ -208,18 +235,24 @@ public class InMemoryRepository<TEntity, TKey> :
     public Task<TEntity> CreateAsync(TEntity entity, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(entity);
+        cancellationToken.ThrowIfCancellationRequested();
 
         lock (_mutationLock)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var key = _keySelector(entity);
+            cancellationToken.ThrowIfCancellationRequested();
 
             // If key is default, generate a new one and set it on the entity
             if (EqualityComparer<TKey>.Default.Equals(key, default!))
             {
                 EnsureGeneratedKeyCanBeAssigned();
                 key = _keyGenerator();
+                cancellationToken.ThrowIfCancellationRequested();
                 entity = NormalizeEntityKey(entity, key);
             }
+
+            cancellationToken.ThrowIfCancellationRequested();
 
             if (!_store.TryAdd(key, entity))
             {
@@ -234,15 +267,18 @@ public class InMemoryRepository<TEntity, TKey> :
     public Task<TEntity?> UpdateAsync(TKey id, TEntity entity, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(entity);
+        cancellationToken.ThrowIfCancellationRequested();
 
         lock (_mutationLock)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!_store.ContainsKey(id))
             {
                 return Task.FromResult<TEntity?>(null);
             }
 
             var normalizedEntity = NormalizeEntityKey(entity, id);
+            cancellationToken.ThrowIfCancellationRequested();
             _store[id] = normalizedEntity;
             return Task.FromResult<TEntity?>(normalizedEntity);
         }
@@ -251,10 +287,12 @@ public class InMemoryRepository<TEntity, TKey> :
     /// <inheritdoc />
     public Task<TEntity?> PatchAsync(TKey id, JsonElement patchDocument, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         ThrowIfPatchModifiesKey(patchDocument);
 
         lock (_mutationLock)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (!_store.TryGetValue(id, out var existing))
             {
                 return Task.FromResult<TEntity?>(null);
@@ -266,6 +304,7 @@ public class InMemoryRepository<TEntity, TKey> :
                 throw new InvalidOperationException("Failed to deserialize patched entity.");
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             _store[id] = updated;
             return Task.FromResult<TEntity?>(updated);
         }
@@ -274,8 +313,11 @@ public class InMemoryRepository<TEntity, TKey> :
     /// <inheritdoc />
     public Task<bool> DeleteAsync(TKey id, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         lock (_mutationLock)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(_store.TryRemove(id, out _));
         }
     }
@@ -289,20 +331,25 @@ public class InMemoryRepository<TEntity, TKey> :
     {
         ArgumentNullException.ThrowIfNull(entity);
         ArgumentNullException.ThrowIfNull(precondition);
+        ct.ThrowIfCancellationRequested();
 
         lock (_mutationLock)
         {
+            ct.ThrowIfCancellationRequested();
             if (!_store.TryGetValue(id, out var current))
             {
                 return Task.FromResult(ConditionalWriteResult<TEntity>.NotFound());
             }
 
-            if (!precondition(current))
+            var preconditionSatisfied = precondition(current);
+            ct.ThrowIfCancellationRequested();
+            if (!preconditionSatisfied)
             {
                 return Task.FromResult(ConditionalWriteResult<TEntity>.PreconditionFailed());
             }
 
             var normalizedEntity = NormalizeEntityKey(entity, id);
+            ct.ThrowIfCancellationRequested();
             _store[id] = normalizedEntity;
             return Task.FromResult(ConditionalWriteResult<TEntity>.Success(normalizedEntity));
         }
@@ -316,22 +363,27 @@ public class InMemoryRepository<TEntity, TKey> :
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(precondition);
+        ct.ThrowIfCancellationRequested();
         ThrowIfPatchModifiesKey(patchDocument);
 
         lock (_mutationLock)
         {
+            ct.ThrowIfCancellationRequested();
             if (!_store.TryGetValue(id, out var current))
             {
                 return Task.FromResult(ConditionalWriteResult<TEntity>.NotFound());
             }
 
-            if (!precondition(current))
+            var preconditionSatisfied = precondition(current);
+            ct.ThrowIfCancellationRequested();
+            if (!preconditionSatisfied)
             {
                 return Task.FromResult(ConditionalWriteResult<TEntity>.PreconditionFailed());
             }
 
             var updated = JsonMergePatch.Apply(current, patchDocument, _jsonOptions)
                 ?? throw new InvalidOperationException("Failed to deserialize patched entity.");
+            ct.ThrowIfCancellationRequested();
             _store[id] = updated;
             return Task.FromResult(ConditionalWriteResult<TEntity>.Success(updated));
         }
@@ -344,15 +396,19 @@ public class InMemoryRepository<TEntity, TKey> :
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(precondition);
+        ct.ThrowIfCancellationRequested();
 
         lock (_mutationLock)
         {
+            ct.ThrowIfCancellationRequested();
             if (!_store.TryGetValue(id, out var current))
             {
                 return Task.FromResult(ConditionalWriteResult<TEntity>.NotFound());
             }
 
-            if (!precondition(current))
+            var preconditionSatisfied = precondition(current);
+            ct.ThrowIfCancellationRequested();
+            if (!preconditionSatisfied)
             {
                 return Task.FromResult(ConditionalWriteResult<TEntity>.PreconditionFailed());
             }
@@ -368,24 +424,30 @@ public class InMemoryRepository<TEntity, TKey> :
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(entities);
+        ct.ThrowIfCancellationRequested();
 
         lock (_mutationLock)
         {
+            ct.ThrowIfCancellationRequested();
             var staged = new List<(TKey Key, TEntity Entity)>(entities.Count);
             var stagedKeys = new HashSet<TKey>();
 
             foreach (var entity in entities)
             {
+                ct.ThrowIfCancellationRequested();
                 var key = _keySelector(entity);
+                ct.ThrowIfCancellationRequested();
                 var current = entity;
 
                 if (EqualityComparer<TKey>.Default.Equals(key, default!))
                 {
                     EnsureGeneratedKeyCanBeAssigned();
                     key = _keyGenerator();
+                    ct.ThrowIfCancellationRequested();
                     current = NormalizeEntityKey(current, key);
                 }
 
+                ct.ThrowIfCancellationRequested();
                 if (!stagedKeys.Add(key) || _store.ContainsKey(key))
                 {
                     throw new InvalidOperationException($"An entity with key '{key}' already exists.");
@@ -394,6 +456,7 @@ public class InMemoryRepository<TEntity, TKey> :
                 staged.Add((key, current));
             }
 
+            ct.ThrowIfCancellationRequested();
             foreach (var (key, entity) in staged)
             {
                 _store[key] = entity;
@@ -410,17 +473,31 @@ public class InMemoryRepository<TEntity, TKey> :
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(entities);
+        ct.ThrowIfCancellationRequested();
 
         lock (_mutationLock)
         {
-            var staged = entities
-                .Select(entity => (Key: _keySelector(entity), Entity: entity))
-                .ToList();
-            var matchedKeys = staged
-                .Where(item => _store.ContainsKey(item.Key))
-                .Select(item => item.Key)
-                .ToList();
+            ct.ThrowIfCancellationRequested();
+            var staged = new List<(TKey Key, TEntity Entity)>(entities.Count);
+            foreach (var entity in entities)
+            {
+                ct.ThrowIfCancellationRequested();
+                var key = _keySelector(entity);
+                ct.ThrowIfCancellationRequested();
+                staged.Add((key, entity));
+            }
 
+            var matchedKeys = new List<TKey>(staged.Count);
+            foreach (var (key, _) in staged)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (_store.ContainsKey(key))
+                {
+                    matchedKeys.Add(key);
+                }
+            }
+
+            ct.ThrowIfCancellationRequested();
             foreach (var (key, entity) in staged)
             {
                 if (_store.ContainsKey(key))
@@ -440,14 +517,23 @@ public class InMemoryRepository<TEntity, TKey> :
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(keys);
+        ct.ThrowIfCancellationRequested();
 
         lock (_mutationLock)
         {
-            var keysToDelete = keys
-                .Distinct()
-                .Where(_store.ContainsKey)
-                .ToList();
+            ct.ThrowIfCancellationRequested();
+            var distinctKeys = new HashSet<TKey>();
+            var keysToDelete = new List<TKey>(keys.Count);
+            foreach (var key in keys)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (distinctKeys.Add(key) && _store.ContainsKey(key))
+                {
+                    keysToDelete.Add(key);
+                }
+            }
 
+            ct.ThrowIfCancellationRequested();
             foreach (var key in keysToDelete)
             {
                 _store.TryRemove(key, out _);
@@ -463,17 +549,24 @@ public class InMemoryRepository<TEntity, TKey> :
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(ids);
+        ct.ThrowIfCancellationRequested();
 
-        var result = new Dictionary<TKey, TEntity>(ids.Count);
-        foreach (var id in ids)
+        lock (_mutationLock)
         {
-            if (_store.TryGetValue(id, out var entity))
+            ct.ThrowIfCancellationRequested();
+            var result = new Dictionary<TKey, TEntity>(ids.Count);
+            foreach (var id in ids)
             {
-                result[id] = entity;
+                ct.ThrowIfCancellationRequested();
+                if (_store.TryGetValue(id, out var entity))
+                {
+                    result[id] = entity;
+                }
             }
-        }
 
-        return Task.FromResult<IReadOnlyDictionary<TKey, TEntity>>(result);
+            ct.ThrowIfCancellationRequested();
+            return Task.FromResult<IReadOnlyDictionary<TKey, TEntity>>(result);
+        }
     }
 
     /// <inheritdoc />
@@ -482,14 +575,17 @@ public class InMemoryRepository<TEntity, TKey> :
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(patches);
+        ct.ThrowIfCancellationRequested();
 
         lock (_mutationLock)
         {
+            ct.ThrowIfCancellationRequested();
             var stagedById = new Dictionary<TKey, TEntity>();
             var matchedIds = new List<TKey>(patches.Count);
 
             foreach (var (id, patchDocument) in patches)
             {
+                ct.ThrowIfCancellationRequested();
                 ThrowIfPatchModifiesKey(patchDocument);
 
                 if (!stagedById.TryGetValue(id, out var existing) &&
@@ -504,10 +600,12 @@ public class InMemoryRepository<TEntity, TKey> :
                     throw new InvalidOperationException($"Failed to deserialize patched entity with key '{id}'.");
                 }
 
+                ct.ThrowIfCancellationRequested();
                 stagedById[id] = updated;
                 matchedIds.Add(id);
             }
 
+            ct.ThrowIfCancellationRequested();
             foreach (var (id, entity) in stagedById)
             {
                 _store[id] = entity;
@@ -521,20 +619,27 @@ public class InMemoryRepository<TEntity, TKey> :
     /// <inheritdoc />
     public Task<long> CountAsync(IReadOnlyList<FilterValue> filters, CancellationToken ct = default)
     {
-        var items = _store.Values.AsEnumerable();
+        ct.ThrowIfCancellationRequested();
+
+        var items = ObserveCancellation(SnapshotEntities(ct), ct);
         items = ApplyFilters(items, filters);
-        return Task.FromResult((long)items.Count());
+        var count = (long)items.Count();
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(count);
     }
 
     /// <inheritdoc />
     public Task<long> CountAsync(PaginationRequest query, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(query);
+        ct.ThrowIfCancellationRequested();
 
-        var items = _store.Values.AsEnumerable();
+        var items = ObserveCancellation(SnapshotEntities(ct), ct);
         items = ApplyFilters(items, query.Filters);
         items = ApplySearch(items, query.Search);
-        return Task.FromResult((long)items.Count());
+        var count = (long)items.Count();
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(count);
     }
 
     /// <summary>
@@ -563,6 +668,17 @@ public class InMemoryRepository<TEntity, TKey> :
                 var key = _keySelector(entity);
                 _store[key] = entity;
             }
+        }
+    }
+
+    private static IEnumerable<TEntity> ObserveCancellation(
+        IEnumerable<TEntity> entities,
+        CancellationToken cancellationToken)
+    {
+        foreach (var entity in entities)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return entity;
         }
     }
 
@@ -754,6 +870,25 @@ public class InMemoryRepository<TEntity, TKey> :
         return true;
     }
 
+    private List<TEntity> SnapshotEntities(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        lock (_mutationLock)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var entities = new List<TEntity>(_store.Count);
+            foreach (var (_, entity) in _store)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                entities.Add(entity);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            return entities;
+        }
+    }
+
     private IEnumerable<TEntity> ApplyFilters(IEnumerable<TEntity> items, IReadOnlyList<FilterValue> filters)
     {
         foreach (var filter in filters)
@@ -775,40 +910,67 @@ public class InMemoryRepository<TEntity, TKey> :
 
     private IEnumerable<TEntity> ApplySorting(
         IEnumerable<TEntity> items,
-        IReadOnlyList<SortField> sortFields)
+        IReadOnlyList<SortField> sortFields,
+        CancellationToken cancellationToken)
     {
+        var keyComparer = Comparer<TKey>.Create((left, right) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var result = _keyComparer.Compare(left, right);
+            cancellationToken.ThrowIfCancellationRequested();
+            return result;
+        });
+
+        TKey SelectKey(TEntity entity)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var key = _keySelector(entity);
+            cancellationToken.ThrowIfCancellationRequested();
+            return key;
+        }
+
         if (sortFields.Count == 0)
         {
             // No sort requested — fall back to key ordering (preserves current behavior)
-            return items.OrderBy(e => _keySelector(e), _keyComparer);
+            return items.OrderBy(SelectKey, keyComparer);
         }
 
+        var valueComparer = Comparer<object?>.Create((left, right) =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var result = Comparer<object?>.Default.Compare(left, right);
+            cancellationToken.ThrowIfCancellationRequested();
+            return result;
+        });
         IOrderedEnumerable<TEntity>? ordered = null;
 
         foreach (var field in sortFields)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             Func<TEntity, object?> selector = e =>
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 _ = TryGetPropertyPathValue(e, field.PropertyName, out var value);
+                cancellationToken.ThrowIfCancellationRequested();
                 return value;
             };
 
             if (ordered is null)
             {
                 ordered = field.Direction == SortDirection.Asc
-                    ? items.OrderBy(selector)
-                    : items.OrderByDescending(selector);
+                    ? items.OrderBy(selector, valueComparer)
+                    : items.OrderByDescending(selector, valueComparer);
             }
             else
             {
                 ordered = field.Direction == SortDirection.Asc
-                    ? ordered.ThenBy(selector)
-                    : ordered.ThenByDescending(selector);
+                    ? ordered.ThenBy(selector, valueComparer)
+                    : ordered.ThenByDescending(selector, valueComparer);
             }
         }
 
         // Always append key as tie-breaker for stable cursor pagination
-        return ordered!.ThenBy(e => _keySelector(e), _keyComparer);
+        return ordered!.ThenBy(SelectKey, keyComparer);
     }
 
     private int DecodeOffsetCursor(string? cursor)

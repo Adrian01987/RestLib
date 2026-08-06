@@ -399,6 +399,47 @@ custom repository implements optional capabilities that application services
 will inject directly, register those interfaces explicitly with the same
 implementation and lifetime.
 
+### InMemory concurrency and entity ownership
+
+The InMemory adapter supports concurrent calls to its repository methods, but
+that guarantee applies to the repository's store operations rather than to the
+internals of your entity objects:
+
+- repository-owned mutations are serialized;
+- point reads, counts, bulk reads, and collection membership snapshots are
+  coordinated with those mutations, so they do not observe a partial batch
+  storage commit;
+- filtering, search, sorting, and pagination run over a shallow snapshot after
+  the store lock is released;
+- stored and returned entities are the same caller-owned references. RestLib
+  does not clone them, freeze them, or synchronize direct property mutations;
+- entity keys must remain stable after insertion. Mutating a stored entity's key
+  directly does not re-key the dictionary;
+- entity getters and configured key selector, generator, assigner, comparer, and
+  precondition delegates must be safe for the way the application uses them;
+  preconditions must not mutate the entity they inspect;
+- mutation callbacks run inside the repository's store critical section. They
+  must not re-enter the same repository or synchronously wait for another
+  thread to call it. Re-entrant writes can invalidate the outer operation's
+  staged assumptions, while a second thread must wait for the callback to
+  release the store.
+
+Consequently, a repository query has stable membership but not a deep snapshot
+of mutable entity state. Applications sharing mutable entity instances across
+threads must provide their own synchronization or use immutable entities.
+
+Cancellation is cooperative. Operations reject an already-cancelled token;
+collection reads and batch planning check it while iterating. Mutating batches
+check once more immediately before their atomic storage commit and then finish
+that commit without interruption, preventing cancellation from leaving a
+partially persisted batch. `Clear` and `Seed` are synchronous setup helpers and
+do not accept cancellation tokens. Cancellation cannot undo side effects that
+application callbacks have already performed outside repository storage.
+
+These guarantees are local to one repository instance. The adapter does not
+provide cross-resource transactions or application-level object isolation; see
+[ADR-033](../adr/033-inmemory-concurrency-contract.md).
+
 ## EF Core Adapter
 
 Use the official EF Core adapter instead of writing a custom repository:

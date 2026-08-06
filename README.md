@@ -635,6 +635,7 @@ Key decisions are documented as Architecture Decision Records:
 | [ADR-030](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/030-single-owner-internal-orchestration-seams.md) | Single-owner internal orchestration seams |
 | [ADR-031](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/031-bounded-performance-caches-and-batch-key-planning.md) | Bounded EF planning, batch-key, and built-in mapping caches |
 | [ADR-032](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/032-application-owned-problem-details.md) | Domain Problem Details are application-owned |
+| [ADR-033](https://github.com/Adrian01987/RestLib/blob/main/docs/adr/033-inmemory-concurrency-contract.md) | InMemory concurrency, entity ownership, and cancellation |
 
 ## Packages
 
@@ -658,6 +659,7 @@ Key decisions are documented as Architecture Decision Records:
 - **Built-in search is intentionally limited** — RestLib supports configured OR-of-contains search across string fields, but it does not provide full-text indexing, ranking, fuzzy matching, or provider-specific search features.
 - **Row-level scoping is application-owned** — apply tenant/user scoping in EF Core global query filters, database policies, or custom repositories before generated endpoints query data.
 - **Cross-resource transactions are application-owned** — use custom endpoints or transactional repositories for workflows such as checkout, payment capture, or multi-resource state changes.
+- **InMemory concurrency is shallow** — concurrent repository calls are coordinated and batch storage commits are indivisible, but entities are retained and returned by reference. Mutable entity internals are not synchronized or cloned, and cancellation is cooperative around an atomic batch commit. See [ADR-033](docs/adr/033-inmemory-concurrency-contract.md).
 - **No CORS configuration** — RestLib does not configure CORS. If your API is consumed by browsers, add ASP.NET Core's built-in CORS middleware:
 
   ```csharp

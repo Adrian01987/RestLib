@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- ADR-033 defining the InMemory adapter's shallow concurrency, live entity-reference, and cooperative cancellation contract
 - ADR-032 defining application ownership of business-domain Problem Details while RestLib retains the generic RFC 9457 model and result pipeline
 - ADR-031 and BenchmarkDotNet coverage for bounded EF planning caches, large scalar/composite batch-key queries, and compiled built-in mapping
 - `RestLib.EntityFrameworkCore` — EF Core repository adapter implementing base CRUD plus batch, atomic conditional-write, query-counting, and field-projection capabilities with server-side filtering, sorting, cursor pagination, batch operations, and `AsNoTracking` default
@@ -49,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- InMemory point reads, counts, bulk reads, and collection membership snapshots now coordinate with serialized mutations; documented entities remain caller-owned references rather than isolated clones
 - Official InMemory and EF Core registrations now expose every optional repository capability their concrete adapter implements; all aliases resolve to the same singleton or scoped repository instance
 - Ecommerce Problem Details descriptors and result helpers now live in the ecommerce sample; the existing insufficient-stock, invalid-transition, and payment HTTP contracts remain unchanged
 - Equivalent EF repository scopes now reuse immutable resource-key metadata and bounded normalized keyset/projection plans by exact model, options, and key-selector identity
@@ -72,6 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- InMemory repository operations now honor cancellation before work, during collection/batch planning, and immediately before atomic mutation commits without allowing cancellation to partially persist a batch
 - Unified Minimal API binding, RestLib results, PATCH preview and persistence, field selection, standard repository adapters, and default ETag generation on ASP.NET Core's canonical `JsonOptions.SerializerOptions`; custom HTTP JSON naming, case, resolver, converter, and number-handling rules now propagate consistently
 - PATCH member resolution now follows effective `JsonTypeInfo` metadata across core, InMemory, and EF Core, while field selection emits canonical JSON contract paths and honors member converters without cache collisions between distinct serializer-option instances
 - Made repeated `AddRestLib` calls fully idempotent so the first successful registration controls RestLib options, JSON behavior, conditional ETag services, and OpenAPI infrastructure consistently.
