@@ -1,3 +1,4 @@
+using System.Globalization;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
@@ -308,6 +309,60 @@ public class FilterParserUnitTests
 
     [Fact]
     [Trait("Category", "Story6.1")]
+    public void TryConvertValue_DefinedNumericEnum_Succeeds()
+    {
+        // Act
+        var (success, value, error) = FilterParser.TryConvertValue("1", typeof(ProductStatus));
+
+        // Assert
+        success.Should().BeTrue();
+        value.Should().Be(ProductStatus.Active);
+        error.Should().BeNull();
+    }
+
+    [Theory]
+    [Trait("Category", "Story6.1")]
+    [InlineData("99")]
+    [InlineData("999999999999999999999")]
+    public void TryConvertValue_UndefinedOrOverflowingNumericEnum_ReturnsError(string input)
+    {
+        // Act
+        var (success, value, error) = FilterParser.TryConvertValue(input, typeof(ProductStatus));
+
+        // Assert
+        success.Should().BeFalse();
+        value.Should().BeNull();
+        error.Should().Contain("Draft").And.Contain("Active").And.Contain("Discontinued");
+    }
+
+    [Fact]
+    [Trait("Category", "Story6.1")]
+    public void TryConvertValue_DeclaredFlagsCombination_Succeeds()
+    {
+        // Act
+        var (success, value, error) = FilterParser.TryConvertValue("Read, Write", typeof(FilterAccess));
+
+        // Assert
+        success.Should().BeTrue();
+        value.Should().Be(FilterAccess.Read | FilterAccess.Write);
+        error.Should().BeNull();
+    }
+
+    [Fact]
+    [Trait("Category", "Story6.1")]
+    public void TryConvertValue_FlagsWithUnknownBits_ReturnsError()
+    {
+        // Act
+        var (success, value, error) = FilterParser.TryConvertValue("8", typeof(FilterAccess));
+
+        // Assert
+        success.Should().BeFalse();
+        value.Should().BeNull();
+        error.Should().Contain("Read").And.Contain("Write");
+    }
+
+    [Fact]
+    [Trait("Category", "Story6.1")]
     public void TryConvertValue_Integer_Succeeds()
     {
         // Act
@@ -328,6 +383,30 @@ public class FilterParserUnitTests
         // Assert
         success.Should().BeTrue();
         value.Should().Be(99.99m);
+    }
+
+    [Fact]
+    [Trait("Category", "Story6.1")]
+    public void TryConvertValue_DecimalUnderGermanCulture_UsesInvariantCulture()
+    {
+        // Arrange
+        var originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+
+            // Act
+            var (success, value, error) = FilterParser.TryConvertValue("1234.5", typeof(decimal));
+
+            // Assert
+            success.Should().BeTrue();
+            value.Should().Be(1234.5m);
+            error.Should().BeNull();
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
     }
 
     [Fact]
@@ -600,6 +679,24 @@ public class FilterParserUnitTests
         result.IsValid.Should().BeFalse();
         result.Errors.Should().HaveCount(1);
         result.Errors[0].ProvidedValue.Should().Be("abc");
+    }
+
+    [Fact]
+    [Trait("Category", "Story6.1")]
+    public void Parse_InOperator_UndefinedNumericEnumValue_ReturnsError()
+    {
+        // Arrange
+        var config = CreateConfig(("Status", "status", typeof(ProductStatus), new[] { FilterOperator.In }));
+        var query = BuildQuery(("status[in]", "Active,99"));
+
+        // Act
+        var result = FilterParser.Parse(query, config);
+
+        // Assert
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle();
+        result.Errors[0].ProvidedValue.Should().Be("99");
+        result.Errors[0].Message.Should().Contain("Active");
     }
 
     #endregion
@@ -910,6 +1007,14 @@ public class FilterParserUnitTests
         }
 
         return new QueryCollection(dict);
+    }
+
+    [Flags]
+    private enum FilterAccess
+    {
+        None = 0,
+        Read = 1,
+        Write = 2,
     }
 
     [System.ComponentModel.TypeConverter(typeof(ComparableFilterValueConverter))]

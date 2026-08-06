@@ -25,7 +25,7 @@ public readonly record struct RestLibCompositeKey<TFirst, TSecond>(TFirst First,
     /// </summary>
     /// <param name="httpContext">The current HTTP context.</param>
     /// <param name="parameter">The target endpoint parameter.</param>
-    /// <returns>The bound composite key.</returns>
+    /// <returns>The bound composite key, or <c>null</c> when a route value is invalid.</returns>
     public static ValueTask<RestLibCompositeKey<TFirst, TSecond>?> BindAsync(
         HttpContext httpContext,
         ParameterInfo parameter)
@@ -37,9 +37,17 @@ public readonly record struct RestLibCompositeKey<TFirst, TSecond>(TFirst First,
             ?? throw new BadHttpRequestException(
                 $"RestLib composite key binding metadata was not found for parameter '{parameter.Name}'.");
 
-        var first = RestLibKeyConversion.ConvertRouteValue<TFirst>(httpContext, metadata.FirstRouteParameter);
-        var second = RestLibKeyConversion.ConvertRouteValue<TSecond>(httpContext, metadata.SecondRouteParameter);
+        try
+        {
+            var first = RestLibKeyConversion.ConvertRouteValue<TFirst>(httpContext, metadata.FirstRouteParameter);
+            var second = RestLibKeyConversion.ConvertRouteValue<TSecond>(httpContext, metadata.SecondRouteParameter);
 
-        return ValueTask.FromResult<RestLibCompositeKey<TFirst, TSecond>?>(new RestLibCompositeKey<TFirst, TSecond>(first, second));
+            return ValueTask.FromResult<RestLibCompositeKey<TFirst, TSecond>?>(
+                new RestLibCompositeKey<TFirst, TSecond>(first, second));
+        }
+        catch (BadHttpRequestException)
+        {
+            return ValueTask.FromResult<RestLibCompositeKey<TFirst, TSecond>?>(null);
+        }
     }
 }

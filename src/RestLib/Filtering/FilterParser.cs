@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using RestLib.Internal;
 using RestLib.Logging;
 
 namespace RestLib.Filtering;
@@ -223,7 +224,8 @@ public static partial class FilterParser
     }
 
     /// <summary>
-    /// Attempts to convert a string value to the target type.
+    /// Attempts to convert a string value to the target type using invariant culture.
+    /// Enum values must be declared members or valid combinations of declared flags.
     /// </summary>
     internal static (bool Success, object? Value, string? ErrorMessage) TryConvertValue(
         string rawValue, Type targetType, ILogger? logger = null, string? parameterName = null)
@@ -293,7 +295,7 @@ public static partial class FilterParser
 
             if (underlyingType.IsEnum)
             {
-                if (Enum.TryParse(underlyingType, rawValue, ignoreCase: true, out var enumValue))
+                if (EnumValueValidator.TryParse(underlyingType, rawValue, out var enumValue))
                 {
                     return (true, enumValue, null);
                 }
@@ -306,7 +308,7 @@ public static partial class FilterParser
             var converter = TypeDescriptor.GetConverter(underlyingType);
             if (converter.CanConvertFrom(typeof(string)))
             {
-                var converted = converter.ConvertFromString(rawValue);
+                var converted = converter.ConvertFrom(null, CultureInfo.InvariantCulture, rawValue);
                 if (converted is null)
                 {
                     return (false, null, $"Cannot convert '{rawValue}' to {GetFriendlyTypeName(targetType)}.");

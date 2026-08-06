@@ -64,7 +64,12 @@ internal static class RestLibKeyConversion
         {
             return (T)ConvertString(stringValue, typeof(T));
         }
-        catch (Exception ex) when (ex is FormatException or InvalidCastException or NotSupportedException)
+        catch (Exception ex) when (ex is
+            ArgumentException or
+            FormatException or
+            InvalidCastException or
+            NotSupportedException or
+            OverflowException)
         {
             throw new BadHttpRequestException(
                 $"The route value '{routeParameterName}' is not valid for type '{typeof(T).Name}'.",
@@ -108,7 +113,13 @@ internal static class RestLibKeyConversion
 
         if (effectiveType.IsEnum)
         {
-            return Enum.Parse(effectiveType, value, ignoreCase: true);
+            if (EnumValueValidator.TryParse(effectiveType, value, out var enumValue))
+            {
+                return enumValue!;
+            }
+
+            throw new FormatException(
+                $"Value '{value}' is not valid for enum type '{effectiveType.Name}'.");
         }
 
         var converter = TypeDescriptor.GetConverter(effectiveType);
@@ -119,7 +130,7 @@ internal static class RestLibKeyConversion
         }
 
         return converter.ConvertFrom(null, CultureInfo.InvariantCulture, value)
-            ?? throw new InvalidOperationException(
+            ?? throw new FormatException(
                 $"RestLib could not convert route value '{value}' to '{effectiveType.Name}'.");
     }
 }

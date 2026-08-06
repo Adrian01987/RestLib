@@ -52,6 +52,12 @@ internal static class ComparisonFilterBuilder
         if (filterValue is null && !string.IsNullOrEmpty(filter.RawValue))
         {
             var (success, convertedValue, _) = FilterParser.TryConvertValue(filter.RawValue, propertyAccess.ReturnType);
+            var underlyingType = Nullable.GetUnderlyingType(propertyAccess.ReturnType) ?? propertyAccess.ReturnType;
+            if (!success && underlyingType.IsEnum)
+            {
+                return Expression.Lambda<Func<TEntity, bool>>(Expression.Constant(false), parameter);
+            }
+
             filterValue = success ? convertedValue : null;
         }
 

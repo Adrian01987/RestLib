@@ -1,7 +1,7 @@
 # ADR-025: Two-part composite key support
 
-**Status:** Accepted
-**Date:** 2026-05-09
+**Status:** Amended
+**Date:** 2026-05-09 (amended 2026-08-06)
 
 ## Context
 
@@ -69,6 +69,8 @@ Folder-based loading resolves the composite key CLR type from the declared key p
 ### Binding, URLs, HATEOAS, OpenAPI, and Problem Details
 
 - Minimal API route binding uses endpoint metadata so composite keys bind from ordered route parts instead of from a single scalar route value.
+- RestLib-owned composite route conversion uses `InvariantCulture`. Malformed, unsupported, overflowing, and undefined enum values fail binding with HTTP 400 before hooks or repository access.
+- Enum key values must resolve to a declared member. `[Flags]` keys may combine declared bits, but values containing unknown bits are rejected. Scalar enum keys receive the same membership check after ASP.NET route binding.
 - Location headers and HATEOAS links render both key segments in configured order.
 - OpenAPI documents one required path parameter per key part.
 - Not-found Problem Details format composite keys using configured route parameter names rather than internal `First` / `Second` labels.
@@ -116,6 +118,7 @@ Rejected because route identity is part of the public HTTP contract. Requiring e
 - Single-key resources continue to use the existing default `{id}` route shape and `KeyProperty` configuration.
 - Composite-key resources require explicit route metadata, either through `UseCompositeKey(...)` or the JSON `Key` object.
 - OpenAPI, HATEOAS, batch parsing, and Problem Details now depend on ordered key-route metadata instead of assuming one scalar key.
+- Route-key interpretation no longer changes with server culture, and invalid or overflowing route segments are client errors rather than repository lookups or unhandled conversion failures.
 - PUT and batch update treat route/envelope keys as authoritative; PATCH and batch patch reject attempts to modify any key part.
 - The EF Core adapter supports two-part composite keys but still rejects keys with more than two parts.
 - JSON schema, docs, and examples must keep both single-key and composite-key paths documented clearly.

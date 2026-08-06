@@ -52,6 +52,12 @@ Relational operators use the common built-in-adapter baseline: `byte`, `short`, 
 types can still use equality, inequality, and membership filters. An unsupported
 operator/type combination returns 400 before repository query or count execution.
 
+Filter operands use invariant conversion regardless of the server locale. Use `.` in
+numeric values (for example, `1234.5`) and ISO-8601 date/time values. Enum names are
+case-insensitive; numeric values must identify a declared member. `[Flags]` combinations
+may contain only declared bits. Undefined and overflowing values return 400, and every
+element of an `in` list follows the same rules.
+
 Partial-string operands are literal and case-insensitive. For example,
 `?name[contains]=%25_sale` searches for the text `%_sale`; `%` and `_` are not SQL
 wildcards. Null strings do not match, and null numeric/date values do not satisfy a
@@ -276,6 +282,11 @@ That produces item routes like:
 ```text
 GET /api/tenant-products/{tenantId}/{sku}
 ```
+
+Composite route segments use invariant conversion. Enum key parts must be declared values
+or valid combinations of declared `[Flags]` bits. Malformed, undefined, or overflowing key
+segments return 400 before hooks or repository access. Scalar enum keys use the same
+membership rule after ASP.NET route binding.
 
 JSON-backed resources use a `Key` object instead of `KeyProperty`:
 

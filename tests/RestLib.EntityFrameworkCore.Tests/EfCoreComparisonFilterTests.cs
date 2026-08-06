@@ -43,6 +43,31 @@ public class EfCoreComparisonFilterTests : IAsyncLifetime
             .WithMessage("*portable numeric and date/time types*");
     }
 
+    [Theory]
+    [InlineData(FilterOperator.Eq)]
+    [InlineData(FilterOperator.Neq)]
+    public void BuildPredicate_UndefinedNumericEnumRawValue_ReturnsAlwaysFalsePredicate(
+        FilterOperator filterOperator)
+    {
+        // Arrange
+        var filter = new FilterValue
+        {
+            PropertyName = nameof(ProductEntity.Lifecycle),
+            QueryParameterName = "lifecycle",
+            PropertyType = typeof(ProductLifecycle),
+            RawValue = "99",
+            TypedValue = null,
+            Operator = filterOperator,
+        };
+
+        // Act
+        var predicate = ComparisonFilterBuilder.BuildPredicate<ProductEntity>(filter).Compile();
+
+        // Assert
+        predicate(new ProductEntity { Lifecycle = ProductLifecycle.Active }).Should().BeFalse();
+        predicate(new ProductEntity { Lifecycle = (ProductLifecycle)99 }).Should().BeFalse();
+    }
+
     /// <summary>
     /// Sets up the test host with filtering enabled.
     /// </summary>

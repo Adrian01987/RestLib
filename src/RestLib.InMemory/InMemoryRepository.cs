@@ -682,11 +682,11 @@ public class InMemoryRepository<TEntity, TKey> :
         }
     }
 
-    private static object? ConvertFilterValue(string? value, Type targetType)
+    private static (bool Success, object? Value) TryConvertFilterValue(string? value, Type targetType)
     {
         if (value == null)
         {
-            return null;
+            return (true, null);
         }
 
         var underlyingType = Nullable.GetUnderlyingType(targetType) ?? targetType;
@@ -695,25 +695,27 @@ public class InMemoryRepository<TEntity, TKey> :
         {
             if (underlyingType == typeof(Guid))
             {
-                return Guid.Parse(value);
+                return (true, Guid.Parse(value));
             }
             if (underlyingType == typeof(DateTime))
             {
-                return DateTime.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+                return (true, DateTime.Parse(value, System.Globalization.CultureInfo.InvariantCulture));
             }
             if (underlyingType == typeof(DateTimeOffset))
             {
-                return DateTimeOffset.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+                return (true, DateTimeOffset.Parse(value, System.Globalization.CultureInfo.InvariantCulture));
             }
             if (underlyingType.IsEnum)
             {
-                return Enum.Parse(underlyingType, value, ignoreCase: true);
+                return EnumValueValidator.TryParse(underlyingType, value, out var enumValue)
+                    ? (true, enumValue)
+                    : (false, null);
             }
-            return Convert.ChangeType(value, underlyingType, System.Globalization.CultureInfo.InvariantCulture);
+            return (true, Convert.ChangeType(value, underlyingType, System.Globalization.CultureInfo.InvariantCulture));
         }
         catch
         {
-            return value;
+            return (true, value);
         }
     }
 
@@ -1010,7 +1012,17 @@ public class InMemoryRepository<TEntity, TKey> :
             return true; // Skip unknown properties
         }
 
-        var filterValue = filter.TypedValue ?? ConvertFilterValue(filter.RawValue, filter.PropertyType);
+        var filterValue = filter.TypedValue;
+        if (filterValue is null)
+        {
+            var conversion = TryConvertFilterValue(filter.RawValue, filter.PropertyType);
+            if (!conversion.Success)
+            {
+                return false;
+            }
+
+            filterValue = conversion.Value;
+        }
 
         return filter.Operator switch
         {

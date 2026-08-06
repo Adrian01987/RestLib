@@ -1,7 +1,7 @@
 # ADR-011: Query Parameter Filtering
 
-**Status:** Accepted
-**Date:** 2026-03-30
+**Status:** Amended
+**Date:** 2026-03-30 (amended 2026-08-06)
 
 ## Context
 
@@ -65,6 +65,8 @@ GET /api/products?category_id=5&is_active=true
 
 - Property names use `snake_case` (matching JSON property names).
 - Values are parsed to the target property's CLR type. Type mismatches return a 400 Problem Details response with type `/problems/invalid-filter`.
+- Conversion uses `InvariantCulture`, so the same query has the same meaning under every server locale. Clients should use invariant numeric forms (for example, `1234.5`) and ISO-8601 date/time forms.
+- Enum names are case-insensitive. Numeric enum input is accepted only when it maps to a declared member. `[Flags]` combinations are accepted only when every bit is present in the enum's declared values; undefined or overflowing values return 400.
 - Multiple filter parameters are combined with AND semantics.
 
 ### 3. Equality-only operators
@@ -97,6 +99,7 @@ If `AllowFiltering()` is not called for a resource, any query parameters that wo
 - Users must configure each filterable property explicitly. There is no shortcut to make all properties filterable.
 - No support for range filters, partial matches, or complex expressions. This is by design — it keeps the implementation simple and the attack surface small.
 - Unknown query parameters are silently ignored, which means a typo in a filter property name will not produce an error. This trade-off favors forward compatibility over strict validation.
+- Each value in an `in` filter is subject to the same invariant conversion and enum-membership validation as a scalar equality filter.
 - Repository implementations must handle `Filters` in `PaginationRequest`. An empty list means no filters were requested.
 
 ### Repository contract enforcement

@@ -7,6 +7,7 @@ using Microsoft.OpenApi;
 using RestLib.Configuration;
 using RestLib.Endpoints;
 using RestLib.Filtering;
+using RestLib.Internal;
 
 namespace RestLib;
 
@@ -278,6 +279,7 @@ public static class RestLibEndpointExtensions
             var getByIdEndpoint = typeof(TApiModel) == typeof(TDbModel)
                 ? group.MapGet(keyRouteTemplate, GetByIdHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
                 : group.MapGet(keyRouteTemplate, GetByIdHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
+            AddScalarEnumKeyValidation<TKey>(getByIdEndpoint);
             OpenApiEndpointConfiguration.ConfigureGetByIdEndpoint(getByIdEndpoint, config, baseEntityName, entityName, restLibOptions);
             AddCompositeKeyBindingMetadataIfNeeded(getByIdEndpoint, config);
 
@@ -304,6 +306,7 @@ public static class RestLibEndpointExtensions
             var updateEndpoint = typeof(TApiModel) == typeof(TDbModel)
                 ? group.MapPut(keyRouteTemplate, UpdateHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
                 : group.MapPut(keyRouteTemplate, UpdateHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
+            AddScalarEnumKeyValidation<TKey>(updateEndpoint);
             OpenApiEndpointConfiguration.ConfigureUpdateEndpoint(updateEndpoint, config, baseEntityName, entityName, restLibOptions);
             AddCompositeKeyBindingMetadataIfNeeded(updateEndpoint, config);
         } // end Update
@@ -314,6 +317,7 @@ public static class RestLibEndpointExtensions
             var patchEndpoint = typeof(TApiModel) == typeof(TDbModel)
                 ? group.MapPatch(keyRouteTemplate, PatchHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
                 : group.MapPatch(keyRouteTemplate, PatchHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
+            AddScalarEnumKeyValidation<TKey>(patchEndpoint);
             OpenApiEndpointConfiguration.ConfigurePatchEndpoint(patchEndpoint, config, baseEntityName, entityName, restLibOptions);
             AddCompositeKeyBindingMetadataIfNeeded(patchEndpoint, config);
         } // end Patch
@@ -324,6 +328,7 @@ public static class RestLibEndpointExtensions
             var deleteEndpoint = typeof(TApiModel) == typeof(TDbModel)
                 ? group.MapDelete(keyRouteTemplate, DeleteHandler.CreateDelegate<TApiModel, TKey>(config, baseEntityName))
                 : group.MapDelete(keyRouteTemplate, DeleteHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config, baseEntityName));
+            AddScalarEnumKeyValidation<TKey>(deleteEndpoint);
             OpenApiEndpointConfiguration.ConfigureDeleteEndpoint(deleteEndpoint, config, baseEntityName, entityName, restLibOptions);
             AddCompositeKeyBindingMetadataIfNeeded(deleteEndpoint, config);
         } // end Delete
@@ -336,6 +341,27 @@ public static class RestLibEndpointExtensions
                 : group.MapPost("batch", BatchHandler.CreateMappedDelegate<TApiModel, TDbModel, TKey>(config));
             OpenApiEndpointConfiguration.ConfigureBatchEndpoint(batchEndpoint, config, baseEntityName, entityName, restLibOptions);
         } // end Batch
+    }
+
+    private static void AddScalarEnumKeyValidation<TKey>(RouteHandlerBuilder endpoint)
+        where TKey : notnull
+    {
+        if (!typeof(TKey).IsEnum)
+        {
+            return;
+        }
+
+        endpoint.AddEndpointFilter(static async (invocationContext, next) =>
+        {
+            if (invocationContext.Arguments.Count > 0 &&
+                invocationContext.Arguments[0] is TKey key &&
+                !EnumValueValidator.IsValid(typeof(TKey), key))
+            {
+                return Results.BadRequest();
+            }
+
+            return await next(invocationContext);
+        });
     }
 
     private static void ValidateMappedEndpointConfiguration<TApiModel, TDbModel, TKey>(

@@ -235,6 +235,38 @@ public partial class InMemoryRepositoryTests
         result.Items.Single().DayOfWeek.Should().Be(DayOfWeek.Friday);
     }
 
+    [Theory]
+    [InlineData(FilterOperator.Eq)]
+    [InlineData(FilterOperator.Neq)]
+    public async Task GetAllAsync_WithUndefinedNumericEnumRawValue_DoesNotMatchAnyEntity(
+        FilterOperator filterOperator)
+    {
+        // Arrange
+        var repository = CreateFilterTestRepository();
+        await repository.CreateAsync(CreateFilterTestEntity(dayOfWeek: DayOfWeek.Monday));
+        await repository.CreateAsync(CreateFilterTestEntity(dayOfWeek: (DayOfWeek)99));
+        var filter = CreateFilterForProperty("DayOfWeek", "99", typeof(DayOfWeek));
+        var filters = new List<FilterValue>
+        {
+            new()
+            {
+                PropertyName = filter.PropertyName,
+                QueryParameterName = filter.QueryParameterName,
+                PropertyType = filter.PropertyType,
+                RawValue = filter.RawValue,
+                TypedValue = filter.TypedValue,
+                Operator = filterOperator,
+            },
+        };
+        var request = new PaginationRequest { Limit = 10, Filters = filters };
+
+        // Act
+        var result = await repository.GetAllAsync(request);
+
+        // Assert
+        result.Items.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task GetAllAsync_WithNullableTypeFilter_FiltersCorrectly()
     {

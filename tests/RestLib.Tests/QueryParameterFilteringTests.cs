@@ -408,6 +408,28 @@ public class QueryParameterFilteringTests : IAsyncLifetime
 
     [Fact]
     [Trait("Category", "Story4.3")]
+    public async Task GetAll_UndefinedNumericEnumValue_Returns400()
+    {
+        // Arrange
+        _repository.Seed([new FilterableEntity
+        {
+            Id = Guid.NewGuid(),
+            Name = "Undefined",
+            Status = (ProductStatus)99,
+        }]);
+
+        // Act
+        var response = await _client.GetAsync("/api/items?status=99");
+
+        // Assert
+        var json = await response.ShouldBeProblemDetailsJson(
+            HttpStatusCode.BadRequest,
+            "/problems/invalid-filter");
+        json.GetProperty("errors").TryGetProperty("status", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    [Trait("Category", "Story4.3")]
     public async Task GetAll_InvalidFilterValue_ReturnsProblemDetails()
     {
         // Arrange
