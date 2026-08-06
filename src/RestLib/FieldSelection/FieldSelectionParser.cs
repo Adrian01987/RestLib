@@ -1,3 +1,5 @@
+using RestLib.Internal;
+
 namespace RestLib.FieldSelection;
 
 /// <summary>
@@ -17,60 +19,36 @@ public static class FieldSelectionParser
         FieldSelectionConfiguration<TEntity> configuration)
         where TEntity : class
     {
-        if (string.IsNullOrWhiteSpace(fieldsValue))
-        {
-            return new FieldSelectionParseResult();
-        }
-
-        var fields = new List<SelectedField>();
-        var errors = new List<FieldSelectionValidationError>();
-        var seenFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        string? allowedNames = null;
-
-        var segments = fieldsValue.Split(',');
-
-        foreach (var segment in segments)
-        {
-            var trimmed = segment.Trim();
-            if (string.IsNullOrEmpty(trimmed))
-            {
-                continue; // Skip empty segments (e.g., trailing comma)
-            }
-
-            var property = configuration.FindByQueryName(trimmed);
-            if (property is null)
-            {
-                allowedNames ??= string.Join(", ",
-                    configuration.Properties.Select(p => p.QueryParameterName));
-                errors.Add(new FieldSelectionValidationError
+        var result = ConfiguredQueryListParser.Parse<
+            FieldSelectionPropertyConfiguration,
+            SelectedField,
+            FieldSelectionValidationError>(
+                fieldsValue,
+                configuration.Properties,
+                static property => property.QueryParameterName,
+                static segment => new ConfiguredQueryToken(segment),
+                static (_, property) => new ConfiguredQueryItemParseResult<SelectedField, FieldSelectionValidationError>(
+                    new SelectedField
+                    {
+                        PropertyName = property.PropertyName,
+                        QueryParameterName = property.QueryParameterName
+                    },
+                    null),
+                static (fieldName, allowedNames) => new FieldSelectionValidationError
                 {
-                    Field = trimmed,
-                    Message = $"'{trimmed}' is not a selectable field. Allowed fields: {allowedNames}."
-                });
-                continue;
-            }
-
-            if (!seenFields.Add(property.QueryParameterName))
-            {
-                errors.Add(new FieldSelectionValidationError
+                    Field = fieldName,
+                    Message = $"'{fieldName}' is not a selectable field. Allowed fields: {allowedNames}."
+                },
+                static fieldName => new FieldSelectionValidationError
                 {
-                    Field = trimmed,
+                    Field = fieldName,
                     Message = "Duplicate field."
                 });
-                continue;
-            }
-
-            fields.Add(new SelectedField
-            {
-                PropertyName = property.PropertyName,
-                QueryParameterName = property.QueryParameterName
-            });
-        }
 
         return new FieldSelectionParseResult
         {
-            Fields = fields,
-            Errors = errors
+            Fields = result.Items,
+            Errors = result.Errors
         };
     }
 }

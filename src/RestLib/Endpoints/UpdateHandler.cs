@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.Hooks;
@@ -41,144 +42,52 @@ internal static class UpdateHandler
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
             var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.Update");
 
-            RestLibLogMessages.UpdateRequestReceived(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
+            RestLibLogMessages.UpdateRequestReceived(
+                logger,
+                entityName,
+                EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
-            // Initialize hook pipeline and run OnRequestReceived
             var (pipeline, hookContext, pipelineEarlyResult) = await HookHelper.InitializePipelineAsync<TEntity, TKey>(
-                config.Hooks, httpContext, RestLibOperation.Update, id, entity, logger: logger);
+                config.Hooks,
+                httpContext,
+                RestLibOperation.Update,
+                id,
+                entity,
+                logger: logger);
             if (pipelineEarlyResult is not null) return pipelineEarlyResult;
-            // Entity might have been modified by hook
             if (hookContext is not null) entity = hookContext.Entity ?? entity;
-            TEntity? originalEntity = null;
 
+            var modelAdapter = EndpointModelAdapter<TEntity, TEntity>.Identity<TEntity>();
+            var state = new EndpointModelState<TEntity, TEntity>(entity, entity);
             try
             {
-                _ = EntityKeyHelper.TrySetEntityKeyParts(entity, id, config.KeyRouteParts);
-
-                // Validate entity using Data Annotations
-                if (options.EnableValidation)
-                {
-                    var validationResult = RestLibResourceValidator.Validate(
-                        entity,
-                        config,
-                        jsonOptions.PropertyNamingPolicy);
-                    if (!validationResult.IsValid)
-                    {
-                        return Responses.ProblemDetailsResult.ValidationFailed(
-                            validationResult.Errors,
-                            httpContext.Request.Path,
-                            jsonOptions,
-                            logger,
-                            options);
-                    }
-                }
-
-                // OnRequestValidated hook
-                var validatedStage = await HookHelper.RunEntityHookStageAsync(
-                    pipeline, hookContext, entity, p => p.ExecuteOnRequestValidatedAsync);
-                if (validatedStage.EarlyResult is not null) return validatedStage.EarlyResult;
-                entity = validatedStage.Entity;
-                _ = EntityKeyHelper.TrySetEntityKeyParts(entity, id, config.KeyRouteParts);
-
-                // Check for ETag precondition (If-Match header)
-                var (etagEntity, etagError) = await ETagHelper.CheckIfMatchPreconditionAsync(
-                    httpContext, repository, id, entityName, options, jsonOptions, ct, logger);
-                if (etagError is not null) return etagError;
-                if (etagEntity is not null) originalEntity = etagEntity;
-
-                var ifMatchPrecondition = ETagHelper.CreateIfMatchPrecondition<TEntity>(httpContext, options);
-                if (ifMatchPrecondition is not null && repository is not IConditionalWriteRepository<TEntity, TKey>)
-                {
-                    return ETagHelper.ConditionalWriteNotSupported(httpContext, jsonOptions, options, logger);
-                }
-
-                // Fetch original entity if not already fetched (for hooks)
-                if (originalEntity is null && pipeline is not null)
-                {
-                    originalEntity = await repository.GetByIdAsync(id, ct);
-                }
-
-                // BeforePersist hook — update existing context with original entity
-                if (hookContext is not null) hookContext.SetOriginalEntity(originalEntity);
-
-                var beforePersistStage = await HookHelper.RunEntityHookStageAsync(
-                    pipeline, hookContext, entity, p => p.ExecuteBeforePersistAsync);
-                if (beforePersistStage.EarlyResult is not null) return beforePersistStage.EarlyResult;
-                entity = beforePersistStage.Entity;
-                _ = EntityKeyHelper.TrySetEntityKeyParts(entity, id, config.KeyRouteParts);
-
-                TEntity? updated;
-                if (ifMatchPrecondition is null)
-                {
-                    updated = await repository.UpdateAsync(id, entity, ct);
-                }
-                else
-                {
-                    var conditionalResult = await ((IConditionalWriteRepository<TEntity, TKey>)repository)
-                        .UpdateConditionallyAsync(id, entity, ifMatchPrecondition, ct);
-                    var conditionalError = ETagHelper.ToErrorResult(
-                        conditionalResult,
-                        httpContext,
-                        id,
-                        entityName,
-                        config.KeyRouteParts,
-                        jsonOptions,
-                        options,
-                        logger);
-                    if (conditionalError is not null) return conditionalError;
-                    updated = conditionalResult.Entity!;
-                }
-
-                if (updated is null)
-                {
-                    return Responses.ProblemDetailsResult.NotFound(
-                        entityName,
-                        id!,
-                        config.KeyRouteParts,
-                        httpContext.Request.Path,
-                        jsonOptions,
-                        logger,
-                        options);
-                }
-
-                // AfterPersist hook
-                var afterPersistStage = await HookHelper.RunEntityHookStageAsync(
-                    pipeline, hookContext, updated, p => p.ExecuteAfterPersistAsync);
-                if (afterPersistStage.EarlyResult is not null) return afterPersistStage.EarlyResult;
-                updated = afterPersistStage.Entity;
-                _ = EntityKeyHelper.TrySetEntityKeyParts(updated, id, config.KeyRouteParts);
-
-                // BeforeResponse hook
-                var beforeResponseStage = await HookHelper.RunEntityHookStageAsync(
-                    pipeline, hookContext, updated, p => p.ExecuteBeforeResponseAsync);
-                if (beforeResponseStage.EarlyResult is not null) return beforeResponseStage.EarlyResult;
-                updated = beforeResponseStage.Entity;
-                _ = EntityKeyHelper.TrySetEntityKeyParts(updated, id, config.KeyRouteParts);
-
-                // Generate the ETag from the final response representation.
-                if (options.EnableETagSupport)
-                {
-                    var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
-                    httpContext.Response.Headers.ETag = etagGenerator.Generate(updated);
-                }
-
-                // Inject HATEOAS links into updated entity response
-                if (options.EnableHateoas)
-                {
-                    var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false, config.KeyRouteParts.Count);
-                    var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TEntity, TKey>>();
-                    var customLinks = customLinksProvider?.GetLinks(updated, id);
-                    var links = HateoasLinkBuilder.BuildEntityLinks(httpContext.Request, collectionPath, id, config, customLinks);
-                    var entityWithLinks = HateoasHelper.EntityWithLinks<TEntity, TKey>(updated, links, jsonOptions);
-                    return Results.Json(entityWithLinks, jsonOptions);
-                }
-
-                return Results.Json(updated, jsonOptions);
+                return await ExecuteUpdateAsync<TEntity, TEntity, TEntity, TKey>(
+                    id,
+                    state,
+                    repository,
+                    modelAdapter,
+                    hooksUseDbModel: false,
+                    httpContext,
+                    ct,
+                    jsonOptions,
+                    options,
+                    logger,
+                    config,
+                    entityName,
+                    pipeline,
+                    hookContext);
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.Update), ex);
-                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Update, ex, id, entity, logger);
+                var errorResult = await HookHelper.HandleErrorHookAsync(
+                    pipeline,
+                    httpContext,
+                    RestLibOperation.Update,
+                    ex,
+                    id,
+                    state.ApiModel,
+                    logger);
                 if (errorResult is not null) return errorResult;
                 throw;
             }
@@ -216,12 +125,16 @@ internal static class UpdateHandler
                 config.MapperName,
                 config.UseAutoMapper,
                 config.ResourceName);
+            var modelAdapter = EndpointModelAdapter<TApiModel, TDbModel>.Mapped(mapper);
 
-            RestLibLogMessages.UpdateRequestReceived(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
+            RestLibLogMessages.UpdateRequestReceived(
+                logger,
+                entityName,
+                EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
             if (config.UsesDbModelHooks)
             {
-                var dbEntity = mapper.ToDb(apiEntity);
+                var dbEntity = modelAdapter.ToDb(apiEntity);
                 var (pipeline, hookContext, pipelineEarlyResult) = await HookHelper.InitializePipelineAsync<TDbModel, TKey>(
                     config.DbModelHooks,
                     httpContext,
@@ -233,17 +146,19 @@ internal static class UpdateHandler
                 if (hookContext is not null)
                 {
                     dbEntity = hookContext.Entity ?? dbEntity;
-                    apiEntity = mapper.ToApi(dbEntity);
+                    apiEntity = modelAdapter.ToApi(dbEntity);
                 }
 
+                var errorHookEntity = dbEntity;
+                var state = new EndpointModelState<TApiModel, TDbModel>(apiEntity, dbEntity);
                 try
                 {
-                    return await ExecuteMappedUpdateAsync<TApiModel, TDbModel, TDbModel, TKey>(
+                    return await ExecuteUpdateAsync<TApiModel, TDbModel, TDbModel, TKey>(
                         id,
-                        apiEntity,
-                        dbEntity,
+                        state,
                         repository,
-                        mapper,
+                        modelAdapter,
+                        hooksUseDbModel: true,
                         httpContext,
                         ct,
                         jsonOptions,
@@ -263,7 +178,7 @@ internal static class UpdateHandler
                         RestLibOperation.Update,
                         ex,
                         id,
-                        dbEntity,
+                        errorHookEntity,
                         logger);
                     if (errorResult is not null) return errorResult;
                     throw;
@@ -283,14 +198,16 @@ internal static class UpdateHandler
                 apiEntity = apiHookContext.Entity ?? apiEntity;
             }
 
+            var apiErrorHookEntity = apiEntity;
             try
             {
-                return await ExecuteMappedUpdateAsync<TApiModel, TDbModel, TApiModel, TKey>(
+                var state = new EndpointModelState<TApiModel, TDbModel>(apiEntity, modelAdapter.ToDb(apiEntity));
+                return await ExecuteUpdateAsync<TApiModel, TDbModel, TApiModel, TKey>(
                     id,
-                    apiEntity,
-                    mapper.ToDb(apiEntity),
+                    state,
                     repository,
-                    mapper,
+                    modelAdapter,
+                    hooksUseDbModel: typeof(TApiModel) == typeof(TDbModel),
                     httpContext,
                     ct,
                     jsonOptions,
@@ -310,7 +227,7 @@ internal static class UpdateHandler
                     RestLibOperation.Update,
                     ex,
                     id,
-                    apiEntity,
+                    apiErrorHookEntity,
                     logger);
                 if (errorResult is not null) return errorResult;
                 throw;
@@ -318,18 +235,18 @@ internal static class UpdateHandler
         };
     }
 
-    private static async Task<IResult> ExecuteMappedUpdateAsync<TApiModel, TDbModel, THookModel, TKey>(
+    private static async Task<IResult> ExecuteUpdateAsync<TApiModel, TDbModel, THookModel, TKey>(
         TKey id,
-        TApiModel apiEntity,
-        TDbModel dbEntity,
+        EndpointModelState<TApiModel, TDbModel> state,
         IRepository<TDbModel, TKey> repository,
-        IRestLibMapper<TApiModel, TDbModel> mapper,
+        EndpointModelAdapter<TApiModel, TDbModel> modelAdapter,
+        bool hooksUseDbModel,
         HttpContext httpContext,
         CancellationToken ct,
         JsonSerializerOptions jsonOptions,
         RestLibOptions options,
-        Microsoft.Extensions.Logging.ILogger logger,
-        RestLibEndpointConfiguration<TApiModel, TDbModel, TKey> config,
+        ILogger logger,
+        RestLibEndpointConfiguration<TApiModel, TKey> config,
         string entityName,
         HookPipeline<THookModel, TKey>? pipeline,
         HookContext<THookModel, TKey>? hookContext)
@@ -338,77 +255,37 @@ internal static class UpdateHandler
         where THookModel : class
         where TKey : notnull
     {
+        var problems = Responses.ProblemDetailsResult.CreateResponder(jsonOptions, logger, options);
         TDbModel? originalDb = null;
         TApiModel? originalApi = null;
 
-        _ = EntityKeyHelper.TrySetEntityKeyParts(dbEntity, id, config.KeyRouteParts);
-        apiEntity = mapper.ToApi(dbEntity);
+        _ = EntityKeyHelper.TrySetEntityKeyParts(state.DbModel, id, config.KeyRouteParts);
+        state.ApiModel = modelAdapter.ToApi(state.DbModel);
 
-        if (options.EnableValidation)
+        var validationError = Validate(state.ApiModel, config, httpContext, jsonOptions, options, problems);
+        if (validationError is not null) return validationError;
+
+        var validatedStage = await HookHelper.RunEntityHookStageAsync(
+            pipeline,
+            hookContext,
+            GetHookEntity<TApiModel, TDbModel, THookModel>(state, hooksUseDbModel),
+            p => p.ExecuteOnRequestValidatedAsync);
+        if (validatedStage.EarlyResult is not null) return validatedStage.EarlyResult;
+        if (modelAdapter.IsIdentity || hookContext is not null)
         {
-            var validationResult = RestLibResourceValidator.Validate(
-                apiEntity,
-                config,
-                jsonOptions.PropertyNamingPolicy);
-            if (!validationResult.IsValid)
-            {
-                return Responses.ProblemDetailsResult.ValidationFailed(
-                    validationResult.Errors,
-                    httpContext.Request.Path,
-                    jsonOptions,
-                    logger,
-                    options);
-            }
+            ApplyRequestHookEntity(state, modelAdapter, validatedStage.Entity, hooksUseDbModel, id, config);
         }
 
-        if (hookContext is not null)
+        if (!modelAdapter.IsIdentity)
         {
-            hookContext.Entity = typeof(THookModel) == typeof(TDbModel)
-                ? (THookModel)(object)dbEntity
-                : (THookModel)(object)apiEntity;
-        }
-
-        var onValidatedResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
-        if (onValidatedResult is not null) return onValidatedResult;
-
-        if (hookContext is not null)
-        {
-            if (typeof(THookModel) == typeof(TDbModel))
-            {
-                dbEntity = (TDbModel)(object)(hookContext.Entity ?? (THookModel)(object)dbEntity);
-                _ = EntityKeyHelper.TrySetEntityKeyParts(dbEntity, id, config.KeyRouteParts);
-                apiEntity = mapper.ToApi(dbEntity);
-            }
-            else
-            {
-                apiEntity = (TApiModel)(object)(hookContext.Entity ?? (THookModel)(object)apiEntity);
-                dbEntity = mapper.ToDb(apiEntity);
-                _ = EntityKeyHelper.TrySetEntityKeyParts(dbEntity, id, config.KeyRouteParts);
-                apiEntity = mapper.ToApi(dbEntity);
-            }
-        }
-
-        if (options.EnableValidation)
-        {
-            var validationResult = RestLibResourceValidator.Validate(
-                apiEntity,
-                config,
-                jsonOptions.PropertyNamingPolicy);
-            if (!validationResult.IsValid)
-            {
-                return Responses.ProblemDetailsResult.ValidationFailed(
-                    validationResult.Errors,
-                    httpContext.Request.Path,
-                    jsonOptions,
-                    logger,
-                    options);
-            }
+            validationError = Validate(state.ApiModel, config, httpContext, jsonOptions, options, problems);
+            if (validationError is not null) return validationError;
         }
 
         var (etagDb, etagApi, etagError) = await ETagHelper.CheckIfMatchPreconditionAsync<TApiModel, TDbModel, TKey>(
             httpContext,
             repository,
-            mapper,
+            modelAdapter.Mapper,
             id,
             entityName,
             options,
@@ -425,7 +302,7 @@ internal static class UpdateHandler
         var ifMatchPrecondition = ETagHelper.CreateIfMatchPrecondition<TApiModel, TDbModel>(
             httpContext,
             options,
-            mapper);
+            modelAdapter.Mapper);
         if (ifMatchPrecondition is not null && repository is not IConditionalWriteRepository<TDbModel, TKey>)
         {
             return ETagHelper.ConditionalWriteNotSupported(httpContext, jsonOptions, options, logger);
@@ -434,47 +311,48 @@ internal static class UpdateHandler
         if (originalDb is null && pipeline is not null)
         {
             originalDb = await repository.GetByIdAsync(id, ct);
-            originalApi = originalDb is not null ? mapper.ToApi(originalDb) : null;
+            originalApi = originalDb is not null ? modelAdapter.ToApi(originalDb) : null;
         }
 
         if (hookContext is not null)
         {
-            hookContext.Entity = typeof(THookModel) == typeof(TDbModel)
-                ? (THookModel)(object)dbEntity
-                : (THookModel)(object)apiEntity;
             hookContext.SetOriginalEntity(
-                typeof(THookModel) == typeof(TDbModel)
+                hooksUseDbModel
                     ? (THookModel?)(object?)originalDb
                     : (THookModel?)(object?)originalApi);
         }
 
-        var beforePersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforePersistAsync);
-        if (beforePersistResult is not null) return beforePersistResult;
+        var beforePersistStage = await HookHelper.RunEntityHookStageAsync(
+            pipeline,
+            hookContext,
+            GetHookEntity<TApiModel, TDbModel, THookModel>(state, hooksUseDbModel),
+            p => p.ExecuteBeforePersistAsync);
+        if (beforePersistStage.EarlyResult is not null) return beforePersistStage.EarlyResult;
 
-        if (hookContext is not null)
+        if (modelAdapter.IsIdentity || hookContext is not null)
         {
-            if (typeof(THookModel) == typeof(TDbModel))
+            if (hooksUseDbModel)
             {
-                dbEntity = (TDbModel)(object)(hookContext.Entity ?? (THookModel)(object)dbEntity);
+                state.DbModel = (TDbModel)(object)beforePersistStage.Entity;
             }
             else
             {
-                apiEntity = (TApiModel)(object)(hookContext.Entity ?? (THookModel)(object)apiEntity);
-                dbEntity = mapper.ToDb(apiEntity);
+                state.ApiModel = (TApiModel)(object)beforePersistStage.Entity;
+                state.DbModel = modelAdapter.ToDb(state.ApiModel);
             }
         }
 
-        _ = EntityKeyHelper.TrySetEntityKeyParts(dbEntity, id, config.KeyRouteParts);
+        _ = EntityKeyHelper.TrySetEntityKeyParts(state.DbModel, id, config.KeyRouteParts);
 
         TDbModel? updatedDb;
         if (ifMatchPrecondition is null)
         {
-            updatedDb = await repository.UpdateAsync(id, dbEntity, ct);
+            updatedDb = await repository.UpdateAsync(id, state.DbModel, ct);
         }
         else
         {
             var conditionalResult = await ((IConditionalWriteRepository<TDbModel, TKey>)repository)
-                .UpdateConditionallyAsync(id, dbEntity, ifMatchPrecondition, ct);
+                .UpdateConditionallyAsync(id, state.DbModel, ifMatchPrecondition, ct);
             var conditionalError = ETagHelper.ToErrorResult(
                 conditionalResult,
                 httpContext,
@@ -487,90 +365,157 @@ internal static class UpdateHandler
             if (conditionalError is not null) return conditionalError;
             updatedDb = conditionalResult.Entity!;
         }
+
         if (updatedDb is null)
         {
-            return Responses.ProblemDetailsResult.NotFound(
+            return problems.Create(Responses.ProblemDetailsFactory.NotFound(
                 entityName,
                 id!,
                 config.KeyRouteParts,
-                httpContext.Request.Path,
-                jsonOptions,
-                logger,
-                options);
+                httpContext.Request.Path));
         }
 
-        var updatedApi = mapper.ToApi(updatedDb);
+        state.DbModel = updatedDb;
+        state.ApiModel = modelAdapter.ToApi(updatedDb);
 
-        if (hookContext is not null)
+        var afterPersistStage = await HookHelper.RunEntityHookStageAsync(
+            pipeline,
+            hookContext,
+            GetHookEntity<TApiModel, TDbModel, THookModel>(state, hooksUseDbModel),
+            p => p.ExecuteAfterPersistAsync);
+        if (afterPersistStage.EarlyResult is not null) return afterPersistStage.EarlyResult;
+        if (modelAdapter.IsIdentity || hookContext is not null)
         {
-            hookContext.Entity = typeof(THookModel) == typeof(TDbModel)
-                ? (THookModel)(object)updatedDb
-                : (THookModel)(object)updatedApi;
+            ApplyResponseHookEntity(state, modelAdapter, afterPersistStage.Entity, hooksUseDbModel, id, config);
         }
-
-        var afterPersistResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteAfterPersistAsync);
-        if (afterPersistResult is not null) return afterPersistResult;
-
-        if (hookContext is not null)
+        else
         {
-            if (typeof(THookModel) == typeof(TDbModel))
-            {
-                updatedDb = (TDbModel)(object)(hookContext.Entity ?? (THookModel)(object)updatedDb);
-                _ = EntityKeyHelper.TrySetEntityKeyParts(updatedDb, id, config.KeyRouteParts);
-                updatedApi = mapper.ToApi(updatedDb);
-            }
-            else
-            {
-                updatedApi = (TApiModel)(object)(hookContext.Entity ?? (THookModel)(object)updatedApi);
-                _ = EntityKeyHelper.TrySetEntityKeyParts(updatedApi, id, config.KeyRouteParts);
-            }
+            _ = EntityKeyHelper.TrySetEntityKeyParts(state.ApiModel, id, config.KeyRouteParts);
         }
 
-        _ = EntityKeyHelper.TrySetEntityKeyParts(updatedApi, id, config.KeyRouteParts);
-
-        if (hookContext is not null)
+        var beforeResponseStage = await HookHelper.RunEntityHookStageAsync(
+            pipeline,
+            hookContext,
+            GetHookEntity<TApiModel, TDbModel, THookModel>(state, hooksUseDbModel),
+            p => p.ExecuteBeforeResponseAsync);
+        if (beforeResponseStage.EarlyResult is not null) return beforeResponseStage.EarlyResult;
+        if (modelAdapter.IsIdentity || hookContext is not null)
         {
-            hookContext.Entity = typeof(THookModel) == typeof(TDbModel)
-                ? (THookModel)(object)updatedDb
-                : (THookModel)(object)updatedApi;
+            ApplyResponseHookEntity(state, modelAdapter, beforeResponseStage.Entity, hooksUseDbModel, id, config);
         }
-
-        var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
-        if (beforeResponseResult is not null) return beforeResponseResult;
-
-        if (hookContext is not null)
+        else
         {
-            if (typeof(THookModel) == typeof(TDbModel))
-            {
-                updatedDb = (TDbModel)(object)(hookContext.Entity ?? (THookModel)(object)updatedDb);
-                _ = EntityKeyHelper.TrySetEntityKeyParts(updatedDb, id, config.KeyRouteParts);
-                updatedApi = mapper.ToApi(updatedDb);
-            }
-            else
-            {
-                updatedApi = (TApiModel)(object)(hookContext.Entity ?? (THookModel)(object)updatedApi);
-                _ = EntityKeyHelper.TrySetEntityKeyParts(updatedApi, id, config.KeyRouteParts);
-            }
+            _ = EntityKeyHelper.TrySetEntityKeyParts(state.ApiModel, id, config.KeyRouteParts);
         }
-
-        _ = EntityKeyHelper.TrySetEntityKeyParts(updatedApi, id, config.KeyRouteParts);
 
         if (options.EnableETagSupport)
         {
             var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
-            httpContext.Response.Headers.ETag = etagGenerator.Generate(updatedApi);
+            httpContext.Response.Headers.ETag = etagGenerator.Generate(state.ApiModel);
         }
 
         if (options.EnableHateoas)
         {
-            var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false, config.KeyRouteParts.Count);
+            var collectionPath = HateoasLinkBuilder.GetCollectionPath(
+                httpContext.Request.Path,
+                isCollectionEndpoint: false,
+                config.KeyRouteParts.Count);
             var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TApiModel, TKey>>();
-            var customLinks = customLinksProvider?.GetLinks(updatedApi, id);
+            var customLinks = customLinksProvider?.GetLinks(state.ApiModel, id);
             var links = HateoasLinkBuilder.BuildEntityLinks(httpContext.Request, collectionPath, id, config, customLinks);
-            var entityWithLinks = HateoasHelper.EntityWithLinks<TApiModel, TKey>(updatedApi, links, jsonOptions);
+            var entityWithLinks = HateoasHelper.EntityWithLinks<TApiModel, TKey>(state.ApiModel, links, jsonOptions);
             return Results.Json(entityWithLinks, jsonOptions);
         }
 
-        return Results.Json(updatedApi, jsonOptions);
+        return Results.Json(state.ApiModel, jsonOptions);
+    }
+
+    private static IResult? Validate<TApiModel, TKey>(
+        TApiModel apiModel,
+        RestLibEndpointConfiguration<TApiModel, TKey> config,
+        HttpContext httpContext,
+        JsonSerializerOptions jsonOptions,
+        RestLibOptions options,
+        Responses.ProblemDetailsResponder problems)
+        where TApiModel : class
+        where TKey : notnull
+    {
+        if (!options.EnableValidation)
+        {
+            return null;
+        }
+
+        var validationResult = RestLibResourceValidator.Validate(
+            apiModel,
+            config,
+            jsonOptions.PropertyNamingPolicy);
+        return validationResult.IsValid
+            ? null
+            : problems.Create(Responses.ProblemDetailsFactory.ValidationFailed(
+                validationResult.Errors,
+                httpContext.Request.Path));
+    }
+
+    private static THookModel GetHookEntity<TApiModel, TDbModel, THookModel>(
+        EndpointModelState<TApiModel, TDbModel> state,
+        bool hooksUseDbModel)
+        where TApiModel : class
+        where TDbModel : class
+        where THookModel : class =>
+        hooksUseDbModel
+            ? (THookModel)(object)state.DbModel
+            : (THookModel)(object)state.ApiModel;
+
+    private static void ApplyRequestHookEntity<TApiModel, TDbModel, THookModel, TKey>(
+        EndpointModelState<TApiModel, TDbModel> state,
+        EndpointModelAdapter<TApiModel, TDbModel> modelAdapter,
+        THookModel hookEntity,
+        bool hooksUseDbModel,
+        TKey id,
+        RestLibEndpointConfiguration<TApiModel, TKey> config)
+        where TApiModel : class
+        where TDbModel : class
+        where THookModel : class
+        where TKey : notnull
+    {
+        if (hooksUseDbModel)
+        {
+            state.DbModel = (TDbModel)(object)hookEntity;
+            _ = EntityKeyHelper.TrySetEntityKeyParts(state.DbModel, id, config.KeyRouteParts);
+            state.ApiModel = modelAdapter.ToApi(state.DbModel);
+        }
+        else
+        {
+            state.ApiModel = (TApiModel)(object)hookEntity;
+            state.DbModel = modelAdapter.ToDb(state.ApiModel);
+            _ = EntityKeyHelper.TrySetEntityKeyParts(state.DbModel, id, config.KeyRouteParts);
+            state.ApiModel = modelAdapter.ToApi(state.DbModel);
+        }
+    }
+
+    private static void ApplyResponseHookEntity<TApiModel, TDbModel, THookModel, TKey>(
+        EndpointModelState<TApiModel, TDbModel> state,
+        EndpointModelAdapter<TApiModel, TDbModel> modelAdapter,
+        THookModel hookEntity,
+        bool hooksUseDbModel,
+        TKey id,
+        RestLibEndpointConfiguration<TApiModel, TKey> config)
+        where TApiModel : class
+        where TDbModel : class
+        where THookModel : class
+        where TKey : notnull
+    {
+        if (hooksUseDbModel)
+        {
+            state.DbModel = (TDbModel)(object)hookEntity;
+            _ = EntityKeyHelper.TrySetEntityKeyParts(state.DbModel, id, config.KeyRouteParts);
+            state.ApiModel = modelAdapter.ToApi(state.DbModel);
+        }
+        else
+        {
+            state.ApiModel = (TApiModel)(object)hookEntity;
+        }
+
+        _ = EntityKeyHelper.TrySetEntityKeyParts(state.ApiModel, id, config.KeyRouteParts);
     }
 }

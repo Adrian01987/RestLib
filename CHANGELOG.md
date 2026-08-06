@@ -43,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Internal orchestration now has single owners for batch state and HTTP processing, compatible mapped/unmapped CRUD operations, collection-query planning, EF Core key/pagination/projection/PATCH planning, configured comma-list parsing, and Problem Details response metadata/settings; public APIs and HTTP contracts remain unchanged
 - Repository adapters now report client-correctable PATCH failures through the adapter-neutral `PatchValidationException` contract; the existing EF Core exception remains available as a derived compatibility type, and InMemory immutable-key failures retain `InvalidOperationException` catch compatibility
 - Relational filters now use one portable built-in-adapter type baseline (`byte`, `short`, `int`, `long`, `float`, `double`, `decimal`, and `DateTime`, including nullable forms); unsupported operator/type combinations return Invalid Filter before repository execution
 - Filtering and search documentation now defines literal operands, null behavior, case folding, and the EF Core provider/collation boundary

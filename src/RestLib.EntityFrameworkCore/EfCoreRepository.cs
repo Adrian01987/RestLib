@@ -1,17 +1,12 @@
 using System.Data;
-using System.Linq.Expressions;
-using System.Reflection;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.Logging;
 using RestLib.Abstractions;
 using RestLib.FieldSelection;
 using RestLib.Filtering;
-using RestLib.Internal;
 using RestLib.Pagination;
-using RestLib.Search;
 using RestLib.Serialization;
 using RestLib.Sorting;
 
@@ -34,46 +29,12 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     where TEntity : class
     where TKey : notnull
 {
-    private const int KeysetCursorVersion = 1;
-    private static readonly MethodInfo OrderByMethod = typeof(Queryable)
-        .GetMethods()
-        .Single(method =>
-            method.Name == nameof(Queryable.OrderBy) &&
-            method.IsGenericMethodDefinition &&
-            method.GetGenericArguments().Length == 2 &&
-            method.GetParameters().Length == 2);
-    private static readonly MethodInfo OrderByDescendingMethod = typeof(Queryable)
-        .GetMethods()
-        .Single(method =>
-            method.Name == nameof(Queryable.OrderByDescending) &&
-            method.IsGenericMethodDefinition &&
-            method.GetGenericArguments().Length == 2 &&
-            method.GetParameters().Length == 2);
-    private static readonly MethodInfo ThenByMethod = typeof(Queryable)
-        .GetMethods()
-        .Single(method =>
-            method.Name == nameof(Queryable.ThenBy) &&
-            method.IsGenericMethodDefinition &&
-            method.GetGenericArguments().Length == 2 &&
-            method.GetParameters().Length == 2);
-    private static readonly MethodInfo ThenByDescendingMethod = typeof(Queryable)
-        .GetMethods()
-        .Single(method =>
-            method.Name == nameof(Queryable.ThenByDescending) &&
-            method.IsGenericMethodDefinition &&
-            method.GetGenericArguments().Length == 2 &&
-            method.GetParameters().Length == 2);
-    private static readonly MethodInfo StringCompareMethod = typeof(string)
-        .GetMethod(nameof(string.Compare), [typeof(string), typeof(string)])
-        ?? throw new InvalidOperationException("RestLib could not resolve string.Compare(string, string).");
     private readonly TContext _context;
     private readonly EfCoreRepositoryOptions<TEntity, TKey> _options;
-    private readonly Expression<Func<TEntity, TKey>> _keySelector;
-    private readonly KeyMetadata _keyMetadata;
-    private readonly JsonSerializerOptions _jsonOptions;
-    private readonly JsonObjectContract _jsonContract;
-    private readonly IReadOnlyDictionary<string, PatchPropertyContract> _patchPropertiesByClrName;
-    private readonly bool _usesExplicitKeySelector;
+    private readonly EfCoreKeyMetadata<TEntity, TKey> _keyMetadata;
+    private readonly EfCorePatchPlanner<TEntity> _patchPlanner;
+    private readonly EfCorePageQueryExecutor<TEntity> _pageQueryExecutor;
+    private readonly EfCoreProjectionPlanner<TEntity> _projectionPlanner;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="EfCoreRepository{TContext, TEntity, TKey}"/> class.
@@ -98,12 +59,19 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     {
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _options = options ?? throw new ArgumentNullException(nameof(options));
-        _jsonOptions = jsonOptions ?? throw new ArgumentNullException(nameof(jsonOptions));
-        _jsonContract = JsonObjectContract.Get(typeof(TEntity), _jsonOptions);
-        _patchPropertiesByClrName = BuildPatchPropertyMap(_context, _jsonContract);
-        _usesExplicitKeySelector = _options.KeySelector is not null;
-        _keyMetadata = ResolveKeyMetadata();
-        _keySelector = _keyMetadata.CompositeSelector;
+        ArgumentNullException.ThrowIfNull(jsonOptions);
+        var jsonContract = JsonObjectContract.Get(typeof(TEntity), jsonOptions);
+        _patchPlanner = new EfCorePatchPlanner<TEntity>(_context.Model, jsonContract);
+        _keyMetadata = new EfCoreKeyMetadata<TEntity, TKey>(
+            _context.Model,
+            _options.KeySelector);
+        _pageQueryExecutor = new EfCorePageQueryExecutor<TEntity>(
+            _context.Model,
+            _keyMetadata.SortKeyParts,
+            () => _options.Logger);
+        _projectionPlanner = new EfCoreProjectionPlanner<TEntity>(
+            () => _options.EnableProjectionPushdown,
+            _keyMetadata.PropertyNames);
     }
 
     /// <inheritdoc />
@@ -111,16 +79,16 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     {
         if (!_options.UseAsNoTracking)
         {
-            if (!_usesExplicitKeySelector)
+            if (!_keyMetadata.UsesExplicitKeySelector)
             {
-                return _context.Set<TEntity>().FindAsync(GetKeyValues(id), ct).AsTask();
+                return _context.Set<TEntity>().FindAsync(_keyMetadata.GetKeyValues(id), ct).AsTask();
             }
 
             return _context.Set<TEntity>()
-                .FirstOrDefaultAsync(BuildKeyEqualsPredicate(id), ct);
+                .FirstOrDefaultAsync(_keyMetadata.BuildEqualsPredicate(id), ct);
         }
 
-        var predicate = BuildKeyEqualsPredicate(id);
+        var predicate = _keyMetadata.BuildEqualsPredicate(id);
         return _context.Set<TEntity>()
             .AsNoTracking()
             .FirstOrDefaultAsync(predicate, ct);
@@ -136,21 +104,26 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     {
         ArgumentNullException.ThrowIfNull(selectedFields);
 
-        if (!TryBuildProjectionPlan(selectedFields, filters ?? [], sortFields ?? [], search: null, out var projectionPlan))
+        if (!_projectionPlanner.TryBuild(
+                selectedFields,
+                filters ?? [],
+                sortFields ?? [],
+                search: null,
+                out var projectionPlan))
         {
-            if (!TryBuildNavigationLoadPaths(selectedFields, out var includePaths))
+            if (!_projectionPlanner.TryBuildNavigationLoadPaths(selectedFields, out var includePaths))
             {
                 return null;
             }
 
-            var includeQuery = ApplyIncludes(GetBaseProjectionQuery(), includePaths);
-            var includePredicate = BuildKeyEqualsPredicate(id);
+            var includeQuery = _projectionPlanner.ApplyIncludes(GetBaseProjectionQuery(), includePaths);
+            var includePredicate = _keyMetadata.BuildEqualsPredicate(id);
             return await includeQuery.FirstOrDefaultAsync(includePredicate, ct);
         }
 
-        var predicate = BuildKeyEqualsPredicate(id);
+        var predicate = _keyMetadata.BuildEqualsPredicate(id);
         var plan = projectionPlan!;
-        return await BuildProjectedQuery(GetBaseProjectionQuery(), plan)
+        return await _projectionPlanner.BuildQuery(GetBaseProjectionQuery(), plan)
             .FirstOrDefaultAsync(predicate, ct);
     }
 
@@ -159,81 +132,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     {
         ArgumentNullException.ThrowIfNull(pagination);
 
-        var query = GetBaseQuery();
-        if (pagination.Search is not null)
-        {
-            query = ApplySearch(query, pagination.Search);
-        }
-
-        if (pagination.Filters.Count > 0)
-        {
-            query = ApplyComparisonFilters(query, pagination.Filters);
-            query = ApplyStringFilters(query, pagination.Filters);
-            query = ApplyInFilters(query, pagination.Filters);
-        }
-
-        var effectiveSortFields = GetEffectiveSortFields(pagination.SortFields);
-        IOrderedQueryable<TEntity> orderedQuery;
-        KeysetPlan? keysetPlan;
-        var offsetStartIndex = 0;
-        if (TryBuildKeysetPlan(effectiveSortFields, out var builtKeysetPlan))
-        {
-            var plan = builtKeysetPlan!;
-            keysetPlan = plan;
-            orderedQuery = ApplyKeysetCursorFilter(query, plan, pagination.Cursor);
-        }
-        else
-        {
-            keysetPlan = null;
-            LogKeysetFallback(effectiveSortFields);
-            offsetStartIndex = DecodeOffsetCursor(pagination.Cursor);
-            orderedQuery = SortBuilder.ApplySorting(query, pagination.SortFields, _keyMetadata.SortKeyParts);
-        }
-
-        var takeCount = pagination.Limit == int.MaxValue ? int.MaxValue : pagination.Limit + 1;
-        List<TEntity> pagedItems;
-
-        if (keysetPlan is not null)
-        {
-            pagedItems = await orderedQuery
-                .Take(takeCount)
-                .ToListAsync(ct);
-        }
-        else
-        {
-            pagedItems = await orderedQuery
-                .Skip(offsetStartIndex)
-                .Take(takeCount)
-                .ToListAsync(ct);
-        }
-
-        var hasMore = pagedItems.Count > pagination.Limit;
-        if (hasMore)
-        {
-            pagedItems = pagedItems.Take(pagination.Limit).ToList();
-        }
-
-        string? nextCursor;
-        if (!hasMore)
-        {
-            nextCursor = null;
-        }
-        else if (keysetPlan is not null)
-        {
-            nextCursor = EncodeKeysetCursor(keysetPlan, pagedItems[^1]);
-        }
-        else
-        {
-            nextCursor = offsetStartIndex <= int.MaxValue - pagination.Limit
-                ? CursorEncoder.Encode(offsetStartIndex + pagination.Limit)
-                : null;
-        }
-
-        return new PagedResult<TEntity>
-        {
-            Items = pagedItems,
-            NextCursor = nextCursor
-        };
+        return await _pageQueryExecutor.ExecuteAsync(GetBaseQuery(), pagination, ct);
     }
 
     /// <inheritdoc />
@@ -245,9 +144,14 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         ArgumentNullException.ThrowIfNull(pagination);
         ArgumentNullException.ThrowIfNull(selectedFields);
 
-        if (!TryBuildProjectionPlan(selectedFields, pagination.Filters, pagination.SortFields, pagination.Search, out var projectionPlan))
+        if (!_projectionPlanner.TryBuild(
+                selectedFields,
+                pagination.Filters,
+                pagination.SortFields,
+                pagination.Search,
+                out var projectionPlan))
         {
-            if (!TryBuildNavigationLoadPaths(selectedFields, out var includePaths))
+            if (!_projectionPlanner.TryBuildNavigationLoadPaths(selectedFields, out var includePaths))
             {
                 return null;
             }
@@ -256,81 +160,8 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         }
 
         var projection = projectionPlan!;
-        var query = BuildProjectedQuery(GetBaseProjectionQuery(), projection);
-        if (pagination.Search is not null)
-        {
-            query = ApplySearch(query, pagination.Search);
-        }
-
-        if (pagination.Filters.Count > 0)
-        {
-            query = ApplyComparisonFilters(query, pagination.Filters);
-            query = ApplyStringFilters(query, pagination.Filters);
-            query = ApplyInFilters(query, pagination.Filters);
-        }
-
-        var effectiveSortFields = GetEffectiveSortFields(pagination.SortFields);
-        IOrderedQueryable<TEntity> orderedQuery;
-        KeysetPlan? keysetPlan;
-        var offsetStartIndex = 0;
-        if (TryBuildKeysetPlan(effectiveSortFields, out var builtKeysetPlan))
-        {
-            var plan = builtKeysetPlan!;
-            keysetPlan = plan;
-            orderedQuery = ApplyKeysetCursorFilter(query, plan, pagination.Cursor);
-        }
-        else
-        {
-            keysetPlan = null;
-            LogKeysetFallback(effectiveSortFields);
-            offsetStartIndex = DecodeOffsetCursor(pagination.Cursor);
-            orderedQuery = SortBuilder.ApplySorting(query, pagination.SortFields, _keyMetadata.SortKeyParts);
-        }
-
-        var takeCount = pagination.Limit == int.MaxValue ? int.MaxValue : pagination.Limit + 1;
-        List<TEntity> pagedItems;
-
-        if (keysetPlan is not null)
-        {
-            pagedItems = await orderedQuery
-                .Take(takeCount)
-                .ToListAsync(ct);
-        }
-        else
-        {
-            pagedItems = await orderedQuery
-                .Skip(offsetStartIndex)
-                .Take(takeCount)
-                .ToListAsync(ct);
-        }
-
-        var hasMore = pagedItems.Count > pagination.Limit;
-        if (hasMore)
-        {
-            pagedItems = pagedItems.Take(pagination.Limit).ToList();
-        }
-
-        string? nextCursor;
-        if (!hasMore)
-        {
-            nextCursor = null;
-        }
-        else if (keysetPlan is not null)
-        {
-            nextCursor = EncodeKeysetCursor(keysetPlan, pagedItems[^1]);
-        }
-        else
-        {
-            nextCursor = offsetStartIndex <= int.MaxValue - pagination.Limit
-                ? CursorEncoder.Encode(offsetStartIndex + pagination.Limit)
-                : null;
-        }
-
-        return new PagedResult<TEntity>
-        {
-            Items = pagedItems,
-            NextCursor = nextCursor
-        };
+        var query = _projectionPlanner.BuildQuery(GetBaseProjectionQuery(), projection);
+        return await _pageQueryExecutor.ExecuteAsync(query, pagination, ct);
     }
 
     /// <inheritdoc />
@@ -360,9 +191,9 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     {
         ArgumentNullException.ThrowIfNull(entity);
 
-        var existing = _usesExplicitKeySelector
-            ? await _context.Set<TEntity>().FirstOrDefaultAsync(BuildKeyEqualsPredicate(id), ct)
-            : await _context.Set<TEntity>().FindAsync(GetKeyValues(id), ct);
+        var existing = _keyMetadata.UsesExplicitKeySelector
+            ? await _context.Set<TEntity>().FirstOrDefaultAsync(_keyMetadata.BuildEqualsPredicate(id), ct)
+            : await _context.Set<TEntity>().FindAsync(_keyMetadata.GetKeyValues(id), ct);
         if (existing is null)
         {
             return null;
@@ -370,10 +201,10 @@ public class EfCoreRepository<TContext, TEntity, TKey>
 
         try
         {
-            CopyPrimaryKeyValues(existing, entity);
+            _keyMetadata.CopyPrimaryKeyValues(existing, entity);
             var entry = _context.Entry(existing);
             entry.CurrentValues.SetValues(entity);
-            SetResourceKeyValues(entry, id);
+            _keyMetadata.SetResourceKeyValues(entry, id);
             await _context.SaveChangesAsync(ct);
         }
         catch (DbUpdateConcurrencyException)
@@ -391,46 +222,48 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     /// <inheritdoc />
     public async Task<TEntity?> PatchAsync(TKey id, JsonElement patchDocument, CancellationToken ct = default)
     {
-        var existing = _usesExplicitKeySelector
-            ? await _context.Set<TEntity>().FirstOrDefaultAsync(BuildKeyEqualsPredicate(id), ct)
-            : await _context.Set<TEntity>().FindAsync(GetKeyValues(id), ct);
+        var existing = _keyMetadata.UsesExplicitKeySelector
+            ? await _context.Set<TEntity>().FirstOrDefaultAsync(_keyMetadata.BuildEqualsPredicate(id), ct)
+            : await _context.Set<TEntity>().FindAsync(_keyMetadata.GetKeyValues(id), ct);
         if (existing is null)
         {
             return null;
         }
 
         var entry = _context.Entry(existing);
-        var primaryKey = GetPrimaryKey();
+        var primaryKey = _keyMetadata.PrimaryKey;
         var keyPropertyNames = primaryKey.Properties
             .Select(property => property.Name)
             .ToHashSet(StringComparer.Ordinal);
-        keyPropertyNames.UnionWith(GetKeyPropertyNames());
-        var patchPlan = BuildPatchPlan(
+        keyPropertyNames.UnionWith(_keyMetadata.PropertyNames);
+        var patchPlan = _patchPlanner.BuildPlan(
+            entry,
             existing,
             patchDocument,
             keyPropertyNames,
             _options.PatchUnknownFieldBehavior,
             new Dictionary<string, object?>(StringComparer.Ordinal));
-        var snapshots = new List<PatchPropertySnapshot>(patchPlan.Count);
+        var snapshots = new List<EfCorePatchPropertySnapshot<TEntity>>(
+            patchPlan.OperationCount);
 
         try
         {
-            ApplyPatchPlan(entry, patchPlan, snapshots);
+            _patchPlanner.ApplyPlan(patchPlan, snapshots);
             await _context.SaveChangesAsync(ct);
         }
         catch (DbUpdateConcurrencyException)
         {
-            RestorePatchChanges(snapshots);
+            _patchPlanner.RestoreChanges(snapshots);
             return null;
         }
         catch (DbUpdateException ex)
         {
-            RestorePatchChanges(snapshots);
+            _patchPlanner.RestoreChanges(snapshots);
             throw ClassifyConstraintViolation(ex);
         }
         catch
         {
-            RestorePatchChanges(snapshots);
+            _patchPlanner.RestoreChanges(snapshots);
             throw;
         }
 
@@ -440,9 +273,9 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     /// <inheritdoc />
     public async Task<bool> DeleteAsync(TKey id, CancellationToken ct = default)
     {
-        var existing = _usesExplicitKeySelector
-            ? await _context.Set<TEntity>().FirstOrDefaultAsync(BuildKeyEqualsPredicate(id), ct)
-            : await _context.Set<TEntity>().FindAsync(GetKeyValues(id), ct);
+        var existing = _keyMetadata.UsesExplicitKeySelector
+            ? await _context.Set<TEntity>().FirstOrDefaultAsync(_keyMetadata.BuildEqualsPredicate(id), ct)
+            : await _context.Set<TEntity>().FindAsync(_keyMetadata.GetKeyValues(id), ct);
         if (existing is null)
         {
             return false;
@@ -480,10 +313,10 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             precondition,
             async current =>
             {
-                CopyPrimaryKeyValues(current, entity);
+                _keyMetadata.CopyPrimaryKeyValues(current, entity);
                 var entry = TrackCurrentEntity(current, id);
                 entry.CurrentValues.SetValues(entity);
-                SetResourceKeyValues(entry, id);
+                _keyMetadata.SetResourceKeyValues(entry, id);
 
                 try
                 {
@@ -520,37 +353,39 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             async current =>
             {
                 var entry = TrackCurrentEntity(current, id);
-                var primaryKey = GetPrimaryKey();
+                var primaryKey = _keyMetadata.PrimaryKey;
                 var keyPropertyNames = primaryKey.Properties
                     .Select(property => property.Name)
                     .ToHashSet(StringComparer.Ordinal);
-                keyPropertyNames.UnionWith(GetKeyPropertyNames());
-                var patchPlan = BuildPatchPlan(
+                keyPropertyNames.UnionWith(_keyMetadata.PropertyNames);
+                var patchPlan = _patchPlanner.BuildPlan(
+                    entry,
                     current,
                     patchDocument,
                     keyPropertyNames,
                     _options.PatchUnknownFieldBehavior,
                     new Dictionary<string, object?>(StringComparer.Ordinal));
-                var snapshots = new List<PatchPropertySnapshot>(patchPlan.Count);
+                var snapshots = new List<EfCorePatchPropertySnapshot<TEntity>>(
+                    patchPlan.OperationCount);
 
                 try
                 {
-                    ApplyPatchPlan(entry, patchPlan, snapshots);
+                    _patchPlanner.ApplyPlan(patchPlan, snapshots);
                     await _context.SaveChangesAsync(ct);
                 }
                 catch (DbUpdateConcurrencyException)
                 {
-                    RestorePatchChanges(snapshots);
+                    _patchPlanner.RestoreChanges(snapshots);
                     return ConditionalWriteResult<TEntity>.PreconditionFailed();
                 }
                 catch (DbUpdateException ex)
                 {
-                    RestorePatchChanges(snapshots);
+                    _patchPlanner.RestoreChanges(snapshots);
                     throw ClassifyConstraintViolation(ex);
                 }
                 catch
                 {
-                    RestorePatchChanges(snapshots);
+                    _patchPlanner.RestoreChanges(snapshots);
                     throw;
                 }
 
@@ -646,7 +481,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
 
         var getKey = _keyMetadata.KeyAccessor;
         var keys = entities.Select(getKey).ToList();
-        var predicate = BuildKeysContainPredicate(keys);
+        var predicate = _keyMetadata.BuildContainsPredicate(keys);
         var existingEntities = await _context.Set<TEntity>()
             .Where(predicate)
             .ToListAsync(ct);
@@ -668,7 +503,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
                     continue;
                 }
 
-                CopyPrimaryKeyValues(existing, entity);
+                _keyMetadata.CopyPrimaryKeyValues(existing, entity);
                 _context.Entry(existing).CurrentValues.SetValues(entity);
             }
 
@@ -715,11 +550,11 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             return [];
         }
 
-        var keyPropertyNames = GetPrimaryKey().Properties
+        var keyPropertyNames = _keyMetadata.PrimaryKey.Properties
             .Select(property => property.Name)
             .ToHashSet(StringComparer.Ordinal);
-        keyPropertyNames.UnionWith(GetKeyPropertyNames());
-        var patchPlans = new List<PatchPlan>(patches.Count);
+        keyPropertyNames.UnionWith(_keyMetadata.PropertyNames);
+        var patchPlans = new List<EfCorePatchPlan<TEntity>>(patches.Count);
         var plannedValuesByEntity = new Dictionary<TEntity, Dictionary<string, object?>>(
             ReferenceEqualityComparer.Instance);
 
@@ -736,40 +571,39 @@ public class EfCoreRepository<TContext, TEntity, TKey>
                 plannedValuesByEntity.Add(existing, plannedValues);
             }
 
-            var operations = BuildPatchPlan(
+            var patchPlan = _patchPlanner.BuildPlan(
+                _context.Entry(existing),
                 existing,
                 patchDocument,
                 keyPropertyNames,
                 _options.PatchUnknownFieldBehavior,
                 plannedValues);
-            patchPlans.Add(new PatchPlan(
-                _context.Entry(existing),
-                operations));
+            patchPlans.Add(patchPlan);
         }
 
-        var snapshots = new List<PatchPropertySnapshot>();
+        var snapshots = new List<EfCorePatchPropertySnapshot<TEntity>>();
         try
         {
             foreach (var patchPlan in patchPlans)
             {
-                ApplyPatchPlan(patchPlan.Entry, patchPlan.Operations, snapshots);
+                _patchPlanner.ApplyPlan(patchPlan, snapshots);
             }
 
             await _context.SaveChangesAsync(ct);
         }
         catch (DbUpdateConcurrencyException)
         {
-            RestorePatchChanges(snapshots);
+            _patchPlanner.RestoreChanges(snapshots);
             throw;
         }
         catch (DbUpdateException ex)
         {
-            RestorePatchChanges(snapshots);
+            _patchPlanner.RestoreChanges(snapshots);
             throw ClassifyConstraintViolation(ex);
         }
         catch
         {
-            RestorePatchChanges(snapshots);
+            _patchPlanner.RestoreChanges(snapshots);
             throw;
         }
 
@@ -835,7 +669,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             return new Dictionary<TKey, TEntity>();
         }
 
-        var predicate = BuildKeysContainPredicate(ids);
+        var predicate = _keyMetadata.BuildContainsPredicate(ids);
         var getKey = _keyMetadata.KeyAccessor;
 
         var entities = await GetBaseQuery()
@@ -850,14 +684,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     {
         ArgumentNullException.ThrowIfNull(filters);
 
-        var query = GetBaseQuery();
-        if (filters.Count > 0)
-        {
-            query = ApplyComparisonFilters(query, filters);
-            query = ApplyStringFilters(query, filters);
-            query = ApplyInFilters(query, filters);
-        }
-
+        var query = _pageQueryExecutor.ApplyFilters(GetBaseQuery(), filters);
         return query.LongCountAsync(ct);
     }
 
@@ -866,55 +693,8 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     {
         ArgumentNullException.ThrowIfNull(query);
 
-        var countQuery = GetBaseQuery();
-        if (query.Search is not null)
-        {
-            countQuery = ApplySearch(countQuery, query.Search);
-        }
-
-        if (query.Filters.Count > 0)
-        {
-            countQuery = ApplyComparisonFilters(countQuery, query.Filters);
-            countQuery = ApplyStringFilters(countQuery, query.Filters);
-            countQuery = ApplyInFilters(countQuery, query.Filters);
-        }
-
+        var countQuery = _pageQueryExecutor.ApplyCriteria(GetBaseQuery(), query);
         return countQuery.LongCountAsync(ct);
-    }
-
-    private static IReadOnlyDictionary<string, PatchPropertyContract> BuildPatchPropertyMap(
-        TContext context,
-        JsonObjectContract jsonContract)
-    {
-        var entityType = context.Model.FindEntityType(typeof(TEntity))
-            ?? throw new InvalidOperationException(
-                $"Entity type '{typeof(TEntity).Name}' is not part of the EF Core model.");
-        var mappedProperties = new Dictionary<string, PropertyInfo>(StringComparer.Ordinal);
-        foreach (var mappedProperty in entityType.GetProperties())
-        {
-            var property = mappedProperty.PropertyInfo;
-            if (property is null || !property.CanWrite || property.GetIndexParameters().Length > 0)
-            {
-                continue;
-            }
-
-            mappedProperties[property.Name] = property;
-        }
-
-        var map = new Dictionary<string, PatchPropertyContract>(StringComparer.Ordinal);
-        foreach (var jsonMember in jsonContract.Members)
-        {
-            if (!jsonMember.CanDeserialize
-                || jsonMember.ClrName is null
-                || !mappedProperties.TryGetValue(jsonMember.ClrName, out var property))
-            {
-                continue;
-            }
-
-            map[property.Name] = new PatchPropertyContract(property, jsonMember);
-        }
-
-        return map;
     }
 
     private static EfCoreConstraintViolationException ClassifyConstraintViolation(DbUpdateException ex)
@@ -928,50 +708,6 @@ public class EfCoreRepository<TContext, TEntity, TKey>
             message ?? "A database constraint violation occurred.",
             constraintType,
             ex);
-    }
-
-    private static bool IsNestedPath(string propertyPath)
-    {
-        return propertyPath.Contains('.', StringComparison.Ordinal);
-    }
-
-    private static Expression BuildPropertyAccess(
-        ParameterExpression parameter,
-        Microsoft.EntityFrameworkCore.Metadata.IProperty property)
-    {
-        return property.PropertyInfo is not null
-            ? Expression.Property(parameter, property.PropertyInfo)
-            : Expression.Property(parameter, property.Name);
-    }
-
-    private static KeyPartMetadata CreateKeyPart(
-        Microsoft.EntityFrameworkCore.Metadata.IProperty property,
-        Expression propertyAccess,
-        Func<TKey, object?> keyValueGetter)
-    {
-        var selector = BuildKeyPartSelector(propertyAccess);
-        return new KeyPartMetadata(property, selector, keyValueGetter);
-    }
-
-    private static LambdaExpression BuildKeyPartSelector(Expression propertyAccess)
-    {
-        var parameter = propertyAccess switch
-        {
-            MemberExpression memberExpression when memberExpression.Expression is ParameterExpression parameterExpression => parameterExpression,
-            _ => throw new InvalidOperationException("Key selector must resolve to a direct member access for sorting and pagination.")
-        };
-
-        var delegateType = typeof(Func<,>).MakeGenericType(typeof(TEntity), propertyAccess.Type);
-        return Expression.Lambda(delegateType, propertyAccess, parameter);
-    }
-
-    private static Func<TCompositeKey, object?> CreateCompositeKeyPartGetter<TCompositeKey>(string propertyName)
-        where TCompositeKey : notnull
-    {
-        var keyParameter = Expression.Parameter(typeof(TCompositeKey), "key");
-        var property = Expression.Property(keyParameter, propertyName);
-        var box = Expression.Convert(property, typeof(object));
-        return Expression.Lambda<Func<TCompositeKey, object?>>(box, keyParameter).Compile();
     }
 
     private static void RestoreConditionalEntry(EntityEntry<TEntity> entry)
@@ -1030,7 +766,7 @@ public class EfCoreRepository<TContext, TEntity, TKey>
     {
         var current = await _context.Set<TEntity>()
             .AsNoTracking()
-            .FirstOrDefaultAsync(BuildKeyEqualsPredicate(id), ct);
+            .FirstOrDefaultAsync(_keyMetadata.BuildEqualsPredicate(id), ct);
         if (current is null)
         {
             return ConditionalWriteResult<TEntity>.NotFound();
@@ -1061,622 +797,18 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         return trackedEntry;
     }
 
-    private bool TryBuildProjectionPlan(
-        IReadOnlyList<SelectedField> selectedFields,
-        IReadOnlyList<FilterValue> filters,
-        IReadOnlyList<SortField> sortFields,
-        SearchRequest? search,
-        out ProjectionPlan? projectionPlan)
-    {
-        if (!_options.EnableProjectionPushdown || selectedFields.Count == 0)
-        {
-            projectionPlan = null;
-            return false;
-        }
-
-        if (search is not null
-            || selectedFields.Any(field => IsNestedPath(field.PropertyName))
-            || filters.Any(filter => IsNestedPath(filter.PropertyName))
-            || sortFields.Any(sortField => IsNestedPath(sortField.PropertyName)))
-        {
-            projectionPlan = null;
-            return false;
-        }
-
-        var requiredProperties = new HashSet<string>(StringComparer.Ordinal)
-            { };
-
-        foreach (var keyPropertyName in GetKeyPropertyNames())
-        {
-            requiredProperties.Add(keyPropertyName);
-        }
-
-        foreach (var field in selectedFields)
-        {
-            requiredProperties.Add(field.PropertyName);
-        }
-
-        foreach (var filter in filters)
-        {
-            requiredProperties.Add(filter.PropertyName);
-        }
-
-        foreach (var sortField in sortFields)
-        {
-            requiredProperties.Add(sortField.PropertyName);
-        }
-
-        var properties = new List<PropertyInfo>(requiredProperties.Count);
-        foreach (var propertyName in requiredProperties)
-        {
-            var property = typeof(TEntity).GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
-            if (property is null || !property.CanRead || !property.CanWrite || !IsProjectableProperty(property))
-            {
-                projectionPlan = null;
-                return false;
-            }
-
-            properties.Add(property);
-        }
-
-        var parameter = Expression.Parameter(typeof(TEntity), "entity");
-        var bindings = properties
-            .Select(property => Expression.Bind(property, Expression.Property(parameter, property)))
-            .ToArray();
-        var body = Expression.MemberInit(Expression.New(typeof(TEntity)), bindings);
-        var selector = Expression.Lambda<Func<TEntity, TEntity>>(body, parameter);
-
-        projectionPlan = new ProjectionPlan(properties, selector);
-        return true;
-    }
-
-    private IQueryable<TEntity> BuildProjectedQuery(IQueryable<TEntity> query, ProjectionPlan projectionPlan)
-    {
-        return query.AsNoTracking().Select(projectionPlan.Selector);
-    }
-
     private async Task<PagedResult<TEntity>> GetAllWithIncludedNavigationsAsync(
         PaginationRequest pagination,
         IReadOnlyList<string> includePaths,
         CancellationToken ct)
     {
-        var query = ApplyIncludes(GetBaseProjectionQuery(), includePaths);
-        if (pagination.Search is not null)
-        {
-            query = ApplySearch(query, pagination.Search);
-        }
-
-        if (pagination.Filters.Count > 0)
-        {
-            query = ApplyComparisonFilters(query, pagination.Filters);
-            query = ApplyStringFilters(query, pagination.Filters);
-            query = ApplyInFilters(query, pagination.Filters);
-        }
-
-        var effectiveSortFields = GetEffectiveSortFields(pagination.SortFields);
-        IOrderedQueryable<TEntity> orderedQuery;
-        KeysetPlan? keysetPlan;
-        var offsetStartIndex = 0;
-        if (TryBuildKeysetPlan(effectiveSortFields, out var builtKeysetPlan))
-        {
-            var plan = builtKeysetPlan!;
-            keysetPlan = plan;
-            orderedQuery = ApplyKeysetCursorFilter(query, plan, pagination.Cursor);
-        }
-        else
-        {
-            keysetPlan = null;
-            LogKeysetFallback(effectiveSortFields);
-            offsetStartIndex = DecodeOffsetCursor(pagination.Cursor);
-            orderedQuery = SortBuilder.ApplySorting(query, pagination.SortFields, _keyMetadata.SortKeyParts);
-        }
-
-        var takeCount = pagination.Limit == int.MaxValue ? int.MaxValue : pagination.Limit + 1;
-        List<TEntity> pagedItems;
-
-        if (keysetPlan is not null)
-        {
-            pagedItems = await orderedQuery
-                .Take(takeCount)
-                .ToListAsync(ct);
-        }
-        else
-        {
-            pagedItems = await orderedQuery
-                .Skip(offsetStartIndex)
-                .Take(takeCount)
-                .ToListAsync(ct);
-        }
-
-        var hasMore = pagedItems.Count > pagination.Limit;
-        if (hasMore)
-        {
-            pagedItems = pagedItems.Take(pagination.Limit).ToList();
-        }
-
-        string? nextCursor;
-        if (!hasMore)
-        {
-            nextCursor = null;
-        }
-        else if (keysetPlan is not null)
-        {
-            nextCursor = EncodeKeysetCursor(keysetPlan, pagedItems[^1]);
-        }
-        else
-        {
-            nextCursor = offsetStartIndex <= int.MaxValue - pagination.Limit
-                ? CursorEncoder.Encode(offsetStartIndex + pagination.Limit)
-                : null;
-        }
-
-        return new PagedResult<TEntity>
-        {
-            Items = pagedItems,
-            NextCursor = nextCursor
-        };
+        var query = _projectionPlanner.ApplyIncludes(GetBaseProjectionQuery(), includePaths);
+        return await _pageQueryExecutor.ExecuteAsync(query, pagination, ct);
     }
 
     private IQueryable<TEntity> GetBaseProjectionQuery()
     {
         return _context.Set<TEntity>().AsNoTracking();
-    }
-
-    private IQueryable<TEntity> ApplyIncludes(IQueryable<TEntity> query, IReadOnlyList<string> includePaths)
-    {
-        foreach (var includePath in includePaths)
-        {
-            query = query.Include(includePath);
-        }
-
-        return query;
-    }
-
-    private bool TryBuildNavigationLoadPaths(
-        IReadOnlyList<SelectedField> selectedFields,
-        out IReadOnlyList<string> includePaths)
-    {
-        var paths = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var field in selectedFields)
-        {
-            if (!IsNestedPath(field.PropertyName))
-            {
-                continue;
-            }
-
-            var propertyPath = NamingUtils.ResolvePropertyPath<TEntity>(field.PropertyName, nameof(selectedFields));
-            if (propertyPath.ClrSegments.Count < 2)
-            {
-                continue;
-            }
-
-            paths.Add(string.Join('.', propertyPath.ClrSegments.Take(propertyPath.ClrSegments.Count - 1)));
-        }
-
-        includePaths = paths.ToList();
-        return includePaths.Count > 0;
-    }
-
-    private List<KeysetSortPart> GetEffectiveSortFields(IReadOnlyList<SortField> sortFields)
-    {
-        return sortFields
-            .Select(sortField => new KeysetSortPart(sortField.PropertyName, sortField.Direction, sortField.QueryParameterName))
-            .ToList();
-    }
-
-    private int DecodeOffsetCursor(string? cursor)
-    {
-        if (string.IsNullOrEmpty(cursor))
-        {
-            return 0;
-        }
-
-        if (CursorEncoder.TryDecode<int>(cursor, out var cursorIndex) && cursorIndex >= 0)
-        {
-            return cursorIndex;
-        }
-
-        throw new EfCoreInvalidCursorException(
-            "The provided cursor is not a valid non-negative offset cursor for this result set.");
-    }
-
-    private bool TryBuildKeysetPlan(
-        IReadOnlyList<KeysetSortPart> sortFields,
-        out KeysetPlan? keysetPlan)
-    {
-        var parts = new List<KeysetPlanPart>();
-
-        foreach (var sortField in sortFields)
-        {
-            if (!TryBuildKeysetPlanPart(sortField.PropertyName, sortField.Direction, sortField.QueryParameterName, out var part))
-            {
-                keysetPlan = null;
-                return false;
-            }
-
-            parts.Add(part!);
-        }
-
-        foreach (var keyPart in _keyMetadata.KeyParts)
-        {
-            if (parts.Any(part => string.Equals(part.PropertyName, keyPart.PropertyName, StringComparison.Ordinal)))
-            {
-                continue;
-            }
-
-            if (!TryBuildKeysetPlanPart(
-                keyPart.PropertyName,
-                SortDirection.Asc,
-                JsonNamingPolicy.SnakeCaseLower.ConvertName(keyPart.PropertyName),
-                out var keyPlanPart))
-            {
-                keysetPlan = null;
-                return false;
-            }
-
-            parts.Add(keyPlanPart!);
-        }
-
-        keysetPlan = new KeysetPlan(parts);
-        return true;
-    }
-
-    private bool TryBuildKeysetPlanPart(
-        string propertyName,
-        SortDirection direction,
-        string queryParameterName,
-        out KeysetPlanPart? part)
-    {
-        var property = typeof(TEntity).GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
-        var mappedProperty = property is null
-            ? null
-            : _context.Model.FindEntityType(typeof(TEntity))?.FindProperty(property.Name);
-        if (property is null
-            || mappedProperty is null
-            || mappedProperty.IsNullable
-            || !IsKeysetComparableType(property.PropertyType))
-        {
-            part = null;
-            return false;
-        }
-
-        var parameter = Expression.Parameter(typeof(TEntity), "entity");
-        var memberAccess = Expression.Property(parameter, property);
-        var delegateType = typeof(Func<,>).MakeGenericType(typeof(TEntity), property.PropertyType);
-        var selector = Expression.Lambda(delegateType, memberAccess, parameter);
-
-        part = new KeysetPlanPart(property.Name, queryParameterName, property.PropertyType, direction, selector, property);
-        return true;
-    }
-
-    private IOrderedQueryable<TEntity> ApplyKeysetCursorFilter(
-        IQueryable<TEntity> query,
-        KeysetPlan keysetPlan,
-        string? cursor)
-    {
-        var filteredQuery = query;
-        if (!string.IsNullOrEmpty(cursor))
-        {
-            var decodedCursor = DecodeKeysetCursor(cursor, keysetPlan);
-            var predicate = BuildKeysetPredicate(keysetPlan, decodedCursor);
-            filteredQuery = filteredQuery.Where(predicate);
-        }
-
-        return ApplyKeysetOrdering(filteredQuery, keysetPlan);
-    }
-
-    private IOrderedQueryable<TEntity> ApplyKeysetOrdering(IQueryable<TEntity> query, KeysetPlan keysetPlan)
-    {
-        IOrderedQueryable<TEntity>? orderedQuery = null;
-
-        foreach (var part in keysetPlan.Parts)
-        {
-            var method = GetQueryableSortMethod(part.Direction, orderedQuery is null);
-            orderedQuery = ApplyQueryableOrdering(method, orderedQuery ?? query, part.Selector);
-        }
-
-        return orderedQuery!;
-    }
-
-    private Expression<Func<TEntity, bool>> BuildKeysetPredicate(KeysetPlan keysetPlan, DecodedKeysetCursor cursor)
-    {
-        var parameter = Expression.Parameter(typeof(TEntity), "entity");
-        Expression? predicate = null;
-
-        for (var i = 0; i < keysetPlan.Parts.Count; i++)
-        {
-            Expression? andChain = null;
-
-            for (var j = 0; j < i; j++)
-            {
-                var equalsExpression = BuildComparisonExpression(parameter, keysetPlan.Parts[j], cursor.Values[j], ExpressionType.Equal);
-                andChain = andChain is null ? equalsExpression : Expression.AndAlso(andChain, equalsExpression);
-            }
-
-            var comparisonType = keysetPlan.Parts[i].Direction == SortDirection.Asc
-                ? ExpressionType.GreaterThan
-                : ExpressionType.LessThan;
-            var comparisonExpression = BuildComparisonExpression(parameter, keysetPlan.Parts[i], cursor.Values[i], comparisonType);
-            var branch = andChain is null ? comparisonExpression : Expression.AndAlso(andChain, comparisonExpression);
-            predicate = predicate is null ? branch : Expression.OrElse(predicate, branch);
-        }
-
-        return Expression.Lambda<Func<TEntity, bool>>(predicate!, parameter);
-    }
-
-    private Expression BuildComparisonExpression(
-        ParameterExpression parameter,
-        KeysetPlanPart part,
-        object cursorValue,
-        ExpressionType comparisonType)
-    {
-        var left = Expression.Property(parameter, part.Property);
-        var right = Expression.Constant(cursorValue, part.PropertyType);
-
-        if (part.PropertyType == typeof(string)
-            && comparisonType is ExpressionType.GreaterThan or ExpressionType.LessThan)
-        {
-            var stringCompare = Expression.Call(StringCompareMethod, left, right);
-            var zero = Expression.Constant(0);
-            return comparisonType == ExpressionType.GreaterThan
-                ? Expression.GreaterThan(stringCompare, zero)
-                : Expression.LessThan(stringCompare, zero);
-        }
-
-        return Expression.MakeBinary(comparisonType, left, right);
-    }
-
-    private string EncodeKeysetCursor(KeysetPlan keysetPlan, TEntity entity)
-    {
-        var values = keysetPlan.Parts
-            .Select(part => JsonSerializer.SerializeToElement(part.Property.GetValue(entity), part.PropertyType))
-            .ToList();
-
-        return CursorEncoder.Encode(new EfCoreKeysetCursor
-        {
-            Version = KeysetCursorVersion,
-            SortSignature = BuildSortSignature(keysetPlan),
-            Values = values
-        });
-    }
-
-    private DecodedKeysetCursor DecodeKeysetCursor(string cursor, KeysetPlan keysetPlan)
-    {
-        if (CursorEncoder.TryDecode<EfCoreKeysetCursor>(cursor, out var decodedCursor))
-        {
-            var keysetCursor = decodedCursor ?? throw new EfCoreInvalidCursorException("The provided cursor could not be decoded.");
-            if (keysetCursor.Version != KeysetCursorVersion)
-            {
-                throw new EfCoreInvalidCursorException("The provided cursor version is not supported.");
-            }
-
-            if (!string.Equals(keysetCursor.SortSignature, BuildSortSignature(keysetPlan), StringComparison.Ordinal))
-            {
-                throw new EfCoreInvalidCursorException("The provided cursor does not match the active sort order.");
-            }
-
-            if (keysetCursor.Values is null || keysetCursor.Values.Count != keysetPlan.Parts.Count)
-            {
-                throw new EfCoreInvalidCursorException("The provided cursor does not match the active sort shape.");
-            }
-
-            var values = new List<object>(keysetPlan.Parts.Count);
-            for (var i = 0; i < keysetPlan.Parts.Count; i++)
-            {
-                values.Add(DeserializeKeysetCursorValue(keysetCursor.Values[i], keysetPlan.Parts[i]));
-            }
-
-            return new DecodedKeysetCursor(values);
-        }
-
-        if (CursorEncoder.TryDecode<int>(cursor, out _))
-        {
-            throw new EfCoreInvalidCursorException("Offset cursors are no longer valid for this sorted result set.");
-        }
-
-        throw new EfCoreInvalidCursorException("The provided cursor is not a valid EF Core pagination cursor.");
-    }
-
-    private object DeserializeKeysetCursorValue(JsonElement cursorValue, KeysetPlanPart part)
-    {
-        if (cursorValue.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
-        {
-            throw new EfCoreInvalidCursorException(
-                $"The provided cursor contains an invalid value for '{part.QueryParameterName}'.");
-        }
-
-        try
-        {
-            return JsonSerializer.Deserialize(cursorValue.GetRawText(), part.PropertyType)
-                ?? throw new EfCoreInvalidCursorException(
-                    $"The provided cursor contains an invalid value for '{part.QueryParameterName}'.");
-        }
-        catch (Exception exception) when (exception is JsonException or NotSupportedException)
-        {
-            throw new EfCoreInvalidCursorException(
-                $"The provided cursor contains an invalid value for '{part.QueryParameterName}'.");
-        }
-    }
-
-    private IQueryable<TEntity> ApplyComparisonFilters(
-        IQueryable<TEntity> query,
-        IReadOnlyList<FilterValue> filters)
-    {
-        foreach (var filter in filters)
-        {
-            if (!IsComparisonOperator(filter.Operator))
-            {
-                continue;
-            }
-
-            var predicate = ComparisonFilterBuilder.BuildPredicate<TEntity>(filter);
-            query = query.Where(predicate);
-        }
-
-        return query;
-    }
-
-    private bool IsComparisonOperator(FilterOperator op)
-    {
-        return op is FilterOperator.Eq
-            or FilterOperator.Neq
-            or FilterOperator.Gt
-            or FilterOperator.Lt
-            or FilterOperator.Gte
-            or FilterOperator.Lte;
-    }
-
-    private IQueryable<TEntity> ApplyStringFilters(
-        IQueryable<TEntity> query,
-        IReadOnlyList<FilterValue> filters)
-    {
-        foreach (var filter in filters)
-        {
-            if (!IsStringOperator(filter.Operator))
-            {
-                continue;
-            }
-
-            var predicate = StringFilterBuilder.BuildPredicate<TEntity>(filter);
-            query = query.Where(predicate);
-        }
-
-        return query;
-    }
-
-    private bool IsStringOperator(FilterOperator op)
-    {
-        return op is FilterOperator.Contains
-            or FilterOperator.StartsWith
-            or FilterOperator.EndsWith;
-    }
-
-    private IQueryable<TEntity> ApplyInFilters(
-        IQueryable<TEntity> query,
-        IReadOnlyList<FilterValue> filters)
-    {
-        foreach (var filter in filters)
-        {
-            if (!IsInOperator(filter.Operator))
-            {
-                continue;
-            }
-
-            var predicate = InFilterBuilder.BuildPredicate<TEntity>(filter);
-            query = query.Where(predicate);
-        }
-
-        return query;
-    }
-
-    private IQueryable<TEntity> ApplySearch(
-        IQueryable<TEntity> query,
-        SearchRequest search)
-    {
-        var predicate = SearchBuilder.BuildPredicate<TEntity>(search);
-        return query.Where(predicate);
-    }
-
-    private bool IsInOperator(FilterOperator op)
-    {
-        return op is FilterOperator.In;
-    }
-
-    private MethodInfo GetQueryableSortMethod(SortDirection direction, bool isPrimarySort)
-    {
-        return (direction, isPrimarySort) switch
-        {
-            (SortDirection.Asc, true) => OrderByMethod,
-            (SortDirection.Desc, true) => OrderByDescendingMethod,
-            (SortDirection.Asc, false) => ThenByMethod,
-            _ => ThenByDescendingMethod,
-        };
-    }
-
-    private IOrderedQueryable<TEntity> ApplyQueryableOrdering(
-        MethodInfo method,
-        IQueryable<TEntity> source,
-        LambdaExpression keySelector)
-    {
-        var genericMethod = method.MakeGenericMethod(typeof(TEntity), keySelector.ReturnType);
-        return (IOrderedQueryable<TEntity>)genericMethod.Invoke(null, [source, keySelector])!;
-    }
-
-    private IReadOnlyList<PatchOperation> BuildPatchPlan(
-        TEntity entity,
-        JsonElement patchDocument,
-        IReadOnlySet<string> keyPropertyNames,
-        EfCorePatchUnknownFieldBehavior unknownFieldBehavior,
-        IDictionary<string, object?> plannedValues)
-    {
-        var operations = new List<PatchOperation>();
-        foreach (var patchProperty in patchDocument.EnumerateObject())
-        {
-            if (!_jsonContract.TryGetPatchMember(patchProperty.Name, out var jsonMember)
-                || jsonMember.ClrName is null
-                || !_patchPropertiesByClrName.TryGetValue(
-                    jsonMember.ClrName,
-                    out var propertyContract))
-            {
-                ThrowIfStrictUnknownField(unknownFieldBehavior, patchProperty.Name, "unknown");
-                continue;
-            }
-
-            var propertyInfo = propertyContract.PropertyInfo;
-            if (keyPropertyNames.Contains(propertyInfo.Name))
-            {
-                throw new EfCorePatchValidationException(
-                    $"PATCH cannot modify immutable resource key field '{patchProperty.Name}'.");
-            }
-
-            var currentValue = plannedValues.TryGetValue(propertyInfo.Name, out var plannedValue)
-                ? plannedValue
-                : propertyInfo.GetValue(entity);
-            var value = JsonMergePatch.Apply(
-                currentValue,
-                propertyInfo.PropertyType,
-                patchProperty.Value,
-                propertyContract.JsonMember.ValueSerializerOptions);
-
-            operations.Add(new PatchOperation(propertyInfo, value));
-            plannedValues[propertyInfo.Name] = value;
-        }
-
-        return operations;
-    }
-
-    private void ApplyPatchPlan(
-        EntityEntry<TEntity> entry,
-        IReadOnlyList<PatchOperation> operations,
-        ICollection<PatchPropertySnapshot> snapshots)
-    {
-        foreach (var operation in operations)
-        {
-            if (!snapshots.Any(snapshot =>
-                    ReferenceEquals(snapshot.Entry.Entity, entry.Entity)
-                    && string.Equals(snapshot.PropertyName, operation.PropertyInfo.Name, StringComparison.Ordinal)))
-            {
-                var propertyEntry = entry.Property(operation.PropertyInfo.Name);
-                snapshots.Add(new PatchPropertySnapshot(
-                    entry,
-                    operation.PropertyInfo.Name,
-                    propertyEntry.CurrentValue,
-                    propertyEntry.IsModified));
-            }
-
-            entry.Property(operation.PropertyInfo.Name).CurrentValue = operation.Value;
-        }
-    }
-
-    private void RestorePatchChanges(IEnumerable<PatchPropertySnapshot> snapshots)
-    {
-        foreach (var snapshot in snapshots.Reverse())
-        {
-            var propertyEntry = snapshot.Entry.Property(snapshot.PropertyName);
-            propertyEntry.CurrentValue = snapshot.CurrentValue;
-            propertyEntry.IsModified = snapshot.IsModified;
-        }
     }
 
     private IReadOnlyList<EntityTrackingSnapshot> CaptureTrackingSnapshot()
@@ -1728,35 +860,12 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         }
     }
 
-    private void ThrowIfStrictUnknownField(
-        EfCorePatchUnknownFieldBehavior unknownFieldBehavior,
-        string propertyName,
-        string reason)
-    {
-        if (unknownFieldBehavior == EfCorePatchUnknownFieldBehavior.Strict)
-        {
-            throw new EfCorePatchValidationException(
-                $"PATCH field '{propertyName}' is {reason} for this resource.");
-        }
-    }
-
-    private Expression<Func<TEntity, bool>> BuildKeyEqualsPredicate(TKey id)
-    {
-        var parameter = Expression.Parameter(typeof(TEntity), "entity");
-        var comparisons = _keyMetadata.KeyParts
-            .Select(keyPart => BuildEntityKeyPartEqualsExpression(parameter, keyPart, keyPart.GetKeyValue(id)))
-            .ToList();
-
-        var predicateBody = comparisons.Aggregate(Expression.AndAlso);
-        return Expression.Lambda<Func<TEntity, bool>>(predicateBody, parameter);
-    }
-
     private async Task<Dictionary<TKey, TEntity>> FetchTrackedEntitiesByIdsAsync(
         IReadOnlyList<TKey> ids,
         CancellationToken ct)
     {
         var getKey = _keyMetadata.KeyAccessor;
-        var predicate = BuildKeysContainPredicate(ids);
+        var predicate = _keyMetadata.BuildContainsPredicate(ids);
         var existingEntities = await _context.Set<TEntity>()
             .Where(predicate)
             .ToListAsync(ct);
@@ -1770,366 +879,10 @@ public class EfCoreRepository<TContext, TEntity, TKey>
         return _options.UseAsNoTracking ? query.AsNoTracking() : query;
     }
 
-    private void CopyPrimaryKeyValues(TEntity source, TEntity target)
-    {
-        var primaryKey = GetPrimaryKey();
-
-        foreach (var keyProperty in primaryKey.Properties)
-        {
-            if (keyProperty.PropertyInfo is null)
-            {
-                continue;
-            }
-
-            var keyValue = keyProperty.PropertyInfo.GetValue(source);
-            keyProperty.PropertyInfo.SetValue(target, keyValue);
-        }
-    }
-
-    private void SetResourceKeyValues(EntityEntry<TEntity> entry, TKey key)
-    {
-        foreach (var keyPart in _keyMetadata.KeyParts)
-        {
-            entry.Property(keyPart.PropertyName).CurrentValue = keyPart.GetKeyValue(key);
-        }
-    }
-
-    private Microsoft.EntityFrameworkCore.Metadata.IKey GetPrimaryKey()
-    {
-        var entityType = _context.Model.FindEntityType(typeof(TEntity))
-            ?? throw new InvalidOperationException(
-                $"Entity type '{typeof(TEntity).Name}' is not part of the EF Core model.");
-
-        return entityType.FindPrimaryKey()
-            ?? throw new InvalidOperationException(
-                $"Entity type '{typeof(TEntity).Name}' has no primary key configured in the EF Core model.");
-    }
-
-    private IReadOnlyList<string> GetKeyPropertyNames()
-    {
-        return _keyMetadata.KeyParts.Select(part => part.PropertyName).ToList();
-    }
-
-    private string BuildSortSignature(KeysetPlan keysetPlan)
-    {
-        return string.Join(",", keysetPlan.Parts.Select(part => $"{part.QueryParameterName}:{part.Direction}"));
-    }
-
-    private void LogKeysetFallback(IReadOnlyList<KeysetSortPart> effectiveSortFields)
-    {
-        if (_options.Logger is null)
-        {
-            return;
-        }
-
-        var sortDescription = effectiveSortFields.Count == 0
-            ? "key only"
-            : string.Join(", ", effectiveSortFields.Select(field => $"{field.QueryParameterName}:{field.Direction}"));
-        _options.Logger.LogWarning(
-            "EF Core keyset pagination fallback activated for {EntityType} with sort {SortDescription}; using offset cursor pagination instead.",
-            typeof(TEntity).Name,
-            sortDescription);
-    }
-
-    private KeyMetadata ResolveKeyMetadata()
-    {
-        if (_options.KeySelector is not null)
-        {
-            return ResolveExplicitKeyMetadata(_options.KeySelector);
-        }
-
-        var primaryKey = GetPrimaryKey();
-
-        if (primaryKey.Properties.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"Entity type '{typeof(TEntity).Name}' has no primary-key properties configured in the EF Core model.");
-        }
-
-        if (primaryKey.Properties.Count > 2)
-        {
-            var propertyNames = string.Join(", ", primaryKey.Properties.Select(property => property.Name));
-            throw new NotSupportedException(
-                $"Entity type '{typeof(TEntity).Name}' has a {primaryKey.Properties.Count}-part primary key ({propertyNames}), but RestLib currently supports at most two-part keys.");
-        }
-
-        var parameter = Expression.Parameter(typeof(TEntity), "entity");
-        if (primaryKey.Properties.Count == 1)
-        {
-            var keyProperty = primaryKey.Properties[0];
-            if (keyProperty.ClrType != typeof(TKey))
-            {
-                throw new InvalidOperationException(
-                    $"Entity type '{typeof(TEntity).Name}' has primary key property '{keyProperty.Name}' of type '{keyProperty.ClrType.Name}', but the registration specifies TKey as '{typeof(TKey).Name}'.");
-            }
-
-            var propertyAccess = BuildPropertyAccess(parameter, keyProperty);
-            var keySelector = Expression.Lambda<Func<TEntity, TKey>>(propertyAccess, parameter);
-            var keyAccessor = keySelector.Compile();
-
-            return new KeyMetadata(
-                keySelector,
-                keyAccessor,
-                [CreateKeyPart(keyProperty, propertyAccess, static key => key)]);
-        }
-
-        if (!typeof(TKey).IsGenericType || typeof(TKey).GetGenericTypeDefinition() != typeof(RestLibCompositeKey<,>))
-        {
-            var propertyNames = string.Join(", ", primaryKey.Properties.Select(property => property.Name));
-            throw new InvalidOperationException(
-                $"Entity type '{typeof(TEntity).Name}' has a composite primary key ({propertyNames}), but the registration specifies TKey '{typeof(TKey).Name}' instead of RestLibCompositeKey<TFirst, TSecond>.");
-        }
-
-        var keyArguments = typeof(TKey).GetGenericArguments();
-        if (primaryKey.Properties[0].ClrType != keyArguments[0]
-            || primaryKey.Properties[1].ClrType != keyArguments[1])
-        {
-            throw new InvalidOperationException(
-                $"Entity type '{typeof(TEntity).Name}' composite primary key types '{primaryKey.Properties[0].ClrType.Name}' and '{primaryKey.Properties[1].ClrType.Name}' must match TKey generic arguments '{keyArguments[0].Name}' and '{keyArguments[1].Name}'.");
-        }
-
-        var firstAccess = BuildPropertyAccess(parameter, primaryKey.Properties[0]);
-        var secondAccess = BuildPropertyAccess(parameter, primaryKey.Properties[1]);
-        var constructor = typeof(TKey).GetConstructor([primaryKey.Properties[0].ClrType, primaryKey.Properties[1].ClrType])
-            ?? throw new InvalidOperationException(
-                $"RestLib could not resolve the composite key constructor for '{typeof(TKey).Name}'.");
-        var body = Expression.New(constructor, firstAccess, secondAccess);
-        var compositeSelector = Expression.Lambda<Func<TEntity, TKey>>(body, parameter);
-        var compositeAccessor = compositeSelector.Compile();
-
-        return new KeyMetadata(
-            compositeSelector,
-            compositeAccessor,
-            [
-                CreateKeyPart(primaryKey.Properties[0], firstAccess, CreateCompositeKeyPartGetter<TKey>(nameof(RestLibCompositeKey<int, int>.First))),
-                CreateKeyPart(primaryKey.Properties[1], secondAccess, CreateCompositeKeyPartGetter<TKey>(nameof(RestLibCompositeKey<int, int>.Second)))
-            ]);
-    }
-
-    private KeyMetadata ResolveExplicitKeyMetadata(Expression<Func<TEntity, TKey>> keySelector)
-    {
-        _ = GetPrimaryKey();
-
-        if (typeof(TKey).IsGenericType && typeof(TKey).GetGenericTypeDefinition() == typeof(RestLibCompositeKey<,>))
-        {
-            return ResolveExplicitCompositeKeyMetadata(keySelector);
-        }
-
-        var keyProperty = ResolveExplicitKeyProperty(keySelector.Body, typeof(TKey), "KeySelector");
-        var parameter = Expression.Parameter(typeof(TEntity), "entity");
-        var propertyAccess = BuildPropertyAccess(parameter, keyProperty);
-        var selector = Expression.Lambda<Func<TEntity, TKey>>(propertyAccess, parameter);
-
-        return new KeyMetadata(
-            selector,
-            selector.Compile(),
-            [CreateKeyPart(keyProperty, propertyAccess, static key => key)]);
-    }
-
-    private KeyMetadata ResolveExplicitCompositeKeyMetadata(Expression<Func<TEntity, TKey>> keySelector)
-    {
-        var body = UnwrapConvert(keySelector.Body);
-        if (body is not NewExpression { Arguments.Count: 2 })
-        {
-            throw new InvalidOperationException(
-                $"The explicit key selector for entity type '{typeof(TEntity).Name}' must create a " +
-                $"{nameof(RestLibCompositeKey<int, int>)} value from two direct mapped properties.");
-        }
-
-        var newExpression = (NewExpression)body;
-        var keyArguments = typeof(TKey).GetGenericArguments();
-        var firstProperty = ResolveExplicitKeyProperty(newExpression.Arguments[0], keyArguments[0], "KeySelector");
-        var secondProperty = ResolveExplicitKeyProperty(newExpression.Arguments[1], keyArguments[1], "KeySelector");
-        var parameter = Expression.Parameter(typeof(TEntity), "entity");
-        var firstAccess = BuildPropertyAccess(parameter, firstProperty);
-        var secondAccess = BuildPropertyAccess(parameter, secondProperty);
-        var constructor = typeof(TKey).GetConstructor([keyArguments[0], keyArguments[1]])
-            ?? throw new InvalidOperationException(
-                $"RestLib could not resolve the composite key constructor for '{typeof(TKey).Name}'.");
-        var bodyExpression = Expression.New(constructor, firstAccess, secondAccess);
-        var compositeSelector = Expression.Lambda<Func<TEntity, TKey>>(bodyExpression, parameter);
-
-        return new KeyMetadata(
-            compositeSelector,
-            compositeSelector.Compile(),
-            [
-                CreateKeyPart(firstProperty, firstAccess, CreateCompositeKeyPartGetter<TKey>(nameof(RestLibCompositeKey<int, int>.First))),
-                CreateKeyPart(secondProperty, secondAccess, CreateCompositeKeyPartGetter<TKey>(nameof(RestLibCompositeKey<int, int>.Second)))
-            ]);
-    }
-
-    private Microsoft.EntityFrameworkCore.Metadata.IProperty ResolveExplicitKeyProperty(
-        Expression expression,
-        Type expectedType,
-        string optionName)
-    {
-        var memberExpression = UnwrapConvert(expression) as MemberExpression;
-        if (memberExpression?.Member is not PropertyInfo propertyInfo
-            || UnwrapConvert(memberExpression.Expression!) is not ParameterExpression)
-        {
-            throw new InvalidOperationException(
-                $"The explicit key selector for entity type '{typeof(TEntity).Name}' must access direct mapped properties only.");
-        }
-
-        if (propertyInfo.PropertyType != expectedType)
-        {
-            throw new InvalidOperationException(
-                $"The explicit key selector property '{propertyInfo.Name}' on entity type '{typeof(TEntity).Name}' " +
-                $"must be of type '{expectedType.Name}', but it is '{propertyInfo.PropertyType.Name}'.");
-        }
-
-        var entityType = _context.Model.FindEntityType(typeof(TEntity))
-            ?? throw new InvalidOperationException(
-                $"Entity type '{typeof(TEntity).Name}' is not part of the EF Core model.");
-
-        return entityType.FindProperty(propertyInfo.Name)
-            ?? throw new InvalidOperationException(
-                $"{nameof(EfCoreRepositoryOptions<TEntity, TKey>)}.{optionName} selects property '{propertyInfo.Name}' " +
-                $"on entity type '{typeof(TEntity).Name}', but that property is not mapped in the EF Core model.");
-    }
-
-    private Expression UnwrapConvert(Expression expression)
-    {
-        while (expression is UnaryExpression unaryExpression
-            && (unaryExpression.NodeType == ExpressionType.Convert
-                || unaryExpression.NodeType == ExpressionType.ConvertChecked))
-        {
-            expression = unaryExpression.Operand;
-        }
-
-        return expression;
-    }
-
-    private object?[] GetKeyValues(TKey key)
-    {
-        return _keyMetadata.KeyParts
-            .Select(keyPart => keyPart.GetKeyValue(key))
-            .ToArray();
-    }
-
-    private Expression<Func<TEntity, bool>> BuildKeysContainPredicate(IReadOnlyList<TKey> keys)
-    {
-        ArgumentNullException.ThrowIfNull(keys);
-
-        var parameter = Expression.Parameter(typeof(TEntity), "entity");
-        Expression? predicate = null;
-
-        foreach (var key in keys)
-        {
-            Expression? keyPredicate = null;
-            foreach (var keyPart in _keyMetadata.KeyParts)
-            {
-                var equals = BuildEntityKeyPartEqualsExpression(parameter, keyPart, keyPart.GetKeyValue(key));
-                keyPredicate = keyPredicate is null ? equals : Expression.AndAlso(keyPredicate, equals);
-            }
-
-            predicate = predicate is null ? keyPredicate : Expression.OrElse(predicate, keyPredicate!);
-        }
-
-        return Expression.Lambda<Func<TEntity, bool>>(predicate!, parameter);
-    }
-
-    private Expression BuildEntityKeyPartEqualsExpression(
-        ParameterExpression parameter,
-        KeyPartMetadata keyPart,
-        object? keyValue)
-    {
-        var left = BuildPropertyAccess(parameter, keyPart.Property);
-        var right = Expression.Constant(keyValue, keyPart.Property.ClrType);
-        return Expression.Equal(left, right);
-    }
-
-    private bool IsKeysetComparableType(Type propertyType)
-    {
-        return Nullable.GetUnderlyingType(propertyType) is null
-            && (propertyType == typeof(string)
-                || propertyType == typeof(Guid)
-                || propertyType == typeof(DateTime)
-                || propertyType == typeof(DateTimeOffset)
-                || propertyType == typeof(decimal)
-                || propertyType == typeof(double)
-                || propertyType == typeof(float)
-                || propertyType == typeof(long)
-                || propertyType == typeof(int)
-                || propertyType == typeof(short)
-                || propertyType == typeof(byte)
-                || propertyType == typeof(ulong)
-                || propertyType == typeof(uint)
-                || propertyType == typeof(ushort)
-                || propertyType == typeof(sbyte));
-    }
-
-    private bool IsProjectableProperty(PropertyInfo property)
-    {
-        var propertyType = property.PropertyType;
-        var underlyingType = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
-
-        return underlyingType.IsEnum ||
-            underlyingType.IsPrimitive ||
-            underlyingType == typeof(string) ||
-            underlyingType == typeof(decimal) ||
-            underlyingType == typeof(Guid) ||
-            underlyingType == typeof(DateTime) ||
-            underlyingType == typeof(DateTimeOffset) ||
-            underlyingType == typeof(TimeSpan);
-    }
-
-    private sealed record KeysetSortPart(string PropertyName, SortDirection Direction, string QueryParameterName);
-
-    private sealed record KeysetPlan(IReadOnlyList<KeysetPlanPart> Parts);
-
-    private sealed record DecodedKeysetCursor(IReadOnlyList<object> Values);
-
-    private sealed record PatchPropertyContract(
-        PropertyInfo PropertyInfo,
-        JsonMemberContract JsonMember);
-
-    private sealed record PatchOperation(PropertyInfo PropertyInfo, object? Value);
-
-    private sealed record PatchPlan(
-        EntityEntry<TEntity> Entry,
-        IReadOnlyList<PatchOperation> Operations);
-
-    private sealed record PatchPropertySnapshot(
-        EntityEntry<TEntity> Entry,
-        string PropertyName,
-        object? CurrentValue,
-        bool IsModified);
-
     private sealed record EntityTrackingSnapshot(
         EntityEntry Entry,
         EntityState State,
         PropertyValues CurrentValues,
         PropertyValues OriginalValues,
         IReadOnlyDictionary<string, bool> ModifiedProperties);
-
-    private sealed record KeyMetadata(
-        Expression<Func<TEntity, TKey>> CompositeSelector,
-        Func<TEntity, TKey> KeyAccessor,
-        IReadOnlyList<KeyPartMetadata> KeyParts)
-    {
-        internal IReadOnlyList<SortBuilder.SortKeyPart> SortKeyParts => KeyParts
-            .Select(part => new SortBuilder.SortKeyPart(part.PropertyName, part.Selector))
-            .ToList();
-    }
-
-    private sealed record KeyPartMetadata(
-        Microsoft.EntityFrameworkCore.Metadata.IProperty Property,
-        LambdaExpression Selector,
-        Func<TKey, object?> GetKeyValue)
-    {
-        internal string PropertyName => Property.Name;
-    }
-
-    private sealed record ProjectionPlan(
-        IReadOnlyList<PropertyInfo> Properties,
-        Expression<Func<TEntity, TEntity>> Selector);
-
-    private sealed record KeysetPlanPart(
-        string PropertyName,
-        string QueryParameterName,
-        Type PropertyType,
-        SortDirection Direction,
-        LambdaExpression Selector,
-        PropertyInfo Property);
 }

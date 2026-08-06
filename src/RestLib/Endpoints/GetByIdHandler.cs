@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using RestLib.Abstractions;
 using RestLib.Caching;
 using RestLib.Configuration;
@@ -41,134 +42,46 @@ internal static class GetByIdHandler
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
             var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.GetById");
 
-            RestLibLogMessages.GetByIdRequestReceived(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
+            RestLibLogMessages.GetByIdRequestReceived(
+                logger,
+                entityName,
+                EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
-            // Initialize hook pipeline and run OnRequestReceived
             var (pipeline, hookContext, pipelineEarlyResult) = await HookHelper.InitializePipelineAsync<TEntity, TKey>(
-                config.Hooks, httpContext, RestLibOperation.GetById, id, logger: logger);
+                config.Hooks,
+                httpContext,
+                RestLibOperation.GetById,
+                id,
+                logger: logger);
             if (pipelineEarlyResult is not null) return pipelineEarlyResult;
 
             try
             {
-                // Parse and validate field selection before hitting the database
-                IReadOnlyList<SelectedField> selectedFields = [];
-                if (config.HasFieldSelection)
-                {
-                    var rawFields = httpContext.Request.Query["fields"].FirstOrDefault();
-                    if (!string.IsNullOrEmpty(rawFields))
-                    {
-                        var fieldsResult = FieldSelectionParser.Parse(rawFields, config.FieldSelectionConfiguration);
-                        if (!fieldsResult.IsValid)
-                        {
-                            return Responses.ProblemDetailsResult.InvalidFields(
-                                fieldsResult.Errors,
-                                httpContext.Request.Path,
-                                jsonOptions,
-                                logger,
-                                options);
-                        }
-
-                        selectedFields = fieldsResult.Fields;
-                    }
-                }
-
-                TEntity? entity;
-                if (selectedFields.Count > 0 &&
-                    ShouldUseProjectionPushdown(options, config) &&
-                    repository is IFieldSelectionProjectionRepository<TEntity, TKey> projectionRepository)
-                {
-                    entity = await projectionRepository.GetByIdProjectedAsync(id, selectedFields, ct: ct)
-                        ?? await repository.GetByIdAsync(id, ct);
-                }
-                else
-                {
-                    entity = await repository.GetByIdAsync(id, ct);
-                }
-
-                if (entity is null)
-                {
-                    return Responses.ProblemDetailsResult.NotFound(
-                        entityName,
-                        id!,
-                        config.KeyRouteParts,
-                        httpContext.Request.Path,
-                        jsonOptions,
-                        logger,
-                        options);
-                }
-
-                // OnRequestValidated hook
-                var validatedStage = await HookHelper.RunEntityHookStageAsync(
-                    pipeline, hookContext, entity, p => p.ExecuteOnRequestValidatedAsync);
-                if (validatedStage.EarlyResult is not null) return validatedStage.EarlyResult;
-                entity = validatedStage.Entity;
-                _ = EntityKeyHelper.TrySetEntityKeyParts(entity, id, config.KeyRouteParts);
-
-                // BeforeResponse hook
-                var beforeResponseStage = await HookHelper.RunEntityHookStageAsync(
-                    pipeline, hookContext, entity, p => p.ExecuteBeforeResponseAsync);
-                if (beforeResponseStage.EarlyResult is not null) return beforeResponseStage.EarlyResult;
-                entity = beforeResponseStage.Entity;
-                _ = EntityKeyHelper.TrySetEntityKeyParts(entity, id, config.KeyRouteParts);
-
-                // Conditional requests use the final response representation, including hook replacements.
-                if (options.EnableETagSupport)
-                {
-                    var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
-                    var etag = etagGenerator.Generate(entity);
-
-                    var ifNoneMatch = httpContext.Request.Headers.IfNoneMatch;
-                    if (!ETagComparer.IfNoneMatchSucceeds(ifNoneMatch, etag))
-                    {
-                        RestLibLogMessages.GetByIdNotModified(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
-                        httpContext.Response.Headers.ETag = etag;
-                        return Results.StatusCode(StatusCodes.Status304NotModified);
-                    }
-
-                    httpContext.Response.Headers.ETag = etag;
-                }
-
-                // Apply field selection projection if requested
-                if (selectedFields.Count > 0)
-                {
-                    var projected = FieldProjector.Project(
-                        entity,
-                        selectedFields,
-                        jsonOptions,
-                        config.FieldSelectionConfiguration.ResponseShape);
-                    if (projected is not null)
-                    {
-                        // Inject HATEOAS links into projected dictionary
-                        if (options.EnableHateoas)
-                        {
-                            var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false, config.KeyRouteParts.Count);
-                            var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TEntity, TKey>>();
-                            var customLinks = customLinksProvider?.GetLinks(entity, id);
-                            var links = HateoasLinkBuilder.BuildEntityLinks(httpContext.Request, collectionPath, id, config, customLinks);
-                            HateoasHelper.InjectLinksIntoProjected(projected, links, jsonOptions);
-                        }
-
-                        return Results.Json(projected, jsonOptions);
-                    }
-                }
-
-                // Inject HATEOAS links into full entity response
-                if (options.EnableHateoas)
-                {
-                    var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false, config.KeyRouteParts.Count);
-                    var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TEntity, TKey>>();
-                    var customLinks = customLinksProvider?.GetLinks(entity, id);
-                    var links = HateoasLinkBuilder.BuildEntityLinks(httpContext.Request, collectionPath, id, config, customLinks);
-                    var entityWithLinks = HateoasHelper.EntityWithLinks<TEntity, TKey>(entity, links, jsonOptions);
-                    return Results.Json(entityWithLinks, jsonOptions);
-                }
-
-                return Results.Json(entity, jsonOptions);
+                return await ExecuteGetByIdAsync<TEntity, TEntity, TEntity, TKey>(
+                    id,
+                    repository,
+                    EndpointModelAdapter<TEntity, TEntity>.Identity<TEntity>(),
+                    hooksUseDbModel: false,
+                    httpContext,
+                    ct,
+                    jsonOptions,
+                    options,
+                    logger,
+                    config,
+                    entityName,
+                    pipeline,
+                    hookContext);
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.GetById), ex);
-                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.GetById, ex, id, logger: logger);
+                var errorResult = await HookHelper.HandleErrorHookAsync(
+                    pipeline,
+                    httpContext,
+                    RestLibOperation.GetById,
+                    ex,
+                    id,
+                    logger: logger);
                 if (errorResult is not null) return errorResult;
                 throw;
             }
@@ -205,8 +118,12 @@ internal static class GetByIdHandler
                 config.MapperName,
                 config.UseAutoMapper,
                 config.ResourceName);
+            var modelAdapter = EndpointModelAdapter<TApiModel, TDbModel>.Mapped(mapper);
 
-            RestLibLogMessages.GetByIdRequestReceived(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
+            RestLibLogMessages.GetByIdRequestReceived(
+                logger,
+                entityName,
+                EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
             if (config.UsesDbModelHooks)
             {
@@ -220,10 +137,11 @@ internal static class GetByIdHandler
 
                 try
                 {
-                    return await ExecuteMappedGetByIdAsync<TApiModel, TDbModel, TDbModel, TKey>(
+                    return await ExecuteGetByIdAsync<TApiModel, TDbModel, TDbModel, TKey>(
                         id,
                         repository,
-                        mapper,
+                        modelAdapter,
+                        hooksUseDbModel: true,
                         httpContext,
                         ct,
                         jsonOptions,
@@ -259,10 +177,11 @@ internal static class GetByIdHandler
 
             try
             {
-                return await ExecuteMappedGetByIdAsync<TApiModel, TDbModel, TApiModel, TKey>(
+                return await ExecuteGetByIdAsync<TApiModel, TDbModel, TApiModel, TKey>(
                     id,
                     repository,
-                    mapper,
+                    modelAdapter,
+                    hooksUseDbModel: typeof(TApiModel) == typeof(TDbModel),
                     httpContext,
                     ct,
                     jsonOptions,
@@ -289,16 +208,17 @@ internal static class GetByIdHandler
         };
     }
 
-    private static async Task<IResult> ExecuteMappedGetByIdAsync<TApiModel, TDbModel, THookModel, TKey>(
+    private static async Task<IResult> ExecuteGetByIdAsync<TApiModel, TDbModel, THookModel, TKey>(
         TKey id,
         IRepository<TDbModel, TKey> repository,
-        IRestLibMapper<TApiModel, TDbModel> mapper,
+        EndpointModelAdapter<TApiModel, TDbModel> modelAdapter,
+        bool hooksUseDbModel,
         HttpContext httpContext,
         CancellationToken ct,
         JsonSerializerOptions jsonOptions,
         RestLibOptions options,
-        Microsoft.Extensions.Logging.ILogger logger,
-        RestLibEndpointConfiguration<TApiModel, TDbModel, TKey> config,
+        ILogger logger,
+        RestLibEndpointConfiguration<TApiModel, TKey> config,
         string entityName,
         HookPipeline<THookModel, TKey>? pipeline,
         HookContext<THookModel, TKey>? hookContext)
@@ -307,113 +227,78 @@ internal static class GetByIdHandler
         where THookModel : class
         where TKey : notnull
     {
-        IReadOnlyList<SelectedField> selectedFields = [];
-        if (config.HasFieldSelection)
-        {
-            var rawFields = httpContext.Request.Query["fields"].FirstOrDefault();
-            if (!string.IsNullOrEmpty(rawFields))
-            {
-                var fieldsResult = FieldSelectionParser.Parse(rawFields, config.FieldSelectionConfiguration);
-                if (!fieldsResult.IsValid)
-                {
-                    return Responses.ProblemDetailsResult.InvalidFields(
-                        fieldsResult.Errors,
-                        httpContext.Request.Path,
-                        jsonOptions,
-                        logger,
-                        options);
-                }
+        var problems = Responses.ProblemDetailsResult.CreateResponder(jsonOptions, logger, options);
+        var selectedFieldsResult = ParseSelectedFields(config, httpContext, problems);
+        if (selectedFieldsResult.Error is not null) return selectedFieldsResult.Error;
+        var selectedFields = selectedFieldsResult.Fields;
 
-                selectedFields = fieldsResult.Fields;
-            }
+        TDbModel? dbEntity;
+        if (modelAdapter.IsIdentity &&
+            selectedFields.Count > 0 &&
+            ShouldUseProjectionPushdown(options, config) &&
+            repository is IFieldSelectionProjectionRepository<TDbModel, TKey> projectionRepository)
+        {
+            dbEntity = await projectionRepository.GetByIdProjectedAsync(id, selectedFields, ct: ct)
+                ?? await repository.GetByIdAsync(id, ct);
+        }
+        else
+        {
+            dbEntity = await repository.GetByIdAsync(id, ct);
         }
 
-        var dbEntity = await repository.GetByIdAsync(id, ct);
         if (dbEntity is null)
         {
-            return Responses.ProblemDetailsResult.NotFound(
+            return problems.Create(Responses.ProblemDetailsFactory.NotFound(
                 entityName,
                 id!,
                 config.KeyRouteParts,
-                httpContext.Request.Path,
-                jsonOptions,
-                logger,
-                options);
+                httpContext.Request.Path));
         }
 
-        var apiEntity = mapper.ToApi(dbEntity);
+        var state = new EndpointModelState<TApiModel, TDbModel>(modelAdapter.ToApi(dbEntity), dbEntity);
 
-        if (hookContext is not null)
+        var validatedStage = await HookHelper.RunEntityHookStageAsync(
+            pipeline,
+            hookContext,
+            GetHookEntity<TApiModel, TDbModel, THookModel>(state, hooksUseDbModel),
+            p => p.ExecuteOnRequestValidatedAsync);
+        if (validatedStage.EarlyResult is not null) return validatedStage.EarlyResult;
+        if (modelAdapter.IsIdentity || hookContext is not null)
         {
-            if (typeof(THookModel) == typeof(TDbModel))
-            {
-                hookContext.Entity = (THookModel)(object)dbEntity;
-            }
-            else
-            {
-                hookContext.Entity = (THookModel)(object)apiEntity;
-            }
+            ApplyResponseHookEntity(state, modelAdapter, validatedStage.Entity, hooksUseDbModel, id, config);
         }
-
-        var onValidatedResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
-        if (onValidatedResult is not null) return onValidatedResult;
-
-        if (hookContext is not null)
+        else
         {
-            if (typeof(THookModel) == typeof(TDbModel))
-            {
-                dbEntity = (TDbModel)(object)(hookContext.Entity ?? (THookModel)(object)dbEntity);
-                _ = EntityKeyHelper.TrySetEntityKeyParts(dbEntity, id, config.KeyRouteParts);
-                apiEntity = mapper.ToApi(dbEntity);
-            }
-            else
-            {
-                apiEntity = (TApiModel)(object)(hookContext.Entity ?? (THookModel)(object)apiEntity);
-                _ = EntityKeyHelper.TrySetEntityKeyParts(apiEntity, id, config.KeyRouteParts);
-            }
+            _ = EntityKeyHelper.TrySetEntityKeyParts(state.ApiModel, id, config.KeyRouteParts);
         }
-        _ = EntityKeyHelper.TrySetEntityKeyParts(apiEntity, id, config.KeyRouteParts);
 
-        if (hookContext is not null)
+        var beforeResponseStage = await HookHelper.RunEntityHookStageAsync(
+            pipeline,
+            hookContext,
+            GetHookEntity<TApiModel, TDbModel, THookModel>(state, hooksUseDbModel),
+            p => p.ExecuteBeforeResponseAsync);
+        if (beforeResponseStage.EarlyResult is not null) return beforeResponseStage.EarlyResult;
+        if (modelAdapter.IsIdentity || hookContext is not null)
         {
-            if (typeof(THookModel) == typeof(TDbModel))
-            {
-                hookContext.Entity = (THookModel)(object)dbEntity;
-            }
-            else
-            {
-                hookContext.Entity = (THookModel)(object)apiEntity;
-            }
+            ApplyResponseHookEntity(state, modelAdapter, beforeResponseStage.Entity, hooksUseDbModel, id, config);
         }
-
-        var beforeResponseResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteBeforeResponseAsync);
-        if (beforeResponseResult is not null) return beforeResponseResult;
-
-        if (hookContext is not null)
+        else
         {
-            if (typeof(THookModel) == typeof(TDbModel))
-            {
-                dbEntity = (TDbModel)(object)(hookContext.Entity ?? (THookModel)(object)dbEntity);
-                _ = EntityKeyHelper.TrySetEntityKeyParts(dbEntity, id, config.KeyRouteParts);
-                apiEntity = mapper.ToApi(dbEntity);
-            }
-            else
-            {
-                apiEntity = (TApiModel)(object)(hookContext.Entity ?? (THookModel)(object)apiEntity);
-                _ = EntityKeyHelper.TrySetEntityKeyParts(apiEntity, id, config.KeyRouteParts);
-            }
+            _ = EntityKeyHelper.TrySetEntityKeyParts(state.ApiModel, id, config.KeyRouteParts);
         }
-        _ = EntityKeyHelper.TrySetEntityKeyParts(apiEntity, id, config.KeyRouteParts);
 
         if (options.EnableETagSupport)
         {
             var etagGenerator = ETagHelper.ResolveETagGenerator(httpContext);
-            var etag = etagGenerator.Generate(apiEntity);
+            var etag = etagGenerator.Generate(state.ApiModel);
 
             var ifNoneMatch = httpContext.Request.Headers.IfNoneMatch;
             if (!ETagComparer.IfNoneMatchSucceeds(ifNoneMatch, etag))
             {
-                RestLibLogMessages.GetByIdNotModified(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
+                RestLibLogMessages.GetByIdNotModified(
+                    logger,
+                    entityName,
+                    EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
                 httpContext.Response.Headers.ETag = etag;
                 return Results.StatusCode(StatusCodes.Status304NotModified);
             }
@@ -424,7 +309,7 @@ internal static class GetByIdHandler
         if (selectedFields.Count > 0)
         {
             var projected = FieldProjector.Project(
-                apiEntity,
+                state.ApiModel,
                 selectedFields,
                 jsonOptions,
                 config.FieldSelectionConfiguration.ResponseShape);
@@ -432,10 +317,7 @@ internal static class GetByIdHandler
             {
                 if (options.EnableHateoas)
                 {
-                    var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false, config.KeyRouteParts.Count);
-                    var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TApiModel, TKey>>();
-                    var customLinks = customLinksProvider?.GetLinks(apiEntity, id);
-                    var links = HateoasLinkBuilder.BuildEntityLinks(httpContext.Request, collectionPath, id, config, customLinks);
+                    var links = BuildLinks(state.ApiModel, id, config, httpContext);
                     HateoasHelper.InjectLinksIntoProjected(projected, links, jsonOptions);
                 }
 
@@ -445,25 +327,99 @@ internal static class GetByIdHandler
 
         if (options.EnableHateoas)
         {
-            var collectionPath = HateoasLinkBuilder.GetCollectionPath(httpContext.Request.Path, isCollectionEndpoint: false, config.KeyRouteParts.Count);
-            var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TApiModel, TKey>>();
-            var customLinks = customLinksProvider?.GetLinks(apiEntity, id);
-            var links = HateoasLinkBuilder.BuildEntityLinks(httpContext.Request, collectionPath, id, config, customLinks);
-            var entityWithLinks = HateoasHelper.EntityWithLinks<TApiModel, TKey>(apiEntity, links, jsonOptions);
+            var links = BuildLinks(state.ApiModel, id, config, httpContext);
+            var entityWithLinks = HateoasHelper.EntityWithLinks<TApiModel, TKey>(state.ApiModel, links, jsonOptions);
             return Results.Json(entityWithLinks, jsonOptions);
         }
 
-        return Results.Json(apiEntity, jsonOptions);
+        return Results.Json(state.ApiModel, jsonOptions);
     }
 
-    private static bool ShouldUseProjectionPushdown<TEntity, TKey>(
-        RestLibOptions options,
-        RestLibEndpointConfiguration<TEntity, TKey> config)
-        where TEntity : class
+    private static (IReadOnlyList<SelectedField> Fields, IResult? Error) ParseSelectedFields<TApiModel, TKey>(
+        RestLibEndpointConfiguration<TApiModel, TKey> config,
+        HttpContext httpContext,
+        Responses.ProblemDetailsResponder problems)
+        where TApiModel : class
         where TKey : notnull
     {
-        // The EF Core projection-capability path also handles nested field
-        // selections by loading required navigations before falling back.
+        if (!config.HasFieldSelection)
+        {
+            return ([], null);
+        }
+
+        var rawFields = httpContext.Request.Query["fields"].FirstOrDefault();
+        if (string.IsNullOrEmpty(rawFields))
+        {
+            return ([], null);
+        }
+
+        var fieldsResult = FieldSelectionParser.Parse(rawFields, config.FieldSelectionConfiguration);
+        return fieldsResult.IsValid
+            ? (fieldsResult.Fields, null)
+            : ([], problems.Create(Responses.ProblemDetailsFactory.InvalidFields(
+                fieldsResult.Errors,
+                httpContext.Request.Path)));
+    }
+
+    private static Dictionary<string, HateoasLink> BuildLinks<TApiModel, TKey>(
+        TApiModel apiModel,
+        TKey id,
+        RestLibEndpointConfiguration<TApiModel, TKey> config,
+        HttpContext httpContext)
+        where TApiModel : class
+        where TKey : notnull
+    {
+        var collectionPath = HateoasLinkBuilder.GetCollectionPath(
+            httpContext.Request.Path,
+            isCollectionEndpoint: false,
+            config.KeyRouteParts.Count);
+        var customLinksProvider = httpContext.RequestServices.GetService<IHateoasLinkProvider<TApiModel, TKey>>();
+        var customLinks = customLinksProvider?.GetLinks(apiModel, id);
+        return HateoasLinkBuilder.BuildEntityLinks(httpContext.Request, collectionPath, id, config, customLinks);
+    }
+
+    private static THookModel GetHookEntity<TApiModel, TDbModel, THookModel>(
+        EndpointModelState<TApiModel, TDbModel> state,
+        bool hooksUseDbModel)
+        where TApiModel : class
+        where TDbModel : class
+        where THookModel : class =>
+        hooksUseDbModel
+            ? (THookModel)(object)state.DbModel
+            : (THookModel)(object)state.ApiModel;
+
+    private static void ApplyResponseHookEntity<TApiModel, TDbModel, THookModel, TKey>(
+        EndpointModelState<TApiModel, TDbModel> state,
+        EndpointModelAdapter<TApiModel, TDbModel> modelAdapter,
+        THookModel hookEntity,
+        bool hooksUseDbModel,
+        TKey id,
+        RestLibEndpointConfiguration<TApiModel, TKey> config)
+        where TApiModel : class
+        where TDbModel : class
+        where THookModel : class
+        where TKey : notnull
+    {
+        if (hooksUseDbModel)
+        {
+            state.DbModel = (TDbModel)(object)hookEntity;
+            _ = EntityKeyHelper.TrySetEntityKeyParts(state.DbModel, id, config.KeyRouteParts);
+            state.ApiModel = modelAdapter.ToApi(state.DbModel);
+        }
+        else
+        {
+            state.ApiModel = (TApiModel)(object)hookEntity;
+        }
+
+        _ = EntityKeyHelper.TrySetEntityKeyParts(state.ApiModel, id, config.KeyRouteParts);
+    }
+
+    private static bool ShouldUseProjectionPushdown<TApiModel, TKey>(
+        RestLibOptions options,
+        RestLibEndpointConfiguration<TApiModel, TKey> config)
+        where TApiModel : class
+        where TKey : notnull
+    {
         return !options.EnableHateoas &&
             !options.EnableETagSupport &&
             config.Hooks is null;

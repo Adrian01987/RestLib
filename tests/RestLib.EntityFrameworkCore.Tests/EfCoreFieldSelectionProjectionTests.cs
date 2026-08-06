@@ -130,6 +130,90 @@ public class EfCoreFieldSelectionProjectionTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RepositoryQueries_FilterSortAndCursor_KeepProjectedAndUnprojectedPagesInParity()
+    {
+        // Arrange
+        await SeedProductsAsync(
+            CreateProduct(name: "A", unitPrice: 10m, stockQuantity: 1, isActive: true),
+            CreateProduct(name: "B", unitPrice: 20m, stockQuantity: 2, isActive: true),
+            CreateProduct(name: "Excluded", unitPrice: 30m, stockQuantity: 3, isActive: false),
+            CreateProduct(name: "C", unitPrice: 40m, stockQuantity: 4, isActive: true));
+        var repository = new EfCoreRepository<TestDbContext, ProductEntity, Guid>(
+            _db,
+            new EfCoreRepositoryOptions<ProductEntity, Guid>
+            {
+                KeySelector = product => product.Id,
+                EnableProjectionPushdown = true
+            });
+        var filters = new FilterValue[]
+        {
+            new()
+            {
+                PropertyName = nameof(ProductEntity.IsActive),
+                QueryParameterName = "is_active",
+                PropertyType = typeof(bool),
+                RawValue = "true",
+                TypedValue = true
+            }
+        };
+        var sortFields = new SortField[]
+        {
+            new()
+            {
+                PropertyName = nameof(ProductEntity.UnitPrice),
+                QueryParameterName = "unit_price",
+                Direction = SortDirection.Asc
+            }
+        };
+        var selectedFields = new SelectedField[]
+        {
+            new()
+            {
+                PropertyName = nameof(ProductEntity.ProductName),
+                QueryParameterName = "product_name"
+            }
+        };
+        var firstRequest = new PaginationRequest
+        {
+            Limit = 2,
+            Filters = filters,
+            SortFields = sortFields
+        };
+
+        // Act
+        var unprojectedFirstPage = await repository.GetAllAsync(firstRequest);
+        var projectedFirstPage = await repository.GetAllProjectedAsync(firstRequest, selectedFields);
+        var unprojectedSecondPage = await repository.GetAllAsync(new PaginationRequest
+        {
+            Cursor = unprojectedFirstPage.NextCursor,
+            Limit = 2,
+            Filters = filters,
+            SortFields = sortFields
+        });
+        var projectedSecondPage = await repository.GetAllProjectedAsync(
+            new PaginationRequest
+            {
+                Cursor = projectedFirstPage!.NextCursor,
+                Limit = 2,
+                Filters = filters,
+                SortFields = sortFields
+            },
+            selectedFields);
+        var count = await repository.CountAsync(firstRequest);
+
+        // Assert
+        projectedFirstPage.Should().NotBeNull();
+        projectedSecondPage.Should().NotBeNull();
+        projectedFirstPage!.Items.Select(product => product.Id)
+            .Should().Equal(unprojectedFirstPage.Items.Select(product => product.Id));
+        projectedFirstPage.NextCursor.Should().Be(unprojectedFirstPage.NextCursor);
+        projectedSecondPage!.Items.Select(product => product.Id)
+            .Should().Equal(unprojectedSecondPage.Items.Select(product => product.Id));
+        projectedSecondPage.NextCursor.Should().Be(unprojectedSecondPage.NextCursor);
+        count.Should().Be(3);
+    }
+
+    [Fact]
     public async Task GetAll_WithProjectionPushdown_SelectsRequestedPlusRequiredColumnsOnly()
     {
         // Arrange

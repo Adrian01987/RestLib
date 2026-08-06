@@ -433,6 +433,54 @@ public class EfCoreServerSideEvaluationTests : IAsyncLifetime
         _adapterLogMessages.Should().ContainSingle(message => message.Contains("keyset pagination fallback", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public async Task GetAll_LoggerAssignedAfterRepositoryConstruction_LogsKeysetFallbackWarning()
+    {
+        // Arrange
+        using var connection = new SqliteConnection("DataSource=:memory:");
+        await connection.OpenAsync();
+        var dbContextOptions = new DbContextOptionsBuilder<UnsupportedSortTestDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var context = new UnsupportedSortTestDbContext(dbContextOptions);
+        await context.Database.EnsureCreatedAsync();
+
+        context.Entities.AddRange(
+            new UnsupportedSortEntity { Id = Guid.NewGuid(), SortBlob = [1], Name = "A" },
+            new UnsupportedSortEntity { Id = Guid.NewGuid(), SortBlob = [2], Name = "B" },
+            new UnsupportedSortEntity { Id = Guid.NewGuid(), SortBlob = [3], Name = "C" });
+        await context.SaveChangesAsync();
+
+        var repositoryOptions = new EfCoreRepositoryOptions<UnsupportedSortEntity, Guid>
+        {
+            KeySelector = entity => entity.Id
+        };
+        var repository = new EfCoreRepository<UnsupportedSortTestDbContext, UnsupportedSortEntity, Guid>(
+            context,
+            repositoryOptions);
+        var lateBoundLogMessages = new List<string>();
+        using var loggerFactory = LoggerFactory.Create(builder =>
+            builder.AddProvider(new ListLoggerProvider(lateBoundLogMessages)));
+        repositoryOptions.Logger = loggerFactory.CreateLogger("LateBoundUnsupportedSortRepository");
+
+        var sortField = new SortField
+        {
+            PropertyName = "SortBlob",
+            QueryParameterName = "sort_blob",
+            Direction = SortDirection.Asc
+        };
+        var request = CreatePaginationRequest(sortFields: [sortField], limit: 2);
+
+        // Act
+        var result = await repository.GetAllAsync(request);
+
+        // Assert
+        result.Items.Should().HaveCount(2);
+        result.NextCursor.Should().NotBeNull();
+        lateBoundLogMessages.Should().ContainSingle(message =>
+            message.Contains("keyset pagination fallback", StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>
     /// Creates a <see cref="PaginationRequest"/> with the specified filters and sort fields.
     /// </summary>

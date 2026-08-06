@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Microsoft.AspNetCore.Http;
 using RestLib.Configuration;
 using RestLib.Endpoints;
 using RestLib.FieldSelection;
@@ -27,14 +26,7 @@ public static class ProblemDetailsFactory
             ? $"{entityName} with key ({id}) does not exist."
             : $"{entityName} with ID '{id}' does not exist.";
 
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.NotFound),
-            Title = "Resource Not Found",
-            Status = StatusCodes.Status404NotFound,
-            Detail = detail,
-            Instance = instance
-        };
+        return ProblemCatalog.NotFound.Create(detail, instance);
     }
 
     /// <summary>
@@ -46,15 +38,7 @@ public static class ProblemDetailsFactory
         IReadOnlyDictionary<string, string[]> errors,
         string? instance = null)
     {
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.ValidationFailed),
-            Title = "Validation Failed",
-            Status = StatusCodes.Status400BadRequest,
-            Detail = "One or more validation errors occurred.",
-            Instance = instance,
-            Errors = errors
-        };
+        return ProblemCatalog.ValidationFailed.Create(instance: instance, errors: errors);
     }
 
     /// <summary>
@@ -64,14 +48,7 @@ public static class ProblemDetailsFactory
     /// <param name="instance">The request path.</param>
     public static RestLibProblemDetails BadRequest(string detail, string? instance = null)
     {
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.BadRequest),
-            Title = "Bad Request",
-            Status = StatusCodes.Status400BadRequest,
-            Detail = detail,
-            Instance = instance
-        };
+        return ProblemCatalog.BadRequest.Create(detail, instance);
     }
 
     /// <summary>
@@ -82,14 +59,7 @@ public static class ProblemDetailsFactory
     /// <param name="detail">Optional detail message; when <c>null</c> a default message is used.</param>
     public static RestLibProblemDetails InvalidCursor(string cursor, string? instance = null, string? detail = null)
     {
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.InvalidCursor),
-            Title = "Invalid Cursor",
-            Status = StatusCodes.Status400BadRequest,
-            Detail = detail ?? "The provided cursor is not a valid pagination cursor.",
-            Instance = instance
-        };
+        return ProblemCatalog.InvalidCursor.Create(detail, instance);
     }
 
     /// <summary>
@@ -101,14 +71,9 @@ public static class ProblemDetailsFactory
     /// <param name="instance">The request path.</param>
     public static RestLibProblemDetails InvalidLimit(int limit, int minLimit, int maxLimit, string? instance = null)
     {
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.InvalidLimit),
-            Title = "Invalid Limit",
-            Status = StatusCodes.Status400BadRequest,
-            Detail = $"The limit value '{limit}' is invalid. Limit must be between {minLimit} and {maxLimit}.",
-            Instance = instance
-        };
+        return ProblemCatalog.InvalidLimit.Create(
+            $"The limit value '{limit}' is invalid. Limit must be between {minLimit} and {maxLimit}.",
+            instance);
     }
 
     /// <summary>
@@ -126,17 +91,10 @@ public static class ProblemDetailsFactory
                 g => g.Key,
                 g => g.Select(e => e.Message).ToArray());
 
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.InvalidFilter),
-            Title = "Invalid Filter Value",
-            Status = StatusCodes.Status400BadRequest,
-            Detail = errors.Count == 1
-              ? $"The filter parameter '{errors[0].ParameterName}' has an invalid value."
-              : $"Multiple filter parameters have invalid values.",
-            Instance = instance,
-            Errors = errorDict
-        };
+        var detail = errors.Count == 1
+            ? $"The filter parameter '{errors[0].ParameterName}' has an invalid value."
+            : "Multiple filter parameters have invalid values.";
+        return ProblemCatalog.InvalidFilter.Create(detail, instance, errorDict);
     }
 
     /// <summary>
@@ -154,17 +112,10 @@ public static class ProblemDetailsFactory
                 g => g.Key,
                 g => g.Select(e => e.Message).ToArray());
 
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.InvalidSort),
-            Title = "Invalid Sort Parameter",
-            Status = StatusCodes.Status400BadRequest,
-            Detail = errors.Count == 1
-              ? $"The sort field '{errors[0].Field}' is invalid."
-              : "One or more sort fields are invalid.",
-            Instance = instance,
-            Errors = errorDict
-        };
+        var detail = errors.Count == 1
+            ? $"The sort field '{errors[0].Field}' is invalid."
+            : "One or more sort fields are invalid.";
+        return ProblemCatalog.InvalidSort.Create(detail, instance, errorDict);
     }
 
     /// <summary>
@@ -182,17 +133,10 @@ public static class ProblemDetailsFactory
                 g => g.Key,
                 g => g.Select(e => e.Message).ToArray());
 
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.InvalidFields),
-            Title = "Invalid Field Selection",
-            Status = StatusCodes.Status400BadRequest,
-            Detail = errors.Count == 1
-              ? $"The field '{errors[0].Field}' is not a selectable field."
-              : "One or more requested fields are not selectable.",
-            Instance = instance,
-            Errors = errorDict
-        };
+        var detail = errors.Count == 1
+            ? $"The field '{errors[0].Field}' is not a selectable field."
+            : "One or more requested fields are not selectable.";
+        return ProblemCatalog.InvalidFields.Create(detail, instance, errorDict);
     }
 
     /// <summary>
@@ -210,17 +154,10 @@ public static class ProblemDetailsFactory
                 group => group.Key,
                 group => group.Select(error => error.Message).ToArray());
 
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.InvalidSearch),
-            Title = "Invalid Search Parameter",
-            Status = StatusCodes.Status400BadRequest,
-            Detail = errors.Count == 1
-                ? $"The search parameter '{errors[0].ParameterName}' is invalid."
-                : "One or more search parameters are invalid.",
-            Instance = instance,
-            Errors = errorDict
-        };
+        var detail = errors.Count == 1
+            ? $"The search parameter '{errors[0].ParameterName}' is invalid."
+            : "One or more search parameters are invalid.";
+        return ProblemCatalog.InvalidSearch.Create(detail, instance, errorDict);
     }
 
     /// <summary>
@@ -234,15 +171,7 @@ public static class ProblemDetailsFactory
         IReadOnlyDictionary<string, string[]>? errors = null,
         string? instance = null)
     {
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.InvalidBatchRequest),
-            Title = "Invalid Batch Request",
-            Status = StatusCodes.Status400BadRequest,
-            Detail = detail,
-            Instance = instance,
-            Errors = errors
-        };
+        return ProblemCatalog.InvalidBatchRequest.Create(detail, instance, errors);
     }
 
     /// <summary>
@@ -256,14 +185,9 @@ public static class ProblemDetailsFactory
         int maxBatchSize,
         string? instance = null)
     {
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.BatchSizeExceeded),
-            Title = "Batch Size Exceeded",
-            Status = StatusCodes.Status400BadRequest,
-            Detail = $"The batch contains {itemCount} items but the maximum allowed is {maxBatchSize}.",
-            Instance = instance
-        };
+        return ProblemCatalog.BatchSizeExceeded.Create(
+            $"The batch contains {itemCount} items but the maximum allowed is {maxBatchSize}.",
+            instance);
     }
 
     /// <summary>
@@ -278,14 +202,9 @@ public static class ProblemDetailsFactory
         string? instance = null)
     {
         var allowed = string.Join(", ", enabledActions);
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.BatchActionNotEnabled),
-            Title = "Batch Action Not Enabled",
-            Status = StatusCodes.Status400BadRequest,
-            Detail = $"The batch action '{action}' is not enabled for this resource. Enabled actions: {allowed}.",
-            Instance = instance
-        };
+        return ProblemCatalog.BatchActionNotEnabled.Create(
+            $"The batch action '{action}' is not enabled for this resource. Enabled actions: {allowed}.",
+            instance);
     }
 
     /// <summary>
@@ -295,14 +214,7 @@ public static class ProblemDetailsFactory
     /// <param name="instance">The request path.</param>
     public static RestLibProblemDetails Conflict(string detail, string? instance = null)
     {
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.Conflict),
-            Title = "Conflict",
-            Status = StatusCodes.Status409Conflict,
-            Detail = detail,
-            Instance = instance
-        };
+        return ProblemCatalog.Conflict.Create(detail, instance);
     }
 
     /// <summary>
@@ -320,18 +232,13 @@ public static class ProblemDetailsFactory
         int available,
         string? instance = null)
     {
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.InsufficientStock),
-            Title = "Insufficient Stock",
-            Status = StatusCodes.Status409Conflict,
-            Detail = detail,
-            Instance = instance,
-            Extensions = CreateExtensions(
+        return ProblemCatalog.InsufficientStock.Create(
+            detail,
+            instance,
+            extensions: CreateExtensions(
                 ("product_id", productId),
                 ("requested", requested),
-                ("available", available))
-        };
+                ("available", available)));
     }
 
     /// <summary>
@@ -345,17 +252,12 @@ public static class ProblemDetailsFactory
         string toStatus,
         string? instance = null)
     {
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.InvalidStatusTransition),
-            Title = "Invalid Status Transition",
-            Status = StatusCodes.Status409Conflict,
-            Detail = $"Status cannot transition from '{fromStatus}' to '{toStatus}'.",
-            Instance = instance,
-            Extensions = CreateExtensions(
+        return ProblemCatalog.InvalidStatusTransition.Create(
+            $"Status cannot transition from '{fromStatus}' to '{toStatus}'.",
+            instance,
+            extensions: CreateExtensions(
                 ("from", fromStatus),
-                ("to", toStatus))
-        };
+                ("to", toStatus)));
     }
 
     /// <summary>
@@ -365,14 +267,7 @@ public static class ProblemDetailsFactory
     /// <param name="instance">The request path.</param>
     public static RestLibProblemDetails PreconditionFailed(string detail, string? instance = null)
     {
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.PreconditionFailed),
-            Title = "Precondition Failed",
-            Status = StatusCodes.Status412PreconditionFailed,
-            Detail = detail,
-            Instance = instance
-        };
+        return ProblemCatalog.PreconditionFailed.Create(detail, instance);
     }
 
     /// <summary>
@@ -384,14 +279,7 @@ public static class ProblemDetailsFactory
     /// <returns>A configured Problem Details response.</returns>
     public static RestLibProblemDetails ConditionalWriteNotSupported(string detail, string? instance = null)
     {
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.ConditionalWriteNotSupported),
-            Title = "Conditional Write Not Supported",
-            Status = StatusCodes.Status501NotImplemented,
-            Detail = detail,
-            Instance = instance
-        };
+        return ProblemCatalog.ConditionalWriteNotSupported.Create(detail, instance);
     }
 
     /// <summary>
@@ -401,14 +289,7 @@ public static class ProblemDetailsFactory
     /// <param name="instance">The request path.</param>
     public static RestLibProblemDetails InternalError(string? detail = null, string? instance = null)
     {
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.InternalError),
-            Title = "Internal Server Error",
-            Status = StatusCodes.Status500InternalServerError,
-            Detail = detail ?? "An unexpected error occurred.",
-            Instance = instance
-        };
+        return ProblemCatalog.InternalError.Create(detail, instance);
     }
 
     /// <summary>
@@ -419,14 +300,7 @@ public static class ProblemDetailsFactory
     /// <param name="instance">The request path.</param>
     public static RestLibProblemDetails HookShortCircuit(int statusCode, string? instance = null)
     {
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.HookShortCircuit),
-            Title = "Hook Short-Circuit",
-            Status = statusCode,
-            Detail = "The operation was short-circuited by a hook.",
-            Instance = instance
-        };
+        return ProblemCatalog.HookShortCircuit.Create(instance: instance, status: statusCode);
     }
 
     /// <summary>
@@ -448,14 +322,7 @@ public static class ProblemDetailsFactory
             ? $"{entityName} with key ({EntityKeyHelper.FormatKeyForDisplay(id, keyRouteParts)}) does not exist."
             : $"{entityName} with ID '{id}' does not exist.";
 
-        return new RestLibProblemDetails
-        {
-            Type = ProblemTypes.Resolve(ProblemTypes.NotFound),
-            Title = "Resource Not Found",
-            Status = StatusCodes.Status404NotFound,
-            Detail = detail,
-            Instance = instance
-        };
+        return ProblemCatalog.NotFound.Create(detail, instance);
     }
 
     private static IDictionary<string, JsonElement> CreateExtensions(

@@ -75,13 +75,11 @@ internal static class ETagHelper
         RestLibOptions options,
         ILogger? logger)
     {
-        return Responses.ProblemDetailsResult.ConditionalWriteNotSupported(
+        var problems = Responses.ProblemDetailsResult.CreateResponder(jsonOptions, logger, options);
+        return problems.Create(Responses.ProblemDetailsFactory.ConditionalWriteNotSupported(
             $"The configured repository must implement {nameof(IConditionalWriteRepository<object, object>)} " +
             "to process If-Match safely.",
-            httpContext.Request.Path,
-            jsonOptions,
-            logger,
-            options);
+            httpContext.Request.Path));
     }
 
     /// <summary>
@@ -99,6 +97,8 @@ internal static class ETagHelper
         where TEntity : class
         where TKey : notnull
     {
+        var problems = Responses.ProblemDetailsResult.CreateResponder(jsonOptions, logger, options);
+
         if (result.Status == ConditionalWriteStatus.Succeeded)
         {
             return null;
@@ -106,14 +106,11 @@ internal static class ETagHelper
 
         if (result.Status == ConditionalWriteStatus.NotFound)
         {
-            return Responses.ProblemDetailsResult.NotFound(
+            return problems.Create(Responses.ProblemDetailsFactory.NotFound(
                 entityName,
                 id,
                 keyRouteParts,
-                httpContext.Request.Path,
-                jsonOptions,
-                logger,
-                options);
+                httpContext.Request.Path));
         }
 
         if (logger is not null)
@@ -121,12 +118,9 @@ internal static class ETagHelper
             RestLibLogMessages.ETagPreconditionFailed(logger, entityName, id.ToString()!);
         }
 
-        return Responses.ProblemDetailsResult.PreconditionFailed(
+        return problems.Create(Responses.ProblemDetailsFactory.PreconditionFailed(
             "The resource has been modified since you last retrieved it.",
-            httpContext.Request.Path,
-            jsonOptions,
-            logger,
-            options);
+            httpContext.Request.Path));
     }
 
     /// <summary>
@@ -162,6 +156,7 @@ internal static class ETagHelper
         where TEntity : class
         where TKey : notnull
     {
+        var problems = Responses.ProblemDetailsResult.CreateResponder(jsonOptions, logger, options);
         var precondition = CreateIfMatchPrecondition<TEntity>(httpContext, options);
         if (precondition is null)
         {
@@ -172,14 +167,11 @@ internal static class ETagHelper
         var current = await repository.GetByIdAsync(id, ct);
         if (current is null)
         {
-            var notFoundResult = Responses.ProblemDetailsResult.NotFound(
+            var notFoundResult = problems.Create(Responses.ProblemDetailsFactory.NotFound(
                 entityName,
                 id!,
                 [new RestLib.Configuration.RestLibKeyRoutePart<TKey>(string.Empty, "id", typeof(TKey), static key => key)],
-                httpContext.Request.Path,
-                jsonOptions,
-                logger: logger,
-                options: options);
+                httpContext.Request.Path));
             return (null, notFoundResult);
         }
 
@@ -190,12 +182,9 @@ internal static class ETagHelper
                 RestLibLogMessages.ETagPreconditionFailed(logger, entityName, id!.ToString()!);
             }
 
-            var preconditionResult = Responses.ProblemDetailsResult.PreconditionFailed(
+            var preconditionResult = problems.Create(Responses.ProblemDetailsFactory.PreconditionFailed(
                 "The resource has been modified since you last retrieved it.",
-                httpContext.Request.Path,
-                jsonOptions,
-                logger: logger,
-                options: options);
+                httpContext.Request.Path));
             return (null, preconditionResult);
         }
 
@@ -236,6 +225,7 @@ internal static class ETagHelper
         where TDbModel : class
         where TKey : notnull
     {
+        var problems = Responses.ProblemDetailsResult.CreateResponder(jsonOptions, logger, options);
         var precondition = CreateIfMatchPrecondition<TApiModel, TDbModel>(httpContext, options, mapper);
         if (precondition is null)
         {
@@ -245,14 +235,11 @@ internal static class ETagHelper
         var currentDb = await repository.GetByIdAsync(id, ct);
         if (currentDb is null)
         {
-            var notFoundResult = Responses.ProblemDetailsResult.NotFound(
+            var notFoundResult = problems.Create(Responses.ProblemDetailsFactory.NotFound(
                 entityName,
                 id!,
                 [new RestLib.Configuration.RestLibKeyRoutePart<TKey>(string.Empty, "id", typeof(TKey), static key => key)],
-                httpContext.Request.Path,
-                jsonOptions,
-                logger: logger,
-                options: options);
+                httpContext.Request.Path));
             return (null, null, notFoundResult);
         }
 
@@ -264,12 +251,9 @@ internal static class ETagHelper
                 RestLibLogMessages.ETagPreconditionFailed(logger, entityName, id!.ToString()!);
             }
 
-            var preconditionResult = Responses.ProblemDetailsResult.PreconditionFailed(
+            var preconditionResult = problems.Create(Responses.ProblemDetailsFactory.PreconditionFailed(
                 "The resource has been modified since you last retrieved it.",
-                httpContext.Request.Path,
-                jsonOptions,
-                logger: logger,
-                options: options);
+                httpContext.Request.Path));
             return (null, null, preconditionResult);
         }
 

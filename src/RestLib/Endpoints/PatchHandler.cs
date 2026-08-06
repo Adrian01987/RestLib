@@ -40,6 +40,7 @@ internal static class PatchHandler
         {
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
             var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.Patch");
+            var problems = Responses.ProblemDetailsResult.CreateResponder(jsonOptions, logger, options);
 
             if (PatchHelper.TryGetPatchedKeyProperty<TEntity, TKey>(
                 patchDocument,
@@ -47,12 +48,9 @@ internal static class PatchHandler
                 jsonOptions,
                 out var patchedKeyProperty))
             {
-                return Responses.ProblemDetailsResult.BadRequest(
+                return problems.Create(Responses.ProblemDetailsFactory.BadRequest(
                     PatchHelper.KeyModificationError(patchedKeyProperty!),
-                    httpContext.Request.Path,
-                    jsonOptions,
-                    logger,
-                    options);
+                    httpContext.Request.Path));
             }
 
             RestLibLogMessages.PatchRequestReceived(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
@@ -85,26 +83,20 @@ internal static class PatchHandler
                     originalEntity = await repository.GetByIdAsync(id, ct);
                     if (originalEntity is null)
                     {
-                        return Responses.ProblemDetailsResult.NotFound(
+                        return problems.Create(Responses.ProblemDetailsFactory.NotFound(
                             entityName,
                             id!,
                             config.KeyRouteParts,
-                            httpContext.Request.Path,
-                            jsonOptions,
-                            logger,
-                            options);
+                            httpContext.Request.Path));
                     }
                 }
 
                 var preview = PatchHelper.PreviewPatch(originalEntity, patchDocument, jsonOptions, logger);
                 if (preview is null)
                 {
-                    return Responses.ProblemDetailsResult.BadRequest(
+                    return problems.Create(Responses.ProblemDetailsFactory.BadRequest(
                         "The patch document could not be applied to the resource.",
-                        httpContext.Request.Path,
-                        jsonOptions,
-                        logger,
-                        options);
+                        httpContext.Request.Path));
                 }
 
                 // Validate merged entity BEFORE persisting to prevent invalid data in the repository
@@ -116,12 +108,9 @@ internal static class PatchHandler
                         jsonOptions.PropertyNamingPolicy);
                     if (!validationResult.IsValid)
                     {
-                        return Responses.ProblemDetailsResult.ValidationFailed(
+                        return problems.Create(Responses.ProblemDetailsFactory.ValidationFailed(
                             validationResult.Errors,
-                            httpContext.Request.Path,
-                            jsonOptions,
-                            logger,
-                            options);
+                            httpContext.Request.Path));
                     }
                 }
 
@@ -143,12 +132,9 @@ internal static class PatchHandler
                         jsonOptions.PropertyNamingPolicy);
                     if (!validationResult.IsValid)
                     {
-                        return Responses.ProblemDetailsResult.ValidationFailed(
+                        return problems.Create(Responses.ProblemDetailsFactory.ValidationFailed(
                             validationResult.Errors,
-                            httpContext.Request.Path,
-                            jsonOptions,
-                            logger,
-                            options);
+                            httpContext.Request.Path));
                     }
                 }
 
@@ -190,14 +176,11 @@ internal static class PatchHandler
 
                 if (patched is null)
                 {
-                    return Responses.ProblemDetailsResult.NotFound(
+                    return problems.Create(Responses.ProblemDetailsFactory.NotFound(
                         entityName,
                         id!,
                         config.KeyRouteParts,
-                        httpContext.Request.Path,
-                        jsonOptions,
-                        logger,
-                        options);
+                        httpContext.Request.Path));
                 }
 
                 // AfterPersist hook
@@ -235,12 +218,9 @@ internal static class PatchHandler
             }
             catch (PatchValidationException ex)
             {
-                return Responses.ProblemDetailsResult.BadRequest(
+                return problems.Create(Responses.ProblemDetailsFactory.BadRequest(
                     ex.Message,
-                    httpContext.Request.Path,
-                    jsonOptions,
-                    logger,
-                    options);
+                    httpContext.Request.Path));
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
@@ -277,6 +257,7 @@ internal static class PatchHandler
         {
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
             var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.Patch");
+            var problems = Responses.ProblemDetailsResult.CreateResponder(jsonOptions, logger, options);
             var repository = httpContext.RequestServices.GetRequiredService<IRepository<TDbModel, TKey>>();
             var mapper = RestLibMapperResolver.Resolve<TApiModel, TDbModel>(
                 httpContext.RequestServices,
@@ -290,12 +271,9 @@ internal static class PatchHandler
                 jsonOptions,
                 out var patchedKeyProperty))
             {
-                return Responses.ProblemDetailsResult.BadRequest(
+                return problems.Create(Responses.ProblemDetailsFactory.BadRequest(
                     PatchHelper.KeyModificationError(patchedKeyProperty!),
-                    httpContext.Request.Path,
-                    jsonOptions,
-                    logger,
-                    options);
+                    httpContext.Request.Path));
             }
 
             RestLibLogMessages.PatchRequestReceived(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
@@ -329,12 +307,9 @@ internal static class PatchHandler
                 }
                 catch (PatchValidationException ex)
                 {
-                    return Responses.ProblemDetailsResult.BadRequest(
+                    return problems.Create(Responses.ProblemDetailsFactory.BadRequest(
                         ex.Message,
-                        httpContext.Request.Path,
-                        jsonOptions,
-                        logger,
-                        options);
+                        httpContext.Request.Path));
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
                 {
@@ -378,12 +353,9 @@ internal static class PatchHandler
             }
             catch (PatchValidationException ex)
             {
-                return Responses.ProblemDetailsResult.BadRequest(
+                return problems.Create(Responses.ProblemDetailsFactory.BadRequest(
                     ex.Message,
-                    httpContext.Request.Path,
-                    jsonOptions,
-                    logger,
-                    options);
+                    httpContext.Request.Path));
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
@@ -420,6 +392,7 @@ internal static class PatchHandler
         where THookModel : class
         where TKey : notnull
     {
+        var problems = Responses.ProblemDetailsResult.CreateResponder(jsonOptions, logger, options);
         TDbModel? originalDb = null;
         TApiModel? originalApi = null;
 
@@ -454,14 +427,11 @@ internal static class PatchHandler
             originalDb = await repository.GetByIdAsync(id, ct);
             if (originalDb is null && options.EnableValidation)
             {
-                return Responses.ProblemDetailsResult.NotFound(
+                return problems.Create(Responses.ProblemDetailsFactory.NotFound(
                     entityName,
                     id!,
                     config.KeyRouteParts,
-                    httpContext.Request.Path,
-                    jsonOptions,
-                    logger,
-                    options);
+                    httpContext.Request.Path));
             }
 
             originalApi = originalDb is not null ? mapper.ToApi(originalDb) : null;
@@ -472,14 +442,11 @@ internal static class PatchHandler
             var notFoundCandidate = await repository.GetByIdAsync(id, ct);
             if (notFoundCandidate is null)
             {
-                return Responses.ProblemDetailsResult.NotFound(
+                return problems.Create(Responses.ProblemDetailsFactory.NotFound(
                     entityName,
                     id!,
                     config.KeyRouteParts,
-                    httpContext.Request.Path,
-                    jsonOptions,
-                    logger,
-                    options);
+                    httpContext.Request.Path));
             }
 
             originalDb = notFoundCandidate;
@@ -489,12 +456,9 @@ internal static class PatchHandler
         var patchedApi = PatchHelper.PreviewPatch(originalApi, patchDocument, jsonOptions, logger);
         if (patchedApi is null)
         {
-            return Responses.ProblemDetailsResult.BadRequest(
+            return problems.Create(Responses.ProblemDetailsFactory.BadRequest(
                 "The patch document could not be applied to the resource.",
-                httpContext.Request.Path,
-                jsonOptions,
-                logger,
-                options);
+                httpContext.Request.Path));
         }
 
         if (options.EnableValidation)
@@ -505,12 +469,9 @@ internal static class PatchHandler
                 jsonOptions.PropertyNamingPolicy);
             if (!validationResult.IsValid)
             {
-                return Responses.ProblemDetailsResult.ValidationFailed(
+                return problems.Create(Responses.ProblemDetailsFactory.ValidationFailed(
                     validationResult.Errors,
-                    httpContext.Request.Path,
-                    jsonOptions,
-                    logger,
-                    options);
+                    httpContext.Request.Path));
             }
         }
 
@@ -553,12 +514,9 @@ internal static class PatchHandler
                 jsonOptions.PropertyNamingPolicy);
             if (!validationResult.IsValid)
             {
-                return Responses.ProblemDetailsResult.ValidationFailed(
+                return problems.Create(Responses.ProblemDetailsFactory.ValidationFailed(
                     validationResult.Errors,
-                    httpContext.Request.Path,
-                    jsonOptions,
-                    logger,
-                    options);
+                    httpContext.Request.Path));
             }
         }
 
@@ -624,14 +582,11 @@ internal static class PatchHandler
         }
         if (updatedDb is null)
         {
-            return Responses.ProblemDetailsResult.NotFound(
+            return problems.Create(Responses.ProblemDetailsFactory.NotFound(
                 entityName,
                 id!,
                 config.KeyRouteParts,
-                httpContext.Request.Path,
-                jsonOptions,
-                logger,
-                options);
+                httpContext.Request.Path));
         }
 
         var updatedApi = mapper.ToApi(updatedDb);

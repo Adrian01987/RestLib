@@ -143,6 +143,28 @@ public class TwoModelEndpointMappingTests
     }
 
     [Fact]
+    public async Task MapRestLib_WithTwoModelResource_InvalidCollectionQueryReturnsProblemBeforeRepositoryCall()
+    {
+        // Arrange
+        var repository = new TrackingTwoModelRepository();
+        var (host, client) = await CreateHostAsync(repository, config =>
+        {
+            config.AllowSorting(item => item.Price);
+        });
+        using var hostHandle = host;
+        using var clientHandle = client;
+
+        // Act
+        var response = await client.GetAsync("/api/items?sort=price:sideways");
+
+        // Assert
+        await response.ShouldBeProblemDetailsJson(
+            HttpStatusCode.BadRequest,
+            ProblemTypes.InvalidSort);
+        repository.GetAllCallCount.Should().Be(0);
+    }
+
+    [Fact]
     public async Task MapRestLib_WithTwoModelResource_ValidationUsesApiModel()
     {
         // Arrange

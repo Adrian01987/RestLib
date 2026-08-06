@@ -364,14 +364,12 @@ public class EfCoreServiceRegistrationTests
         var options = provider.GetRequiredService<EfCoreRepositoryOptions<IntKeyEntity, Guid>>();
         using var scope = provider.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<IRepository<IntKeyEntity, Guid>>();
-        var keySelector = ((EfCoreRepository<KeyDetectionTestDbContext, IntKeyEntity, Guid>)repository)
-            .GetType()
-            .GetField("_keySelector", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-        var key = ((System.Linq.Expressions.Expression<Func<IntKeyEntity, Guid>>)keySelector.GetValue(repository)!)
-            .Compile()
-            .Invoke(entity);
+        var dbContext = scope.ServiceProvider.GetRequiredService<KeyDetectionTestDbContext>();
+        var keyMetadata = new EfCoreKeyMetadata<IntKeyEntity, Guid>(dbContext.Model, options.KeySelector);
+        var key = keyMetadata.KeyAccessor(entity);
 
         // Assert
+        repository.Should().NotBeNull();
         options.KeySelector.Should().NotBeNull();
         key.Should().Be(entity.ExternalId);
     }
@@ -433,14 +431,12 @@ public class EfCoreServiceRegistrationTests
         // Act
         using var scope = provider.CreateScope();
         var repository = scope.ServiceProvider.GetRequiredService<IRepository<RegistrationTestEntity, Guid>>();
-        var keySelector = ((EfCoreRepository<KeyDetectionTestDbContext, RegistrationTestEntity, Guid>)repository)
-            .GetType()
-            .GetField("_keySelector", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-        var key = ((System.Linq.Expressions.Expression<Func<RegistrationTestEntity, Guid>>)keySelector.GetValue(repository)!)
-            .Compile()
-            .Invoke(entity);
+        var dbContext = scope.ServiceProvider.GetRequiredService<KeyDetectionTestDbContext>();
+        var keyMetadata = new EfCoreKeyMetadata<RegistrationTestEntity, Guid>(dbContext.Model, keySelector: null);
+        var key = keyMetadata.KeyAccessor(entity);
 
         // Assert
+        repository.Should().NotBeNull();
         key.Should().Be(entity.Id);
     }
 

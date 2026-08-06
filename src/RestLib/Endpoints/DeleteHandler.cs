@@ -1,5 +1,7 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.Hooks;
@@ -37,124 +39,49 @@ internal static class DeleteHandler
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
             var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.Delete");
 
-            RestLibLogMessages.DeleteRequestReceived(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
+            RestLibLogMessages.DeleteRequestReceived(
+                logger,
+                entityName,
+                EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
-            // Initialize hook pipeline and run OnRequestReceived
             var (pipeline, hookContext, pipelineEarlyResult) = await HookHelper.InitializePipelineAsync<TEntity, TKey>(
-                config.Hooks, httpContext, RestLibOperation.Delete, id, logger: logger);
+                config.Hooks,
+                httpContext,
+                RestLibOperation.Delete,
+                id,
+                logger: logger);
             if (pipelineEarlyResult is not null) return pipelineEarlyResult;
-            TEntity? entityToDelete = null;
 
+            var state = new OptionalEndpointModelState<TEntity, TEntity>();
             try
             {
-                // Check for ETag precondition (If-Match header)
-                var (etagEntity, etagError) = await ETagHelper.CheckIfMatchPreconditionAsync(
-                    httpContext, repository, id, entityName, options, jsonOptions, ct, logger);
-                if (etagError is not null) return etagError;
-                if (etagEntity is not null) entityToDelete = etagEntity;
-
-                var ifMatchPrecondition = ETagHelper.CreateIfMatchPrecondition<TEntity>(httpContext, options);
-                if (ifMatchPrecondition is not null && repository is not IConditionalWriteRepository<TEntity, TKey>)
-                {
-                    return ETagHelper.ConditionalWriteNotSupported(httpContext, jsonOptions, options, logger);
-                }
-
-                // Fetch entity for hooks if pipeline exists and not already fetched
-                if (entityToDelete is null && pipeline is not null)
-                {
-                    entityToDelete = await repository.GetByIdAsync(id, ct);
-                }
-
-                if (pipeline is not null && entityToDelete is null)
-                {
-                    return Responses.ProblemDetailsResult.NotFound(
-                        entityName,
-                        id!,
-                        config.KeyRouteParts,
-                        httpContext.Request.Path,
-                        jsonOptions,
-                        logger,
-                        options);
-                }
-
-                if (entityToDelete is not null)
-                {
-                    var validatedStage = await HookHelper.RunEntityHookStageAsync(
-                        pipeline, hookContext, entityToDelete, p => p.ExecuteOnRequestValidatedAsync);
-                    if (validatedStage.EarlyResult is not null) return validatedStage.EarlyResult;
-                    entityToDelete = validatedStage.Entity;
-                    _ = EntityKeyHelper.TrySetEntityKeyParts(entityToDelete, id, config.KeyRouteParts);
-                }
-
-                // BeforePersist hook
-                if (entityToDelete is not null)
-                {
-                    var beforePersistStage = await HookHelper.RunEntityHookStageAsync(
-                        pipeline, hookContext, entityToDelete, p => p.ExecuteBeforePersistAsync);
-                    if (beforePersistStage.EarlyResult is not null) return beforePersistStage.EarlyResult;
-                    entityToDelete = beforePersistStage.Entity;
-                    _ = EntityKeyHelper.TrySetEntityKeyParts(entityToDelete, id, config.KeyRouteParts);
-                }
-
-                if (ifMatchPrecondition is null)
-                {
-                    var deleted = await repository.DeleteAsync(id, ct);
-                    if (!deleted)
-                    {
-                        return Responses.ProblemDetailsResult.NotFound(
-                            entityName,
-                            id!,
-                            config.KeyRouteParts,
-                            httpContext.Request.Path,
-                            jsonOptions,
-                            logger,
-                            options);
-                    }
-                }
-                else
-                {
-                    var conditionalResult = await ((IConditionalWriteRepository<TEntity, TKey>)repository)
-                        .DeleteConditionallyAsync(id, ifMatchPrecondition, ct);
-                    var conditionalError = ETagHelper.ToErrorResult(
-                        conditionalResult,
-                        httpContext,
-                        id,
-                        entityName,
-                        config.KeyRouteParts,
-                        jsonOptions,
-                        options,
-                        logger);
-                    if (conditionalError is not null) return conditionalError;
-                    entityToDelete = conditionalResult.Entity!;
-                }
-
-                RestLibLogMessages.EntityDeleted(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
-
-                // AfterPersist hook
-                if (entityToDelete is not null)
-                {
-                    var afterPersistStage = await HookHelper.RunEntityHookStageAsync(
-                        pipeline, hookContext, entityToDelete, p => p.ExecuteAfterPersistAsync);
-                    if (afterPersistStage.EarlyResult is not null) return afterPersistStage.EarlyResult;
-                    entityToDelete = afterPersistStage.Entity;
-                    _ = EntityKeyHelper.TrySetEntityKeyParts(entityToDelete, id, config.KeyRouteParts);
-                }
-
-                // BeforeResponse hook
-                if (entityToDelete is not null)
-                {
-                    var beforeResponseStage = await HookHelper.RunEntityHookStageAsync(
-                        pipeline, hookContext, entityToDelete, p => p.ExecuteBeforeResponseAsync);
-                    if (beforeResponseStage.EarlyResult is not null) return beforeResponseStage.EarlyResult;
-                    entityToDelete = beforeResponseStage.Entity;
-                }
-
-                return Results.NoContent();
+                return await ExecuteDeleteAsync<TEntity, TEntity, TEntity, TKey>(
+                    id,
+                    state,
+                    repository,
+                    EndpointModelAdapter<TEntity, TEntity>.Identity<TEntity>(),
+                    hooksUseDbModel: false,
+                    httpContext,
+                    ct,
+                    jsonOptions,
+                    options,
+                    logger,
+                    config,
+                    entityName,
+                    pipeline,
+                    hookContext);
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
                 RestLibLogMessages.EndpointUnhandledException(logger, nameof(RestLibOperation.Delete), ex);
-                var errorResult = await HookHelper.HandleErrorHookAsync(pipeline, httpContext, RestLibOperation.Delete, ex, id, entityToDelete, logger);
+                var errorResult = await HookHelper.HandleErrorHookAsync(
+                    pipeline,
+                    httpContext,
+                    RestLibOperation.Delete,
+                    ex,
+                    id,
+                    state.ApiModel,
+                    logger);
                 if (errorResult is not null) return errorResult;
                 throw;
             }
@@ -191,8 +118,12 @@ internal static class DeleteHandler
                 config.MapperName,
                 config.UseAutoMapper,
                 config.ResourceName);
+            var modelAdapter = EndpointModelAdapter<TApiModel, TDbModel>.Mapped(mapper);
 
-            RestLibLogMessages.DeleteRequestReceived(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
+            RestLibLogMessages.DeleteRequestReceived(
+                logger,
+                entityName,
+                EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
             if (config.UsesDbModelHooks)
             {
@@ -206,10 +137,12 @@ internal static class DeleteHandler
 
                 try
                 {
-                    return await ExecuteMappedDeleteAsync<TApiModel, TDbModel, TDbModel, TKey>(
+                    return await ExecuteDeleteAsync<TApiModel, TDbModel, TDbModel, TKey>(
                         id,
+                        new OptionalEndpointModelState<TApiModel, TDbModel>(),
                         repository,
-                        mapper,
+                        modelAdapter,
+                        hooksUseDbModel: true,
                         httpContext,
                         ct,
                         jsonOptions,
@@ -245,10 +178,12 @@ internal static class DeleteHandler
 
             try
             {
-                return await ExecuteMappedDeleteAsync<TApiModel, TDbModel, TApiModel, TKey>(
+                return await ExecuteDeleteAsync<TApiModel, TDbModel, TApiModel, TKey>(
                     id,
+                    new OptionalEndpointModelState<TApiModel, TDbModel>(),
                     repository,
-                    mapper,
+                    modelAdapter,
+                    hooksUseDbModel: typeof(TApiModel) == typeof(TDbModel),
                     httpContext,
                     ct,
                     jsonOptions,
@@ -275,16 +210,18 @@ internal static class DeleteHandler
         };
     }
 
-    private static async Task<IResult> ExecuteMappedDeleteAsync<TApiModel, TDbModel, THookModel, TKey>(
+    private static async Task<IResult> ExecuteDeleteAsync<TApiModel, TDbModel, THookModel, TKey>(
         TKey id,
+        OptionalEndpointModelState<TApiModel, TDbModel> state,
         IRepository<TDbModel, TKey> repository,
-        IRestLibMapper<TApiModel, TDbModel> mapper,
+        EndpointModelAdapter<TApiModel, TDbModel> modelAdapter,
+        bool hooksUseDbModel,
         HttpContext httpContext,
         CancellationToken ct,
-        System.Text.Json.JsonSerializerOptions jsonOptions,
+        JsonSerializerOptions jsonOptions,
         RestLibOptions options,
-        Microsoft.Extensions.Logging.ILogger logger,
-        RestLibEndpointConfiguration<TApiModel, TDbModel, TKey> config,
+        ILogger logger,
+        RestLibEndpointConfiguration<TApiModel, TKey> config,
         string entityName,
         HookPipeline<THookModel, TKey>? pipeline,
         HookContext<THookModel, TKey>? hookContext)
@@ -293,13 +230,12 @@ internal static class DeleteHandler
         where THookModel : class
         where TKey : notnull
     {
-        TDbModel? entityToDeleteDb = null;
-        TApiModel? entityToDeleteApi = null;
+        var problems = Responses.ProblemDetailsResult.CreateResponder(jsonOptions, logger, options);
 
         var (etagDb, etagApi, etagError) = await ETagHelper.CheckIfMatchPreconditionAsync<TApiModel, TDbModel, TKey>(
             httpContext,
             repository,
-            mapper,
+            modelAdapter.Mapper,
             id,
             entityName,
             options,
@@ -309,79 +245,56 @@ internal static class DeleteHandler
         if (etagError is not null) return etagError;
         if (etagDb is not null)
         {
-            entityToDeleteDb = etagDb;
-            entityToDeleteApi = etagApi;
+            state.DbModel = etagDb;
+            state.ApiModel = etagApi;
         }
 
         var ifMatchPrecondition = ETagHelper.CreateIfMatchPrecondition<TApiModel, TDbModel>(
             httpContext,
             options,
-            mapper);
+            modelAdapter.Mapper);
         if (ifMatchPrecondition is not null && repository is not IConditionalWriteRepository<TDbModel, TKey>)
         {
             return ETagHelper.ConditionalWriteNotSupported(httpContext, jsonOptions, options, logger);
         }
 
-        if (entityToDeleteDb is null && pipeline is not null)
+        if (state.DbModel is null && pipeline is not null)
         {
-            entityToDeleteDb = await repository.GetByIdAsync(id, ct);
-            entityToDeleteApi = entityToDeleteDb is not null ? mapper.ToApi(entityToDeleteDb) : null;
+            state.DbModel = await repository.GetByIdAsync(id, ct);
+            state.ApiModel = state.DbModel is not null ? modelAdapter.ToApi(state.DbModel) : null;
         }
 
-        if (pipeline is not null && entityToDeleteDb is null)
+        if (pipeline is not null && state.DbModel is null)
         {
-            return Responses.ProblemDetailsResult.NotFound(
+            return problems.Create(Responses.ProblemDetailsFactory.NotFound(
                 entityName,
                 id!,
                 config.KeyRouteParts,
-                httpContext.Request.Path,
-                jsonOptions,
-                logger,
-                options);
+                httpContext.Request.Path));
         }
 
-        var validatedHookEntity = typeof(THookModel) == typeof(TDbModel)
-            ? (THookModel?)(object?)entityToDeleteDb
-            : (THookModel?)(object?)entityToDeleteApi;
+        var validatedHookEntity = GetHookEntity<TApiModel, TDbModel, THookModel>(state, hooksUseDbModel);
         if (validatedHookEntity is not null)
         {
             var validatedStage = await HookHelper.RunEntityHookStageAsync(
-                pipeline, hookContext, validatedHookEntity, p => p.ExecuteOnRequestValidatedAsync);
+                pipeline,
+                hookContext,
+                validatedHookEntity,
+                p => p.ExecuteOnRequestValidatedAsync);
             if (validatedStage.EarlyResult is not null) return validatedStage.EarlyResult;
-
-            if (typeof(THookModel) == typeof(TDbModel))
-            {
-                entityToDeleteDb = (TDbModel)(object)validatedStage.Entity;
-                _ = EntityKeyHelper.TrySetEntityKeyParts(entityToDeleteDb, id, config.KeyRouteParts);
-                entityToDeleteApi = mapper.ToApi(entityToDeleteDb);
-            }
-            else
-            {
-                entityToDeleteApi = (TApiModel)(object)validatedStage.Entity;
-                _ = EntityKeyHelper.TrySetEntityKeyParts(entityToDeleteApi, id, config.KeyRouteParts);
-            }
+            ApplyRequestHookEntity(state, modelAdapter, validatedStage.Entity, hooksUseDbModel, id, config);
         }
 
-        var beforePersistHookEntity = typeof(THookModel) == typeof(TDbModel)
-            ? (THookModel?)(object?)entityToDeleteDb
-            : (THookModel?)(object?)entityToDeleteApi;
+        var beforePersistHookEntity = GetHookEntity<TApiModel, TDbModel, THookModel>(state, hooksUseDbModel);
         if (beforePersistHookEntity is not null)
         {
             var beforePersistStage = await HookHelper.RunEntityHookStageAsync(
-                pipeline, hookContext, beforePersistHookEntity, p => p.ExecuteBeforePersistAsync);
+                pipeline,
+                hookContext,
+                beforePersistHookEntity,
+                p => p.ExecuteBeforePersistAsync);
             if (beforePersistStage.EarlyResult is not null) return beforePersistStage.EarlyResult;
-
-            if (typeof(THookModel) == typeof(TDbModel))
-            {
-                entityToDeleteDb = (TDbModel)(object)beforePersistStage.Entity;
-                _ = EntityKeyHelper.TrySetEntityKeyParts(entityToDeleteDb, id, config.KeyRouteParts);
-                entityToDeleteApi = mapper.ToApi(entityToDeleteDb);
-            }
-            else
-            {
-                entityToDeleteApi = (TApiModel)(object)beforePersistStage.Entity;
-                _ = EntityKeyHelper.TrySetEntityKeyParts(entityToDeleteApi, id, config.KeyRouteParts);
-            }
+            ApplyRequestHookEntity(state, modelAdapter, beforePersistStage.Entity, hooksUseDbModel, id, config);
         }
 
         if (ifMatchPrecondition is null)
@@ -389,14 +302,11 @@ internal static class DeleteHandler
             var deleted = await repository.DeleteAsync(id, ct);
             if (!deleted)
             {
-                return Responses.ProblemDetailsResult.NotFound(
+                return problems.Create(Responses.ProblemDetailsFactory.NotFound(
                     entityName,
                     id!,
                     config.KeyRouteParts,
-                    httpContext.Request.Path,
-                    jsonOptions,
-                    logger,
-                    options);
+                    httpContext.Request.Path));
             }
         }
         else
@@ -413,29 +323,71 @@ internal static class DeleteHandler
                 options,
                 logger);
             if (conditionalError is not null) return conditionalError;
-            entityToDeleteDb = conditionalResult.Entity!;
-            entityToDeleteApi = mapper.ToApi(entityToDeleteDb);
+            state.DbModel = conditionalResult.Entity!;
+            state.ApiModel = modelAdapter.ToApi(state.DbModel);
         }
 
-        RestLibLogMessages.EntityDeleted(logger, entityName, EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
+        RestLibLogMessages.EntityDeleted(
+            logger,
+            entityName,
+            EntityKeyHelper.FormatKeyForDisplay(id, config.KeyRouteParts));
 
-        var afterPersistHookEntity = typeof(THookModel) == typeof(TDbModel)
-            ? (THookModel?)(object?)entityToDeleteDb
-            : (THookModel?)(object?)entityToDeleteApi;
+        var afterPersistHookEntity = GetHookEntity<TApiModel, TDbModel, THookModel>(state, hooksUseDbModel);
         if (afterPersistHookEntity is not null)
         {
             var afterPersistStage = await HookHelper.RunEntityHookStageAsync(
-                pipeline, hookContext, afterPersistHookEntity, p => p.ExecuteAfterPersistAsync);
+                pipeline,
+                hookContext,
+                afterPersistHookEntity,
+                p => p.ExecuteAfterPersistAsync);
             if (afterPersistStage.EarlyResult is not null) return afterPersistStage.EarlyResult;
 
             var beforeResponseHookEntity = afterPersistStage.Entity;
             _ = EntityKeyHelper.TrySetEntityKeyParts(beforeResponseHookEntity, id, config.KeyRouteParts);
 
             var beforeResponseStage = await HookHelper.RunEntityHookStageAsync(
-                pipeline, hookContext, beforeResponseHookEntity, p => p.ExecuteBeforeResponseAsync);
+                pipeline,
+                hookContext,
+                beforeResponseHookEntity,
+                p => p.ExecuteBeforeResponseAsync);
             if (beforeResponseStage.EarlyResult is not null) return beforeResponseStage.EarlyResult;
         }
 
         return Results.NoContent();
+    }
+
+    private static THookModel? GetHookEntity<TApiModel, TDbModel, THookModel>(
+        OptionalEndpointModelState<TApiModel, TDbModel> state,
+        bool hooksUseDbModel)
+        where TApiModel : class
+        where TDbModel : class
+        where THookModel : class =>
+        hooksUseDbModel
+            ? (THookModel?)(object?)state.DbModel
+            : (THookModel?)(object?)state.ApiModel;
+
+    private static void ApplyRequestHookEntity<TApiModel, TDbModel, THookModel, TKey>(
+        OptionalEndpointModelState<TApiModel, TDbModel> state,
+        EndpointModelAdapter<TApiModel, TDbModel> modelAdapter,
+        THookModel hookEntity,
+        bool hooksUseDbModel,
+        TKey id,
+        RestLibEndpointConfiguration<TApiModel, TKey> config)
+        where TApiModel : class
+        where TDbModel : class
+        where THookModel : class
+        where TKey : notnull
+    {
+        if (hooksUseDbModel)
+        {
+            state.DbModel = (TDbModel)(object)hookEntity;
+            _ = EntityKeyHelper.TrySetEntityKeyParts(state.DbModel, id, config.KeyRouteParts);
+            state.ApiModel = modelAdapter.ToApi(state.DbModel);
+        }
+        else
+        {
+            state.ApiModel = (TApiModel)(object)hookEntity;
+            _ = EntityKeyHelper.TrySetEntityKeyParts(state.ApiModel, id, config.KeyRouteParts);
+        }
     }
 }

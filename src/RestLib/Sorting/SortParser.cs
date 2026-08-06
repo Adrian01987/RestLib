@@ -1,3 +1,5 @@
+using RestLib.Internal;
+
 namespace RestLib.Sorting;
 
 /// <summary>
@@ -17,87 +19,64 @@ public static class SortParser
         SortConfiguration<TEntity> configuration)
         where TEntity : class
     {
-        if (string.IsNullOrWhiteSpace(sortValue))
-        {
-            return new SortParseResult();
-        }
-
-        var fields = new List<SortField>();
-        var errors = new List<SortValidationError>();
-        var seenFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        string? allowedNames = null;
-
-        var segments = sortValue.Split(',');
-
-        foreach (var segment in segments)
-        {
-            var trimmed = segment.Trim();
-            if (string.IsNullOrEmpty(trimmed))
+        var result = ConfiguredQueryListParser.Parse<SortPropertyConfiguration, SortField, SortValidationError>(
+            sortValue,
+            configuration.Properties,
+            static property => property.QueryParameterName,
+            static segment =>
             {
-                continue; // Skip empty segments (e.g., trailing comma)
-            }
-
-            var parts = trimmed.Split(':', 2);
-            var fieldName = parts[0].Trim();
-            var directionStr = parts.Length > 1 ? parts[1].Trim() : "asc";
-
-            // Look up the field in the configuration
-            var property = configuration.FindByQueryName(fieldName);
-            if (property is null)
+                var parts = segment.Split(':', 2);
+                return new ConfiguredQueryToken(
+                    parts[0].Trim(),
+                    parts.Length > 1 ? parts[1].Trim() : null);
+            },
+            static (token, property) =>
             {
-                allowedNames ??= string.Join(", ",
-                    configuration.Properties.Select(p => p.QueryParameterName));
-                errors.Add(new SortValidationError
+                var directionValue = token.Modifier ?? "asc";
+                SortDirection direction;
+                if (string.Equals(directionValue, "asc", StringComparison.OrdinalIgnoreCase))
                 {
-                    Field = fieldName,
-                    Message = $"'{fieldName}' is not a sortable field. Allowed fields: {allowedNames}."
-                });
-                continue;
-            }
-
-            // Parse direction
-            SortDirection direction;
-            if (string.Equals(directionStr, "asc", StringComparison.OrdinalIgnoreCase))
-            {
-                direction = SortDirection.Asc;
-            }
-            else if (string.Equals(directionStr, "desc", StringComparison.OrdinalIgnoreCase))
-            {
-                direction = SortDirection.Desc;
-            }
-            else
-            {
-                errors.Add(new SortValidationError
+                    direction = SortDirection.Asc;
+                }
+                else if (string.Equals(directionValue, "desc", StringComparison.OrdinalIgnoreCase))
                 {
-                    Field = fieldName,
-                    Message = "Direction must be 'asc' or 'desc'."
-                });
-                continue;
-            }
-
-            // Check for duplicates
-            if (!seenFields.Add(property.QueryParameterName))
-            {
-                errors.Add(new SortValidationError
+                    direction = SortDirection.Desc;
+                }
+                else
                 {
-                    Field = fieldName,
-                    Message = "Duplicate sort field."
-                });
-                continue;
-            }
+                    return new ConfiguredQueryItemParseResult<SortField, SortValidationError>(
+                        null,
+                        new SortValidationError
+                        {
+                            Field = token.FieldName,
+                            Message = "Direction must be 'asc' or 'desc'."
+                        });
+                }
 
-            fields.Add(new SortField
+                return new ConfiguredQueryItemParseResult<SortField, SortValidationError>(
+                    new SortField
+                    {
+                        PropertyName = property.PropertyName,
+                        QueryParameterName = property.QueryParameterName,
+                        Direction = direction
+                    },
+                    null);
+            },
+            static (fieldName, allowedNames) => new SortValidationError
             {
-                PropertyName = property.PropertyName,
-                QueryParameterName = property.QueryParameterName,
-                Direction = direction
+                Field = fieldName,
+                Message = $"'{fieldName}' is not a sortable field. Allowed fields: {allowedNames}."
+            },
+            static fieldName => new SortValidationError
+            {
+                Field = fieldName,
+                Message = "Duplicate sort field."
             });
-        }
 
         return new SortParseResult
         {
-            Fields = fields,
-            Errors = errors
+            Fields = result.Items,
+            Errors = result.Errors
         };
     }
 }

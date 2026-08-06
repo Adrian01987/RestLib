@@ -4,14 +4,11 @@ using Microsoft.Extensions.DependencyInjection;
 using RestLib.Abstractions;
 using RestLib.Configuration;
 using RestLib.FieldSelection;
-using RestLib.Filtering;
 using RestLib.Hooks;
 using RestLib.Hypermedia;
 using RestLib.Logging;
 using RestLib.Mapping;
 using RestLib.Pagination;
-using RestLib.Search;
-using RestLib.Sorting;
 
 namespace RestLib.Endpoints;
 
@@ -41,6 +38,7 @@ internal static class GetAllHandler
         {
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
             var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.GetAll");
+            var problems = Responses.ProblemDetailsResult.CreateResponder(jsonOptions, logger, options);
 
             RestLibLogMessages.GetAllRequestReceived(logger, cursor?.Length ?? 0, limit);
 
@@ -51,140 +49,23 @@ internal static class GetAllHandler
 
             try
             {
-                // Validate cursor if provided
-                if (!string.IsNullOrEmpty(cursor))
-                {
-                    if (cursor.Length > options.MaxCursorLength)
-                    {
-                        return Responses.ProblemDetailsResult.InvalidCursor(
-                            cursor,
-                            httpContext.Request.Path,
-                            jsonOptions,
-                            $"The cursor exceeds the maximum allowed length of {options.MaxCursorLength} characters.",
-                            logger,
-                            options);
-                    }
-
-                    if (!CursorEncoder.IsValid(cursor))
-                    {
-                        return Responses.ProblemDetailsResult.InvalidCursor(
-                            cursor,
-                            httpContext.Request.Path,
-                            jsonOptions,
-                            logger: logger,
-                            options: options);
-                    }
-                }
-
-                // Validate limit if provided
-                if (limit.HasValue && (limit.Value < 1 || limit.Value > options.MaxPageSize))
-                {
-                    return Responses.ProblemDetailsResult.InvalidLimit(
-                        limit.Value,
-                        1,
-                        options.MaxPageSize,
-                        httpContext.Request.Path,
-                        jsonOptions,
-                        logger,
-                        options);
-                }
-
-                // Parse and validate filters
-                IReadOnlyList<FilterValue> filterValues = [];
-                if (config.HasFilters)
-                {
-                    var filterResult = FilterParser.Parse(httpContext.Request.Query, config.FilterConfiguration, options.MaxFilterInListSize);
-                    if (!filterResult.IsValid)
-                    {
-                        return Responses.ProblemDetailsResult.InvalidFilters(
-                            filterResult.Errors,
-                            httpContext.Request.Path,
-                            jsonOptions,
-                            logger,
-                            options);
-                    }
-
-                    filterValues = filterResult.Filters;
-                }
-
-                // Parse and validate sort
-                IReadOnlyList<SortField> sortFields = [];
-                if (config.HasSorting)
-                {
-                    var rawSort = httpContext.Request.Query["sort"].FirstOrDefault();
-                    if (!string.IsNullOrEmpty(rawSort))
-                    {
-                        var sortResult = SortParser.Parse(rawSort, config.SortConfiguration);
-                        if (!sortResult.IsValid)
-                        {
-                            return Responses.ProblemDetailsResult.InvalidSort(
-                                sortResult.Errors,
-                                httpContext.Request.Path,
-                                jsonOptions,
-                                logger,
-                                options);
-                        }
-
-                        sortFields = sortResult.Fields;
-                    }
-                    else if (config.SortConfiguration.DefaultSortFields is { Count: > 0 } defaults)
-                    {
-                        sortFields = defaults;
-                    }
-                }
-
-                // Parse and validate field selection
-                IReadOnlyList<SelectedField> selectedFields = [];
-                if (config.HasFieldSelection)
-                {
-                    var rawFields = httpContext.Request.Query["fields"].FirstOrDefault();
-                    if (!string.IsNullOrEmpty(rawFields))
-                    {
-                        var fieldsResult = FieldSelectionParser.Parse(rawFields, config.FieldSelectionConfiguration);
-                        if (!fieldsResult.IsValid)
-                        {
-                            return Responses.ProblemDetailsResult.InvalidFields(
-                                fieldsResult.Errors,
-                                httpContext.Request.Path,
-                                jsonOptions,
-                                logger,
-                                options);
-                        }
-
-                        selectedFields = fieldsResult.Fields;
-                    }
-                }
-
-                SearchRequest? search = null;
-                if (config.HasSearch)
-                {
-                    var searchResult = SearchParser.Parse(httpContext.Request.Query, config.SearchConfiguration);
-                    if (!searchResult.IsValid)
-                    {
-                        return Responses.ProblemDetailsResult.InvalidSearch(
-                            searchResult.Errors,
-                            httpContext.Request.Path,
-                            jsonOptions,
-                            logger,
-                            options);
-                    }
-
-                    search = searchResult.Search;
-                }
+                var queryPreparation = CollectionQueryCoordinator.Prepare(
+                    httpContext.Request,
+                    cursor,
+                    limit,
+                    options,
+                    config,
+                    problems);
+                if (queryPreparation.ErrorResult is not null) return queryPreparation.ErrorResult;
 
                 // OnRequestValidated hook
                 var onValidatedResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
                 if (onValidatedResult is not null) return onValidatedResult;
 
-                var effectiveLimit = Math.Clamp(limit ?? options.DefaultPageSize, 1, options.MaxPageSize);
-                var paginationRequest = new PaginationRequest
-                {
-                    Cursor = cursor,
-                    Limit = effectiveLimit,
-                    Filters = filterValues,
-                    SortFields = sortFields,
-                    Search = search
-                };
+                var queryPlan = queryPreparation.CreatePlan(options);
+                var paginationRequest = queryPlan.PaginationRequest;
+                var selectedFields = queryPlan.SelectedFields;
+                var effectiveLimit = queryPlan.EffectiveLimit;
 
                 PagedResult<TEntity> result;
                 try
@@ -203,13 +84,10 @@ internal static class GetAllHandler
                 }
                 catch (InvalidCursorException ex)
                 {
-                    return Responses.ProblemDetailsResult.InvalidCursor(
+                    return problems.Create(Responses.ProblemDetailsFactory.InvalidCursor(
                         cursor ?? string.Empty,
                         httpContext.Request.Path,
-                        jsonOptions,
-                        ex.Message,
-                        logger,
-                        options);
+                        ex.Message));
                 }
 
                 // If the repository supports counting, get the total count
@@ -218,9 +96,9 @@ internal static class GetAllHandler
                 {
                     totalCount = await queryCountable.CountAsync(paginationRequest, ct);
                 }
-                else if (search is null && repository is ICountableRepository<TEntity, TKey> countable)
+                else if (paginationRequest.Search is null && repository is ICountableRepository<TEntity, TKey> countable)
                 {
-                    totalCount = await countable.CountAsync(filterValues, ct);
+                    totalCount = await countable.CountAsync(paginationRequest.Filters, ct);
                 }
 
                 var response = PaginationHelper.BuildCollectionResponse(result, httpContext.Request, cursor, effectiveLimit, options, totalCount);
@@ -419,134 +297,24 @@ internal static class GetAllHandler
         where THookModel : class
         where TKey : notnull
     {
-        if (!string.IsNullOrEmpty(cursor))
-        {
-            if (cursor.Length > options.MaxCursorLength)
-            {
-                return Responses.ProblemDetailsResult.InvalidCursor(
-                    cursor,
-                    httpContext.Request.Path,
-                    jsonOptions,
-                    $"The cursor exceeds the maximum allowed length of {options.MaxCursorLength} characters.",
-                    logger,
-                    options);
-            }
+        var problems = Responses.ProblemDetailsResult.CreateResponder(jsonOptions, logger, options);
 
-            if (!CursorEncoder.IsValid(cursor))
-            {
-                return Responses.ProblemDetailsResult.InvalidCursor(
-                    cursor,
-                    httpContext.Request.Path,
-                    jsonOptions,
-                    logger: logger,
-                    options: options);
-            }
-        }
-
-        if (limit.HasValue && (limit.Value < 1 || limit.Value > options.MaxPageSize))
-        {
-            return Responses.ProblemDetailsResult.InvalidLimit(
-                limit.Value,
-                1,
-                options.MaxPageSize,
-                httpContext.Request.Path,
-                jsonOptions,
-                logger,
-                options);
-        }
-
-        IReadOnlyList<FilterValue> filterValues = [];
-        if (config.HasFilters)
-        {
-            var filterResult = FilterParser.Parse(httpContext.Request.Query, config.FilterConfiguration, options.MaxFilterInListSize);
-            if (!filterResult.IsValid)
-            {
-                return Responses.ProblemDetailsResult.InvalidFilters(
-                    filterResult.Errors,
-                    httpContext.Request.Path,
-                    jsonOptions,
-                    logger,
-                    options);
-            }
-
-            filterValues = filterResult.Filters;
-        }
-
-        IReadOnlyList<SortField> sortFields = [];
-        if (config.HasSorting)
-        {
-            var rawSort = httpContext.Request.Query["sort"].FirstOrDefault();
-            if (!string.IsNullOrEmpty(rawSort))
-            {
-                var sortResult = SortParser.Parse(rawSort, config.SortConfiguration);
-                if (!sortResult.IsValid)
-                {
-                    return Responses.ProblemDetailsResult.InvalidSort(
-                        sortResult.Errors,
-                        httpContext.Request.Path,
-                        jsonOptions,
-                        logger,
-                        options);
-                }
-
-                sortFields = sortResult.Fields;
-            }
-            else if (config.SortConfiguration.DefaultSortFields is { Count: > 0 } defaults)
-            {
-                sortFields = defaults;
-            }
-        }
-
-        IReadOnlyList<SelectedField> selectedFields = [];
-        if (config.HasFieldSelection)
-        {
-            var rawFields = httpContext.Request.Query["fields"].FirstOrDefault();
-            if (!string.IsNullOrEmpty(rawFields))
-            {
-                var fieldsResult = FieldSelectionParser.Parse(rawFields, config.FieldSelectionConfiguration);
-                if (!fieldsResult.IsValid)
-                {
-                    return Responses.ProblemDetailsResult.InvalidFields(
-                        fieldsResult.Errors,
-                        httpContext.Request.Path,
-                        jsonOptions,
-                        logger,
-                        options);
-                }
-
-                selectedFields = fieldsResult.Fields;
-            }
-        }
-
-        SearchRequest? search = null;
-        if (config.HasSearch)
-        {
-            var searchResult = SearchParser.Parse(httpContext.Request.Query, config.SearchConfiguration);
-            if (!searchResult.IsValid)
-            {
-                return Responses.ProblemDetailsResult.InvalidSearch(
-                    searchResult.Errors,
-                    httpContext.Request.Path,
-                    jsonOptions,
-                    logger,
-                    options);
-            }
-
-            search = searchResult.Search;
-        }
+        var queryPreparation = CollectionQueryCoordinator.Prepare(
+            httpContext.Request,
+            cursor,
+            limit,
+            options,
+            config,
+            problems);
+        if (queryPreparation.ErrorResult is not null) return queryPreparation.ErrorResult;
 
         var onValidatedResult = await HookHelper.RunHookStageAsync(pipeline, hookContext, p => p.ExecuteOnRequestValidatedAsync);
         if (onValidatedResult is not null) return onValidatedResult;
 
-        var effectiveLimit = Math.Clamp(limit ?? options.DefaultPageSize, 1, options.MaxPageSize);
-        var paginationRequest = new PaginationRequest
-        {
-            Cursor = cursor,
-            Limit = effectiveLimit,
-            Filters = filterValues,
-            SortFields = sortFields,
-            Search = search
-        };
+        var queryPlan = queryPreparation.CreatePlan(options);
+        var paginationRequest = queryPlan.PaginationRequest;
+        var selectedFields = queryPlan.SelectedFields;
+        var effectiveLimit = queryPlan.EffectiveLimit;
 
         PagedResult<TDbModel> dbResult;
         try
@@ -555,13 +323,10 @@ internal static class GetAllHandler
         }
         catch (InvalidCursorException ex)
         {
-            return Responses.ProblemDetailsResult.InvalidCursor(
+            return problems.Create(Responses.ProblemDetailsFactory.InvalidCursor(
                 cursor ?? string.Empty,
                 httpContext.Request.Path,
-                jsonOptions,
-                ex.Message,
-                logger,
-                options);
+                ex.Message));
         }
 
         long? totalCount = null;
@@ -569,9 +334,9 @@ internal static class GetAllHandler
         {
             totalCount = await queryCountable.CountAsync(paginationRequest, ct);
         }
-        else if (search is null && repository is ICountableRepository<TDbModel, TKey> countable)
+        else if (paginationRequest.Search is null && repository is ICountableRepository<TDbModel, TKey> countable)
         {
-            totalCount = await countable.CountAsync(filterValues, ct);
+            totalCount = await countable.CountAsync(paginationRequest.Filters, ct);
         }
 
         var apiItems = dbResult.Items.Select(mapper.ToApi).ToList();

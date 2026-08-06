@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using RestLib.Abstractions;
 using RestLib.Batch;
 using RestLib.Configuration;
@@ -17,6 +18,27 @@ namespace RestLib.Endpoints;
 internal static class BatchHandler
 {
     /// <summary>
+    /// Adapts model-specific batch pipelines to the shared HTTP coordinator.
+    /// </summary>
+    private interface IBatchRequestProcessor
+    {
+        /// <summary>
+        /// Processes the parsed item array for the requested action.
+        /// </summary>
+        /// <param name="action">The requested batch action.</param>
+        /// <param name="items">The parsed item array.</param>
+        /// <returns>The batch response.</returns>
+        Task<BatchResponse> ProcessAsync(BatchAction action, JsonElement items);
+
+        /// <summary>
+        /// Executes the active model's before-response hook.
+        /// </summary>
+        /// <param name="operation">The requested RestLib operation.</param>
+        /// <returns>An early result, or <c>null</c>.</returns>
+        Task<IResult?> ExecuteBeforeResponseAsync(RestLibOperation operation);
+    }
+
+    /// <summary>
     /// Creates the delegate for the Batch endpoint.
     /// </summary>
     /// <typeparam name="TEntity">The entity type.</typeparam>
@@ -32,202 +54,41 @@ internal static class BatchHandler
         {
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
             var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.Batch");
-            var repository = httpContext.RequestServices.GetRequiredService<IRepository<TEntity, TKey>>();
-            var ct = httpContext.RequestAborted;
-            var instance = httpContext.Request.Path.ToString();
+            var repository = httpContext.RequestServices
+                .GetRequiredService<IRepository<TEntity, TKey>>();
 
-            // Deserialize the envelope
-            BatchRequestEnvelope? envelope;
-            try
-            {
-                envelope = await httpContext.Request.ReadFromJsonAsync<BatchRequestEnvelope>(jsonOptions, ct);
-            }
-            catch (JsonException ex)
-            {
-                RestLibLogMessages.BatchEnvelopeDeserializationFailed(logger, ex);
-                return Responses.ProblemDetailsResult.InvalidBatchRequest(
-                    "The request body is not valid JSON.",
-                    instance: instance,
-                    jsonOptions: jsonOptions,
-                    logger: logger,
-                    options: options);
-            }
-
-            if (envelope is null)
-            {
-                return Responses.ProblemDetailsResult.InvalidBatchRequest(
-                    "The request body is empty.",
-                    instance: instance,
-                    jsonOptions: jsonOptions,
-                    logger: logger,
-                    options: options);
-            }
-
-            // Validate action
-            if (!Enum.TryParse<BatchAction>(envelope.Action, ignoreCase: true, out var action)
-                || !Enum.IsDefined(action))
-            {
-                var allowedActions = config.EnabledBatchActions
-                    .Select(a => a.ToString().ToLowerInvariant());
-                return Responses.ProblemDetailsResult.InvalidBatchRequest(
-                    $"'{envelope.Action}' is not a valid batch action.",
-                    errors: new Dictionary<string, string[]>
-                    {
-                        ["action"] = [$"'{envelope.Action}' is not a valid batch action. Allowed actions: {string.Join(", ", allowedActions)}."]
-                    },
-                    instance: instance,
-                    jsonOptions: jsonOptions,
-                    logger: logger,
-                    options: options);
-            }
-
-            // Verify action is enabled
-            if (!config.IsBatchActionEnabled(action))
-            {
-                var enabledActions = config.EnabledBatchActions
-                    .Select(a => a.ToString().ToLowerInvariant());
-                return Responses.ProblemDetailsResult.BatchActionNotEnabled(
-                    action.ToString().ToLowerInvariant(),
-                    enabledActions,
-                    instance: instance,
-                    jsonOptions: jsonOptions,
-                    logger: logger,
-                    options: options);
-            }
-
-            var batchOperation = action.ToRestLibOperation();
-            var authorizationResult = await BatchAuthorizationHelper.AuthorizeAsync(
+            return await HandleAsync(
                 httpContext,
                 config,
+                jsonOptions,
                 options,
-                batchOperation);
-            if (authorizationResult is not null)
-            {
-                return authorizationResult;
-            }
+                logger,
+                () =>
+                {
+                    var pipeline = config.Hooks is not null
+                        ? new HookPipeline<TEntity, TKey>(config.Hooks, logger)
+                        : null;
+                    var batchRepository = httpContext.RequestServices
+                        .GetService<IBatchRepository<TEntity, TKey>>();
+                    var context = new BatchContext<TEntity, TKey>
+                    {
+                        HttpContext = httpContext,
+                        Repository = repository,
+                        BatchRepository = batchRepository,
+                        Pipeline = pipeline,
+                        Options = options,
+                        JsonOptions = jsonOptions,
+                        CancellationToken = httpContext.RequestAborted,
+                        EndpointConfig = config,
+                        CollectionPath = GetCollectionPathFromBatchPath(
+                            httpContext.Request.Path.ToString()),
+                        Logger = logger
+                    };
 
-            // Validate items array exists
-            if (envelope.Items.ValueKind == JsonValueKind.Undefined
-                || envelope.Items.ValueKind == JsonValueKind.Null)
-            {
-                return Responses.ProblemDetailsResult.InvalidBatchRequest(
-                    "The 'items' array is required.",
-                    instance: instance,
-                    jsonOptions: jsonOptions,
-                    logger: logger,
-                    options: options);
-            }
-
-            if (envelope.Items.ValueKind != JsonValueKind.Array)
-            {
-                return Responses.ProblemDetailsResult.InvalidBatchRequest(
-                    "The 'items' property must be an array.",
-                    instance: instance,
-                    jsonOptions: jsonOptions,
-                    logger: logger,
-                    options: options);
-            }
-
-            var itemCount = envelope.Items.GetArrayLength();
-
-            // Validate non-empty
-            if (itemCount == 0)
-            {
-                return Responses.ProblemDetailsResult.InvalidBatchRequest(
-                    "The 'items' array must contain at least one item.",
-                    instance: instance,
-                    jsonOptions: jsonOptions,
-                    logger: logger,
-                    options: options);
-            }
-
-            // Validate batch size
-            if (options.MaxBatchSize > 0 && itemCount > options.MaxBatchSize)
-            {
-                return Responses.ProblemDetailsResult.BatchSizeExceeded(
-                    itemCount,
-                    options.MaxBatchSize,
-                    instance: instance,
-                    jsonOptions: jsonOptions,
-                    logger: logger,
-                    options: options);
-            }
-
-            // Create hook pipeline if hooks are configured
-            var pipeline = config.Hooks is not null ? new HookPipeline<TEntity, TKey>(config.Hooks, logger) : null;
-
-            var actionName = action.ToString().ToLowerInvariant();
-            RestLibLogMessages.BatchRequestReceived(logger, actionName, itemCount);
-
-            // Resolve optional batch repository for bulk-optimized operations
-            var batchRepository = httpContext.RequestServices
-                .GetService<IBatchRepository<TEntity, TKey>>();
-
-            // Build the shared batch context
-            var batchContext = new BatchContext<TEntity, TKey>
-            {
-                HttpContext = httpContext,
-                Repository = repository,
-                BatchRepository = batchRepository,
-                Pipeline = pipeline,
-                Options = options,
-                JsonOptions = jsonOptions,
-                CancellationToken = ct,
-                EndpointConfig = config,
-                CollectionPath = GetCollectionPathFromBatchPath(instance),
-                Logger = logger
-            };
-
-            JsonElement parsedItems;
-            try
-            {
-                parsedItems = ParseItems(action, envelope.Items, config.KeyRouteParts, jsonOptions);
-            }
-            catch (JsonException ex)
-            {
-                return Responses.ProblemDetailsResult.InvalidBatchRequest(
-                    ex.Message,
-                    instance: instance,
-                    jsonOptions: jsonOptions,
-                    logger: logger,
-                    options: options);
-            }
-
-            // Dispatch only after client-owned JSON parsing has completed. Application,
-            // hook, mapper, and repository exceptions must not be reclassified as 400s.
-            var response = action switch
-            {
-                BatchAction.Create => await new BatchCreatePipeline<TEntity, TKey>()
-                    .ProcessAsync(parsedItems, batchContext),
-                BatchAction.Update => await new BatchUpdatePipeline<TEntity, TKey>()
-                    .ProcessAsync(parsedItems, batchContext),
-                BatchAction.Patch => await new BatchPatchPipeline<TEntity, TKey>()
-                    .ProcessAsync(parsedItems, batchContext),
-                BatchAction.Delete => await new BatchDeletePipeline<TEntity, TKey>()
-                    .ProcessAsync(parsedItems, batchContext),
-                _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
-            };
-
-            // BeforeResponse hook — runs once for the entire batch, after all items are processed.
-            if (pipeline is not null)
-            {
-                var hookContext = pipeline.CreateContext(httpContext, batchOperation);
-                var beforeResponseResult = await HookHelper.ExecuteHookAsync(
-                    pipeline.ExecuteBeforeResponseAsync, hookContext);
-                if (beforeResponseResult is not null) return beforeResponseResult;
-            }
-
-            // Determine response status code
-            var allSucceeded = response.Items.All(r => r.Status is >= 200 and < 300);
-            var statusCode = allSucceeded
-                ? StatusCodes.Status200OK
-                : StatusCodes.Status207MultiStatus;
-
-            var succeeded = response.Items.Count(r => r.Status is >= 200 and < 300);
-            var failed = response.Items.Count - succeeded;
-            RestLibLogMessages.BatchCompleted(logger, actionName, response.Items.Count, succeeded, failed, statusCode);
-
-            return Results.Json(response, jsonOptions, statusCode: statusCode);
+                    return new EntityBatchRequestProcessor<TEntity, TKey>(
+                        context,
+                        pipeline);
+                });
         };
     }
 
@@ -240,7 +101,8 @@ internal static class BatchHandler
     /// <param name="config">The endpoint configuration.</param>
     /// <returns>The request delegate.</returns>
     internal static Func<HttpContext, Task<IResult>>
-        CreateMappedDelegate<TApiModel, TDbModel, TKey>(RestLibEndpointConfiguration<TApiModel, TDbModel, TKey> config)
+        CreateMappedDelegate<TApiModel, TDbModel, TKey>(
+            RestLibEndpointConfiguration<TApiModel, TDbModel, TKey> config)
         where TApiModel : class
         where TDbModel : class
         where TKey : notnull
@@ -249,231 +111,215 @@ internal static class BatchHandler
         {
             var (jsonOptions, options) = OptionsResolver.ResolveOptions(httpContext);
             var logger = RestLibLoggerResolver.ResolveLogger(httpContext, "RestLib.Batch");
-            var repository = httpContext.RequestServices.GetRequiredService<IRepository<TDbModel, TKey>>();
+            var repository = httpContext.RequestServices
+                .GetRequiredService<IRepository<TDbModel, TKey>>();
             var mapper = RestLibMapperResolver.Resolve<TApiModel, TDbModel>(
                 httpContext.RequestServices,
                 config.MapperName,
                 config.UseAutoMapper,
                 config.ResourceName);
-            var ct = httpContext.RequestAborted;
-            var instance = httpContext.Request.Path.ToString();
 
-            BatchRequestEnvelope? envelope;
-            try
-            {
-                envelope = await httpContext.Request.ReadFromJsonAsync<BatchRequestEnvelope>(jsonOptions, ct);
-            }
-            catch (JsonException ex)
-            {
-                RestLibLogMessages.BatchEnvelopeDeserializationFailed(logger, ex);
-                return Responses.ProblemDetailsResult.InvalidBatchRequest(
-                    "The request body is not valid JSON.",
-                    instance: instance,
-                    jsonOptions: jsonOptions,
-                    logger: logger,
-                    options: options);
-            }
-
-            if (envelope is null)
-            {
-                return Responses.ProblemDetailsResult.InvalidBatchRequest(
-                    "The request body is empty.",
-                    instance: instance,
-                    jsonOptions: jsonOptions,
-                    logger: logger,
-                    options: options);
-            }
-
-            if (!Enum.TryParse<BatchAction>(envelope.Action, ignoreCase: true, out var action)
-                || !Enum.IsDefined(action))
-            {
-                var allowedActions = config.EnabledBatchActions
-                    .Select(a => a.ToString().ToLowerInvariant());
-                return Responses.ProblemDetailsResult.InvalidBatchRequest(
-                    $"'{envelope.Action}' is not a valid batch action.",
-                    errors: new Dictionary<string, string[]>
-                    {
-                        ["action"] = [$"'{envelope.Action}' is not a valid batch action. Allowed actions: {string.Join(", ", allowedActions)}."]
-                    },
-                    instance: instance,
-                    jsonOptions: jsonOptions,
-                    logger: logger,
-                    options: options);
-            }
-
-            if (!config.IsBatchActionEnabled(action))
-            {
-                var enabledActions = config.EnabledBatchActions
-                    .Select(a => a.ToString().ToLowerInvariant());
-                return Responses.ProblemDetailsResult.BatchActionNotEnabled(
-                    action.ToString().ToLowerInvariant(),
-                    enabledActions,
-                    instance: instance,
-                    jsonOptions: jsonOptions,
-                    logger: logger,
-                    options: options);
-            }
-
-            var batchOperation = action.ToRestLibOperation();
-            var authorizationResult = await BatchAuthorizationHelper.AuthorizeAsync(
+            return await HandleAsync(
                 httpContext,
                 config,
+                jsonOptions,
                 options,
-                batchOperation);
-            if (authorizationResult is not null)
-            {
-                return authorizationResult;
-            }
-
-            if (envelope.Items.ValueKind == JsonValueKind.Undefined
-                || envelope.Items.ValueKind == JsonValueKind.Null)
-            {
-                return Responses.ProblemDetailsResult.InvalidBatchRequest(
-                    "The 'items' array is required.",
-                    instance: instance,
-                    jsonOptions: jsonOptions,
-                    logger: logger,
-                    options: options);
-            }
-
-            if (envelope.Items.ValueKind != JsonValueKind.Array)
-            {
-                return Responses.ProblemDetailsResult.InvalidBatchRequest(
-                    "The 'items' property must be an array.",
-                    instance: instance,
-                    jsonOptions: jsonOptions,
-                    logger: logger,
-                    options: options);
-            }
-
-            var itemCount = envelope.Items.GetArrayLength();
-            if (itemCount == 0)
-            {
-                return Responses.ProblemDetailsResult.InvalidBatchRequest(
-                    "The 'items' array must contain at least one item.",
-                    instance: instance,
-                    jsonOptions: jsonOptions,
-                    logger: logger,
-                    options: options);
-            }
-
-            if (options.MaxBatchSize > 0 && itemCount > options.MaxBatchSize)
-            {
-                return Responses.ProblemDetailsResult.BatchSizeExceeded(
-                    itemCount,
-                    options.MaxBatchSize,
-                    instance: instance,
-                    jsonOptions: jsonOptions,
-                    logger: logger,
-                    options: options);
-            }
-
-            var apiPipeline = config.UsesDbModelHooks || config.Hooks is null
-                ? null
-                : new HookPipeline<TApiModel, TKey>(config.Hooks, logger);
-            var dbPipeline = config.UsesDbModelHooks && config.DbModelHooks is not null
-                ? new HookPipeline<TDbModel, TKey>(config.DbModelHooks, logger)
-                : null;
-
-            var actionName = action.ToString().ToLowerInvariant();
-            RestLibLogMessages.BatchRequestReceived(logger, actionName, itemCount);
-
-            var batchRepository = httpContext.RequestServices.GetService<IBatchRepository<TDbModel, TKey>>();
-            var batchContext = new MappedBatchContext<TApiModel, TDbModel, TKey>
-            {
-                HttpContext = httpContext,
-                Repository = repository,
-                BatchRepository = batchRepository,
-                ApiPipeline = apiPipeline,
-                DbPipeline = dbPipeline,
-                Mapper = mapper,
-                Options = options,
-                JsonOptions = jsonOptions,
-                CancellationToken = ct,
-                EndpointConfig = config,
-                CollectionPath = GetCollectionPathFromBatchPath(instance),
-                Logger = logger
-            };
-
-            JsonElement parsedItems;
-            try
-            {
-                parsedItems = ParseItems(action, envelope.Items, config.KeyRouteParts, jsonOptions);
-            }
-            catch (JsonException ex)
-            {
-                return Responses.ProblemDetailsResult.InvalidBatchRequest(
-                    ex.Message,
-                    instance: instance,
-                    jsonOptions: jsonOptions,
-                    logger: logger,
-                    options: options);
-            }
-
-            var response = action switch
-            {
-                BatchAction.Create => await new MappedBatchCreatePipeline<TApiModel, TDbModel, TKey>()
-                    .ProcessAsync(parsedItems, batchContext),
-                BatchAction.Update => await new MappedBatchUpdatePipeline<TApiModel, TDbModel, TKey>()
-                    .ProcessAsync(parsedItems, batchContext),
-                BatchAction.Patch => await new MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>()
-                    .ProcessAsync(parsedItems, batchContext),
-                BatchAction.Delete => await new MappedBatchDeletePipeline<TApiModel, TDbModel, TKey>()
-                    .ProcessAsync(parsedItems, batchContext),
-                _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
-            };
-
-            if (dbPipeline is not null)
-            {
-                var hookContext = dbPipeline.CreateContext(httpContext, batchOperation);
-                var beforeResponseResult = await HookHelper.ExecuteHookAsync(
-                    dbPipeline.ExecuteBeforeResponseAsync,
-                    hookContext);
-                if (beforeResponseResult is not null)
+                logger,
+                () =>
                 {
-                    return beforeResponseResult;
-                }
-            }
-            else if (apiPipeline is not null)
-            {
-                var hookContext = apiPipeline.CreateContext(httpContext, batchOperation);
-                var beforeResponseResult = await HookHelper.ExecuteHookAsync(
-                    apiPipeline.ExecuteBeforeResponseAsync,
-                    hookContext);
-                if (beforeResponseResult is not null)
-                {
-                    return beforeResponseResult;
-                }
-            }
+                    var apiPipeline = config.UsesDbModelHooks || config.Hooks is null
+                        ? null
+                        : new HookPipeline<TApiModel, TKey>(config.Hooks, logger);
+                    var dbPipeline = config.UsesDbModelHooks && config.DbModelHooks is not null
+                        ? new HookPipeline<TDbModel, TKey>(config.DbModelHooks, logger)
+                        : null;
+                    var batchRepository = httpContext.RequestServices
+                        .GetService<IBatchRepository<TDbModel, TKey>>();
+                    var context = new MappedBatchContext<TApiModel, TDbModel, TKey>
+                    {
+                        HttpContext = httpContext,
+                        Repository = repository,
+                        BatchRepository = batchRepository,
+                        ApiPipeline = apiPipeline,
+                        DbPipeline = dbPipeline,
+                        Mapper = mapper,
+                        Options = options,
+                        JsonOptions = jsonOptions,
+                        CancellationToken = httpContext.RequestAborted,
+                        EndpointConfig = config,
+                        CollectionPath = GetCollectionPathFromBatchPath(
+                            httpContext.Request.Path.ToString()),
+                        Logger = logger
+                    };
 
-            var allSucceeded = response.Items.All(r => r.Status is >= 200 and < 300);
-            var statusCode = allSucceeded
-                ? StatusCodes.Status200OK
-                : StatusCodes.Status207MultiStatus;
-
-            var succeeded = response.Items.Count(r => r.Status is >= 200 and < 300);
-            var failed = response.Items.Count - succeeded;
-            RestLibLogMessages.BatchCompleted(logger, actionName, response.Items.Count, succeeded, failed, statusCode);
-
-            return Results.Json(response, jsonOptions, statusCode: statusCode);
+                    return new MappedBatchRequestProcessor<TApiModel, TDbModel, TKey>(
+                        context,
+                        apiPipeline,
+                        dbPipeline);
+                });
         };
     }
 
-    /// <summary>
-    /// Extracts the collection path from the batch endpoint path by removing the trailing "/batch" segment.
-    /// For example, "/api/products/batch" becomes "/api/products".
-    /// </summary>
-    /// <param name="batchPath">The full batch endpoint path.</param>
-    /// <returns>The collection path.</returns>
+    private static async Task<IResult> HandleAsync<TApiModel, TKey>(
+        HttpContext httpContext,
+        RestLibEndpointConfiguration<TApiModel, TKey> config,
+        JsonSerializerOptions jsonOptions,
+        RestLibOptions options,
+        ILogger logger,
+        Func<IBatchRequestProcessor> processorFactory)
+        where TApiModel : class
+        where TKey : notnull
+    {
+        var cancellationToken = httpContext.RequestAborted;
+        var instance = httpContext.Request.Path.ToString();
+        var problems = Responses.ProblemDetailsResult.CreateResponder(
+            jsonOptions,
+            logger,
+            options);
+
+        BatchRequestEnvelope? envelope;
+        try
+        {
+            envelope = await httpContext.Request.ReadFromJsonAsync<BatchRequestEnvelope>(
+                jsonOptions,
+                cancellationToken);
+        }
+        catch (JsonException exception)
+        {
+            RestLibLogMessages.BatchEnvelopeDeserializationFailed(logger, exception);
+            return problems.Create(Responses.ProblemDetailsFactory.InvalidBatchRequest(
+                "The request body is not valid JSON.",
+                instance: instance));
+        }
+
+        if (envelope is null)
+        {
+            return problems.Create(Responses.ProblemDetailsFactory.InvalidBatchRequest(
+                "The request body is empty.",
+                instance: instance));
+        }
+
+        if (!Enum.TryParse<BatchAction>(envelope.Action, ignoreCase: true, out var action) ||
+            !Enum.IsDefined(action))
+        {
+            var allowedActions = config.EnabledBatchActions
+                .Select(static enabledAction => enabledAction.ToString().ToLowerInvariant());
+            return problems.Create(Responses.ProblemDetailsFactory.InvalidBatchRequest(
+                $"'{envelope.Action}' is not a valid batch action.",
+                errors: new Dictionary<string, string[]>
+                {
+                    ["action"] =
+                    [
+                        $"'{envelope.Action}' is not a valid batch action. " +
+                        $"Allowed actions: {string.Join(", ", allowedActions)}."
+                    ]
+                },
+                instance: instance));
+        }
+
+        if (!config.IsBatchActionEnabled(action))
+        {
+            var enabledActions = config.EnabledBatchActions
+                .Select(static enabledAction => enabledAction.ToString().ToLowerInvariant());
+            return problems.Create(Responses.ProblemDetailsFactory.BatchActionNotEnabled(
+                action.ToString().ToLowerInvariant(),
+                enabledActions,
+                instance: instance));
+        }
+
+        var batchOperation = action.ToRestLibOperation();
+        var authorizationResult = await BatchAuthorizationHelper.AuthorizeAsync(
+            httpContext,
+            config,
+            options,
+            batchOperation);
+        if (authorizationResult is not null)
+        {
+            return authorizationResult;
+        }
+
+        if (envelope.Items.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+        {
+            return problems.Create(Responses.ProblemDetailsFactory.InvalidBatchRequest(
+                "The 'items' array is required.",
+                instance: instance));
+        }
+
+        if (envelope.Items.ValueKind != JsonValueKind.Array)
+        {
+            return problems.Create(Responses.ProblemDetailsFactory.InvalidBatchRequest(
+                "The 'items' property must be an array.",
+                instance: instance));
+        }
+
+        var itemCount = envelope.Items.GetArrayLength();
+        if (itemCount == 0)
+        {
+            return problems.Create(Responses.ProblemDetailsFactory.InvalidBatchRequest(
+                "The 'items' array must contain at least one item.",
+                instance: instance));
+        }
+
+        if (options.MaxBatchSize > 0 && itemCount > options.MaxBatchSize)
+        {
+            return problems.Create(Responses.ProblemDetailsFactory.BatchSizeExceeded(
+                itemCount,
+                options.MaxBatchSize,
+                instance: instance));
+        }
+
+        var processor = processorFactory();
+        var actionName = action.ToString().ToLowerInvariant();
+        RestLibLogMessages.BatchRequestReceived(logger, actionName, itemCount);
+
+        JsonElement parsedItems;
+        try
+        {
+            parsedItems = ParseItems(
+                action,
+                envelope.Items,
+                config.KeyRouteParts,
+                jsonOptions);
+        }
+        catch (JsonException exception)
+        {
+            return problems.Create(Responses.ProblemDetailsFactory.InvalidBatchRequest(
+                exception.Message,
+                instance: instance));
+        }
+
+        var response = await processor.ProcessAsync(action, parsedItems);
+        var beforeResponseResult = await processor.ExecuteBeforeResponseAsync(batchOperation);
+        if (beforeResponseResult is not null)
+        {
+            return beforeResponseResult;
+        }
+
+        var allSucceeded = response.Items.All(
+            static result => result.Status is >= 200 and < 300);
+        var statusCode = allSucceeded
+            ? StatusCodes.Status200OK
+            : StatusCodes.Status207MultiStatus;
+        var succeeded = response.Items.Count(
+            static result => result.Status is >= 200 and < 300);
+        var failed = response.Items.Count - succeeded;
+        RestLibLogMessages.BatchCompleted(
+            logger,
+            actionName,
+            response.Items.Count,
+            succeeded,
+            failed,
+            statusCode);
+
+        return Results.Json(response, jsonOptions, statusCode: statusCode);
+    }
+
     private static string GetCollectionPathFromBatchPath(string batchPath)
     {
         const string batchSuffix = "/batch";
-        if (batchPath.EndsWith(batchSuffix, StringComparison.OrdinalIgnoreCase))
-        {
-            return batchPath[..^batchSuffix.Length];
-        }
-
-        return batchPath;
+        return batchPath.EndsWith(batchSuffix, StringComparison.OrdinalIgnoreCase)
+            ? batchPath[..^batchSuffix.Length]
+            : batchPath;
     }
 
     private static JsonElement ParseItems<TKey>(
@@ -553,17 +399,20 @@ internal static class BatchHandler
     {
         if (item.ValueKind != JsonValueKind.Object)
         {
-            throw new JsonException("Batch update and patch items must be objects with 'id' and 'body' properties.");
+            throw new JsonException(
+                "Batch update and patch items must be objects with 'id' and 'body' properties.");
         }
 
         if (!TryGetObjectProperty(item, "id", out var idElement))
         {
-            throw new JsonException("Batch update and patch items must include an 'id' property.");
+            throw new JsonException(
+                "Batch update and patch items must include an 'id' property.");
         }
 
         if (!TryGetObjectProperty(item, "body", out var bodyElement))
         {
-            throw new JsonException("Batch update and patch items must include a 'body' property.");
+            throw new JsonException(
+                "Batch update and patch items must include a 'body' property.");
         }
 
         return new BatchUpdateItem<TKey>
@@ -581,7 +430,10 @@ internal static class BatchHandler
     {
         if (keyRouteParts.Count <= 1)
         {
-            return (TKey)RestLibKeyConversion.DeserializeJsonValue(keyElement, typeof(TKey), jsonOptions);
+            return (TKey)RestLibKeyConversion.DeserializeJsonValue(
+                keyElement,
+                typeof(TKey),
+                jsonOptions);
         }
 
         if (keyElement.ValueKind != JsonValueKind.Object)
@@ -590,17 +442,28 @@ internal static class BatchHandler
         }
 
         var keyType = typeof(TKey);
-        if (!keyType.IsGenericType || keyType.GetGenericTypeDefinition() != typeof(RestLibCompositeKey<,>))
+        if (!keyType.IsGenericType ||
+            keyType.GetGenericTypeDefinition() != typeof(RestLibCompositeKey<,>))
         {
             throw new JsonException(
-                $"Composite batch keys require TKey '{typeof(TKey).Name}' to be RestLibCompositeKey<TFirst, TSecond>.");
+                $"Composite batch keys require TKey '{typeof(TKey).Name}' " +
+                "to be RestLibCompositeKey<TFirst, TSecond>.");
         }
 
         var genericArguments = keyType.GetGenericArguments();
-        var firstValue = GetCompositeKeyPartValue(keyElement, keyRouteParts[0], genericArguments[0], jsonOptions);
-        var secondValue = GetCompositeKeyPartValue(keyElement, keyRouteParts[1], genericArguments[1], jsonOptions);
+        var firstValue = GetCompositeKeyPartValue(
+            keyElement,
+            keyRouteParts[0],
+            genericArguments[0],
+            jsonOptions);
+        var secondValue = GetCompositeKeyPartValue(
+            keyElement,
+            keyRouteParts[1],
+            genericArguments[1],
+            jsonOptions);
         var constructor = keyType.GetConstructor([genericArguments[0], genericArguments[1]])
-            ?? throw new JsonException($"RestLib could not resolve the composite key constructor for '{keyType.Name}'.");
+            ?? throw new JsonException(
+                $"RestLib could not resolve the composite key constructor for '{keyType.Name}'.");
 
         return (TKey)constructor.Invoke([firstValue, secondValue]);
     }
@@ -616,15 +479,20 @@ internal static class BatchHandler
         {
             if (TryGetObjectProperty(keyElement, propertyName, out var valueElement))
             {
-                return RestLibKeyConversion.DeserializeJsonValue(valueElement, targetType, jsonOptions);
+                return RestLibKeyConversion.DeserializeJsonValue(
+                    valueElement,
+                    targetType,
+                    jsonOptions);
             }
         }
 
         throw new JsonException(
-            $"Composite batch key is missing required property '{JsonNamingPolicy.SnakeCaseLower.ConvertName(keyRoutePart.PropertyName)}'.");
+            $"Composite batch key is missing required property " +
+            $"'{JsonNamingPolicy.SnakeCaseLower.ConvertName(keyRoutePart.PropertyName)}'.");
     }
 
-    private static IEnumerable<string> GetCompositeKeyPropertyNames<TKey>(RestLibKeyRoutePart<TKey> keyRoutePart)
+    private static IEnumerable<string> GetCompositeKeyPropertyNames<TKey>(
+        RestLibKeyRoutePart<TKey> keyRoutePart)
         where TKey : notnull
     {
         yield return JsonNamingPolicy.SnakeCaseLower.ConvertName(keyRoutePart.PropertyName);
@@ -632,7 +500,10 @@ internal static class BatchHandler
         yield return keyRoutePart.RouteParameterName;
     }
 
-    private static bool TryGetObjectProperty(JsonElement element, string propertyName, out JsonElement value)
+    private static bool TryGetObjectProperty(
+        JsonElement element,
+        string propertyName,
+        out JsonElement value)
     {
         foreach (var property in element.EnumerateObject())
         {
@@ -645,5 +516,87 @@ internal static class BatchHandler
 
         value = default;
         return false;
+    }
+
+    private sealed class EntityBatchRequestProcessor<TEntity, TKey>(
+        BatchContext<TEntity, TKey> context,
+        HookPipeline<TEntity, TKey>? pipeline) : IBatchRequestProcessor
+        where TEntity : class
+        where TKey : notnull
+    {
+        public async Task<BatchResponse> ProcessAsync(BatchAction action, JsonElement items)
+        {
+            return action switch
+            {
+                BatchAction.Create => await new BatchCreatePipeline<TEntity, TKey>()
+                    .ProcessAsync(items, context),
+                BatchAction.Update => await new BatchUpdatePipeline<TEntity, TKey>()
+                    .ProcessAsync(items, context),
+                BatchAction.Patch => await new BatchPatchPipeline<TEntity, TKey>()
+                    .ProcessAsync(items, context),
+                BatchAction.Delete => await new BatchDeletePipeline<TEntity, TKey>()
+                    .ProcessAsync(items, context),
+                _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
+            };
+        }
+
+        public async Task<IResult?> ExecuteBeforeResponseAsync(RestLibOperation operation)
+        {
+            if (pipeline is null)
+            {
+                return null;
+            }
+
+            var hookContext = pipeline.CreateContext(context.HttpContext, operation);
+            return await HookHelper.ExecuteHookAsync(
+                pipeline.ExecuteBeforeResponseAsync,
+                hookContext);
+        }
+    }
+
+    private sealed class MappedBatchRequestProcessor<TApiModel, TDbModel, TKey>(
+        MappedBatchContext<TApiModel, TDbModel, TKey> context,
+        HookPipeline<TApiModel, TKey>? apiPipeline,
+        HookPipeline<TDbModel, TKey>? dbPipeline) : IBatchRequestProcessor
+        where TApiModel : class
+        where TDbModel : class
+        where TKey : notnull
+    {
+        public async Task<BatchResponse> ProcessAsync(BatchAction action, JsonElement items)
+        {
+            return action switch
+            {
+                BatchAction.Create => await new MappedBatchCreatePipeline<TApiModel, TDbModel, TKey>()
+                    .ProcessAsync(items, context),
+                BatchAction.Update => await new MappedBatchUpdatePipeline<TApiModel, TDbModel, TKey>()
+                    .ProcessAsync(items, context),
+                BatchAction.Patch => await new MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>()
+                    .ProcessAsync(items, context),
+                BatchAction.Delete => await new MappedBatchDeletePipeline<TApiModel, TDbModel, TKey>()
+                    .ProcessAsync(items, context),
+                _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
+            };
+        }
+
+        public async Task<IResult?> ExecuteBeforeResponseAsync(RestLibOperation operation)
+        {
+            if (dbPipeline is not null)
+            {
+                var hookContext = dbPipeline.CreateContext(context.HttpContext, operation);
+                return await HookHelper.ExecuteHookAsync(
+                    dbPipeline.ExecuteBeforeResponseAsync,
+                    hookContext);
+            }
+
+            if (apiPipeline is not null)
+            {
+                var hookContext = apiPipeline.CreateContext(context.HttpContext, operation);
+                return await HookHelper.ExecuteHookAsync(
+                    apiPipeline.ExecuteBeforeResponseAsync,
+                    hookContext);
+            }
+
+            return null;
+        }
     }
 }

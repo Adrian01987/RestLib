@@ -1,197 +1,38 @@
-using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
-using RestLib.Configuration;
 using RestLib.Endpoints;
-using RestLib.Hooks;
 using RestLib.Hypermedia;
-using RestLib.Internal;
-using RestLib.Logging;
 using RestLib.Responses;
-using RestLib.Serialization;
 using RestLib.Validation;
 
 namespace RestLib.Batch;
 
 /// <summary>
-/// Abstract base class implementing the template method for mapped batch operations.
+/// Adapts the common batch state machine to mapped API and persistence models.
 /// </summary>
 /// <typeparam name="TApiModel">The API model type.</typeparam>
-/// <typeparam name="TDbModel">The DB model type.</typeparam>
+/// <typeparam name="TDbModel">The persistence model type.</typeparam>
 /// <typeparam name="TKey">The key type.</typeparam>
-/// <typeparam name="TRawItem">The deserialized item type from JSON.</typeparam>
-/// <typeparam name="TValidItem">The validated item type passed to persistence.</typeparam>
+/// <typeparam name="TRawItem">The deserialized request item type.</typeparam>
+/// <typeparam name="TValidItem">The validated persistence item type.</typeparam>
 internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRawItem, TValidItem>
+    : BatchActionPipelineBase<TKey, TRawItem, TValidItem, MappedBatchContext<TApiModel, TDbModel, TKey>>
     where TApiModel : class
     where TDbModel : class
     where TKey : notnull
 {
     /// <summary>
-    /// Gets the HTTP success status code for this action.
+    /// Gets the success status code for the action.
     /// </summary>
     protected abstract int SuccessStatusCode { get; }
 
     /// <summary>
-    /// Gets the <see cref="RestLibOperation"/> for this batch action.
+    /// Validates an API entity using the resource's configured rules.
     /// </summary>
-    protected abstract RestLibOperation Operation { get; }
-
-    /// <summary>
-    /// Gets the error message used when the items array cannot be deserialized.
-    /// </summary>
-    protected virtual string DeserializationErrorMessage =>
-        "The 'items' array could not be deserialized.";
-
-    /// <summary>
-    /// Gets a value indicating whether this action supports a bulk persistence path.
-    /// </summary>
-    protected virtual bool HasBulkPath => true;
-
-    /// <summary>
-    /// Orchestrates the full mapped batch processing pipeline.
-    /// </summary>
-    /// <param name="itemsElement">The raw JSON items array.</param>
+    /// <param name="index">The item index.</param>
+    /// <param name="apiEntity">The API entity.</param>
     /// <param name="context">The mapped batch context.</param>
-    /// <returns>The batch response with per-item results.</returns>
-    internal async Task<BatchResponse> ProcessAsync(
-        JsonElement itemsElement,
-        MappedBatchContext<TApiModel, TDbModel, TKey> context)
-    {
-        context.CancellationToken.ThrowIfCancellationRequested();
-
-        var items = JsonDeserializationHelper.DeserializeArray<TRawItem>(itemsElement, context.JsonOptions, context.Logger);
-        if (items is null)
-        {
-            return SingleErrorResponse(
-                0,
-                StatusCodes.Status400BadRequest,
-                ProblemDetailsFactory.BadRequest(
-                    DeserializationErrorMessage,
-                    context.HttpContext.Request.Path));
-        }
-
-        var results = new BatchItemResult?[items.Count];
-        var validItems = new List<TValidItem>();
-
-        for (var i = 0; i < items.Count; i++)
-        {
-            context.CancellationToken.ThrowIfCancellationRequested();
-
-            var (error, validItem) = await ValidateItemAsync(i, items[i], context);
-            if (error is not null)
-            {
-                results[i] = error;
-                continue;
-            }
-
-            validItems.Add(validItem!);
-        }
-
-        await ExecuteAsync(validItems, results, context);
-
-        return new BatchResponse { Items = results.ToList()! };
-    }
-
-    /// <summary>
-    /// Creates a batch response with a single error entry.
-    /// </summary>
-    /// <param name="index">The item index for the error.</param>
-    /// <param name="status">The HTTP status code.</param>
-    /// <param name="error">The problem details describing the error.</param>
-    /// <returns>A batch response containing a single error item.</returns>
-    protected static BatchResponse SingleErrorResponse(
-        int index,
-        int status,
-        RestLibProblemDetails error)
-    {
-        return new BatchResponse
-        {
-            Items = [new BatchItemResult { Index = index, Status = status, Error = error }]
-        };
-    }
-
-    /// <summary>
-    /// Runs the request hook stages and returns an error result if any stage short-circuits.
-    /// </summary>
-    /// <typeparam name="THookModel">The hook model type.</typeparam>
-    /// <param name="index">The item index.</param>
-    /// <param name="pipeline">The hook pipeline.</param>
-    /// <param name="hookContext">The hook context.</param>
-    /// <returns>An error result if short-circuited, or <c>null</c>.</returns>
-    protected static async Task<BatchItemResult?> RunRequestHooksAsync<THookModel>(
-        int index,
-        HookPipeline<THookModel, TKey> pipeline,
-        HookContext<THookModel, TKey> hookContext)
-        where THookModel : class
-    {
-        var received = await pipeline.ExecuteOnRequestReceivedAsync(hookContext);
-        if (!received)
-        {
-            return HookShortCircuitResult(index, hookContext);
-        }
-
-        var validated = await pipeline.ExecuteOnRequestValidatedAsync(hookContext);
-        if (!validated)
-        {
-            return HookShortCircuitResult(index, hookContext);
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Runs the before-persist hook stage and returns an error result if it short-circuits.
-    /// </summary>
-    /// <typeparam name="THookModel">The hook model type.</typeparam>
-    /// <param name="index">The item index.</param>
-    /// <param name="pipeline">The hook pipeline.</param>
-    /// <param name="hookContext">The hook context.</param>
-    /// <returns>An error result if short-circuited, or <c>null</c>.</returns>
-    protected static async Task<BatchItemResult?> RunBeforePersistHookAsync<THookModel>(
-        int index,
-        HookPipeline<THookModel, TKey> pipeline,
-        HookContext<THookModel, TKey> hookContext)
-        where THookModel : class
-    {
-        var before = await pipeline.ExecuteBeforePersistAsync(hookContext);
-        if (!before)
-        {
-            return HookShortCircuitResult(index, hookContext);
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Runs the request and before-persist hook stages.
-    /// </summary>
-    /// <typeparam name="THookModel">The hook model type.</typeparam>
-    /// <param name="index">The item index.</param>
-    /// <param name="pipeline">The hook pipeline.</param>
-    /// <param name="hookContext">The hook context.</param>
-    /// <returns>An error result if short-circuited, or <c>null</c>.</returns>
-    protected static async Task<BatchItemResult?> RunPrePersistHooksAsync<THookModel>(
-        int index,
-        HookPipeline<THookModel, TKey> pipeline,
-        HookContext<THookModel, TKey> hookContext)
-        where THookModel : class
-    {
-        var requestHookError = await RunRequestHooksAsync(index, pipeline, hookContext);
-        if (requestHookError is not null)
-        {
-            return requestHookError;
-        }
-
-        return await RunBeforePersistHookAsync(index, pipeline, hookContext);
-    }
-
-    /// <summary>
-    /// Validates an API entity using data annotations and JSON-declared rules.
-    /// </summary>
-    /// <param name="index">The item index.</param>
-    /// <param name="apiEntity">The API entity to validate.</param>
-    /// <param name="context">The mapped batch context.</param>
-    /// <returns>An error result if validation fails, or <c>null</c>.</returns>
+    /// <returns>An error item when validation fails; otherwise, <c>null</c>.</returns>
     protected static BatchItemResult? ValidateApiEntity(
         int index,
         TApiModel apiEntity,
@@ -206,39 +47,19 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
             apiEntity,
             context.EndpointConfig,
             context.JsonOptions.PropertyNamingPolicy);
-        if (!validationResult.IsValid)
-        {
-            return ValidationFailedResult(index, validationResult, context.HttpContext.Request.Path);
-        }
-
-        return null;
+        return validationResult.IsValid
+            ? null
+            : ValidationFailedResult(index, validationResult, context.HttpContext.Request.Path);
     }
 
     /// <summary>
-    /// Creates a 400 Bad Request batch item result.
+    /// Creates a not-found item result for the API resource.
     /// </summary>
+    /// <typeparam name="TId">The ID type.</typeparam>
     /// <param name="index">The item index.</param>
-    /// <param name="detail">The error detail message.</param>
+    /// <param name="id">The missing ID.</param>
     /// <param name="instance">The request path.</param>
-    /// <returns>A bad request batch item result.</returns>
-    protected static BatchItemResult BadRequestResult(int index, string detail, string? instance)
-    {
-        return new BatchItemResult
-        {
-            Index = index,
-            Status = StatusCodes.Status400BadRequest,
-            Error = ProblemDetailsFactory.BadRequest(detail, instance)
-        };
-    }
-
-    /// <summary>
-    /// Creates a 404 Not Found batch item result.
-    /// </summary>
-    /// <typeparam name="TId">The key type.</typeparam>
-    /// <param name="index">The item index.</param>
-    /// <param name="id">The entity ID.</param>
-    /// <param name="instance">The request path.</param>
-    /// <returns>A not found batch item result.</returns>
+    /// <returns>The item result.</returns>
     protected static BatchItemResult NotFoundResult<TId>(int index, TId id, string? instance)
     {
         return new BatchItemResult
@@ -250,32 +71,12 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
     }
 
     /// <summary>
-    /// Creates a 400 Validation Failed batch item result.
+    /// Preserves the configured persistence key after mapping or hook replacement.
     /// </summary>
-    /// <param name="index">The item index.</param>
-    /// <param name="validationResult">The validation result with errors.</param>
-    /// <param name="instance">The request path.</param>
-    /// <returns>A validation failed batch item result.</returns>
-    protected static BatchItemResult ValidationFailedResult(
-        int index,
-        EntityValidationResult validationResult,
-        string? instance)
-    {
-        return new BatchItemResult
-        {
-            Index = index,
-            Status = StatusCodes.Status400BadRequest,
-            Error = ProblemDetailsFactory.ValidationFailed(validationResult.Errors, instance)
-        };
-    }
-
-    /// <summary>
-    /// Preserves the configured DB key property on a mapped model when one can be
-    /// identified.
-    /// </summary>
-    /// <param name="dbEntity">The DB model instance.</param>
+    /// <param name="dbEntity">The persistence entity.</param>
     /// <param name="id">The resource ID.</param>
     /// <param name="context">The mapped batch context.</param>
+    /// <returns><c>true</c> when the key was applied.</returns>
     protected static bool TrySetDbEntityKey(
         TDbModel dbEntity,
         TKey id,
@@ -284,153 +85,35 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
         ArgumentNullException.ThrowIfNull(dbEntity);
         ArgumentNullException.ThrowIfNull(context);
 
-        return EntityKeyHelper.TrySetEntityKeyParts(dbEntity, id, context.EndpointConfig.KeyRouteParts);
+        return EntityKeyHelper.TrySetEntityKeyParts(
+            dbEntity,
+            id,
+            context.EndpointConfig.KeyRouteParts);
     }
 
     /// <summary>
-    /// Creates a batch item result from a hook short-circuit during validation.
-    /// </summary>
-    /// <typeparam name="THookModel">The hook model type.</typeparam>
-    /// <param name="index">The item index.</param>
-    /// <param name="hookContext">The hook context with the early result.</param>
-    /// <returns>A batch item result reflecting the hook's short-circuit response.</returns>
-    protected static BatchItemResult HookShortCircuitResult<THookModel>(
-        int index,
-        HookContext<THookModel, TKey> hookContext)
-        where THookModel : class
-    {
-        if (hookContext.EarlyResult is null)
-        {
-            return new BatchItemResult
-            {
-                Index = index,
-                Status = StatusCodes.Status500InternalServerError,
-                Error = ProblemDetailsFactory.InternalError(
-                    detail: "The operation was short-circuited by a hook.")
-            };
-        }
-
-        var statusCode = hookContext.EarlyResult is IStatusCodeHttpResult statusResult
-            ? statusResult.StatusCode ?? StatusCodes.Status500InternalServerError
-            : StatusCodes.Status500InternalServerError;
-
-        var error = hookContext.EarlyResult is IValueHttpResult { Value: RestLibProblemDetails problem }
-            ? problem
-            : ProblemDetailsFactory.HookShortCircuit(statusCode);
-
-        return new BatchItemResult
-        {
-            Index = index,
-            Status = statusCode,
-            Error = error
-        };
-    }
-
-    /// <summary>
-    /// Builds a batch item result from a hook's early result after persist.
-    /// </summary>
-    /// <param name="index">The item index.</param>
-    /// <param name="earlyResult">The early result set by the hook.</param>
-    /// <param name="httpContext">The current HTTP context.</param>
-    /// <returns>A batch item result reflecting the hook's short-circuit response.</returns>
-    protected static BatchItemResult BuildHookResultItem(
-        int index,
-        IResult? earlyResult,
-        HttpContext httpContext)
-    {
-        var statusCode = earlyResult is IStatusCodeHttpResult statusResult
-            ? statusResult.StatusCode ?? StatusCodes.Status500InternalServerError
-            : StatusCodes.Status500InternalServerError;
-
-        var error = earlyResult is IValueHttpResult { Value: RestLibProblemDetails problem }
-            ? problem
-            : ProblemDetailsFactory.InternalError(
-                detail: "Hook short-circuited after persist.",
-                instance: httpContext.Request.Path);
-
-        return new BatchItemResult
-        {
-            Index = index,
-            Status = statusCode,
-            Error = error
-        };
-    }
-
-    /// <summary>
-    /// Validates a single deserialized item.
-    /// </summary>
-    /// <param name="index">The item index within the batch.</param>
-    /// <param name="rawItem">The deserialized raw item.</param>
-    /// <param name="context">The mapped batch context.</param>
-    /// <returns>A tuple of (error or null, validated item or default).</returns>
-    protected abstract Task<(BatchItemResult? Error, TValidItem? ValidItem)> ValidateItemAsync(
-        int index,
-        TRawItem? rawItem,
-        MappedBatchContext<TApiModel, TDbModel, TKey> context);
-
-    /// <summary>
-    /// Extracts the original index from a validated item.
+    /// Extracts the API entity used by error hooks from a validated item.
     /// </summary>
     /// <param name="validItem">The validated item.</param>
-    /// <returns>The zero-based index.</returns>
-    protected abstract int GetIndex(TValidItem validItem);
-
-    /// <summary>
-    /// Persists a single validated item and populates the result.
-    /// </summary>
-    /// <param name="validItem">The validated item.</param>
-    /// <param name="results">The results array to populate.</param>
-    /// <param name="context">The mapped batch context.</param>
-    protected abstract Task PersistSingleItemAsync(
-        TValidItem validItem,
-        BatchItemResult?[] results,
-        MappedBatchContext<TApiModel, TDbModel, TKey> context);
-
-    /// <summary>
-    /// Extracts the resource ID from a validated item for hook context, if applicable.
-    /// </summary>
-    /// <param name="validItem">The validated item.</param>
-    /// <returns>The resource ID, or default.</returns>
-    protected virtual TKey? GetResourceId(TValidItem validItem) => default;
-
-    /// <summary>
-    /// Extracts the API entity from a validated item for error hooks, if applicable.
-    /// </summary>
-    /// <param name="validItem">The validated item.</param>
-    /// <returns>The API entity, or null.</returns>
+    /// <returns>The API entity, when available.</returns>
     protected virtual TApiModel? GetApiEntity(TValidItem validItem) => default;
 
     /// <summary>
-    /// Extracts the DB entity from a validated item for error hooks, if applicable.
+    /// Extracts the persistence entity used by error hooks from a validated item.
     /// </summary>
     /// <param name="validItem">The validated item.</param>
-    /// <returns>The DB entity, or null.</returns>
+    /// <returns>The persistence entity, when available.</returns>
     protected virtual TDbModel? GetDbEntity(TValidItem validItem) => default;
 
     /// <summary>
-    /// Persists all validated items using the bulk repository path.
-    /// Repository calls must use <see cref="BulkPersistenceExecutor"/> so failures
-    /// are distinguished from post-persistence processing failures.
-    /// </summary>
-    /// <param name="validItems">The validated items.</param>
-    /// <param name="results">The results array to populate.</param>
-    /// <param name="context">The mapped batch context.</param>
-    protected abstract Task PersistBulkAsync(
-        List<TValidItem> validItems,
-        BatchItemResult?[] results,
-        MappedBatchContext<TApiModel, TDbModel, TKey> context);
-
-    /// <summary>
-    /// Runs the after-persist hook and builds the success result.
+    /// Runs the active after-persist hook and builds the API response entity.
     /// </summary>
     /// <param name="index">The item index.</param>
-    /// <param name="dbEntity">The persisted DB entity.</param>
-    /// <param name="resourceId">The resource ID for hook context.</param>
+    /// <param name="dbEntity">The persisted entity.</param>
+    /// <param name="resourceId">The resource ID.</param>
     /// <param name="context">The mapped batch context.</param>
-    /// <param name="mappedApiEntity">
-    /// An API entity mapped during bulk-result validation, when available.
-    /// </param>
-    /// <returns>The batch item result.</returns>
+    /// <param name="mappedApiEntity">A previously mapped API entity, when available.</param>
+    /// <returns>The completed item result.</returns>
     protected async Task<BatchItemResult> RunAfterPersistAndBuildResultAsync(
         int index,
         TDbModel dbEntity,
@@ -457,7 +140,10 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
             dbEntity = afterContext.Entity ?? dbEntity;
             if (entityKey is not null)
             {
-                _ = EntityKeyHelper.TrySetEntityKeyParts(dbEntity, entityKey, context.EndpointConfig.KeyRouteParts);
+                _ = EntityKeyHelper.TrySetEntityKeyParts(
+                    dbEntity,
+                    entityKey,
+                    context.EndpointConfig.KeyRouteParts);
             }
 
             apiEntity = context.Mapper.ToApi(dbEntity);
@@ -480,24 +166,28 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
 
         if (entityKey is not null)
         {
-            _ = EntityKeyHelper.TrySetEntityKeyParts(apiEntity, entityKey, context.EndpointConfig.KeyRouteParts);
+            _ = EntityKeyHelper.TrySetEntityKeyParts(
+                apiEntity,
+                entityKey,
+                context.EndpointConfig.KeyRouteParts);
         }
 
         object resultEntity = apiEntity;
-        if (context.Options.EnableHateoas)
+        if (context.Options.EnableHateoas && entityKey is not null)
         {
-            if (entityKey is not null)
-            {
-                var customLinksProvider = context.HttpContext.RequestServices.GetService<IHateoasLinkProvider<TApiModel, TKey>>();
-                var customLinks = customLinksProvider?.GetLinks(apiEntity, entityKey);
-                var links = HateoasLinkBuilder.BuildEntityLinks(
-                    context.HttpContext.Request,
-                    context.CollectionPath,
-                    entityKey,
-                    context.EndpointConfig,
-                    customLinks);
-                resultEntity = HateoasHelper.EntityWithLinks<TApiModel, TKey>(apiEntity, links, context.JsonOptions);
-            }
+            var customLinksProvider = context.HttpContext.RequestServices
+                .GetService<IHateoasLinkProvider<TApiModel, TKey>>();
+            var customLinks = customLinksProvider?.GetLinks(apiEntity, entityKey);
+            var links = HateoasLinkBuilder.BuildEntityLinks(
+                context.HttpContext.Request,
+                context.CollectionPath,
+                entityKey,
+                context.EndpointConfig,
+                customLinks);
+            resultEntity = HateoasHelper.EntityWithLinks<TApiModel, TKey>(
+                apiEntity,
+                links,
+                context.JsonOptions);
         }
 
         return new BatchItemResult
@@ -509,20 +199,14 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
     }
 
     /// <summary>
-    /// Processes bulk results by running after-persist hooks and building success results.
+    /// Correlates bulk persistence results and builds API response items.
     /// </summary>
-    /// <param name="validItems">The validated items that were persisted.</param>
-    /// <param name="bulkResults">The DB entities returned from the bulk operation.</param>
-    /// <param name="results">The results array to populate.</param>
+    /// <param name="validItems">The submitted valid items.</param>
+    /// <param name="bulkResults">The persistence results.</param>
+    /// <param name="results">The indexed response items.</param>
     /// <param name="context">The mapped batch context.</param>
-    /// <param name="allowMissingResults">
-    /// Whether the repository may omit entities that no longer exist. Omitted
-    /// update and patch results are correlated by API-model key and returned as 404 items.
-    /// </param>
-    /// <param name="expectedResultKeys">
-    /// Caller-supplied create keys captured before persistence, indexed by input position.
-    /// Generated default keys are omitted because their result order is not observable.
-    /// </param>
+    /// <param name="allowMissingResults">Whether omitted keyed results represent missing resources.</param>
+    /// <param name="expectedResultKeys">Caller-supplied create keys by input position.</param>
     protected async Task ProcessBulkResultsAsync(
         List<TValidItem> validItems,
         IReadOnlyList<TDbModel> bulkResults,
@@ -552,13 +236,14 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
                 submittedKeys.Add(resourceId);
             }
 
-            var apiEntities = bulkResults
-                .Select(context.Mapper.ToApi)
-                .ToList();
+            var apiEntities = bulkResults.Select(context.Mapper.ToApi).ToList();
             var returnedKeys = new List<TKey>(apiEntities.Count);
             foreach (var apiEntity in apiEntities)
             {
-                if (!EntityKeyHelper.TryGetEntityKey(apiEntity, context.EndpointConfig.KeySelector, out var key))
+                if (!EntityKeyHelper.TryGetEntityKey(
+                        apiEntity,
+                        context.EndpointConfig.KeySelector,
+                        out var key))
                 {
                     throw new BatchRepositoryContractException(
                         $"The batch repository contract was violated for '{actionName}': " +
@@ -576,14 +261,17 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
         }
         else
         {
-            BatchRepositoryResultContract.ValidateComplete(bulkResults, validItems.Count, actionName);
+            BatchRepositoryResultContract.ValidateComplete(
+                bulkResults,
+                validItems.Count,
+                actionName);
             if (expectedResultKeys is not null && expectedResultKeys.Count > 0)
             {
                 var apiEntities = new TApiModel?[bulkResults.Count];
-                foreach (var (index, expectedKey) in expectedResultKeys)
+                foreach (var (resultIndex, expectedKey) in expectedResultKeys)
                 {
-                    var apiEntity = context.Mapper.ToApi(bulkResults[index]);
-                    apiEntities[index] = apiEntity;
+                    var apiEntity = context.Mapper.ToApi(bulkResults[resultIndex]);
+                    apiEntities[resultIndex] = apiEntity;
                     if (!EntityKeyHelper.TryGetEntityKey(
                             apiEntity,
                             context.EndpointConfig.KeySelector,
@@ -600,21 +288,21 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
             }
 
             correlations = Enumerable.Range(0, validItems.Count)
-                .Select(static index => (int?)index)
+                .Select(static resultIndex => (int?)resultIndex)
                 .ToArray();
         }
 
-        for (var j = 0; j < validItems.Count; j++)
+        for (var itemIndex = 0; itemIndex < validItems.Count; itemIndex++)
         {
             context.CancellationToken.ThrowIfCancellationRequested();
 
-            var validItem = validItems[j];
-            var index = GetIndex(validItem);
-            var resultIndex = correlations[j];
+            var validItem = validItems[itemIndex];
+            var originalIndex = GetIndex(validItem);
+            var resultIndex = correlations[itemIndex];
             if (resultIndex is null)
             {
-                results[index] = NotFoundResult(
-                    index,
+                results[originalIndex] = NotFoundResult(
+                    originalIndex,
                     GetResourceId(validItem)!,
                     context.HttpContext.Request.Path);
                 continue;
@@ -625,8 +313,8 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
                 ? mappedApiEntities[resultIndex.Value]
                 : null;
 
-            results[index] = await RunAfterPersistAndBuildResultAsync(
-                index,
+            results[originalIndex] = await RunAfterPersistAndBuildResultAsync(
+                originalIndex,
                 dbEntity,
                 GetResourceId(validItem),
                 context,
@@ -634,213 +322,40 @@ internal abstract class MappedBatchActionPipeline<TApiModel, TDbModel, TKey, TRa
         }
     }
 
-    /// <summary>
-    /// Creates a batch item result from an exception.
-    /// </summary>
-    /// <param name="index">The item index.</param>
-    /// <param name="exception">The exception.</param>
-    /// <param name="instance">The request path.</param>
-    /// <param name="options">The RestLib options.</param>
-    /// <returns>A batch item result describing the exception.</returns>
-    private static BatchItemResult ExceptionResult(
-        int index,
-        Exception exception,
-        string? instance,
-        RestLibOptions options)
+    /// <inheritdoc/>
+    protected override bool CanUseBulk(MappedBatchContext<TApiModel, TDbModel, TKey> context)
     {
-        var detail = options.IncludeExceptionDetailsInErrors
-            ? $"{exception.GetType().Name}: {exception.Message}"
-            : "An internal error occurred while processing this item.";
-
-        return new BatchItemResult
-        {
-            Index = index,
-            Status = StatusCodes.Status500InternalServerError,
-            Error = ProblemDetailsFactory.InternalError(detail: detail, instance: instance)
-        };
+        return context.BatchRepository is not null;
     }
 
-    private static BatchItemResult BuildHandledErrorResult(
-        int index,
+    /// <inheritdoc/>
+    protected override async Task<(bool Handled, IResult? Result)> ExecuteErrorHookAsync(
+        TValidItem validItem,
         Exception exception,
-        IResult errorResult,
         MappedBatchContext<TApiModel, TDbModel, TKey> context)
     {
-        var statusCode = errorResult is IStatusCodeHttpResult statusResult
-            ? statusResult.StatusCode ?? StatusCodes.Status500InternalServerError
-            : StatusCodes.Status500InternalServerError;
-
-        var error = errorResult is IValueHttpResult { Value: RestLibProblemDetails problem }
-            ? problem
-            : ProblemDetailsFactory.InternalError(
-                detail: context.Options.IncludeExceptionDetailsInErrors
-                    ? $"{exception.GetType().Name}: {exception.Message}"
-                    : "An internal error occurred while processing this item.",
-                instance: context.HttpContext.Request.Path);
-
-        return new BatchItemResult
+        if (context.DbPipeline is not null)
         {
-            Index = index,
-            Status = statusCode,
-            Error = error
-        };
-    }
-
-    private async Task ExecuteAsync(
-        List<TValidItem> validItems,
-        BatchItemResult?[] results,
-        MappedBatchContext<TApiModel, TDbModel, TKey> context)
-    {
-        context.CancellationToken.ThrowIfCancellationRequested();
-
-        if (validItems.Count == 0)
-        {
-            return;
+            var errorContext = context.DbPipeline.CreateErrorContext(
+                context.HttpContext,
+                Operation,
+                exception,
+                GetResourceId(validItem),
+                GetDbEntity(validItem));
+            return await context.DbPipeline.ExecuteOnErrorAsync(errorContext);
         }
 
-        if (HasBulkPath && context.BatchRepository is not null)
+        if (context.ApiPipeline is not null)
         {
-            try
-            {
-                await PersistBulkAsync(validItems, results, context);
-            }
-            catch (Exception bulkException) when (
-                bulkException is BulkPersistenceException or BatchRepositoryContractException)
-            {
-                context.CancellationToken.ThrowIfCancellationRequested();
-
-                var persistenceException = bulkException is BulkPersistenceException
-                    ? bulkException.InnerException ?? bulkException
-                    : bulkException;
-                var actionName = Operation.ToString().ToLowerInvariant();
-                if (persistenceException is BatchRepositoryContractException)
-                {
-                    RestLibLogMessages.BatchRepositoryContractViolated(
-                        context.Logger,
-                        actionName,
-                        validItems.Count,
-                        persistenceException);
-                }
-                else
-                {
-                    RestLibLogMessages.BulkPersistenceFailed(
-                        context.Logger,
-                        actionName,
-                        validItems.Count,
-                        persistenceException);
-                }
-
-                var failedItems = validItems
-                    .Where(item => results[GetIndex(item)] is null)
-                    .ToList();
-
-                foreach (var item in failedItems)
-                {
-                    context.CancellationToken.ThrowIfCancellationRequested();
-
-                    var index = GetIndex(item);
-                    results[index] = await HandleItemErrorAsync(
-                        index,
-                        persistenceException,
-                        context,
-                        GetResourceId(item),
-                        GetApiEntity(item),
-                        GetDbEntity(item));
-                }
-            }
-        }
-        else
-        {
-            await PersistIndividuallyAsync(validItems, results, context);
-        }
-    }
-
-    private async Task PersistIndividuallyAsync(
-        List<TValidItem> validItems,
-        BatchItemResult?[] results,
-        MappedBatchContext<TApiModel, TDbModel, TKey> context)
-    {
-        foreach (var item in validItems)
-        {
-            context.CancellationToken.ThrowIfCancellationRequested();
-
-            var index = GetIndex(item);
-            try
-            {
-                await PersistSingleItemAsync(item, results, context);
-            }
-            catch (Exception ex) when (!RequestCancellation.IsRequested(ex, context.CancellationToken))
-            {
-                context.CancellationToken.ThrowIfCancellationRequested();
-
-                var actionName = Operation.ToString().ToLowerInvariant();
-                RestLibLogMessages.BatchItemPersistenceFailed(context.Logger, actionName, index, ex);
-
-                results[index] = await HandleItemErrorAsync(
-                    index,
-                    ex,
-                    context,
-                    GetResourceId(item),
-                    GetApiEntity(item),
-                    GetDbEntity(item));
-            }
-        }
-    }
-
-    private async Task<BatchItemResult> HandleItemErrorAsync(
-        int index,
-        Exception exception,
-        MappedBatchContext<TApiModel, TDbModel, TKey> context,
-        TKey? resourceId = default,
-        TApiModel? apiEntity = default,
-        TDbModel? dbEntity = default)
-    {
-        context.CancellationToken.ThrowIfCancellationRequested();
-
-        try
-        {
-            if (context.DbPipeline is not null)
-            {
-                var errorContext = context.DbPipeline.CreateErrorContext(
-                    context.HttpContext,
-                    Operation,
-                    exception,
-                    resourceId,
-                    dbEntity);
-                var (handled, errorResult) = await context.DbPipeline.ExecuteOnErrorAsync(errorContext);
-                context.CancellationToken.ThrowIfCancellationRequested();
-                if (handled && errorResult is not null)
-                {
-                    return BuildHandledErrorResult(index, exception, errorResult, context);
-                }
-            }
-            else if (context.ApiPipeline is not null)
-            {
-                var errorContext = context.ApiPipeline.CreateErrorContext(
-                    context.HttpContext,
-                    Operation,
-                    exception,
-                    resourceId,
-                    apiEntity);
-                var (handled, errorResult) = await context.ApiPipeline.ExecuteOnErrorAsync(errorContext);
-                context.CancellationToken.ThrowIfCancellationRequested();
-                if (handled && errorResult is not null)
-                {
-                    return BuildHandledErrorResult(index, exception, errorResult, context);
-                }
-            }
-        }
-        catch (Exception hookException) when (
-            !RequestCancellation.IsRequested(hookException, context.CancellationToken))
-        {
-            var actionName = Operation.ToString().ToLowerInvariant();
-            RestLibLogMessages.BatchErrorHookSwallowed(
-                context.Logger,
-                actionName,
-                index,
-                hookException);
+            var errorContext = context.ApiPipeline.CreateErrorContext(
+                context.HttpContext,
+                Operation,
+                exception,
+                GetResourceId(validItem),
+                GetApiEntity(validItem));
+            return await context.ApiPipeline.ExecuteOnErrorAsync(errorContext);
         }
 
-        return ExceptionResult(index, exception, context.HttpContext.Request.Path, context.Options);
+        return (false, null);
     }
 }
