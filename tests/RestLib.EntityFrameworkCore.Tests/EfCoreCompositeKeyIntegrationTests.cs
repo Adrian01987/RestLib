@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using RestLib.Configuration;
 using RestLib.EntityFrameworkCore.Tests.Fakes;
@@ -107,13 +108,17 @@ public class EfCoreCompositeKeyIntegrationTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task CompositeKeyResource_Update_ReplacesEntityByCompositeKey()
+    public async Task CompositeKeyResource_Update_ConflictingBodyKeyParts_UsesRouteIdentity()
     {
         // Arrange
         var entity = CreateTenantProduct(productName: "Original", unitPrice: 10m);
+        var bodyTenantId = Guid.NewGuid();
+        var bodySku = "body-sku";
         await SeedTenantProductsAsync(entity);
         var payload = new
         {
+            tenant_id = bodyTenantId,
+            sku = bodySku,
             product_name = "Updated",
             unit_price = 99.9m,
             stock_quantity = 44,
@@ -133,6 +138,14 @@ public class EfCoreCompositeKeyIntegrationTests : IAsyncLifetime
         body.Sku.Should().Be(entity.Sku);
         body.ProductName.Should().Be("Updated");
         body.UnitPrice.Should().Be(99.9m);
+
+        _db.ChangeTracker.Clear();
+        var persisted = await _db.TenantProducts.FindAsync(entity.TenantId, entity.Sku);
+        persisted.Should().NotBeNull();
+        persisted!.TenantId.Should().Be(entity.TenantId);
+        persisted.Sku.Should().Be(entity.Sku);
+        persisted.ProductName.Should().Be("Updated");
+        (await _db.TenantProducts.FindAsync(bodyTenantId, bodySku)).Should().BeNull();
     }
 
     [Fact]
@@ -224,6 +237,8 @@ public class EfCoreCompositeKeyIntegrationTests : IAsyncLifetime
         var first = CreateTenantProduct(tenantId, "sku-update", "Update", 10m);
         var second = CreateTenantProduct(tenantId, "sku-patch", "Patch", 20m);
         var third = CreateTenantProduct(tenantId, "sku-delete", "Delete", 30m);
+        var bodyTenantId = Guid.NewGuid();
+        var bodySku = "body-update";
         await SeedTenantProductsAsync(first, second, third);
 
         var updatePayload = new
@@ -236,6 +251,8 @@ public class EfCoreCompositeKeyIntegrationTests : IAsyncLifetime
                     id = new { tenant_id = first.TenantId, sku = first.Sku },
                     body = new
                     {
+                        tenant_id = bodyTenantId,
+                        sku = bodySku,
                         product_name = "Updated Name",
                         unit_price = 77.7m,
                         stock_quantity = 9,
@@ -275,6 +292,10 @@ public class EfCoreCompositeKeyIntegrationTests : IAsyncLifetime
         updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         patchResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         deleteResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var updateDocument = JsonDocument.Parse(await updateResponse.Content.ReadAsStringAsync());
+        var updateEntity = updateDocument.RootElement.GetProperty("items")[0].GetProperty("entity");
+        updateEntity.GetProperty("tenant_id").GetGuid().Should().Be(first.TenantId);
+        updateEntity.GetProperty("sku").GetString().Should().Be(first.Sku);
 
         _db.ChangeTracker.Clear();
         var updated = await _db.TenantProducts.FindAsync(first.TenantId, first.Sku);
@@ -282,7 +303,12 @@ public class EfCoreCompositeKeyIntegrationTests : IAsyncLifetime
         var deleted = await _db.TenantProducts.FindAsync(third.TenantId, third.Sku);
 
         updated.Should().NotBeNull();
-        updated!.ProductName.Should().Be("Updated Name");
+        updated!.TenantId.Should().Be(first.TenantId);
+        updated.Sku.Should().Be(first.Sku);
+        updated.ProductName.Should().Be("Updated Name");
+        (await _db.TenantProducts.FindAsync(bodyTenantId, bodySku)).Should().BeNull();
+        (await _db.TenantProducts.AnyAsync(entity =>
+            entity.TenantId == bodyTenantId || entity.Sku == bodySku)).Should().BeFalse();
         patched.Should().NotBeNull();
         patched!.ProductName.Should().Be("Patched Name");
         deleted.Should().BeNull();

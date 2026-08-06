@@ -83,6 +83,39 @@ public class EfCoreUpdateTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Update_ConflictingBodyId_UsesRouteIdentity()
+    {
+        // Arrange
+        var routeId = _seededProducts[0].Id;
+        var bodyId = Guid.NewGuid();
+        var replacement = new
+        {
+            id = bodyId,
+            product_name = "Route identity wins",
+            unit_price = 25m,
+            stock_quantity = 7,
+            is_active = true,
+            created_at = "2025-07-01T00:00:00Z"
+        };
+
+        // Act
+        var response = await _client.PutAsJsonAsync($"/api/products/{routeId}", replacement);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updated = await DeserializeProductAsync(response);
+        updated.Should().NotBeNull();
+        updated!.Id.Should().Be(routeId);
+
+        _db.ChangeTracker.Clear();
+        var persisted = await _db.Products.FindAsync(routeId);
+        persisted.Should().NotBeNull();
+        persisted!.Id.Should().Be(routeId);
+        persisted.ProductName.Should().Be("Route identity wins");
+        (await _db.Products.FindAsync(bodyId)).Should().BeNull();
+    }
+
+    [Fact]
     public async Task Update_NonExistentKey_Returns404ProblemDetails()
     {
         // Arrange

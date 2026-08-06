@@ -10,6 +10,10 @@ The following is a set of guidelines for contributing to RestLib. These are most
 
 *   [.NET 10.0 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) or later.
 *   An IDE of your choice (VS Code, Visual Studio, Rider).
+*   On Windows, SQL Server LocalDB (`MSSQLLocalDB`) for the live EF Core
+    provider/collation contract tests. Those cases run and fail loudly when the
+    prerequisite is missing in Windows CI; they are explicitly skipped on
+    non-Windows platforms.
 
 ### Building the Project
 

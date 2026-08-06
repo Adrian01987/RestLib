@@ -29,6 +29,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\RestLib.EntityFrameworkCore\RestLib.EntityFrameworkCore.csproj" />
+    <ProjectReference Include="..\..\src\RestLib.InMemory\RestLib.InMemory.csproj" />
   </ItemGroup>
 
 </Project>

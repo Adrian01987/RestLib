@@ -99,8 +99,16 @@ public class ServiceRegistrationTests
             options.OmitNullValues = false;
             options.DefaultPageSize = 12;
             options.MaxPageSize = 120;
+            options.IncludePaginationLinks = false;
             options.RequireAuthorizationByDefault = false;
             options.EnableETagSupport = false;
+            options.UseProblemDetails = false;
+            options.IncludeExceptionDetailsInErrors = true;
+            options.EnableValidation = false;
+            options.MaxBatchSize = 17;
+            options.MaxFilterInListSize = 9;
+            options.MaxCursorLength = 512;
+            options.ProblemTypeBaseUri = new Uri("https://first.example/problems");
             options.EnableHateoas = true;
         });
         services.AddRestLib(options =>
@@ -109,8 +117,16 @@ public class ServiceRegistrationTests
             options.OmitNullValues = true;
             options.DefaultPageSize = 42;
             options.MaxPageSize = 420;
+            options.IncludePaginationLinks = true;
             options.RequireAuthorizationByDefault = true;
             options.EnableETagSupport = true;
+            options.UseProblemDetails = true;
+            options.IncludeExceptionDetailsInErrors = false;
+            options.EnableValidation = true;
+            options.MaxBatchSize = 71;
+            options.MaxFilterInListSize = 19;
+            options.MaxCursorLength = 1024;
+            options.ProblemTypeBaseUri = new Uri("https://second.example/problems");
             options.EnableHateoas = false;
         });
         using var provider = services.BuildServiceProvider();
@@ -124,8 +140,16 @@ public class ServiceRegistrationTests
         options.OmitNullValues.Should().BeFalse();
         options.DefaultPageSize.Should().Be(12);
         options.MaxPageSize.Should().Be(120);
+        options.IncludePaginationLinks.Should().BeFalse();
         options.RequireAuthorizationByDefault.Should().BeFalse();
         options.EnableETagSupport.Should().BeFalse();
+        options.UseProblemDetails.Should().BeFalse();
+        options.IncludeExceptionDetailsInErrors.Should().BeTrue();
+        options.EnableValidation.Should().BeFalse();
+        options.MaxBatchSize.Should().Be(17);
+        options.MaxFilterInListSize.Should().Be(9);
+        options.MaxCursorLength.Should().Be(512);
+        options.ProblemTypeBaseUri.Should().Be(new Uri("https://first.example/problems"));
         options.EnableHateoas.Should().BeTrue();
 
         restLibJsonOptions.PropertyNamingPolicy.Should().BeSameAs(options.JsonNamingPolicy);

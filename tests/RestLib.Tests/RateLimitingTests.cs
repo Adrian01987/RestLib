@@ -25,6 +25,7 @@ public class RateLimitingTests : IAsyncLifetime
     private IHost? _host;
     private HttpClient? _client;
     private TestEntityRepository? _repository;
+    private RepositorySpy<TestEntity, Guid>? _repositorySpy;
 
     /// <inheritdoc />
     public Task InitializeAsync() => Task.CompletedTask;
@@ -32,8 +33,9 @@ public class RateLimitingTests : IAsyncLifetime
     private async Task CreateHostAsync(Action<RestLibEndpointConfiguration<TestEntity, Guid>> configure)
     {
         _repository = new TestEntityRepository();
+        _repositorySpy = new RepositorySpy<TestEntity, Guid>(_repository);
 
-        (_host, _client) = await new TestHostBuilder<TestEntity, Guid>(_repository, "/api/limited")
+        (_host, _client) = await new TestHostBuilder<TestEntity, Guid>(_repositorySpy, "/api/limited")
             .WithServices(services =>
             {
                 services.AddRateLimiter(options =>
@@ -162,20 +164,52 @@ public class RateLimitingTests : IAsyncLifetime
         getAllResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    [Fact]
+    [Theory]
+    [InlineData("create", BatchAction.Create, RestLibOperation.BatchCreate)]
+    [InlineData("update", BatchAction.Update, RestLibOperation.BatchUpdate)]
+    [InlineData("patch", BatchAction.Patch, RestLibOperation.BatchPatch)]
+    [InlineData("delete", BatchAction.Delete, RestLibOperation.BatchDelete)]
     [Trait("Category", "Story6.1")]
-    public async Task BatchDelete_WithActionPolicy_Returns429WhenExceeded()
+    public async Task BatchAction_WithActionPolicy_Returns429WhenExceeded(
+        string actionName,
+        BatchAction action,
+        RestLibOperation operation)
     {
         // Arrange
         await CreateHostAsync(cfg =>
         {
-            cfg.EnableBatch(BatchAction.Delete);
-            cfg.UseRateLimiting("strict", RestLibOperation.BatchDelete);
+            cfg.EnableBatch(action);
+            cfg.UseRateLimiting("strict", operation);
         });
-        var payload = new
+        var id = Guid.NewGuid();
+        if (action != BatchAction.Create)
         {
-            action = "delete",
-            items = new[] { Guid.NewGuid() }
+            _repository!.Seed(new TestEntity { Id = id, Name = "Original" });
+        }
+
+        object payload = action switch
+        {
+            BatchAction.Create => new
+            {
+                action = actionName,
+                items = new[] { new { name = "Created" } }
+            },
+            BatchAction.Update => new
+            {
+                action = actionName,
+                items = new[] { new { id, body = new { name = "Updated" } } }
+            },
+            BatchAction.Patch => new
+            {
+                action = actionName,
+                items = new[] { new { id, body = new { name = "Patched" } } }
+            },
+            BatchAction.Delete => new
+            {
+                action = actionName,
+                items = new[] { id }
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Unknown batch action.")
         };
 
         // Act
@@ -183,8 +217,17 @@ public class RateLimitingTests : IAsyncLifetime
         var secondResponse = await _client.PostAsJsonAsync("/api/limited/batch", payload);
 
         // Assert
-        firstResponse.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         secondResponse.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        var writeCallCount = action switch
+        {
+            BatchAction.Create => _repositorySpy!.CreateAsyncCallCount,
+            BatchAction.Update => _repositorySpy!.UpdateAsyncCallCount,
+            BatchAction.Patch => _repositorySpy!.PatchAsyncCallCount,
+            BatchAction.Delete => _repositorySpy!.DeleteAsyncCallCount,
+            _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Unknown batch action.")
+        };
+        writeCallCount.Should().Be(1, "the rejected request must not reach persistence");
     }
 
     [Fact]

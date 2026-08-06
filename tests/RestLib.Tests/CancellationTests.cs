@@ -10,7 +10,6 @@ using RestLib.Abstractions;
 using RestLib.Batch;
 using RestLib.Configuration;
 using RestLib.Hooks;
-using RestLib.InMemory;
 using RestLib.Mapping;
 using RestLib.Pagination;
 using RestLib.Tests.Fakes;
@@ -165,9 +164,7 @@ public class CancellationTests
     public async Task BatchCreate_BulkPersistenceCancelled_PropagatesWithoutItemFailuresOrErrorHooks()
     {
         // Arrange
-        var repository = new InMemoryRepository<CancellationEntity, Guid>(
-            entity => entity.Id,
-            Guid.NewGuid);
+        var repository = new CreateTrackingRepository<CancellationEntity>();
         var batchRepository = new BlockingBatchRepository();
         var errorHookCallCount = 0;
         var (host, client) = await new TestHostBuilder<CancellationEntity, Guid>(
@@ -215,8 +212,8 @@ public class CancellationTests
             await act.Should().ThrowAsync<OperationCanceledException>();
             await batchRepository.Completed.WaitAsync(TimeSpan.FromSeconds(5));
             batchRepository.CreateManyCallCount.Should().Be(1);
+            repository.CreateCallCount.Should().Be(0);
             errorHookCallCount.Should().Be(0);
-            repository.Count.Should().Be(0);
         }
         finally
         {
@@ -231,9 +228,7 @@ public class CancellationTests
     public async Task MappedBatchCreate_BulkPersistenceCancelled_PropagatesWithoutErrorHook()
     {
         // Arrange
-        var repository = new InMemoryRepository<CancellationDbEntity, Guid>(
-            entity => entity.Id,
-            Guid.NewGuid);
+        var repository = new CreateTrackingRepository<CancellationDbEntity>();
         var batchRepository = new BlockingMappedBatchRepository();
         var errorHookCallCount = 0;
         var (host, client) = await new TestTwoModelHostBuilder<CancellationApiEntity, CancellationDbEntity, Guid>(
@@ -285,8 +280,8 @@ public class CancellationTests
             await act.Should().ThrowAsync<OperationCanceledException>();
             await batchRepository.Completed.WaitAsync(TimeSpan.FromSeconds(5));
             batchRepository.CreateManyCallCount.Should().Be(1);
+            repository.CreateCallCount.Should().Be(0);
             errorHookCallCount.Should().Be(0);
-            repository.Count.Should().Be(0);
         }
         finally
         {
@@ -513,6 +508,43 @@ public class CancellationTests
 
         public Task<IReadOnlyList<CancellationEntity>> UpdateManyAsync(
             IReadOnlyList<CancellationEntity> entities,
+            CancellationToken ct = default)
+            => throw new NotSupportedException();
+    }
+
+    private sealed class CreateTrackingRepository<TEntity> : IRepository<TEntity, Guid>
+        where TEntity : class
+    {
+        private int _createCallCount;
+
+        public int CreateCallCount => _createCallCount;
+
+        public Task<TEntity> CreateAsync(TEntity entity, CancellationToken ct = default)
+        {
+            Interlocked.Increment(ref _createCallCount);
+            return Task.FromResult(entity);
+        }
+
+        public Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public Task<PagedResult<TEntity>> GetAllAsync(
+            PaginationRequest pagination,
+            CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public Task<TEntity?> GetByIdAsync(Guid id, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public Task<TEntity?> PatchAsync(
+            Guid id,
+            JsonElement patchDocument,
+            CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public Task<TEntity?> UpdateAsync(
+            Guid id,
+            TEntity entity,
             CancellationToken ct = default)
             => throw new NotSupportedException();
     }

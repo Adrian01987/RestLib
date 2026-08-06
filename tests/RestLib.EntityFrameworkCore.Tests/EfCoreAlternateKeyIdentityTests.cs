@@ -1,7 +1,15 @@
+using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using RestLib.Batch;
 using RestLib.EntityFrameworkCore.Tests.Fakes;
 using Xunit;
 
@@ -11,6 +19,110 @@ namespace RestLib.EntityFrameworkCore.Tests;
 [Trait("Feature", "Identity")]
 public sealed class EfCoreAlternateKeyIdentityTests
 {
+    [Fact]
+    public async Task UpdateEndpoint_AlternateBodyKeyDiffersFromRouteKey_PreservesRouteAndStorageIdentity()
+    {
+        // Arrange
+        await using var testHost = await AlternateKeyTestHost.CreateAsync();
+        var routeKey = Guid.NewGuid();
+        var bodyKey = Guid.NewGuid();
+        testHost.DbContext.IntKeyEntities.Add(new IntKeyEntity
+        {
+            Id = 42,
+            ExternalId = routeKey,
+            Name = "Original"
+        });
+        await testHost.DbContext.SaveChangesAsync();
+        testHost.DbContext.ChangeTracker.Clear();
+
+        var replacement = new
+        {
+            id = 999,
+            external_id = bodyKey,
+            name = "Updated through HTTP"
+        };
+
+        // Act
+        var response = await testHost.Client.PutAsJsonAsync(
+            $"/api/alternate-key-items/{routeKey}",
+            replacement);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var responseDocument = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        responseDocument.RootElement.GetProperty("id").GetInt32().Should().Be(42);
+        responseDocument.RootElement.GetProperty("external_id").GetGuid().Should().Be(routeKey);
+
+        testHost.DbContext.ChangeTracker.Clear();
+        var repository = CreateRepository(testHost.DbContext);
+        var persisted = await repository.GetByIdAsync(routeKey);
+        persisted.Should().NotBeNull();
+        persisted!.Id.Should().Be(42);
+        persisted.ExternalId.Should().Be(routeKey);
+        persisted.Name.Should().Be("Updated through HTTP");
+        (await repository.GetByIdAsync(bodyKey)).Should().BeNull();
+        (await testHost.DbContext.IntKeyEntities.FindAsync(999)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task BatchUpdateEndpoint_ConflictingBodyIdentity_UsesEnvelopeAndStorageIdentity()
+    {
+        // Arrange
+        await using var testHost = await AlternateKeyTestHost.CreateAsync();
+        var envelopeKey = Guid.NewGuid();
+        var bodyKey = Guid.NewGuid();
+        testHost.DbContext.IntKeyEntities.Add(new IntKeyEntity
+        {
+            Id = 42,
+            ExternalId = envelopeKey,
+            Name = "Original"
+        });
+        await testHost.DbContext.SaveChangesAsync();
+        testHost.DbContext.ChangeTracker.Clear();
+
+        var payload = new
+        {
+            action = "update",
+            items = new[]
+            {
+                new
+                {
+                    id = envelopeKey,
+                    body = new
+                    {
+                        id = 999,
+                        external_id = bodyKey,
+                        name = "Updated through batch"
+                    }
+                }
+            }
+        };
+
+        // Act
+        var response = await testHost.Client.PostAsJsonAsync(
+            "/api/alternate-key-items/batch",
+            payload);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var responseDocument = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var resultEntity = responseDocument.RootElement
+            .GetProperty("items")[0]
+            .GetProperty("entity");
+        resultEntity.GetProperty("id").GetInt32().Should().Be(42);
+        resultEntity.GetProperty("external_id").GetGuid().Should().Be(envelopeKey);
+
+        testHost.DbContext.ChangeTracker.Clear();
+        var repository = CreateRepository(testHost.DbContext);
+        var persisted = await repository.GetByIdAsync(envelopeKey);
+        persisted.Should().NotBeNull();
+        persisted!.Id.Should().Be(42);
+        persisted.ExternalId.Should().Be(envelopeKey);
+        persisted.Name.Should().Be("Updated through batch");
+        (await repository.GetByIdAsync(bodyKey)).Should().BeNull();
+        (await testHost.DbContext.IntKeyEntities.FindAsync(999)).Should().BeNull();
+    }
+
     [Fact]
     public async Task UpdateAsync_AlternateBodyKeyDiffersFromRouteKey_PreservesRouteAndStorageIdentity()
     {
@@ -105,5 +217,108 @@ public sealed class EfCoreAlternateKeyIdentityTests
             {
                 KeySelector = entity => entity.ExternalId
             });
+    }
+
+    private sealed class AlternateKeyTestHost : IAsyncDisposable
+    {
+        private readonly IHost _host;
+        private readonly IServiceScope _scope;
+        private readonly SqliteConnection _connection;
+
+        private AlternateKeyTestHost(
+            IHost host,
+            HttpClient client,
+            IServiceScope scope,
+            KeyDetectionTestDbContext dbContext,
+            SqliteConnection connection)
+        {
+            _host = host;
+            _scope = scope;
+            _connection = connection;
+            Client = client;
+            DbContext = dbContext;
+        }
+
+        public HttpClient Client { get; }
+
+        public KeyDetectionTestDbContext DbContext { get; }
+
+        public static async Task<AlternateKeyTestHost> CreateAsync()
+        {
+            var connection = new SqliteConnection("DataSource=:memory:");
+            IHost? host = null;
+            IServiceScope? scope = null;
+            try
+            {
+                await connection.OpenAsync();
+
+                host = new HostBuilder()
+                .ConfigureWebHost(webBuilder =>
+                {
+                    webBuilder
+                        .UseTestServer()
+                        .ConfigureServices(services =>
+                        {
+                            services.AddRestLib(_ => { });
+                            services.AddSingleton(connection);
+                            services.AddDbContext<KeyDetectionTestDbContext>(options =>
+                                options.UseSqlite(connection));
+                            services.AddRestLibEfCore<KeyDetectionTestDbContext, IntKeyEntity, Guid>(options =>
+                                options.KeySelector = entity => entity.ExternalId);
+                            services.AddRouting();
+                        })
+                        .Configure(app =>
+                        {
+                            app.UseRouting();
+                            app.UseEndpoints(endpoints =>
+                            {
+                                endpoints.MapRestLib<IntKeyEntity, Guid>(
+                                    "/api/alternate-key-items",
+                                    config =>
+                                    {
+                                        config.AllowAnonymous();
+                                        config.KeySelector = entity => entity.ExternalId;
+                                        config.EnableBatch(BatchAction.Update);
+                                    });
+                            });
+                        });
+                })
+                .Build();
+
+                await host.StartAsync();
+                scope = host.Services.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<KeyDetectionTestDbContext>();
+                await dbContext.Database.EnsureCreatedAsync();
+
+                return new AlternateKeyTestHost(
+                    host,
+                    host.GetTestClient(),
+                    scope,
+                    dbContext,
+                    connection);
+            }
+            catch
+            {
+                scope?.Dispose();
+                host?.Dispose();
+                await connection.DisposeAsync();
+                throw;
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            Client.Dispose();
+            try
+            {
+                await _host.StopAsync();
+            }
+            finally
+            {
+                _scope.Dispose();
+                _host.Dispose();
+                await _connection.DisposeAsync();
+            }
+        }
     }
 }

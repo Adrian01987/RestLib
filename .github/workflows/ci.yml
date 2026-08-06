@@ -33,6 +33,10 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Verify SQL Server LocalDB prerequisite
+        if: matrix.os == 'windows-latest'
+        run: sqllocaldb info MSSQLLocalDB
+
       - name: Cache NuGet packages
         uses: actions/cache@v6
         with:
