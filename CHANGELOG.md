@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - ADR-032 defining application ownership of business-domain Problem Details while RestLib retains the generic RFC 9457 model and result pipeline
 - ADR-031 and BenchmarkDotNet coverage for bounded EF planning caches, large scalar/composite batch-key queries, and compiled built-in mapping
-- `RestLib.EntityFrameworkCore` — EF Core repository adapter implementing `IRepository`, `IBatchRepository`, and `ICountableRepository` with server-side filtering, sorting, cursor pagination, batch operations, and `AsNoTracking` default
+- `RestLib.EntityFrameworkCore` — EF Core repository adapter implementing base CRUD plus batch, atomic conditional-write, query-counting, and field-projection capabilities with server-side filtering, sorting, cursor pagination, batch operations, and `AsNoTracking` default
 - ADR-021: EF Core repository adapter design decisions — cursor pagination strategy, `AsNoTracking` default, JSON Merge Patch via change tracking, key auto-detection, scoped lifetime
 - Structured logging via `Microsoft.Extensions.Logging` across all endpoints, batch pipelines, hook execution, and error paths
 - `[LoggerMessage]` source-generated log methods for zero-allocation structured logging (EventId 1000–1349)
@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Official InMemory and EF Core registrations now expose every optional repository capability their concrete adapter implements; all aliases resolve to the same singleton or scoped repository instance
 - Ecommerce Problem Details descriptors and result helpers now live in the ecommerce sample; the existing insufficient-stock, invalid-transition, and payment HTTP contracts remain unchanged
 - Equivalent EF repository scopes now reuse immutable resource-key metadata and bounded normalized keyset/projection plans by exact model, options, and key-selector identity
 - Large EF batch-key reads now deduplicate and execute bounded sequential queries: scalar keys use `Contains`, while two-part composite keys use balanced predicates under the same 512 key-part budget

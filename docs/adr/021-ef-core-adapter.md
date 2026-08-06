@@ -1,14 +1,14 @@
 # ADR-021: EF Core Repository Adapter
 
 **Status:** Amended
-**Date:** 2026-04-15 (amended 2026-08-05)
+**Date:** 2026-04-15 (amended 2026-08-06)
 
 ## Context
 RestLib's core abstractions are intentionally persistence-agnostic. The library defines
-`IRepository<TEntity, TKey>` for CRUD operations, `IBatchRepository<TEntity, TKey>` for
-bulk operations, and `ICountableRepository<TEntity, TKey>` for collection counting, but
-it does not mandate a specific database or ORM. That separation keeps the core package
- usable for custom repositories, test doubles, and non-relational backends.
+`IRepository<TEntity, TKey>` for CRUD operations plus optional capabilities for batch
+operations, atomic conditional writes, collection/query counting, and field-selection
+projection, but it does not mandate a specific database or ORM. That separation keeps the
+core package usable for custom repositories, test doubles, and non-relational backends.
 
 The existing InMemory adapter covers demos, tests, and quick prototypes, but production
 applications typically need a repository implementation backed by a real database. Entity
@@ -174,10 +174,13 @@ two parts are still rejected with a clear error message because the current prod
 supports only scalar keys and ordered two-part `RestLibCompositeKey<TFirst, TSecond>` values.
 
 ### Scoped repository lifetime matching DbContext
-The EF Core repository is registered as `Scoped`, and all three repository interfaces
-(`IRepository`, `IBatchRepository`, and `ICountableRepository`) forward to the same scoped
-instance. This matches the default `DbContext` lifetime used by `AddDbContext` and ensures
-that all repository behavior for a request shares the same EF Core unit of work.
+The EF Core repository is registered as `Scoped`. Its base repository service and every
+implemented optional capability (`IBatchRepository`, `IConditionalWriteRepository`,
+`ICountableRepository`, `IQueryCountableRepository`, and
+`IFieldSelectionProjectionRepository`) forward to the same scoped concrete instance. This
+matches the default `DbContext` lifetime used by `AddDbContext`, makes the advertised
+capabilities directly injectable, and ensures that all repository behavior for a request
+shares the same EF Core unit of work.
 
 Scoped lifetime was chosen because the repository is effectively a thin wrapper around the
 `DbContext`. Registering it as a singleton would create an invalid captive dependency over

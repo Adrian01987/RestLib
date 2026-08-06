@@ -82,6 +82,67 @@ public class EfCoreServiceRegistrationTests
         repo1.Should().NotBeSameAs(repo3);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AddRestLibEfCore_RegistrationMode_AllCapabilitiesShareScopedConcreteRepository(
+        bool enableProjectionPushdown)
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        AddTestDbContext(services);
+
+        if (enableProjectionPushdown)
+        {
+            services.AddRestLibEfCore<RegistrationTestDbContext, RegistrationTestEntity, Guid>(
+                options => options.EnableProjectionPushdown = true);
+        }
+        else
+        {
+            services.AddRestLibEfCore<RegistrationTestDbContext, RegistrationTestEntity, Guid>();
+        }
+
+        using var provider = services.BuildServiceProvider();
+        using var firstScope = provider.CreateScope();
+        using var secondScope = provider.CreateScope();
+
+        // Act
+        var firstScopeServices = ResolveRepositoryServices(firstScope.ServiceProvider);
+        var secondScopeServices = ResolveRepositoryServices(secondScope.ServiceProvider);
+
+        // Assert
+        foreach (var service in firstScopeServices)
+        {
+            service.Should().BeSameAs(firstScopeServices[0]);
+        }
+
+        foreach (var service in secondScopeServices)
+        {
+            service.Should().BeSameAs(secondScopeServices[0]);
+        }
+
+        for (var index = 0; index < firstScopeServices.Length; index++)
+        {
+            secondScopeServices[index].Should().NotBeSameAs(firstScopeServices[index]);
+        }
+
+        static object[] ResolveRepositoryServices(IServiceProvider serviceProvider)
+        {
+            return
+            [
+                serviceProvider.GetRequiredService<
+                    EfCoreRepository<RegistrationTestDbContext, RegistrationTestEntity, Guid>>(),
+                serviceProvider.GetRequiredService<IRepository<RegistrationTestEntity, Guid>>(),
+                serviceProvider.GetRequiredService<IBatchRepository<RegistrationTestEntity, Guid>>(),
+                serviceProvider.GetRequiredService<IConditionalWriteRepository<RegistrationTestEntity, Guid>>(),
+                serviceProvider.GetRequiredService<ICountableRepository<RegistrationTestEntity, Guid>>(),
+                serviceProvider.GetRequiredService<IQueryCountableRepository<RegistrationTestEntity, Guid>>(),
+                serviceProvider.GetRequiredService<
+                    IFieldSelectionProjectionRepository<RegistrationTestEntity, Guid>>(),
+            ];
+        }
+    }
+
     [Fact]
     public void AddRestLibEfCore_AllInterfaces_ResolveSameInstance_WithinScope()
     {

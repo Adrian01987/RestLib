@@ -59,6 +59,10 @@ public static class EfCoreServiceExtensions
             sp => sp.GetRequiredService<EfCoreRepository<TContext, TEntity, TKey>>());
         services.AddScoped<ICountableRepository<TEntity, TKey>>(
             sp => sp.GetRequiredService<EfCoreRepository<TContext, TEntity, TKey>>());
+        services.AddScoped<IQueryCountableRepository<TEntity, TKey>>(
+            sp => sp.GetRequiredService<EfCoreRepository<TContext, TEntity, TKey>>());
+        services.AddScoped<IFieldSelectionProjectionRepository<TEntity, TKey>>(
+            sp => sp.GetRequiredService<EfCoreRepository<TContext, TEntity, TKey>>());
 
         return services;
     }

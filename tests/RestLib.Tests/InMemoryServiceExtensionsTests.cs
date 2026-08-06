@@ -131,12 +131,16 @@ public class InMemoryServiceExtensionsTests
         var iRepository = provider.GetService<IRepository<Product, Guid>>();
         var iBatchRepository = provider.GetService<IBatchRepository<Product, Guid>>();
         var conditionalWriteRepository = provider.GetService<IConditionalWriteRepository<Product, Guid>>();
+        var countableRepository = provider.GetService<ICountableRepository<Product, Guid>>();
+        var queryCountableRepository = provider.GetService<IQueryCountableRepository<Product, Guid>>();
         var concrete = provider.GetService<InMemoryRepository<Product, Guid>>();
 
         // Assert
         iRepository.Should().BeSameAs(concrete);
         iBatchRepository.Should().BeSameAs(concrete);
         conditionalWriteRepository.Should().BeSameAs(concrete);
+        countableRepository.Should().BeSameAs(concrete);
+        queryCountableRepository.Should().BeSameAs(concrete);
     }
 
     [Fact]
@@ -166,6 +170,57 @@ public class InMemoryServiceExtensionsTests
 
         // Assert
         repo1.Should().BeSameAs(repo2);
+    }
+
+    [Theory]
+    [InlineData("Default")]
+    [InlineData("Comparer")]
+    [InlineData("Assigner")]
+    [InlineData("AssignerAndComparer")]
+    [InlineData("Options")]
+    [InlineData("OptionsAndAssigner")]
+    [InlineData("Data")]
+    [InlineData("DataAndAssigner")]
+    [InlineData("DataAndOptions")]
+    [InlineData("DataOptionsAndAssigner")]
+    public void RegistrationOverload_AllImplementedCapabilitiesResolveSameSingleton(string variant)
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        RegisterCapabilityVariant(services, variant);
+        Type[] serviceTypes =
+        [
+            typeof(InMemoryRepository<Product, Guid>),
+            typeof(IRepository<Product, Guid>),
+            typeof(IBatchRepository<Product, Guid>),
+            typeof(IConditionalWriteRepository<Product, Guid>),
+            typeof(ICountableRepository<Product, Guid>),
+            typeof(IQueryCountableRepository<Product, Guid>)
+        ];
+
+        // Act
+        using var provider = services.BuildServiceProvider();
+        using var firstScope = provider.CreateScope();
+        using var secondScope = provider.CreateScope();
+        var concrete = firstScope.ServiceProvider
+            .GetRequiredService<InMemoryRepository<Product, Guid>>();
+
+        // Assert
+        foreach (var serviceType in serviceTypes)
+        {
+            var descriptor = services.Should()
+                .ContainSingle(candidate => candidate.ServiceType == serviceType)
+                .Which;
+            descriptor.Lifetime.Should().Be(ServiceLifetime.Singleton);
+
+            firstScope.ServiceProvider.GetRequiredService(serviceType).Should().BeSameAs(concrete);
+            firstScope.ServiceProvider.GetRequiredService(serviceType).Should().BeSameAs(concrete);
+            secondScope.ServiceProvider.GetRequiredService(serviceType).Should().BeSameAs(concrete);
+        }
+
+        firstScope.ServiceProvider
+            .GetService<IFieldSelectionProjectionRepository<Product, Guid>>()
+            .Should().BeNull();
     }
 
     [Theory]
@@ -208,6 +263,8 @@ public class InMemoryServiceExtensionsTests
         provider.GetRequiredService<IRepository<SerializationProduct, Guid>>().Should().BeSameAs(repository);
         provider.GetRequiredService<IBatchRepository<SerializationProduct, Guid>>().Should().BeSameAs(repository);
         provider.GetRequiredService<IConditionalWriteRepository<SerializationProduct, Guid>>().Should().BeSameAs(repository);
+        provider.GetRequiredService<ICountableRepository<SerializationProduct, Guid>>().Should().BeSameAs(repository);
+        provider.GetRequiredService<IQueryCountableRepository<SerializationProduct, Guid>>().Should().BeSameAs(repository);
     }
 
     [Fact]
@@ -647,6 +704,79 @@ public class InMemoryServiceExtensionsTests
 
         // Assert
         result.Items.Select(entity => entity.Sequence).Should().Equal(1, 2);
+    }
+
+    private static void RegisterCapabilityVariant(IServiceCollection services, string variant)
+    {
+        var jsonOptions = new JsonSerializerOptions();
+        Product[] seedData = [new Product(Guid.NewGuid(), "Seed", 1m)];
+        Func<Product, Guid, Product> keyAssigner = static (product, key) => product with { Id = key };
+
+        switch (variant)
+        {
+            case "Default":
+                services.AddRestLibInMemory<Product, Guid>(product => product.Id, Guid.NewGuid);
+                break;
+            case "Comparer":
+                services.AddRestLibInMemory<Product, Guid>(
+                    product => product.Id,
+                    Guid.NewGuid,
+                    Comparer<Guid>.Default);
+                break;
+            case "Assigner":
+                services.AddRestLibInMemory<Product, Guid>(product => product.Id, Guid.NewGuid, keyAssigner);
+                break;
+            case "AssignerAndComparer":
+                services.AddRestLibInMemory<Product, Guid>(
+                    product => product.Id,
+                    Guid.NewGuid,
+                    keyAssigner,
+                    Comparer<Guid>.Default);
+                break;
+            case "Options":
+                services.AddRestLibInMemoryWithOptions<Product, Guid>(
+                    product => product.Id,
+                    Guid.NewGuid,
+                    jsonOptions);
+                break;
+            case "OptionsAndAssigner":
+                services.AddRestLibInMemoryWithOptions<Product, Guid>(
+                    product => product.Id,
+                    Guid.NewGuid,
+                    jsonOptions,
+                    keyAssigner);
+                break;
+            case "Data":
+                services.AddRestLibInMemoryWithData<Product, Guid>(
+                    product => product.Id,
+                    Guid.NewGuid,
+                    seedData);
+                break;
+            case "DataAndAssigner":
+                services.AddRestLibInMemoryWithData<Product, Guid>(
+                    product => product.Id,
+                    Guid.NewGuid,
+                    seedData,
+                    keyAssigner);
+                break;
+            case "DataAndOptions":
+                services.AddRestLibInMemoryWithDataAndOptions<Product, Guid>(
+                    product => product.Id,
+                    Guid.NewGuid,
+                    seedData,
+                    jsonOptions);
+                break;
+            case "DataOptionsAndAssigner":
+                services.AddRestLibInMemoryWithDataAndOptions<Product, Guid>(
+                    product => product.Id,
+                    Guid.NewGuid,
+                    seedData,
+                    jsonOptions,
+                    keyAssigner);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(variant), variant, "Unknown registration variant.");
+        }
     }
 
     #endregion

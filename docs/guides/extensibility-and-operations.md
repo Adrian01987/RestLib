@@ -372,6 +372,33 @@ When ETag support is enabled, conditional GETs work with the base repository con
 the mutation. RestLib returns 501 Conditional Write Not Supported for an `If-Match` write when
 that optional capability is absent; it never falls back to a race-prone read-then-write sequence.
 
+### Injecting official adapter capabilities
+
+The official adapter registration extensions expose every repository capability
+implemented by their concrete repository. Each interface resolves to the same
+adapter instance rather than creating a second store, `DbContext`, or unit of
+work.
+
+| Repository service | InMemory | EF Core |
+| --- | --- | --- |
+| `IRepository<TEntity, TKey>` | Singleton | Scoped |
+| `IBatchRepository<TEntity, TKey>` | Same singleton | Same scope |
+| `IConditionalWriteRepository<TEntity, TKey>` | Same singleton | Same scope |
+| `ICountableRepository<TEntity, TKey>` | Same singleton | Same scope |
+| `IQueryCountableRepository<TEntity, TKey>` | Same singleton | Same scope |
+| `IFieldSelectionProjectionRepository<TEntity, TKey>` | Not implemented | Same scope |
+
+This makes an implemented capability directly injectable by application
+services; endpoint feature detection and DI resolution describe the same
+adapter surface. Projection remains resolvable for EF Core when pushdown is
+disabled because the capability can decline an individual request and return
+`null` for the normal materialized fallback.
+
+`AddRepository` registers the base custom-repository contract only. When a
+custom repository implements optional capabilities that application services
+will inject directly, register those interfaces explicitly with the same
+implementation and lifetime.
+
 ## EF Core Adapter
 
 Use the official EF Core adapter instead of writing a custom repository:

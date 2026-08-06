@@ -157,11 +157,7 @@ public static class InMemoryServiceExtensions
         where TKey : notnull
     {
         var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, jsonOptions);
-        services.AddSingleton<IRepository<TEntity, TKey>>(repository);
-        services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
-        services.AddSingleton<IConditionalWriteRepository<TEntity, TKey>>(repository);
-        services.AddSingleton(repository);
-        return services;
+        return RegisterRepository(services, repository);
     }
 
     /// <summary>
@@ -187,11 +183,7 @@ public static class InMemoryServiceExtensions
         where TKey : notnull
     {
         var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, jsonOptions, keyAssigner);
-        services.AddSingleton<IRepository<TEntity, TKey>>(repository);
-        services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
-        services.AddSingleton<IConditionalWriteRepository<TEntity, TKey>>(repository);
-        services.AddSingleton(repository);
-        return services;
+        return RegisterRepository(services, repository);
     }
 
     /// <summary>
@@ -294,11 +286,7 @@ public static class InMemoryServiceExtensions
     {
         var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, jsonOptions);
         repository.Seed(seedData);
-        services.AddSingleton<IRepository<TEntity, TKey>>(repository);
-        services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
-        services.AddSingleton<IConditionalWriteRepository<TEntity, TKey>>(repository);
-        services.AddSingleton(repository);
-        return services;
+        return RegisterRepository(services, repository);
     }
 
     /// <summary>
@@ -327,9 +315,23 @@ public static class InMemoryServiceExtensions
     {
         var repository = new InMemoryRepository<TEntity, TKey>(keySelector, keyGenerator, jsonOptions, keyAssigner);
         repository.Seed(seedData);
+        return RegisterRepository(services, repository);
+    }
+
+    private static IServiceCollection RegisterRepository<TEntity, TKey>(
+        IServiceCollection services,
+        InMemoryRepository<TEntity, TKey> repository)
+        where TEntity : class
+        where TKey : notnull
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(repository);
+
         services.AddSingleton<IRepository<TEntity, TKey>>(repository);
         services.AddSingleton<IBatchRepository<TEntity, TKey>>(repository);
         services.AddSingleton<IConditionalWriteRepository<TEntity, TKey>>(repository);
+        services.AddSingleton<ICountableRepository<TEntity, TKey>>(repository);
+        services.AddSingleton<IQueryCountableRepository<TEntity, TKey>>(repository);
         services.AddSingleton(repository);
         return services;
     }
@@ -358,6 +360,8 @@ public static class InMemoryServiceExtensions
         services.AddSingleton<IRepository<TEntity, TKey>>(ResolveRepository);
         services.AddSingleton<IBatchRepository<TEntity, TKey>>(ResolveRepository);
         services.AddSingleton<IConditionalWriteRepository<TEntity, TKey>>(ResolveRepository);
+        services.AddSingleton<ICountableRepository<TEntity, TKey>>(ResolveRepository);
+        services.AddSingleton<IQueryCountableRepository<TEntity, TKey>>(ResolveRepository);
         return services;
     }
 

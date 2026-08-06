@@ -22,11 +22,18 @@ EF Core projection pushdown is opt-in through
 `EfCoreRepositoryOptions<TEntity, TKey>.EnableProjectionPushdown`. The default
 remains `false`.
 
-When enabled, the EF Core repository advertises
-`IFieldSelectionProjectionRepository<TEntity, TKey>` and can project direct
-scalar field selections into an EF-translatable `Select` expression. The
-projection includes the requested fields, the primary key, and any fields needed
-for active filters or sorting.
+The EF Core repository implements
+`IFieldSelectionProjectionRepository<TEntity, TKey>`. When pushdown is enabled,
+it can project direct scalar field selections into an EF-translatable `Select`
+expression. The projection includes the requested fields, the primary key, and
+any fields needed for active filters or sorting.
+
+The EF Core registration exposes this interface as a scoped DI alias of the
+same concrete repository even when pushdown is disabled. The capability is
+therefore directly injectable without creating a second `DbContext`; disabled
+requests, and direct scalar requests that cannot be translated safely, return
+`null` and use the materialized fallback. Nested selections instead use the
+adapter's navigation-loading fallback described below.
 
 Core endpoint handlers decide whether the projection repository may be used.
 They skip pushdown when:

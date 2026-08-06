@@ -13,7 +13,10 @@ namespace RestLib.InMemory;
 
 /// <summary>
 /// Thread-safe in-memory implementation of <see cref="IRepository{TEntity, TKey}"/>,
-/// <see cref="IBatchRepository{TEntity, TKey}"/>, and <see cref="ICountableRepository{TEntity, TKey}"/>.
+/// <see cref="IBatchRepository{TEntity, TKey}"/>,
+/// <see cref="IConditionalWriteRepository{TEntity, TKey}"/>,
+/// <see cref="ICountableRepository{TEntity, TKey}"/>, and
+/// <see cref="IQueryCountableRepository{TEntity, TKey}"/>.
 /// Ideal for testing, prototyping, and scenarios where data persistence is not required.
 /// </summary>
 /// <typeparam name="TEntity">The entity type.</typeparam>
