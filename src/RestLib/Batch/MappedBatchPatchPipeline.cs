@@ -24,32 +24,32 @@ internal sealed class MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>
     protected override RestLibOperation Operation => RestLibOperation.BatchPatch;
 
     /// <inheritdoc/>
+    protected override Task<(BatchItemResult? Error, (int Index, TKey Id, JsonElement Body) ValidItem)> ValidateBulkItemAsync(
+        int index,
+        BatchUpdateItem<TKey>? item,
+        MappedBatchContext<TApiModel, TDbModel, TKey> context)
+    {
+        return Task.FromResult(ValidateStructure(index, item, context));
+    }
+
+    /// <inheritdoc/>
     protected override async Task<(BatchItemResult? Error, (int Index, TKey Id, JsonElement Body) ValidItem)> ValidateItemAsync(
         int index,
         BatchUpdateItem<TKey>? item,
         MappedBatchContext<TApiModel, TDbModel, TKey> context)
     {
-        if (item is null)
+        var (error, validItem) = ValidateStructure(index, item, context);
+        if (error is not null)
         {
-            return (BadRequestResult(index, $"Item at index {index} could not be deserialized.", context.HttpContext.Request.Path), default);
+            return (error, default);
         }
 
-        if (PatchHelper.TryGetPatchedKeyProperty<TApiModel, TKey>(
-            item.Body,
-            context.EndpointConfig.KeyRouteParts,
-            context.JsonOptions,
-            out var patchedKeyProperty))
-        {
-            return (BadRequestResult(
-                index,
-                PatchHelper.KeyModificationError(patchedKeyProperty!),
-                context.HttpContext.Request.Path), default);
-        }
-
-        var existingDb = await context.Repository.GetByIdAsync(item.Id, context.CancellationToken);
+        var existingDb = await context.Repository.GetByIdAsync(
+            validItem.Id,
+            context.CancellationToken);
         if (existingDb is null)
         {
-            return (NotFoundResult(index, item.Id!, context.HttpContext.Request.Path), default);
+            return (NotFoundResult(index, validItem.Id!, context.HttpContext.Request.Path), default);
         }
 
         if (context.DbPipeline is not null)
@@ -57,7 +57,7 @@ internal sealed class MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>
             var hookContext = context.DbPipeline.CreateContext(
                 context.HttpContext,
                 RestLibOperation.BatchPatch,
-                resourceId: item.Id);
+                resourceId: validItem.Id);
 
             var received = await context.DbPipeline.ExecuteOnRequestReceivedAsync(hookContext);
             if (!received)
@@ -70,7 +70,7 @@ internal sealed class MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>
             var hookContext = context.ApiPipeline.CreateContext(
                 context.HttpContext,
                 RestLibOperation.BatchPatch,
-                resourceId: item.Id);
+                resourceId: validItem.Id);
 
             var received = await context.ApiPipeline.ExecuteOnRequestReceivedAsync(hookContext);
             if (!received)
@@ -79,7 +79,7 @@ internal sealed class MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>
             }
         }
 
-        return (null, (index, item.Id, item.Body));
+        return (null, validItem);
     }
 
     /// <inheritdoc/>
@@ -98,6 +98,13 @@ internal sealed class MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>
         var originals = await BulkPersistenceExecutor.ExecuteAsync(
             () => context.BatchRepository!.GetByIdsAsync(ids, context.CancellationToken),
             context.CancellationToken);
+        BatchRepositoryResultContract.ValidateLookup(
+            originals,
+            ids,
+            entity => EntityKeyHelper.GetEntityKey(
+                context.Mapper.ToApi(entity),
+                context.EndpointConfig.KeySelector),
+            "patch");
 
         var itemsToPersist = new List<(int Index, TKey Id, JsonElement Body, TDbModel Entity)>();
 
@@ -110,6 +117,35 @@ internal sealed class MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>
                 RestLibLogMessages.BatchPatchItemNotFound(context.Logger, index, typeof(TApiModel).Name, id!);
                 results[index] = NotFoundResult(index, id!, context.HttpContext.Request.Path);
                 continue;
+            }
+
+            if (context.DbPipeline is not null)
+            {
+                var receivedContext = context.DbPipeline.CreateContext(
+                    context.HttpContext,
+                    RestLibOperation.BatchPatch,
+                    resourceId: id);
+                var received = await context.DbPipeline.ExecuteOnRequestReceivedAsync(
+                    receivedContext);
+                if (!received)
+                {
+                    results[index] = HookShortCircuitResult(index, receivedContext);
+                    continue;
+                }
+            }
+            else if (context.ApiPipeline is not null)
+            {
+                var receivedContext = context.ApiPipeline.CreateContext(
+                    context.HttpContext,
+                    RestLibOperation.BatchPatch,
+                    resourceId: id);
+                var received = await context.ApiPipeline.ExecuteOnRequestReceivedAsync(
+                    receivedContext);
+                if (!received)
+                {
+                    results[index] = HookShortCircuitResult(index, receivedContext);
+                    continue;
+                }
             }
 
             var originalApi = context.Mapper.ToApi(originalDb);
@@ -373,5 +409,33 @@ internal sealed class MappedBatchPatchPipeline<TApiModel, TDbModel, TKey>
         }
 
         results[index] = await RunAfterPersistAndBuildResultAsync(index, updated, id, context);
+    }
+
+    private (BatchItemResult? Error, (int Index, TKey Id, JsonElement Body) ValidItem) ValidateStructure(
+        int index,
+        BatchUpdateItem<TKey>? item,
+        MappedBatchContext<TApiModel, TDbModel, TKey> context)
+    {
+        if (item is null)
+        {
+            return (BadRequestResult(
+                index,
+                $"Item at index {index} could not be deserialized.",
+                context.HttpContext.Request.Path), default);
+        }
+
+        if (PatchHelper.TryGetPatchedKeyProperty<TApiModel, TKey>(
+            item.Body,
+            context.EndpointConfig.KeyRouteParts,
+            context.JsonOptions,
+            out var patchedKeyProperty))
+        {
+            return (BadRequestResult(
+                index,
+                PatchHelper.KeyModificationError(patchedKeyProperty!),
+                context.HttpContext.Request.Path), default);
+        }
+
+        return (null, (index, item.Id, item.Body));
     }
 }

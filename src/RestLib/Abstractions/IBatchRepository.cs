@@ -7,10 +7,15 @@ namespace RestLib.Abstractions;
 /// When implemented alongside <see cref="IRepository{TEntity, TKey}"/>,
 /// RestLib uses these methods for batch endpoints instead of looping
 /// over single-entity methods.
+/// Batch optimization describes calls at this repository boundary; an
+/// implementation may perform additional reads or queries internally.
 /// Mutating operations are atomic with respect to repository persistence:
 /// when one throws, none of the changes from that call may remain persisted.
 /// RestLib reports the failure and does not retry through
 /// <see cref="IRepository{TEntity, TKey}"/>.
+/// A bulk update or patch can be preceded by one <see cref="GetByIdsAsync"/>
+/// lookup. No atomicity or transaction is implied across that completed lookup
+/// and the later mutating call.
 /// Returned entities are also part of the repository contract: entries must be
 /// non-null, must represent only the supplied inputs, and must follow each
 /// method's documented cardinality and ordering rules. RestLib validates the
@@ -93,6 +98,10 @@ public interface IBatchRepository<TEntity, TKey>
     /// Retrieves multiple entities by their keys in a single operation.
     /// Used by batch pipelines to avoid N+1 <c>GetByIdAsync</c> calls
     /// when checking existence or fetching originals before persistence.
+    /// The returned mapping becomes RestLib's logical pre-write snapshot for
+    /// item validation, merge previews, and applicable hook contexts. It is not
+    /// transactionally coupled to a later update or patch call, and an
+    /// implementation may use multiple physical reads to produce it.
     /// </summary>
     /// <param name="ids">The keys of the entities to retrieve.</param>
     /// <param name="ct">Cancellation token.</param>

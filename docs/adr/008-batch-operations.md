@@ -95,6 +95,26 @@ RestLib uses the batch methods for better performance. Otherwise, it falls
 back to looping over `IRepository` methods without first attempting a bulk
 operation. This avoids breaking existing repository implementations.
 
+For bulk update and patch, RestLib first performs read-free member decoding and
+structural checks, gathers the keys that survive those checks, and invokes
+`GetByIdsAsync` once when at least one candidate survives. It performs no
+per-item `GetByIdAsync` calls on that bulk path. The returned keyed lookup is
+the pre-write snapshot used for existence
+results, model validation, merge-patch previews, and the `OriginalEntity`
+available to applicable pre-persistence hooks. Items rejected by those stages
+are excluded from the subsequent `UpdateManyAsync` or `PatchManyAsync` call.
+
+Repeated keys share the same pre-write snapshot: each occurrence is validated,
+and each required patch preview is based on that value rather than on the result
+of an earlier occurrence. Persistence still follows the documented repeated-key
+ordering, and every successful returned occurrence represents the final value.
+The snapshot lookup and mutation are separate repository calls and are not
+atomic together, so the stored value can change between them. A custom adapter
+can also perform additional reads or queries inside either batch method; the
+guarantee is at most one `GetByIdsAsync` invocation and zero
+endpoint-orchestrated per-item reads, not a fixed number of physical data-store
+round trips.
+
 The batch repository contract also defines adapter-independent item semantics:
 
 - Create returns one result per input in input order and rejects duplicate keys
@@ -204,6 +224,9 @@ before persistence. In a concurrent environment, the entity could change
 between the fetch and the actual patch call, making the preview stale.
 This is an accepted trade-off for the common non-concurrent case.
 
-Implementation: `BatchPatchPipeline.PersistBulkAsync` (bulk path with
-`GetByIdsAsync`) and `BatchPatchPipeline.PersistSingleItemAsync`
-(individual path with `GetByIdAsync`).
+On the bulk path, one `GetByIdsAsync` call supplies that snapshot when any item
+survives structural validation; no per-item existence read is made. Repeated
+keys use the same fetched original for each required preview. On the individual
+fallback path, each item continues to use `GetByIdAsync`. An adapter may still
+perform its own internal reads while implementing `GetByIdsAsync` or
+`PatchManyAsync`.

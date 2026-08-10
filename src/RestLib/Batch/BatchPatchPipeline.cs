@@ -28,47 +28,47 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
     protected override RestLibOperation Operation => RestLibOperation.BatchPatch;
 
     /// <inheritdoc/>
+    protected override Task<(BatchItemResult? Error, (int Index, TKey Id, JsonElement Body) ValidItem)> ValidateBulkItemAsync(
+        int index,
+        BatchUpdateItem<TKey>? item,
+        BatchContext<TEntity, TKey> context)
+    {
+        return Task.FromResult(ValidateStructure(index, item, context));
+    }
+
+    /// <inheritdoc/>
     protected override async Task<(BatchItemResult? Error, (int Index, TKey Id, JsonElement Body) ValidItem)> ValidateItemAsync(
         int index,
         BatchUpdateItem<TKey>? item,
         BatchContext<TEntity, TKey> context)
     {
-        if (item is null)
-            return (BadRequestResult(index, $"Item at index {index} could not be deserialized.", context.HttpContext.Request.Path), default);
-
-        if (PatchHelper.TryGetPatchedKeyProperty<TEntity, TKey>(
-            item.Body,
-            context.EndpointConfig.KeyRouteParts,
-            context.JsonOptions,
-            out var patchedKeyProperty))
+        var (error, validItem) = ValidateStructure(index, item, context);
+        if (error is not null)
         {
-            return (BadRequestResult(
-                index,
-                PatchHelper.KeyModificationError(patchedKeyProperty!),
-                context.HttpContext.Request.Path), default);
+            return (error, default);
         }
 
         // Fetch existing entity (needed for 404 check and hook context)
-        var existing = await context.Repository.GetByIdAsync(item.Id, context.CancellationToken);
+        var existing = await context.Repository.GetByIdAsync(validItem.Id, context.CancellationToken);
         if (existing is null)
         {
             var entityName = typeof(TEntity).Name;
-            return (NotFoundResult(index, entityName, item.Id!, context.HttpContext.Request.Path, context.EndpointConfig.KeyRouteParts), default);
+            return (NotFoundResult(index, entityName, validItem.Id!, context.HttpContext.Request.Path, context.EndpointConfig.KeyRouteParts), default);
         }
 
-        // OnRequestReceived runs before loading the merge base. OnRequestValidated runs
-        // later with the validated merge preview as its effective entity.
+        // OnRequestReceived runs after existence has been established and before the
+        // merge preview is built. OnRequestValidated sees that validated preview.
         if (context.Pipeline is not null)
         {
             var hookContext = context.Pipeline.CreateContext(
                 context.HttpContext, RestLibOperation.BatchPatch,
-                resourceId: item.Id);
+                resourceId: validItem.Id);
 
             var received = await context.Pipeline.ExecuteOnRequestReceivedAsync(hookContext);
             if (!received) return (HookShortCircuitResult(index, hookContext), default);
         }
 
-        return (null, (index, item.Id, item.Body));
+        return (null, validItem);
     }
 
     /// <inheritdoc/>
@@ -91,6 +91,13 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
             var originals = await BulkPersistenceExecutor.ExecuteAsync(
                 () => context.BatchRepository!.GetByIdsAsync(ids, context.CancellationToken),
                 context.CancellationToken);
+            BatchRepositoryResultContract.ValidateLookup(
+                originals,
+                ids,
+                entity => EntityKeyHelper.GetEntityKey(
+                    entity,
+                    context.EndpointConfig.KeySelector),
+                "patch");
 
             itemsToPersist = new List<(int Index, TKey Id, JsonElement Body)>();
             var effectiveEntities = new List<TEntity>();
@@ -109,6 +116,21 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
                         Error = ProblemDetailsFactory.NotFound(entityName, id, context.EndpointConfig.KeyRouteParts, context.HttpContext.Request.Path)
                     };
                     continue;
+                }
+
+                if (context.Pipeline is not null)
+                {
+                    var receivedContext = context.Pipeline.CreateContext(
+                        context.HttpContext,
+                        RestLibOperation.BatchPatch,
+                        resourceId: id);
+                    var received = await context.Pipeline.ExecuteOnRequestReceivedAsync(
+                        receivedContext);
+                    if (!received)
+                    {
+                        results[index] = HookShortCircuitResult(index, receivedContext);
+                        continue;
+                    }
                 }
 
                 var preview = PatchHelper.PreviewPatch(original, body, context.JsonOptions, context.Logger);
@@ -355,5 +377,33 @@ internal sealed class BatchPatchPipeline<TEntity, TKey>
         }
 
         results[index] = await RunAfterPersistAndBuildResultAsync(index, patched, id, context);
+    }
+
+    private (BatchItemResult? Error, (int Index, TKey Id, JsonElement Body) ValidItem) ValidateStructure(
+        int index,
+        BatchUpdateItem<TKey>? item,
+        BatchContext<TEntity, TKey> context)
+    {
+        if (item is null)
+        {
+            return (BadRequestResult(
+                index,
+                $"Item at index {index} could not be deserialized.",
+                context.HttpContext.Request.Path), default);
+        }
+
+        if (PatchHelper.TryGetPatchedKeyProperty<TEntity, TKey>(
+            item.Body,
+            context.EndpointConfig.KeyRouteParts,
+            context.JsonOptions,
+            out var patchedKeyProperty))
+        {
+            return (BadRequestResult(
+                index,
+                PatchHelper.KeyModificationError(patchedKeyProperty!),
+                context.HttpContext.Request.Path), default);
+        }
+
+        return (null, (index, item.Id, item.Body));
     }
 }

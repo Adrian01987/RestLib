@@ -44,6 +44,7 @@ internal abstract class BatchActionPipelineBase<TKey, TRawItem, TValidItem, TCon
 
         var results = new BatchItemResult?[items.Count];
         var validItems = new List<TValidItem>();
+        var useBulk = HasBulkPath && CanUseBulk(context);
 
         for (var index = 0; index < items.Count; index++)
         {
@@ -79,7 +80,9 @@ internal abstract class BatchActionPipelineBase<TKey, TRawItem, TValidItem, TCon
                 continue;
             }
 
-            var (error, validItem) = await ValidateItemAsync(index, rawItem, context);
+            var (error, validItem) = useBulk
+                ? await ValidateBulkItemAsync(index, rawItem, context)
+                : await ValidateItemAsync(index, rawItem, context);
             if (error is not null)
             {
                 results[index] = error;
@@ -89,7 +92,7 @@ internal abstract class BatchActionPipelineBase<TKey, TRawItem, TValidItem, TCon
             validItems.Add(validItem!);
         }
 
-        await ExecuteAsync(validItems, results, context);
+        await ExecuteAsync(validItems, results, context, useBulk);
 
         return new BatchResponse { Items = results.ToList()! };
     }
@@ -288,6 +291,21 @@ internal abstract class BatchActionPipelineBase<TKey, TRawItem, TValidItem, TCon
         TContext context);
 
     /// <summary>
+    /// Validates one deserialized item before bulk persistence.
+    /// </summary>
+    /// <param name="index">The original item index.</param>
+    /// <param name="rawItem">The deserialized item.</param>
+    /// <param name="context">The batch context.</param>
+    /// <returns>An error or a validated item.</returns>
+    protected virtual Task<(BatchItemResult? Error, TValidItem? ValidItem)> ValidateBulkItemAsync(
+        int index,
+        TRawItem? rawItem,
+        TContext context)
+    {
+        return ValidateItemAsync(index, rawItem, context);
+    }
+
+    /// <summary>
     /// Gets the original request index from a validated item.
     /// </summary>
     /// <param name="validItem">The validated item.</param>
@@ -389,7 +407,8 @@ internal abstract class BatchActionPipelineBase<TKey, TRawItem, TValidItem, TCon
     private async Task ExecuteAsync(
         List<TValidItem> validItems,
         BatchItemResult?[] results,
-        TContext context)
+        TContext context,
+        bool useBulk)
     {
         context.CancellationToken.ThrowIfCancellationRequested();
 
@@ -398,7 +417,7 @@ internal abstract class BatchActionPipelineBase<TKey, TRawItem, TValidItem, TCon
             return;
         }
 
-        if (HasBulkPath && CanUseBulk(context))
+        if (useBulk)
         {
             try
             {

@@ -56,6 +56,22 @@ normalization or deserialization failures become indexed 400 results; only
 envelope-level failures remain top-level 400 responses. This ownership preserves
 one ordered result per accepted array member across mapped and unmapped modes.
 
+The state machine selects the bulk or individual path before item validation so
+each path has one explicit validation seam. The individual seam may perform the
+operation's point lookup while validating each item. For bulk update and patch,
+the first seam performs only decoding and structural checks. The operation
+pipeline then gathers the surviving keys, invokes `GetByIdsAsync` once, validates
+that keyed result, and runs existence checks, model validation, merge previews,
+and pre-persistence hooks against that snapshot before invoking the mutating
+batch method. This keeps result-slot ownership in the shared state machine while
+preventing bulk candidates from also taking the individual N-read path.
+
+The single capability lookup is an orchestration contract, not a claim about an
+adapter's internal query count or a transaction spanning lookup and mutation.
+Repeated keys deliberately share one pre-write original for validation and hook
+contexts; the repository's ordered duplicate-key mutation semantics remain the
+owner of the final persisted value.
+
 `BulkPersistenceExecutor` marks only the bulk repository call. This boundary is
 important because a repository failure may occur after a write was committed,
 while a later mapping or hook failure is a post-persistence failure. The shared

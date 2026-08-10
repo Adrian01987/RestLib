@@ -182,6 +182,7 @@ public class BatchResultAssociationTests : IAsyncLifetime
         var individualUpdateCalls = 0;
         var afterPersistCalls = 0;
 
+        ConfigureBulkRead(batchRepository, stored);
         batchRepository.UpdateManyAsync(
                 Arg.Any<IReadOnlyList<BatchEntity>>(),
                 Arg.Any<CancellationToken>())
@@ -231,6 +232,7 @@ public class BatchResultAssociationTests : IAsyncLifetime
         var batchRepository = (IBatchRepository<BatchEntity, Guid>)repository;
         var afterPersistCalls = 0;
 
+        ConfigureBulkRead(batchRepository, stored);
         batchRepository.UpdateManyAsync(
                 Arg.Any<IReadOnlyList<BatchEntity>>(),
                 Arg.Any<CancellationToken>())
@@ -355,6 +357,7 @@ public class BatchResultAssociationTests : IAsyncLifetime
         var individualUpdateCalls = 0;
         var afterPersistCalls = 0;
 
+        ConfigureBulkRead(batchRepository, stored);
         batchRepository.UpdateManyAsync(
                 Arg.Any<IReadOnlyList<BatchEntity>>(),
                 Arg.Any<CancellationToken>())
@@ -560,6 +563,7 @@ public class BatchResultAssociationTests : IAsyncLifetime
         var individualUpdateCalls = 0;
         var afterPersistCalls = 0;
 
+        ConfigureMappedBulkRead(batchRepository, stored);
         batchRepository.UpdateManyAsync(
                 Arg.Any<IReadOnlyList<MappedDbEntity>>(),
                 Arg.Any<CancellationToken>())
@@ -614,6 +618,7 @@ public class BatchResultAssociationTests : IAsyncLifetime
         var individualUpdateCalls = 0;
         var afterPersistCalls = 0;
 
+        ConfigureMappedBulkRead(batchRepository, stored);
         batchRepository.UpdateManyAsync(
                 Arg.Any<IReadOnlyList<MappedDbEntity>>(),
                 Arg.Any<CancellationToken>())

@@ -458,9 +458,15 @@ public class RepositorySpy<TEntity, TKey> : IRepository<TEntity, TKey>
     /// <summary>Gets the number of times <c>DeleteAsync</c> was called.</summary>
     public int DeleteAsyncCallCount { get; private set; }
 
+    /// <summary>Gets the number of times <c>GetByIdAsync</c> was called.</summary>
+    public int GetByIdCallCount { get; private set; }
+
     /// <inheritdoc />
-    public Task<TEntity?> GetByIdAsync(TKey id, CancellationToken ct = default) =>
-        _inner.GetByIdAsync(id, ct);
+    public Task<TEntity?> GetByIdAsync(TKey id, CancellationToken ct = default)
+    {
+        GetByIdCallCount++;
+        return _inner.GetByIdAsync(id, ct);
+    }
 
     /// <inheritdoc />
     public Task<PagedResult<TEntity>> GetAllAsync(PaginationRequest pagination, CancellationToken ct = default) =>

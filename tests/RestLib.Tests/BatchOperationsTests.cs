@@ -1876,11 +1876,12 @@ public class BatchOperationsTests : IAsyncLifetime
         // Arrange
         var id1 = Guid.NewGuid();
         var id2 = Guid.NewGuid();
+        var missingId = Guid.NewGuid();
         _repository.Seed(new[]
         {
-      new BatchEntity { Id = id1, Name = "Old1", Price = 1m },
-      new BatchEntity { Id = id2, Name = "Old2", Price = 2m }
-    });
+            new BatchEntity { Id = id1, Name = "Old1", Price = 1m },
+            new BatchEntity { Id = id2, Name = "Old2", Price = 2m }
+        });
 
         await CreateHostWithBatchRepositoryAsync(config =>
         {
@@ -1892,18 +1893,32 @@ public class BatchOperationsTests : IAsyncLifetime
         {
             action = "update",
             items = new[]
-          {
-        new { id = id1, body = new { name = "New1", price = 11m, is_active = true } },
-        new { id = id2, body = new { name = "New2", price = 22m, is_active = true } }
-      }
+            {
+                new { id = id1, body = new { name = "New1", price = 11m, is_active = true } },
+                new { id = missingId, body = new { name = "Missing", price = 99m, is_active = true } },
+                new { id = id2, body = new { name = "New2", price = 22m, is_active = true } }
+            }
         };
 
         // Act
         var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items");
+        items.EnumerateArray().Select(static item => item.GetProperty("index").GetInt32())
+            .Should().Equal(0, 1, 2);
+        items.EnumerateArray().Select(static item => item.GetProperty("status").GetInt32())
+            .Should().Equal(200, 404, 200);
+        items[1].GetProperty("error").GetProperty("type").GetString()
+            .Should().Be(ProblemTypes.NotFound);
         _batchSpy!.UpdateManyCallCount.Should().Be(1);
+        _batchSpy.GetByIdsCallCount.Should().Be(1);
+        _repositorySpy!.GetByIdCallCount.Should().Be(0);
+        _repositorySpy.UpdateAsyncCallCount.Should().Be(0);
+        (await _repository.GetByIdAsync(id1))!.Name.Should().Be("New1");
+        (await _repository.GetByIdAsync(id2))!.Name.Should().Be("New2");
     }
 
     [Fact]
@@ -1913,11 +1928,12 @@ public class BatchOperationsTests : IAsyncLifetime
         // Arrange
         var id1 = Guid.NewGuid();
         var id2 = Guid.NewGuid();
+        var missingId = Guid.NewGuid();
         _repository.Seed(new[]
         {
-      new BatchEntity { Id = id1, Name = "PatchMe1", Price = 1m },
-      new BatchEntity { Id = id2, Name = "PatchMe2", Price = 2m }
-    });
+            new BatchEntity { Id = id1, Name = "PatchMe1", Price = 1m },
+            new BatchEntity { Id = id2, Name = "PatchMe2", Price = 2m }
+        });
 
         await CreateHostWithBatchRepositoryAsync(config =>
         {
@@ -1929,18 +1945,32 @@ public class BatchOperationsTests : IAsyncLifetime
         {
             action = "patch",
             items = new[]
-          {
-        new { id = id1, body = new { price = 99m } },
-        new { id = id2, body = new { price = 88m } }
-      }
+            {
+                new { id = id1, body = new { price = 99m } },
+                new { id = missingId, body = new { price = 77m } },
+                new { id = id2, body = new { price = 88m } }
+            }
         };
 
         // Act
         var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items");
+        items.EnumerateArray().Select(static item => item.GetProperty("index").GetInt32())
+            .Should().Equal(0, 1, 2);
+        items.EnumerateArray().Select(static item => item.GetProperty("status").GetInt32())
+            .Should().Equal(200, 404, 200);
+        items[1].GetProperty("error").GetProperty("type").GetString()
+            .Should().Be(ProblemTypes.NotFound);
         _batchSpy!.PatchManyCallCount.Should().Be(1);
+        _batchSpy.GetByIdsCallCount.Should().Be(1);
+        _repositorySpy!.GetByIdCallCount.Should().Be(0);
+        _repositorySpy.PatchAsyncCallCount.Should().Be(0);
+        (await _repository.GetByIdAsync(id1))!.Price.Should().Be(99m);
+        (await _repository.GetByIdAsync(id2))!.Price.Should().Be(88m);
     }
 
     [Fact]

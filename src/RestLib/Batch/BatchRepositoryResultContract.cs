@@ -77,6 +77,54 @@ internal static class BatchRepositoryResultContract
     }
 
     /// <summary>
+    /// Validates a keyed lookup used to prepare update or patch candidates.
+    /// Missing requested keys are allowed, but every returned entry must represent
+    /// one requested key and agree with its entity's resource key.
+    /// </summary>
+    /// <typeparam name="TEntity">The returned entity type.</typeparam>
+    /// <typeparam name="TKey">The resource key type.</typeparam>
+    /// <param name="results">The keyed entities returned by the repository.</param>
+    /// <param name="requestedKeys">The requested keys, including repeated occurrences.</param>
+    /// <param name="keySelector">Extracts the resource key from a returned entity.</param>
+    /// <param name="action">The batch action name.</param>
+    internal static void ValidateLookup<TEntity, TKey>(
+        IReadOnlyDictionary<TKey, TEntity> results,
+        IReadOnlyList<TKey> requestedKeys,
+        Func<TEntity, TKey?> keySelector,
+        string action)
+        where TEntity : class
+        where TKey : notnull
+    {
+        if (results is null)
+        {
+            throw Violation(action, "returned a null keyed lookup");
+        }
+
+        var requestedKeySet = requestedKeys.ToHashSet();
+        foreach (var (dictionaryKey, entity) in results)
+        {
+            if (!requestedKeySet.Contains(dictionaryKey))
+            {
+                throw Violation(action, "returned an entity whose key was not requested");
+            }
+
+            if (entity is null)
+            {
+                throw Violation(action, "returned a null entity from its keyed lookup");
+            }
+
+            var entityKey = keySelector(entity);
+            if (entityKey is null ||
+                !EqualityComparer<TKey>.Default.Equals(dictionaryKey, entityKey))
+            {
+                throw Violation(
+                    action,
+                    "returned an entity whose resource key did not match its lookup key");
+            }
+        }
+    }
+
+    /// <summary>
     /// Correlates update or patch results to their submitted keys. A key may be
     /// omitted completely when the resource no longer exists, but partial duplicate
     /// groups, unexpected keys, and reordered results violate the repository contract.

@@ -391,6 +391,7 @@ public class TwoModelBatchOperationsTests : IAsyncLifetime
         // Arrange
         var id1 = Guid.NewGuid();
         var id2 = Guid.NewGuid();
+        var missingId = Guid.NewGuid();
         _repository.Seed(
             new TwoModelBatchDbItem
             {
@@ -419,6 +420,7 @@ public class TwoModelBatchOperationsTests : IAsyncLifetime
             items = new object[]
             {
                 new { id = id1, body = new { name = "New1", price = 11m, category = "hardware", is_active = true } },
+                new { id = missingId, body = new { name = "Missing", price = 99m, category = "hardware", is_active = true } },
                 new { id = id2, body = new { name = "New2", price = 22m, category = "hardware", is_active = true } }
             }
         };
@@ -427,8 +429,21 @@ public class TwoModelBatchOperationsTests : IAsyncLifetime
         var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items");
+        items.EnumerateArray().Select(static item => item.GetProperty("index").GetInt32())
+            .Should().Equal(0, 1, 2);
+        items.EnumerateArray().Select(static item => item.GetProperty("status").GetInt32())
+            .Should().Equal(200, 404, 200);
+        items[1].GetProperty("error").GetProperty("type").GetString()
+            .Should().Be(ProblemTypes.NotFound);
         _batchSpy!.UpdateManyCallCount.Should().Be(1);
+        _batchSpy.GetByIdsCallCount.Should().Be(1);
+        _repositorySpy!.GetByIdCallCount.Should().Be(0);
+        _repositorySpy.UpdateAsyncCallCount.Should().Be(0);
+        (await _repository.GetByIdAsync(id1))!.Name.Should().Be("New1");
+        (await _repository.GetByIdAsync(id2))!.Name.Should().Be("New2");
     }
 
     [Fact]
@@ -437,6 +452,7 @@ public class TwoModelBatchOperationsTests : IAsyncLifetime
         // Arrange
         var id1 = Guid.NewGuid();
         var id2 = Guid.NewGuid();
+        var missingId = Guid.NewGuid();
         _repository.Seed(
             new TwoModelBatchDbItem
             {
@@ -465,6 +481,7 @@ public class TwoModelBatchOperationsTests : IAsyncLifetime
             items = new object[]
             {
                 new { id = id1, body = new { price = 11m } },
+                new { id = missingId, body = new { price = 99m } },
                 new { id = id2, body = new { price = 22m } }
             }
         };
@@ -473,10 +490,22 @@ public class TwoModelBatchOperationsTests : IAsyncLifetime
         var response = await _client!.PostAsync("/api/items/batch", BatchJson(payload));
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items");
+        items.EnumerateArray().Select(static item => item.GetProperty("index").GetInt32())
+            .Should().Equal(0, 1, 2);
+        items.EnumerateArray().Select(static item => item.GetProperty("status").GetInt32())
+            .Should().Equal(200, 404, 200);
+        items[1].GetProperty("error").GetProperty("type").GetString()
+            .Should().Be(ProblemTypes.NotFound);
         _batchSpy!.UpdateManyCallCount.Should().Be(1);
         _batchSpy.PatchManyCallCount.Should().Be(0);
         _batchSpy.GetByIdsCallCount.Should().Be(1);
+        _repositorySpy!.GetByIdCallCount.Should().Be(0);
+        _repositorySpy.UpdateAsyncCallCount.Should().Be(0);
+        (await _repository.GetByIdAsync(id1))!.Price.Should().Be(11m);
+        (await _repository.GetByIdAsync(id2))!.Price.Should().Be(22m);
     }
 
     [Fact]

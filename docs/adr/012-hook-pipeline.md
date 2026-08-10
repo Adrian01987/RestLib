@@ -1,6 +1,6 @@
 # ADR-012: Hook Pipeline for Extensibility
 
-**Status:** Accepted
+**Status:** Accepted (amended 2026-08-10)
 **Date:** 2026-03-30
 
 ## Context
@@ -133,6 +133,16 @@ A new `HookPipeline<TEntity, TKey>` instance is created for each request. The `I
 ### 6. Batch operation hook behavior
 
 Batch operations (batch create, update, patch, delete) fire hooks per-item within the batch. This ensures each item receives the same hook processing as it would in a single-item operation. However, batch operations do not fire `BeforeResponse` or `OnError` per-item — these stages are handled at the batch level.
+
+When batch update or patch uses `IBatchRepository`, RestLib obtains one keyed
+pre-write snapshot before running per-item model validation and pre-persistence
+hook work. `OnRequestReceived` remains before model validation or merge preview,
+but the capability lookup has already completed. Wherever a later hook stage
+exposes `OriginalEntity`, its value comes from that snapshot. Repeated keys use
+the same pre-write original for every occurrence; an earlier occurrence does not
+become the original for a later one. The lookup and mutation calls are not atomic
+together, so hooks must not treat the snapshot as a concurrency guarantee. The
+individual repository fallback retains its per-item point lookup behavior.
 
 ## Rationale
 

@@ -82,6 +82,20 @@ enter per-item error handling and default to internal errors (configured error
 hooks may replace that response). RestLib does not retry the write because the
 repository may already have committed it.
 
+On bulk update and patch, RestLib decodes and structurally checks members before
+repository access, then calls `GetByIdsAsync` once when at least one key
+survives. It does not issue a `GetByIdAsync` call per item. Existence checks, validation,
+merge previews, and pre-persistence hooks use that returned pre-write snapshot;
+only surviving items reach `UpdateManyAsync` or `PatchManyAsync`. Repeated keys
+share the same original snapshot even though the mutation method applies them in
+input order and returns the final value for each successful occurrence.
+
+This is a RestLib-to-repository call-count guarantee, not a physical query-count
+or concurrency guarantee. A repository may perform internal reads while
+implementing either batch method, and no transaction is implied across the
+separate lookup and mutation calls. The individual fallback continues to use
+one point lookup per update or patch item.
+
 Batch size is limited to 100 items by default (configurable via
 `RestLibOptions.MaxBatchSize`). Hooks and validation run independently for every
 member that was decoded successfully, with errors reported in the member's
