@@ -92,5 +92,47 @@ public partial class OpenApiDocumentationTests
         return result.Document!;
     }
 
+    private static OpenApiOperation RequireOperation(
+        OpenApiDocument document,
+        string path,
+        HttpMethod method)
+    {
+        document.Paths.Should().NotBeNull();
+        var paths = document.Paths!;
+        paths.Should().ContainKey(path);
+
+        var pathItem = paths[path];
+        pathItem.Should().NotBeNull();
+        pathItem!.Operations.Should().NotBeNull();
+        var operations = pathItem.Operations!;
+        operations.Should().ContainKey(method);
+
+        var operation = operations[method];
+        operation.Should().NotBeNull();
+        return operation!;
+    }
+
+    private static IOpenApiResponse RequireResponse(OpenApiOperation operation, string statusCode)
+    {
+        operation.Responses.Should().NotBeNull();
+        var responses = operation.Responses!;
+        responses.Should().ContainKey(statusCode);
+
+        var response = responses[statusCode];
+        response.Should().NotBeNull();
+        return response!;
+    }
+
+    private static IOpenApiParameter RequireParameter(OpenApiOperation operation, string name)
+    {
+        operation.Parameters.Should().NotBeNull();
+        var parameters = operation.Parameters!;
+        parameters.Should().ContainSingle(parameter => parameter.Name == name);
+
+        var parameter = parameters.Single(candidate => candidate.Name == name);
+        parameter.Should().NotBeNull();
+        return parameter!;
+    }
+
     #endregion
 }

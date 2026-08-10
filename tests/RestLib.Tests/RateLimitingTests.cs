@@ -211,10 +211,11 @@ public class RateLimitingTests : IAsyncLifetime
             },
             _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Unknown batch action.")
         };
+        var client = _client ?? throw new InvalidOperationException("The test host did not create an HTTP client.");
 
         // Act
-        var firstResponse = await _client!.PostAsJsonAsync("/api/limited/batch", payload);
-        var secondResponse = await _client.PostAsJsonAsync("/api/limited/batch", payload);
+        var firstResponse = await client.PostAsJsonAsync("/api/limited/batch", payload);
+        var secondResponse = await client.PostAsJsonAsync("/api/limited/batch", payload);
 
         // Assert
         firstResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -253,10 +254,11 @@ public class RateLimitingTests : IAsyncLifetime
             action = "delete",
             items = new[] { Guid.NewGuid() }
         };
+        var client = _client ?? throw new InvalidOperationException("The test host did not create an HTTP client.");
 
         // Act
-        var createResponse = await _client!.PostAsJsonAsync("/api/limited/batch", createPayload);
-        var deleteResponse = await _client.PostAsJsonAsync("/api/limited/batch", deletePayload);
+        var createResponse = await client.PostAsJsonAsync("/api/limited/batch", createPayload);
+        var deleteResponse = await client.PostAsJsonAsync("/api/limited/batch", deletePayload);
 
         // Assert
         createResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -286,11 +288,12 @@ public class RateLimitingTests : IAsyncLifetime
             action = "delete",
             items = new[] { Guid.NewGuid() }
         };
+        var client = _client ?? throw new InvalidOperationException("The test host did not create an HTTP client.");
 
         // Act
-        var firstCreateResponse = await _client!.PostAsJsonAsync("/api/limited/batch", createPayload);
-        var deleteResponse = await _client.PostAsJsonAsync("/api/limited/batch", deletePayload);
-        var secondCreateResponse = await _client.PostAsJsonAsync("/api/limited/batch", createPayload);
+        var firstCreateResponse = await client.PostAsJsonAsync("/api/limited/batch", createPayload);
+        var deleteResponse = await client.PostAsJsonAsync("/api/limited/batch", deletePayload);
+        var secondCreateResponse = await client.PostAsJsonAsync("/api/limited/batch", createPayload);
 
         // Assert
         firstCreateResponse.StatusCode.Should().Be(HttpStatusCode.OK);

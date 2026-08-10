@@ -30,12 +30,11 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var getAllOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!;
-        var cursorParam = getAllOp.Parameters!.FirstOrDefault(p => p.Name == "cursor");
+        var getAllOp = RequireOperation(openApiDoc, "/api/items", HttpMethod.Get);
+        var cursorParam = RequireParameter(getAllOp, "cursor");
 
         // Assert
-        cursorParam.Should().NotBeNull();
-        cursorParam!.In.Should().Be(ParameterLocation.Query);
+        cursorParam.In.Should().Be(ParameterLocation.Query);
         cursorParam.Required.Should().BeFalse();
         cursorParam.Description.Should().Contain("cursor");
         cursorParam.Schema!.Type.Should().Be(JsonSchemaType.String);
@@ -50,12 +49,11 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var getAllOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!;
-        var limitParam = getAllOp.Parameters!.FirstOrDefault(p => p.Name == "limit");
+        var getAllOp = RequireOperation(openApiDoc, "/api/items", HttpMethod.Get);
+        var limitParam = RequireParameter(getAllOp, "limit");
 
         // Assert
-        limitParam.Should().NotBeNull();
-        limitParam!.In.Should().Be(ParameterLocation.Query);
+        limitParam.In.Should().Be(ParameterLocation.Query);
         limitParam.Required.Should().BeFalse();
         limitParam.Schema!.Type.Should().Be(JsonSchemaType.Integer);
 
@@ -96,12 +94,11 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var getAllOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!;
-        var limitParam = getAllOp.Parameters!.FirstOrDefault(p => p.Name == "limit");
+        var getAllOp = RequireOperation(openApiDoc, "/api/items", HttpMethod.Get);
+        var limitParam = RequireParameter(getAllOp, "limit");
 
         // Assert
-        limitParam.Should().NotBeNull();
-        limitParam!.Schema!.Minimum.Should().Be("1");
+        limitParam.Schema!.Minimum.Should().Be("1");
         limitParam.Schema.Maximum.Should().Be("500");
         limitParam.Schema.Default.Should().NotBeNull();
         limitParam.Schema.Default!.GetValue<int>().Should().Be(50);
@@ -120,12 +117,11 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var getByIdOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!;
-        var idParam = getByIdOp.Parameters!.FirstOrDefault(p => p.Name == "id");
+        var getByIdOp = RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Get);
+        var idParam = RequireParameter(getByIdOp, "id");
 
         // Assert
-        idParam.Should().NotBeNull();
-        idParam!.In.Should().Be(ParameterLocation.Path);
+        idParam.In.Should().Be(ParameterLocation.Path);
         idParam.Required.Should().BeTrue();
         idParam.Description.Should().Contain("identifier");
         idParam.Schema!.Type.Should().Be(JsonSchemaType.Integer);
@@ -140,12 +136,11 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var getByIdOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!;
-        var ifNoneMatchParam = getByIdOp.Parameters!.FirstOrDefault(p => p.Name == "If-None-Match");
+        var getByIdOp = RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Get);
+        var ifNoneMatchParam = RequireParameter(getByIdOp, "If-None-Match");
 
         // Assert
-        ifNoneMatchParam.Should().NotBeNull();
-        ifNoneMatchParam!.In.Should().Be(ParameterLocation.Header);
+        ifNoneMatchParam.In.Should().Be(ParameterLocation.Header);
         ifNoneMatchParam.Required.Should().BeFalse();
         ifNoneMatchParam.Description.Should().Contain("ETag");
     }
@@ -159,12 +154,11 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var updateOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!;
-        var ifMatchParam = updateOp.Parameters!.FirstOrDefault(p => p.Name == "If-Match");
+        var updateOp = RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Put);
+        var ifMatchParam = RequireParameter(updateOp, "If-Match");
 
         // Assert
-        ifMatchParam.Should().NotBeNull();
-        ifMatchParam!.In.Should().Be(ParameterLocation.Header);
+        ifMatchParam.In.Should().Be(ParameterLocation.Header);
         ifMatchParam.Required.Should().BeFalse();
         ifMatchParam.Description.Should().Contain("optimistic locking");
     }
@@ -178,12 +172,11 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var deleteOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!;
-        var ifMatchParam = deleteOp.Parameters!.FirstOrDefault(p => p.Name == "If-Match");
+        var deleteOp = RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Delete);
+        var ifMatchParam = RequireParameter(deleteOp, "If-Match");
 
         // Assert
-        ifMatchParam.Should().NotBeNull();
-        ifMatchParam!.In.Should().Be(ParameterLocation.Header);
+        ifMatchParam.In.Should().Be(ParameterLocation.Header);
         ifMatchParam.Required.Should().BeFalse();
     }
 
@@ -196,17 +189,15 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var getAllOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!;
+        var getAllOp = RequireOperation(openApiDoc, "/api/items", HttpMethod.Get);
 
         // Assert - Should have filter parameters
-        var isActiveParam = getAllOp.Parameters!.FirstOrDefault(p => p.Name == "is_active");
-        isActiveParam.Should().NotBeNull();
-        isActiveParam!.In.Should().Be(ParameterLocation.Query);
+        var isActiveParam = RequireParameter(getAllOp, "is_active");
+        isActiveParam.In.Should().Be(ParameterLocation.Query);
         isActiveParam.Schema!.Type.Should().Be(JsonSchemaType.Boolean);
 
-        var categoryIdParam = getAllOp.Parameters!.FirstOrDefault(p => p.Name == "category_id");
-        categoryIdParam.Should().NotBeNull();
-        categoryIdParam!.Schema!.Type.Should().Be(JsonSchemaType.String);
+        var categoryIdParam = RequireParameter(getAllOp, "category_id");
+        categoryIdParam.Schema!.Type.Should().Be(JsonSchemaType.String);
         categoryIdParam.Schema.Format.Should().Be("uuid");
     }
 
@@ -232,8 +223,8 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var getAllOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!;
-        var nameParameter = getAllOp.Parameters!.Single(parameter => parameter.Name == "name");
+        var getAllOp = RequireOperation(openApiDoc, "/api/items", HttpMethod.Get);
+        var nameParameter = RequireParameter(getAllOp, "name");
 
         // Assert
         nameParameter.Description.Should()
@@ -267,12 +258,11 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var getAllOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!;
-        var searchParam = getAllOp.Parameters!.FirstOrDefault(parameter => parameter.Name == "query");
+        var getAllOp = RequireOperation(openApiDoc, "/api/items", HttpMethod.Get);
+        var searchParam = RequireParameter(getAllOp, "query");
 
         // Assert
-        searchParam.Should().NotBeNull();
-        searchParam!.In.Should().Be(ParameterLocation.Query);
+        searchParam.In.Should().Be(ParameterLocation.Query);
         searchParam.Required.Should().BeFalse();
         searchParam.Schema!.Type.Should().Be(JsonSchemaType.String);
         searchParam.Description.Should().Contain("OR-of-contains");

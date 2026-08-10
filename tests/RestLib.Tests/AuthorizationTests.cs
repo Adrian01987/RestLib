@@ -496,12 +496,13 @@ public class AuthorizationTests : IAsyncLifetime
             action = "create",
             items = new[] { new { name = "Batch" } }
         };
+        var client = _client ?? throw new InvalidOperationException("The test host did not create an HTTP client.");
 
         // Act
-        var anonymousResponse = await _client!.PostAsJsonAsync("/api/test-entities/batch", payload);
-        _client.DefaultRequestHeaders.Authorization =
+        var anonymousResponse = await client.PostAsJsonAsync("/api/test-entities/batch", payload);
+        client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Test");
-        var authenticatedResponse = await _client.PostAsJsonAsync("/api/test-entities/batch", payload);
+        var authenticatedResponse = await client.PostAsJsonAsync("/api/test-entities/batch", payload);
 
         // Assert
         anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -526,12 +527,13 @@ public class AuthorizationTests : IAsyncLifetime
             action = "create",
             items = new[] { new { name = "Batch" } }
         };
+        var client = _client ?? throw new InvalidOperationException("The test host did not create an HTTP client.");
 
         // Act
-        var anonymousResponse = await _client!.PostAsJsonAsync("/api/test-entities/batch", payload);
-        _client.DefaultRequestHeaders.Authorization =
+        var anonymousResponse = await client.PostAsJsonAsync("/api/test-entities/batch", payload);
+        client.DefaultRequestHeaders.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Test");
-        var authenticatedResponse = await _client.PostAsJsonAsync("/api/test-entities/batch", payload);
+        var authenticatedResponse = await client.PostAsJsonAsync("/api/test-entities/batch", payload);
 
         // Assert
         anonymousResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized);

@@ -7,16 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-08-10
+
 ### Breaking Changes
 
-- Removed the ecommerce-only `ProblemTypes.InsufficientStock` and `ProblemTypes.InvalidStatusTransition` constants and their `ProblemDetailsFactory` / `ProblemDetailsResult` convenience methods from the generic core package. Applications should define domain problem metadata locally, construct `RestLibProblemDetails`, and return it with `ProblemDetailsResult.Create`; this removal must ship in the next major version.
+- Removed the ecommerce-only `ProblemTypes.InsufficientStock` and `ProblemTypes.InvalidStatusTransition` constants and their `ProblemDetailsFactory` / `ProblemDetailsResult` convenience methods from the generic core package. Applications should own domain problem metadata, construct `RestLibProblemDetails`, and return it with `ProblemDetailsResult.Create`.
+- Conditional PUT, PATCH, and DELETE requests using `If-Match` now require `IConditionalWriteRepository<TEntity, TKey>`. Custom repositories without that atomic-write capability return 501 instead of performing an unsafe check-then-write.
+- Resource identity is now route- and batch-key authoritative. PUT normalizes configured primary, alternate, and composite keys, while PATCH rejects attempts to mutate identity through CLR names, JSON aliases, or custom metadata.
+- Custom `IBatchRepository<TEntity, TKey>` implementations must honor the documented atomicity, missing-key, repeated-key, cardinality, ordering, and result-correlation contract. Malformed or uncorrelatable bulk results are rejected without retrying a potentially committed write.
+- Shared batch routes now authorize the requested action rather than always using create metadata. All enabled actions must also share one compatible effective rate-limit configuration or endpoint mapping fails.
+- When generated-key assignment is required, InMemory now fails before invoking the generator if the model has no unambiguous writable key; calculated, composite, ambiguous, or immutable models can supply an explicit key assigner.
+- Relational filtering now uses a portable built-in-adapter type baseline. Unsupported operator/type combinations are rejected before repository access, parsing is culture-invariant, and ordinary undefined enum values or flags containing undeclared bits are invalid.
 
 ### Added
 
-- ADR-033 defining the InMemory adapter's shallow concurrency, live entity-reference, and cooperative cancellation contract
-- ADR-032 defining application ownership of business-domain Problem Details while RestLib retains the generic RFC 9457 model and result pipeline
-- ADR-031 and BenchmarkDotNet coverage for bounded EF planning caches, large scalar/composite batch-key queries, and compiled built-in mapping
-- `RestLib.EntityFrameworkCore` — EF Core repository adapter implementing base CRUD plus batch, atomic conditional-write, query-counting, and field-projection capabilities with server-side filtering, sorting, cursor pagination, batch operations, and `AsNoTracking` default
+- `IConditionalWriteRepository<TEntity, TKey>`, `ConditionalWriteResult<TEntity>`, and `ConditionalWriteStatus` for atomic ETag-protected mutations.
+- Adapter-neutral `PatchValidationException` and `InvalidCursorException` contracts.
+- InMemory constructors and registration overloads for explicit generated-key assignment and deterministic key comparison.
+- `application/merge-patch+json` request and OpenAPI support alongside `application/json` for PATCH endpoints.
+- ADRs 030–033 and BenchmarkDotNet coverage for shared orchestration, bounded EF planning caches, application-owned Problem Details, and InMemory concurrency.
+
+### Changed
+
+- PATCH now implements recursive RFC 7396 JSON Merge Patch across preview, InMemory, and EF Core paths: null removes members, objects merge recursively, and arrays or scalar values replace their targets.
+- Shared ASP.NET Core JSON settings now govern Minimal API binding, PATCH, field projection, standard adapters, responses, and default ETag generation, including custom naming policies, metadata resolvers, converters, and number handling.
+- Hook entity replacement now has consistent persistence and response semantics across create, get-by-id, update, patch, delete, and mapped or unmapped batch entity-bearing stages; authoritative resource identity is reapplied after replacement.
+- Cursor validation is adapter-neutral and strict. Malformed, negative, or tampered cursors return 400; EF uses keyset pagination only for safely consumable shapes and otherwise uses offset pagination.
+- Filtering and search now align literal wildcard handling, invariant case folding, null behavior, and early operator/type validation across the built-in adapters, with provider collation boundaries documented.
+- Field selection preserves deep sibling paths and a stable configured flat or nested response shape regardless of selection density or converters.
+- InMemory reads and mutations now use the documented shallow-concurrency model with cooperative cancellation while retaining live, caller-owned entity references.
+- Official InMemory and EF registrations expose every supported optional repository interface, with all aliases resolving to the same logical repository instance.
+- Repeated `AddRestLib` calls are idempotent and follow first-successful-registration-wins semantics for options, JSON behavior, ETags, and OpenAPI infrastructure.
+- Ecommerce-specific Problem Details descriptors and helpers moved to the ecommerce sample while preserving its existing HTTP contracts.
+
+### Fixed
+
+- Batch processing no longer replays uncertain bulk failures, converts cancellation into item failures, or falls back after a potentially committed write.
+- Batch responses retain one ordered result per accepted array member, correlate keyed results safely, and report member deserialization or key errors at the correct index while valid siblings continue.
+- Bulk update and patch validation use one `GetByIdsAsync` snapshot and preserve missing and repeated-key semantics across mapped and unmapped pipelines.
+- EF strict PATCH builds and validates the complete mutation plan before changing tracked state and restores tracked values after validation failures or cancellation.
+- Official adapters perform `If-Match` validation atomically with the write, preventing stale mutations from racing between the precondition check and persistence.
+- Generated pagination, HATEOAS, and create `Location` URLs include normalized `PathBase`; HATEOAS collection wrapping no longer drops an entity when its key is unavailable and instead returns that item without `_links`.
+- Core no longer identifies adapter failures through fully qualified exception-name strings or converts arbitrary `InvalidOperationException` failures into client-visible 400 responses.
+- Configured validation regular expressions compile once with invariant semantics and a fixed 100 ms timeout. Request-time timeouts return the normal 400 validation response, while startup-validation timeouts fail endpoint mapping with configuration context.
+
+### Performance
+
+- EF reuses immutable key metadata and bounded keyset and projection plans using model-, option-, and selector-safe cache keys.
+- Large scalar and two-part composite EF batch-key reads are deduplicated and chunked under a 512 key-part budget.
+- Built-in identity and reflection mappers reuse compiled delegates, and bulk update/patch removes endpoint-level N+1 and 2N+1 reads.
+
+### Security
+
+- Pinned `Microsoft.OpenApi` 2.11.0 to replace the vulnerable 2.0.0 dependency that produced NU1903 restore failures.
+- Updated ASP.NET Core and EF Core packages to 10.0.10, pinned `SQLitePCLRaw.bundle_e_sqlite3` 3.0.4 for samples and tests, and refreshed supporting dependencies and CI actions.
+
+### Tests and Tooling
+
+- Expanded boundary, cross-adapter, provider, mapping, cancellation, hook, batch, conditional-write, and pagination coverage across the core and EF test suites.
+- Expanded E2E coverage for action-aware batch authorization, RFC 7396, search, two-model mapping, alternate and composite keys, rate limiting, and OpenAPI; documented and guarded native Windows Git Bash execution.
+- Removed dead EF planning/sorting code, tracked C# Dev Kit `*.lscache` files, and broad AD0001/CS8602/CS8604 suppressions; fixed the nullable diagnostics those suppressions concealed.
+
+## [2.5.3] - 2026-06-16
+
+_Cumulative changes recorded since 2.0.0; releases 2.1.0 through 2.5.2 did not have separate changelog sections._
+
+### Added
+
+- `RestLib.EntityFrameworkCore` — EF Core repository adapter implementing `IRepository`, `IBatchRepository`, and `ICountableRepository` with server-side filtering, sorting, cursor pagination, batch operations, and `AsNoTracking` default
 - ADR-021: EF Core repository adapter design decisions — cursor pagination strategy, `AsNoTracking` default, JSON Merge Patch via change tracking, key auto-detection, scoped lifetime
 - Structured logging via `Microsoft.Extensions.Logging` across all endpoints, batch pipelines, hook execution, and error paths
 - `[LoggerMessage]` source-generated log methods for zero-allocation structured logging (EventId 1000–1349)
@@ -50,16 +108,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- InMemory point reads, counts, bulk reads, and collection membership snapshots now coordinate with serialized mutations; documented entities remain caller-owned references rather than isolated clones
-- Official InMemory and EF Core registrations now expose every optional repository capability their concrete adapter implements; all aliases resolve to the same singleton or scoped repository instance
-- Ecommerce Problem Details descriptors and result helpers now live in the ecommerce sample; the existing insufficient-stock, invalid-transition, and payment HTTP contracts remain unchanged
-- Equivalent EF repository scopes now reuse immutable resource-key metadata and bounded normalized keyset/projection plans by exact model, options, and key-selector identity
-- Large EF batch-key reads now deduplicate and execute bounded sequential queries: scalar keys use `Contains`, while two-part composite keys use balanced predicates under the same 512 key-part budget
-- RestLib-owned identity and reflection mappers now reuse stateless instances and compiled delegates per closed model pair; custom mapper instances continue to follow their registered DI lifetimes
-- Internal orchestration now has single owners for batch state and HTTP processing, compatible mapped/unmapped CRUD operations, collection-query planning, EF Core key/pagination/projection/PATCH planning, configured comma-list parsing, and Problem Details response metadata/settings; public APIs and HTTP contracts remain unchanged
-- Repository adapters now report client-correctable PATCH failures through the adapter-neutral `PatchValidationException` contract; the existing EF Core exception remains available as a derived compatibility type, and InMemory immutable-key failures retain `InvalidOperationException` catch compatibility
-- Relational filters now use one portable built-in-adapter type baseline (`byte`, `short`, `int`, `long`, `float`, `double`, `decimal`, and `DateTime`, including nullable forms); unsupported operator/type combinations return Invalid Filter before repository execution
-- Filtering and search documentation now defines literal operands, null behavior, case folding, and the EF Core provider/collation boundary
 - `ProblemDetailsResult` now logs all error responses at appropriate levels (Information for 4xx, Error for 5xx)
 - `BatchContext` carries `ILogger` for consistent logging through batch pipeline
 - `HookPipeline` emits Trace-level entry/exit events and Debug-level short-circuit events for all hook stages
@@ -74,16 +122,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- InMemory repository operations now honor cancellation before work, during collection/batch planning, and immediately before atomic mutation commits without allowing cancellation to partially persist a batch
-- Unified Minimal API binding, RestLib results, PATCH preview and persistence, field selection, standard repository adapters, and default ETag generation on ASP.NET Core's canonical `JsonOptions.SerializerOptions`; custom HTTP JSON naming, case, resolver, converter, and number-handling rules now propagate consistently
-- PATCH member resolution now follows effective `JsonTypeInfo` metadata across core, InMemory, and EF Core, while field selection emits canonical JSON contract paths and honors member converters without cache collisions between distinct serializer-option instances
-- Made repeated `AddRestLib` calls fully idempotent so the first successful registration controls RestLib options, JSON behavior, conditional ETag services, and OpenAPI infrastructure consistently.
-- Generated pagination and built-in HATEOAS URLs, plus direct and mapped create `Location` headers, now include the normalized ASP.NET Core `PathBase`; processed forwarded scheme, host, and prefix values are honored without reading raw proxy headers
-- Core PATCH handling no longer recognizes EF Core exceptions by fully qualified type-name strings, and batch dispatch no longer turns arbitrary `InvalidOperationException` failures into client-visible 400 responses
-- EF Core `contains`, `starts_with`, and `ends_with` filters now escape SQL pattern characters and normalize case consistently, so `%`, `_`, brackets, carets, and escape characters are matched literally instead of becoming wildcards
-- EF Core case-insensitive search no longer depends on the server process's ambient culture, and InMemory null values no longer satisfy relational filters
-- Batch bulk results are now validated and correlated before after-persist processing: responses preserve one original-order slot per request item, update/patch omissions remain attached to their resource keys, and unsafe custom-repository results enter per-item error handling without retrying a potentially committed write
-- Nested field-selection response shape now remains stable across sparse, dense, and class-level converter projection strategies
+- Dense field-selection fallback continues to return flat dotted keys even when nested sparse responses are enabled
 - Folder-loaded two-model resources now honor `UnifiedTypeResolver` results without still requiring `Mapping.DbType` in JSON
 - Parallel test runs no longer hit transient `MvcTestingAppManifest.json` file-lock errors; the test projects now use `Microsoft.AspNetCore.TestHost` directly instead of the unused MVC testing manifest pipeline
 - `RestLibOptions.RequireAuthorizationByDefault = false` now leaves endpoints anonymous unless an operation-specific authorization policy is configured
@@ -368,7 +407,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Architecture Decision Records (ADRs) for key design choices
 - XML documentation for public APIs
 
-[Unreleased]: https://github.com/Adrian01987/RestLib/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/Adrian01987/RestLib/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/Adrian01987/RestLib/compare/v2.5.3...v3.0.0
+[2.5.3]: https://github.com/Adrian01987/RestLib/compare/v2.0.0...v2.5.3
 [2.0.0]: https://github.com/Adrian01987/RestLib/compare/v1.3.1...v2.0.0
 [1.3.1]: https://github.com/Adrian01987/RestLib/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/Adrian01987/RestLib/compare/v1.2.0...v1.3.0

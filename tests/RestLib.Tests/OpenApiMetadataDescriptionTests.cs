@@ -35,7 +35,7 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Description
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Get).Description
             .Should().Be(customDescription);
     }
 
@@ -56,7 +56,7 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Description
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Post).Description
             .Should().Be(customDescription);
     }
 
@@ -81,17 +81,17 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Description
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Get).Description
             .Should().Be("Custom GetAll description");
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Description
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Post).Description
             .Should().Be("Custom Create description");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Description
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Get).Description
             .Should().Be("Custom GetById description");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.Description
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Put).Description
             .Should().Be("Custom Update description");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.Description
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Patch).Description
             .Should().Be("Custom Patch description");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.Description
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Delete).Description
             .Should().Be("Custom Delete description");
     }
 

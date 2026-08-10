@@ -38,7 +38,7 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert - All configurations should be applied
-        var getAllOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!;
+        var getAllOp = RequireOperation(openApiDoc, "/api/items", HttpMethod.Get);
 
         getAllOp.Tags.Should().Contain(t => t.Name == "Legacy Products");
         getAllOp.Deprecated.Should().BeTrue();
@@ -99,9 +99,9 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert - Each endpoint group should have its own tag
-        openApiDoc.Paths!["/api/products"]!.Operations[HttpMethod.Get]!.Tags
+        RequireOperation(openApiDoc, "/api/products", HttpMethod.Get).Tags
             .Should().Contain(t => t.Name == "Products");
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Tags
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Get).Tags
             .Should().Contain(t => t.Name == "Inventory Items");
     }
 

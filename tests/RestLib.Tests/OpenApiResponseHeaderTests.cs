@@ -30,8 +30,8 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var getByIdOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!;
-        var response200 = getByIdOp.Responses["200"];
+        var getByIdOp = RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Get);
+        var response200 = RequireResponse(getByIdOp, "200");
 
         // Assert
         response200.Headers.Should().ContainKey("ETag");
@@ -47,8 +47,8 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var createOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!;
-        var response201 = createOp.Responses["201"];
+        var createOp = RequireOperation(openApiDoc, "/api/items", HttpMethod.Post);
+        var response201 = RequireResponse(createOp, "201");
 
         // Assert
         response201.Headers.Should().ContainKey("ETag");
@@ -63,8 +63,8 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var updateOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!;
-        var response200 = updateOp.Responses["200"];
+        var updateOp = RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Put);
+        var response200 = RequireResponse(updateOp, "200");
 
         // Assert
         response200.Headers.Should().ContainKey("ETag");

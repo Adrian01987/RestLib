@@ -149,5 +149,25 @@ public partial class OpenApiMetadataConfigurationTests
         return result.Document!;
     }
 
+    private static OpenApiOperation RequireOperation(
+        OpenApiDocument document,
+        string path,
+        HttpMethod method)
+    {
+        document.Paths.Should().NotBeNull();
+        var paths = document.Paths!;
+        paths.Should().ContainKey(path);
+
+        var pathItem = paths[path];
+        pathItem.Should().NotBeNull();
+        pathItem!.Operations.Should().NotBeNull();
+        var operations = pathItem.Operations!;
+        operations.Should().ContainKey(method);
+
+        var operation = operations[method];
+        operation.Should().NotBeNull();
+        return operation!;
+    }
+
     #endregion
 }

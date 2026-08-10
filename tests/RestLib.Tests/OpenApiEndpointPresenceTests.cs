@@ -57,17 +57,17 @@ public partial class OpenApiDocumentationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.OperationId
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Get).OperationId
             .Should().Be("OpenApiTestEntity_api_items_GetAll");
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.OperationId
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Post).OperationId
             .Should().Be("OpenApiTestEntity_api_items_Create");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.OperationId
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Get).OperationId
             .Should().Be("OpenApiTestEntity_api_items_GetById");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.OperationId
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Put).OperationId
             .Should().Be("OpenApiTestEntity_api_items_Update");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.OperationId
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Patch).OperationId
             .Should().Be("OpenApiTestEntity_api_items_Patch");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.OperationId
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Delete).OperationId
             .Should().Be("OpenApiTestEntity_api_items_Delete");
     }
 
@@ -82,17 +82,17 @@ public partial class OpenApiDocumentationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Summary
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Get).Summary
             .Should().Contain("Get all");
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Summary
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Post).Summary
             .Should().Contain("Create");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Summary
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Get).Summary
             .Should().Contain("Get");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.Summary
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Put).Summary
             .Should().Contain("update");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.Summary
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Patch).Summary
             .Should().Contain("Partial");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.Summary
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Delete).Summary
             .Should().Contain("Delete");
     }
 
@@ -107,17 +107,17 @@ public partial class OpenApiDocumentationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert - All endpoints should have descriptions
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Description
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Get).Description
             .Should().NotBeNullOrEmpty();
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Description
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Post).Description
             .Should().NotBeNullOrEmpty();
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Description
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Get).Description
             .Should().NotBeNullOrEmpty();
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.Description
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Put).Description
             .Should().NotBeNullOrEmpty();
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.Description
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Patch).Description
             .Should().NotBeNullOrEmpty();
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.Description
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Delete).Description
             .Should().NotBeNullOrEmpty();
     }
 
@@ -132,11 +132,11 @@ public partial class OpenApiDocumentationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert - All endpoints should be tagged with entity name
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Tags
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Get).Tags
             .Should().Contain(t => t.Name == "OpenApiTestEntity");
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Tags
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Post).Tags
             .Should().Contain(t => t.Name == "OpenApiTestEntity");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Tags
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Get).Tags
             .Should().Contain(t => t.Name == "OpenApiTestEntity");
     }
 

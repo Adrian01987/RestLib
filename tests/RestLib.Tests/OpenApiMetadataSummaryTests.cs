@@ -35,7 +35,7 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Summary
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Get).Summary
             .Should().Be(customSummary);
     }
 
@@ -56,7 +56,7 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Summary
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Get).Summary
             .Should().Be(customSummary);
     }
 
@@ -77,7 +77,7 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Summary
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Post).Summary
             .Should().Be(customSummary);
     }
 
@@ -98,7 +98,7 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.Summary
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Put).Summary
             .Should().Be(customSummary);
     }
 
@@ -119,7 +119,7 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.Summary
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Patch).Summary
             .Should().Be(customSummary);
     }
 
@@ -140,7 +140,7 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.Summary
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Delete).Summary
             .Should().Be(customSummary);
     }
 
@@ -165,12 +165,12 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Summary.Should().Be("List products");
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Summary.Should().Be("Add product");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Summary.Should().Be("Get product");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.Summary.Should().Be("Replace product");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.Summary.Should().Be("Update product fields");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.Summary.Should().Be("Remove product");
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Get).Summary.Should().Be("List products");
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Post).Summary.Should().Be("Add product");
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Get).Summary.Should().Be("Get product");
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Put).Summary.Should().Be("Replace product");
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Patch).Summary.Should().Be("Update product fields");
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Delete).Summary.Should().Be("Remove product");
     }
 
     [Fact]
@@ -189,13 +189,13 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert - GetAll should use custom summary
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Summary
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Get).Summary
             .Should().Be("Custom list products");
 
         // Other operations should use default summaries (containing entity name)
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Summary
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Post).Summary
             .Should().Contain("Create");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Summary
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Get).Summary
             .Should().Contain("Get");
     }
 

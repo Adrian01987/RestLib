@@ -34,12 +34,12 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert - All operations should be marked as deprecated
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Deprecated.Should().BeTrue();
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Deprecated.Should().BeTrue();
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Deprecated.Should().BeTrue();
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.Deprecated.Should().BeTrue();
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.Deprecated.Should().BeTrue();
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.Deprecated.Should().BeTrue();
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Get).Deprecated.Should().BeTrue();
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Post).Deprecated.Should().BeTrue();
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Get).Deprecated.Should().BeTrue();
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Put).Deprecated.Should().BeTrue();
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Patch).Deprecated.Should().BeTrue();
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Delete).Deprecated.Should().BeTrue();
     }
 
     [Fact]
@@ -58,12 +58,12 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert - No operations should be marked as deprecated
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Deprecated.Should().BeFalse();
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Deprecated.Should().BeFalse();
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Deprecated.Should().BeFalse();
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.Deprecated.Should().BeFalse();
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.Deprecated.Should().BeFalse();
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.Deprecated.Should().BeFalse();
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Get).Deprecated.Should().BeFalse();
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Post).Deprecated.Should().BeFalse();
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Get).Deprecated.Should().BeFalse();
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Put).Deprecated.Should().BeFalse();
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Patch).Deprecated.Should().BeFalse();
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Delete).Deprecated.Should().BeFalse();
     }
 
     [Fact]
@@ -84,10 +84,9 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert - Descriptions should contain the deprecation message
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Description
-            .Should().Contain("DEPRECATED");
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Description
-            .Should().Contain(deprecationMessage);
+        var operation = RequireOperation(openApiDoc, "/api/items", HttpMethod.Get);
+        operation.Description.Should().Contain("DEPRECATED");
+        operation.Description.Should().Contain(deprecationMessage);
     }
 
     [Fact]
@@ -107,10 +106,9 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert - Should have a default deprecation notice
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Description
-            .Should().Contain("DEPRECATED");
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Description
-            .Should().Contain("deprecated");
+        var operation = RequireOperation(openApiDoc, "/api/items", HttpMethod.Get);
+        operation.Description.Should().Contain("DEPRECATED");
+        operation.Description.Should().Contain("deprecated");
     }
 
     [Fact]
@@ -130,10 +128,9 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert - Descriptions should NOT contain deprecation message
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Description
-            .Should().NotContain("DEPRECATED");
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Description
-            .Should().NotContain("This should not appear");
+        var operation = RequireOperation(openApiDoc, "/api/items", HttpMethod.Get);
+        operation.Description.Should().NotContain("DEPRECATED");
+        operation.Description.Should().NotContain("This should not appear");
     }
 
     #endregion

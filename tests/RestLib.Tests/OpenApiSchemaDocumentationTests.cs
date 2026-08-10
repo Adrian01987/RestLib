@@ -41,8 +41,8 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var getAllOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!;
-        var response200 = getAllOp.Responses["200"];
+        var getAllOp = RequireOperation(openApiDoc, "/api/items", HttpMethod.Get);
+        var response200 = RequireResponse(getAllOp, "200");
 
         // Assert - Response should have application/json content
         response200.Content.Should().ContainKey("application/json");
@@ -78,7 +78,7 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var createOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!;
+        var createOp = RequireOperation(openApiDoc, "/api/items", HttpMethod.Post);
 
         // Assert
         createOp.RequestBody.Should().NotBeNull();
@@ -95,7 +95,7 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var updateOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!;
+        var updateOp = RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Put);
 
         // Assert
         updateOp.RequestBody.Should().NotBeNull();
@@ -112,7 +112,7 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var patchOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!;
+        var patchOp = RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Patch);
 
         // Assert
         patchOp.RequestBody.Should().NotBeNull();

@@ -30,7 +30,7 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var getAllOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!;
+        var getAllOp = RequireOperation(openApiDoc, "/api/items", HttpMethod.Get);
 
         // Assert
         getAllOp.Responses.Should().ContainKey("200"); // Success
@@ -48,7 +48,7 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var getByIdOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!;
+        var getByIdOp = RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Get);
 
         // Assert
         getByIdOp.Responses.Should().ContainKey("200"); // Success
@@ -67,7 +67,7 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var createOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!;
+        var createOp = RequireOperation(openApiDoc, "/api/items", HttpMethod.Post);
 
         // Assert
         createOp.Responses.Should().ContainKey("201"); // Created
@@ -85,8 +85,8 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var createOp = openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!;
-        var response201 = createOp.Responses["201"];
+        var createOp = RequireOperation(openApiDoc, "/api/items", HttpMethod.Post);
+        var response201 = RequireResponse(createOp, "201");
 
         // Assert
         response201.Headers.Should().ContainKey("Location");
@@ -102,15 +102,15 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var batchOp = openApiDoc.Paths!["/api/items/batch"]!.Operations[HttpMethod.Post]!;
+        var batchOp = RequireOperation(openApiDoc, "/api/items/batch", HttpMethod.Post);
 
         // Assert
         batchOp.Description.Should().Contain("one ordered result per member");
         batchOp.Responses.Should().ContainKey("200");
         batchOp.Responses.Should().ContainKey("207");
         batchOp.Responses.Should().ContainKey("400");
-        batchOp.Responses["207"].Description.Should().Contain("member decoding failures");
-        batchOp.Responses["400"].Description.Should().Contain("Top-level invalid batch envelope");
+        RequireResponse(batchOp, "207").Description.Should().Contain("member decoding failures");
+        RequireResponse(batchOp, "400").Description.Should().Contain("Top-level invalid batch envelope");
     }
 
     [Fact]
@@ -122,7 +122,7 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var updateOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!;
+        var updateOp = RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Put);
 
         // Assert
         updateOp.Responses.Should().ContainKey("200"); // Success
@@ -143,7 +143,7 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var patchOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!;
+        var patchOp = RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Patch);
 
         // Assert
         patchOp.Responses.Should().ContainKey("200"); // Success
@@ -164,7 +164,7 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var deleteOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!;
+        var deleteOp = RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Delete);
 
         // Assert
         deleteOp.Responses.Should().ContainKey("204"); // No Content
@@ -184,8 +184,8 @@ public partial class OpenApiDocumentationTests
 
         // Act
         var openApiDoc = await GetOpenApiDocument(client);
-        var getByIdOp = openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!;
-        var response404 = getByIdOp.Responses["404"];
+        var getByIdOp = RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Get);
+        var response404 = RequireResponse(getByIdOp, "404");
 
         // Assert - Should use application/problem+json
         response404.Content.Should().ContainKey("application/problem+json");

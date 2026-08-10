@@ -419,8 +419,10 @@ public class CompositeKeyEndpointTests : IAsyncLifetime
         var result = OpenApiDocument.Parse(openApi, "json");
         var document = result.Document!;
         var operation = document.Paths!["/api/catalog-items/{tenantId}/{sku}"]!.Operations![HttpMethod.Get]!;
-        var tenantIdParameter = operation.Parameters!.Single(parameter => parameter.Name == "tenantId");
-        var skuParameter = operation.Parameters.Single(parameter => parameter.Name == "sku");
+        operation.Parameters.Should().NotBeNull();
+        var parameters = operation.Parameters!;
+        var tenantIdParameter = parameters.Single(parameter => parameter.Name == "tenantId");
+        var skuParameter = parameters.Single(parameter => parameter.Name == "sku");
 
         // Assert
         tenantIdParameter.In.Should().Be(ParameterLocation.Path);

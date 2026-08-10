@@ -34,17 +34,17 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert - All operations should use entity type name as tag
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Tags
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Get).Tags
             .Should().Contain(t => t.Name == "MetadataTestEntity");
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Tags
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Post).Tags
             .Should().Contain(t => t.Name == "MetadataTestEntity");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Tags
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Get).Tags
             .Should().Contain(t => t.Name == "MetadataTestEntity");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.Tags
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Put).Tags
             .Should().Contain(t => t.Name == "MetadataTestEntity");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.Tags
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Patch).Tags
             .Should().Contain(t => t.Name == "MetadataTestEntity");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.Tags
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Delete).Tags
             .Should().Contain(t => t.Name == "MetadataTestEntity");
     }
 
@@ -64,17 +64,17 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert - All operations should use custom tag
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Tags
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Get).Tags
             .Should().Contain(t => t.Name == "Products");
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Post]!.Tags
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Post).Tags
             .Should().Contain(t => t.Name == "Products");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Get]!.Tags
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Get).Tags
             .Should().Contain(t => t.Name == "Products");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Put]!.Tags
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Put).Tags
             .Should().Contain(t => t.Name == "Products");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Patch]!.Tags
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Patch).Tags
             .Should().Contain(t => t.Name == "Products");
-        openApiDoc.Paths!["/api/items/{id}"]!.Operations[HttpMethod.Delete]!.Tags
+        RequireOperation(openApiDoc, "/api/items/{id}", HttpMethod.Delete).Tags
             .Should().Contain(t => t.Name == "Products");
     }
 
@@ -94,9 +94,10 @@ public partial class OpenApiMetadataConfigurationTests
         var openApiDoc = await GetOpenApiDocument(client);
 
         // Assert - Should NOT contain the default entity name tag
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Tags
+        var tags = RequireOperation(openApiDoc, "/api/items", HttpMethod.Get).Tags;
+        tags
             .Should().NotContain(t => t.Name == "MetadataTestEntity");
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Tags
+        tags
             .Should().ContainSingle(t => t.Name == "Items");
     }
 
@@ -117,7 +118,7 @@ public partial class OpenApiMetadataConfigurationTests
 
         // Assert - Should use entity name when tag is empty
         // Note: Empty string is truthy in C# so it won't fall back. Let's check actual behavior
-        openApiDoc.Paths!["/api/items"]!.Operations[HttpMethod.Get]!.Tags
+        RequireOperation(openApiDoc, "/api/items", HttpMethod.Get).Tags
             .Should().HaveCount(1);
     }
 
