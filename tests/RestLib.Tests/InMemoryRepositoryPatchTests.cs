@@ -22,7 +22,7 @@ public partial class InMemoryRepositoryTests
         var repository = CreateRepository();
         var entity = CreateEntity("Original", 100);
         await repository.CreateAsync(entity);
-        var patch = JsonDocument.Parse("""{"name": "Patched"}""").RootElement;
+        var patch = ParsePatch("""{"name": "Patched"}""");
 
         // Act
         var result = await repository.PatchAsync(entity.Id, patch);
@@ -38,7 +38,7 @@ public partial class InMemoryRepositoryTests
     {
         // Arrange
         var repository = CreateRepository();
-        var patch = JsonDocument.Parse("""{"name": "Patched"}""").RootElement;
+        var patch = ParsePatch("""{"name": "Patched"}""");
 
         // Act
         var result = await repository.PatchAsync(Guid.NewGuid(), patch);
@@ -54,7 +54,7 @@ public partial class InMemoryRepositoryTests
         var repository = CreateRepository();
         var entity = CreateEntity("Original", 100);
         await repository.CreateAsync(entity);
-        var patch = JsonDocument.Parse("""{"name": "Patched", "value": 999}""").RootElement;
+        var patch = ParsePatch("""{"name": "Patched", "value": 999}""");
 
         // Act
         var result = await repository.PatchAsync(entity.Id, patch);
@@ -72,8 +72,8 @@ public partial class InMemoryRepositoryTests
         var repository = CreateRepository();
         var entity = CreateEntity("Original", 100);
         await repository.CreateAsync(entity);
-        var patch = JsonDocument.Parse(
-            $$"""{"id":"{{Guid.NewGuid()}}","name":"Changed"}""").RootElement;
+        var patch = ParsePatch(
+            $$"""{"id":"{{Guid.NewGuid()}}","name":"Changed"}""");
 
         // Act
         var act = () => repository.PatchAsync(entity.Id, patch);
@@ -91,8 +91,8 @@ public partial class InMemoryRepositoryTests
         var repository = CreateRepository();
         var entity = CreateEntity("Original", 100);
         await repository.CreateAsync(entity);
-        var patch = JsonDocument.Parse(
-            $$"""{"id":"{{Guid.NewGuid()}}","name":"Changed"}""").RootElement;
+        var patch = ParsePatch(
+            $$"""{"id":"{{Guid.NewGuid()}}","name":"Changed"}""");
 
         // Act
         var act = () => repository.PatchConditionallyAsync(entity.Id, patch, _ => true);
@@ -146,7 +146,7 @@ public partial class InMemoryRepositoryTests
         var createdAt = DateTime.UtcNow.AddDays(-1);
         var entity = new TestEntity(Guid.NewGuid(), "Original", 100, createdAt);
         await repository.CreateAsync(entity);
-        var patch = JsonDocument.Parse("""{"name": "Patched"}""").RootElement;
+        var patch = ParsePatch("""{"name": "Patched"}""");
 
         // Act
         var result = await repository.PatchAsync(entity.Id, patch);
@@ -180,7 +180,7 @@ public partial class InMemoryRepositoryTests
         var repository = CreateMultiWordRepository();
         var entity = new MultiWordEntity(Guid.NewGuid(), "Widget", true, 50, DateTime.UtcNow);
         await repository.CreateAsync(entity);
-        var patch = JsonDocument.Parse("""{"product_name": "Updated Widget", "is_active": false}""").RootElement;
+        var patch = ParsePatch("""{"product_name": "Updated Widget", "is_active": false}""");
 
         // Act
         var result = await repository.PatchAsync(entity.Id, patch);
@@ -199,7 +199,7 @@ public partial class InMemoryRepositoryTests
         var repository = CreateMultiWordRepository();
         var entity = new MultiWordEntity(Guid.NewGuid(), "Widget", true, 50, DateTime.UtcNow);
         await repository.CreateAsync(entity);
-        var patch = JsonDocument.Parse("""{"ProductName": "PascalPatched", "StockQuantity": 99}""").RootElement;
+        var patch = ParsePatch("""{"ProductName": "PascalPatched", "StockQuantity": 99}""");
 
         // Act
         var result = await repository.PatchAsync(entity.Id, patch);
@@ -218,7 +218,7 @@ public partial class InMemoryRepositoryTests
         var repository = CreateMultiWordRepository();
         var entity = new MultiWordEntity(Guid.NewGuid(), "Widget", true, 50, DateTime.UtcNow);
         await repository.CreateAsync(entity);
-        var patch = JsonDocument.Parse("""{"productName": "CamelPatched", "isActive": false}""").RootElement;
+        var patch = ParsePatch("""{"productName": "CamelPatched", "isActive": false}""");
 
         // Act
         var result = await repository.PatchAsync(entity.Id, patch);
@@ -239,7 +239,7 @@ public partial class InMemoryRepositoryTests
         await repository.CreateAsync(entity);
 
         // Mix snake_case and PascalCase in the same patch document
-        var patch = JsonDocument.Parse("""{"product_name": "MixedPatch", "StockQuantity": 0}""").RootElement;
+        var patch = ParsePatch("""{"product_name": "MixedPatch", "StockQuantity": 0}""");
 
         // Act
         var result = await repository.PatchAsync(entity.Id, patch);
@@ -260,7 +260,7 @@ public partial class InMemoryRepositoryTests
         await repository.CreateAsync(entity);
 
         // Patch includes a property that doesn't exist on the entity
-        var patch = JsonDocument.Parse("""{"product_name": "Still Updated", "non_existent_field": "ignored"}""").RootElement;
+        var patch = ParsePatch("""{"product_name": "Still Updated", "non_existent_field": "ignored"}""");
 
         // Act
         var result = await repository.PatchAsync(entity.Id, patch);
@@ -283,7 +283,7 @@ public partial class InMemoryRepositoryTests
         var repository = CreateMultiWordRepository();
         var entity = new MultiWordEntity(Guid.NewGuid(), "Widget", true, 50, DateTime.UtcNow);
         await repository.CreateAsync(entity);
-        var patch = JsonDocument.Parse("""{"product_name": null}""").RootElement;
+        var patch = ParsePatch("""{"product_name": null}""");
 
         // Act
         var result = await repository.PatchAsync(entity.Id, patch);
@@ -304,7 +304,7 @@ public partial class InMemoryRepositoryTests
         await repository.CreateAsync(entity);
 
         // Include a known property plus an array property (not on the entity)
-        var patch = JsonDocument.Parse("""{"name": "Updated", "tags": [1, 2, 3]}""").RootElement;
+        var patch = ParsePatch("""{"name": "Updated", "tags": [1, 2, 3]}""");
 
         // Act
         var result = await repository.PatchAsync(entity.Id, patch);
@@ -324,7 +324,7 @@ public partial class InMemoryRepositoryTests
         await repository.CreateAsync(entity);
 
         // Include a known property plus a nested object (not on the entity)
-        var patch = JsonDocument.Parse("""{"name": "Updated", "address": {"city": "NYC"}}""").RootElement;
+        var patch = ParsePatch("""{"name": "Updated", "address": {"city": "NYC"}}""");
 
         // Act
         var result = await repository.PatchAsync(entity.Id, patch);
@@ -342,9 +342,8 @@ public partial class InMemoryRepositoryTests
         var repository = CreateMergePatchRepository();
         var entity = CreateMergePatchEntity();
         await repository.CreateAsync(entity);
-        var patch = JsonDocument.Parse(
-            """{"details":{"city":"Shelbyville"},"amount":79228162514264337593543950335,"sequence":18446744073709551615,"tags":["replacement"]}""")
-            .RootElement;
+        var patch = ParsePatch(
+            """{"details":{"city":"Shelbyville"},"amount":79228162514264337593543950335,"sequence":18446744073709551615,"tags":["replacement"]}""");
 
         // Act
         var result = await repository.PatchAsync(entity.Id, patch);
@@ -366,8 +365,8 @@ public partial class InMemoryRepositoryTests
         var first = CreateMergePatchEntity();
         var second = CreateMergePatchEntity();
         await repository.CreateManyAsync([first, second]);
-        var firstPatch = JsonDocument.Parse("""{"details":{"city":"First City"}}""").RootElement;
-        var secondPatch = JsonDocument.Parse("""{"details":{"city":"Second City"}}""").RootElement;
+        var firstPatch = ParsePatch("""{"details":{"city":"First City"}}""");
+        var secondPatch = ParsePatch("""{"details":{"city":"Second City"}}""");
 
         // Act
         var results = await repository.PatchManyAsync(
@@ -383,6 +382,12 @@ public partial class InMemoryRepositoryTests
 
     private static InMemoryRepository<MergePatchEntity, Guid> CreateMergePatchRepository() =>
         new(entity => entity.Id, Guid.NewGuid);
+
+    private static JsonElement ParsePatch(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
+    }
 
     private static MergePatchEntity CreateMergePatchEntity() =>
         new()

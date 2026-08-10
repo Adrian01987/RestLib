@@ -204,7 +204,7 @@ internal sealed class EfCoreProjectionPlanner<TEntity>
         var selector = Expression.Lambda<Func<TEntity, TEntity>>(body, parameter);
 
         return new ProjectionPlanResolution(
-            new EfCoreProjectionPlan<TEntity>(properties, selector));
+            new EfCoreProjectionPlan<TEntity>(selector));
     }
 
     private static bool IsNestedPath(string propertyPath)
@@ -312,9 +312,7 @@ internal sealed class EfCoreProjectionPlanner<TEntity>
 /// Describes a server-side entity projection.
 /// </summary>
 /// <typeparam name="TEntity">The entity type.</typeparam>
-/// <param name="Properties">The properties included in the projection.</param>
 /// <param name="Selector">The projection selector.</param>
 internal sealed record EfCoreProjectionPlan<TEntity>(
-    IReadOnlyList<PropertyInfo> Properties,
     Expression<Func<TEntity, TEntity>> Selector)
     where TEntity : class;

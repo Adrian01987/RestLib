@@ -250,10 +250,10 @@ public partial class InMemoryRepositoryTests
         var second = CreateEntity("Second", 2);
         await repository.CreateManyAsync([first, second]);
         var missingId = Guid.NewGuid();
-        var secondPatch = JsonDocument.Parse("""{"name":"Second updated"}""").RootElement;
-        var missingPatch = JsonDocument.Parse("""{"name":"Missing"}""").RootElement;
-        var firstPatch = JsonDocument.Parse("""{"name":"First updated"}""").RootElement;
-        var firstFinalPatch = JsonDocument.Parse("""{"value":100}""").RootElement;
+        var secondPatch = ParseBatchPatch("""{"name":"Second updated"}""");
+        var missingPatch = ParseBatchPatch("""{"name":"Missing"}""");
+        var firstPatch = ParseBatchPatch("""{"name":"First updated"}""");
+        var firstFinalPatch = ParseBatchPatch("""{"value":100}""");
 
         // Act
         var result = await repository.PatchManyAsync(
@@ -283,9 +283,9 @@ public partial class InMemoryRepositoryTests
         var first = CreateEntity("First", 1);
         var second = CreateEntity("Second", 2);
         await repository.CreateManyAsync([first, second]);
-        var validPatch = JsonDocument.Parse("""{"name":"Changed"}""").RootElement;
-        var invalidPatch = JsonDocument.Parse(
-            $$"""{"id":"{{Guid.NewGuid()}}","name":"Invalid"}""").RootElement;
+        var validPatch = ParseBatchPatch("""{"name":"Changed"}""");
+        var invalidPatch = ParseBatchPatch(
+            $$"""{"id":"{{Guid.NewGuid()}}","name":"Invalid"}""");
 
         // Act
         var act = () => repository.PatchManyAsync(
@@ -483,4 +483,10 @@ public partial class InMemoryRepositoryTests
     }
 
     #endregion
+
+    private static JsonElement ParseBatchPatch(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
+    }
 }

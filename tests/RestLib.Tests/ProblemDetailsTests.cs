@@ -623,7 +623,7 @@ public class ProblemDetailsTests : IAsyncLifetime
         var json = JsonSerializer.Serialize(problem);
 
         // Assert — no extra properties appear
-        var doc = JsonDocument.Parse(json);
+        using var doc = JsonDocument.Parse(json);
         var props = doc.RootElement.EnumerateObject().Select(p => p.Name).ToList();
         props.Should().BeEquivalentTo(new[] { "type", "title", "status" });
     }

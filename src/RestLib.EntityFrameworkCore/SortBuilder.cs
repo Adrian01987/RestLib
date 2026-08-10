@@ -18,51 +18,6 @@ internal static class SortBuilder
     private static readonly MethodInfo ThenByDescendingMethod = GetQueryableMethod(nameof(Queryable.ThenByDescending));
 
     /// <summary>
-    /// Applies sorting to the query based on the provided sort fields and a scalar key selector.
-    /// </summary>
-    /// <typeparam name="TEntity">The entity type.</typeparam>
-    /// <typeparam name="TKey">The primary key type.</typeparam>
-    /// <param name="query">The queryable to sort.</param>
-    /// <param name="sortFields">The sort fields to apply.</param>
-    /// <param name="keySelector">The key selector appended as a deterministic tie-breaker.</param>
-    /// <returns>An ordered queryable with all sort fields and the key tie-breaker applied.</returns>
-    public static IOrderedQueryable<TEntity> ApplySorting<TEntity, TKey>(
-        IQueryable<TEntity> query,
-        IReadOnlyList<SortField> sortFields,
-        Expression<Func<TEntity, TKey>> keySelector)
-        where TEntity : class
-        where TKey : notnull
-    {
-        ArgumentNullException.ThrowIfNull(query);
-        ArgumentNullException.ThrowIfNull(sortFields);
-        ArgumentNullException.ThrowIfNull(keySelector);
-
-        if (sortFields.Count == 0)
-        {
-            return query.OrderBy(keySelector);
-        }
-
-        IOrderedQueryable<TEntity>? orderedQuery = null;
-
-        foreach (var sortField in sortFields)
-        {
-            var propertyAccess = ExpressionBuilder.BuildPropertyAccess<TEntity>(sortField.PropertyName);
-            var method = GetSortMethod(sortField.Direction, orderedQuery is null);
-
-            if (orderedQuery is null)
-            {
-                orderedQuery = ApplyOrdering<TEntity>(method, query, propertyAccess);
-            }
-            else
-            {
-                orderedQuery = ApplyOrdering<TEntity>(method, orderedQuery, propertyAccess);
-            }
-        }
-
-        return orderedQuery!.ThenBy(keySelector);
-    }
-
-    /// <summary>
     /// Applies sorting to the query based on the provided sort fields and ordered key parts.
     /// </summary>
     /// <typeparam name="TEntity">The entity type.</typeparam>
