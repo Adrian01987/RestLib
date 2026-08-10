@@ -313,32 +313,100 @@ public class CompositeKeyEndpointTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task BatchPatch_WithNullCompositeKeyPart_ReturnsInvalidBatchRequest()
+    public async Task BatchPatch_WithMalformedCompositeKey_ReturnsIndexedErrorAndProcessesValidSiblings()
     {
         // Arrange
-        var content = new StringContent(
-            """
+        var first = CreateItem(sku: "sku-first", productName: "First", price: 10m);
+        var third = CreateItem(sku: "sku-third", productName: "Third", price: 30m);
+        Seed(first, third);
+        var payload = new
+        {
+            action = "patch",
+            items = new object[]
             {
-              "action": "patch",
-              "items": [
+                new
                 {
-                  "id": { "tenant_id": "11111111-1111-1111-1111-111111111111", "sku": null },
-                  "body": { "product_name": "Ignored" }
-                }
-              ]
-            }
-            """,
-            Encoding.UTF8,
-            "application/json");
+                    id = new { tenant_id = first.TenantId, sku = first.Sku },
+                    body = new { product_name = "First Patched" },
+                },
+                new
+                {
+                    id = new { tenant_id = Guid.NewGuid(), sku = (string?)null },
+                    body = new { product_name = "Ignored" },
+                },
+                new
+                {
+                    id = new { tenant_id = third.TenantId, sku = third.Sku },
+                    body = new { product_name = "Third Patched" },
+                },
+            },
+        };
 
         // Act
-        var response = await _client.PostAsync("/api/catalog-items/batch", content);
+        var response = await _client.PostAsync("/api/catalog-items/batch", BatchJson(payload));
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        var problem = await DeserializeProblemAsync(response);
-        problem.Should().NotBeNull();
-        problem!.Type.Should().Be(ProblemTypes.InvalidBatchRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+        var json = await DeserializeJsonAsync(response);
+        var items = json.GetProperty("items");
+        items.GetArrayLength().Should().Be(3);
+        items.EnumerateArray().Select(static item => item.GetProperty("index").GetInt32())
+            .Should().Equal(0, 1, 2);
+        items.EnumerateArray().Select(static item => item.GetProperty("status").GetInt32())
+            .Should().Equal(200, 400, 200);
+        items[1].GetProperty("error").GetProperty("type").GetString()
+            .Should().Be(ProblemTypes.BadRequest);
+
+        var storedFirst = await _repository.GetByIdAsync(
+            new RestLibCompositeKey<Guid, string>(first.TenantId, first.Sku));
+        var storedThird = await _repository.GetByIdAsync(
+            new RestLibCompositeKey<Guid, string>(third.TenantId, third.Sku));
+        storedFirst.Should().NotBeNull();
+        storedFirst!.ProductName.Should().Be("First Patched");
+        storedThird.Should().NotBeNull();
+        storedThird!.ProductName.Should().Be("Third Patched");
+    }
+
+    [Fact]
+    public async Task BatchDelete_WithMalformedCompositeKey_ReturnsIndexedErrorAndDeletesValidSiblings()
+    {
+        // Arrange
+        var first = CreateItem(sku: "sku-first", productName: "First");
+        var middle = CreateItem(sku: "sku-middle", productName: "Middle");
+        var third = CreateItem(sku: "sku-third", productName: "Third");
+        Seed(first, middle, third);
+        var payload = new
+        {
+            action = "delete",
+            items = new object[]
+            {
+                new { tenant_id = first.TenantId, sku = first.Sku },
+                new { tenant_id = middle.TenantId, sku = (string?)null },
+                new { tenant_id = third.TenantId, sku = third.Sku },
+            },
+        };
+
+        // Act
+        var response = await _client.PostAsync("/api/catalog-items/batch", BatchJson(payload));
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+        var json = await DeserializeJsonAsync(response);
+        var items = json.GetProperty("items");
+        items.GetArrayLength().Should().Be(3);
+        items.EnumerateArray().Select(static item => item.GetProperty("index").GetInt32())
+            .Should().Equal(0, 1, 2);
+        items.EnumerateArray().Select(static item => item.GetProperty("status").GetInt32())
+            .Should().Equal(204, 400, 204);
+        items[1].GetProperty("error").GetProperty("type").GetString()
+            .Should().Be(ProblemTypes.BadRequest);
+
+        (await _repository.GetByIdAsync(
+            new RestLibCompositeKey<Guid, string>(first.TenantId, first.Sku))).Should().BeNull();
+        (await _repository.GetByIdAsync(
+            new RestLibCompositeKey<Guid, string>(middle.TenantId, middle.Sku))).Should().NotBeNull();
+        (await _repository.GetByIdAsync(
+            new RestLibCompositeKey<Guid, string>(third.TenantId, third.Sku))).Should().BeNull();
     }
 
     [Fact]

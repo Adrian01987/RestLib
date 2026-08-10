@@ -1,12 +1,17 @@
 using System.ComponentModel;
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
+using RestLib.Batch;
 using RestLib.Configuration;
 using RestLib.InMemory;
 using RestLib.Internal;
+using RestLib.Responses;
 using RestLib.Tests.Fakes;
 using Xunit;
 
@@ -140,6 +145,73 @@ public class KeyConversionTests
             numericResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             undefinedDefaultResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             undefinedResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        }
+        finally
+        {
+            client?.Dispose();
+            if (host is not null)
+            {
+                await host.StopAsync();
+                host.Dispose();
+            }
+        }
+    }
+
+    [Fact]
+    [Trait("Type", "Integration")]
+    public async Task ScalarEnumBatchDelete_UndefinedMiddleKey_ReturnsIndexedErrorAndDeletesValidSiblings()
+    {
+        // Arrange
+        var repository = new InMemoryRepository<EnumKeyEntity, RouteKeyStatus>(
+            static entity => entity.Id,
+            static () => RouteKeyStatus.Active);
+        repository.Seed([
+            new EnumKeyEntity { Id = RouteKeyStatus.Active, Name = "Active" },
+            new EnumKeyEntity { Id = RouteKeyStatus.Archived, Name = "Archived" },
+            new EnumKeyEntity { Id = (RouteKeyStatus)99, Name = "Undefined" },
+        ]);
+
+        IHost? host = null;
+        HttpClient? client = null;
+        try
+        {
+            (host, client) = await new TestHostBuilder<EnumKeyEntity, RouteKeyStatus>(
+                    repository,
+                    "/api/enum-keys")
+                .WithEndpoint(static config =>
+                {
+                    config.AllowAnonymous();
+                    config.EnableBatch(BatchAction.Delete);
+                })
+                .BuildAsync();
+            var content = new StringContent(
+                """
+                {
+                  "action": "delete",
+                  "items": [1, 99, 2]
+                }
+                """,
+                Encoding.UTF8,
+                "application/json");
+
+            // Act
+            var response = await client.PostAsync("/api/enum-keys/batch", content);
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+            var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+            var items = json.GetProperty("items");
+            items.GetArrayLength().Should().Be(3);
+            items.EnumerateArray().Select(static item => item.GetProperty("index").GetInt32())
+                .Should().Equal(0, 1, 2);
+            items.EnumerateArray().Select(static item => item.GetProperty("status").GetInt32())
+                .Should().Equal(204, 400, 204);
+            items[1].GetProperty("error").GetProperty("type").GetString()
+                .Should().Be(ProblemTypes.BadRequest);
+
+            (await repository.GetByIdAsync(RouteKeyStatus.Active)).Should().BeNull();
+            (await repository.GetByIdAsync(RouteKeyStatus.Archived)).Should().BeNull();
+            (await repository.GetByIdAsync((RouteKeyStatus)99)).Should().NotBeNull();
         }
         finally
         {

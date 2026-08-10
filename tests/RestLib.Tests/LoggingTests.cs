@@ -1186,7 +1186,7 @@ public class BatchErrorLoggingTests : IAsyncLifetime
 
     [Fact]
     [Trait("Category", "Logging")]
-    public async Task Batch_MalformedItemsArray_LogsJsonDeserializationFailed()
+    public async Task Batch_MalformedArrayMember_LogsOneJsonDeserializationFailure()
     {
         // Arrange
         _repository = new InMemoryRepository<BatchEntity, Guid>(e => e.Id, Guid.NewGuid);
@@ -1199,15 +1199,14 @@ public class BatchErrorLoggingTests : IAsyncLifetime
             })
             .BuildWithLoggingAsync();
 
-        // The envelope is valid JSON with action + items array, but items contains
-        // elements that cannot be deserialized into BatchRequestItem<TKey>.
-        // We need the array itself to parse as JSON but individual elements to fail deserialization.
-        // The items array expects objects with optional "id", "body" fields. If we put
-        // primitives that cause a JsonException during Deserialize<List<BatchRequestItem>>...
         var rawJson = """
         {
             "action": "create",
-            "items": [1, 2, 3]
+            "items": [
+                { "name": "First", "price": 10, "is_active": true },
+                42,
+                { "name": "Third", "price": 30, "is_active": true }
+            ]
         }
         """;
         var content = new StringContent(rawJson, Encoding.UTF8, "application/json");
@@ -1215,14 +1214,19 @@ public class BatchErrorLoggingTests : IAsyncLifetime
         // Act
         var response = await _client.PostAsync("/api/items/batch", content);
 
-        // Assert — the batch pipeline processes this (possibly as 207 or 400), but either way
-        // the JsonDeserializationFailed log should have been emitted
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.MultiStatus, HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.MultiStatus);
+        var json = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var items = json.GetProperty("items");
+        items.GetArrayLength().Should().Be(3);
+        items.EnumerateArray().Select(static item => item.GetProperty("index").GetInt32())
+            .Should().Equal(0, 1, 2);
+        items.EnumerateArray().Select(static item => item.GetProperty("status").GetInt32())
+            .Should().Equal(201, 400, 201);
 
         var logs = _logCollector!.GetSnapshot();
-        var entry = logs.FirstOrDefault(r => r.Id.Id == 1330);
-        entry.Should().NotBeNull();
-        entry!.Level.Should().Be(LogLevel.Debug);
+        var entries = logs.Where(r => r.Id.Id == 1330).ToList();
+        entries.Should().ContainSingle();
+        entries[0].Level.Should().Be(LogLevel.Debug);
     }
 }
 

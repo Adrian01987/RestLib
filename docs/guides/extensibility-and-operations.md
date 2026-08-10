@@ -50,15 +50,24 @@ Content-Type: application/json
 }
 ```
 
-The response reports per-item status. All succeeded returns 200; mixed results
-return 207 Multi-Status with individual status codes per item.
+The response reports per-item status. RestLib returns 200 only when every item
+succeeds and 207 Multi-Status whenever one or more items fail, including when
+all items fail.
 
-For a successfully parsed `items` array, the response contains one entry per
-request item in the same order. The entry's `index` is its original zero-based
-request position. Update and patch repositories may omit resources that are
-missing at persistence time; RestLib correlates returned entities by resource
-key, so the missing input receives a 404 in its own slot without shifting the
-entities returned for later inputs.
+Once the request envelope and its non-empty `items` array are accepted, the
+response contains one entry per array member in the same order. The entry's
+`index` is its original zero-based request position. Each member is decoded
+independently for the selected action: a malformed member receives an indexed
+400 `/problems/bad-request` result and valid siblings continue. It never reaches
+validation, hooks, or the repository. Syntactically invalid JSON, a missing,
+null, non-array, or empty `items` value, an invalid or disabled action, and an
+oversized batch instead produce one top-level 400 Problem Details response.
+
+Update and patch repositories may omit resources that are missing at persistence
+time; RestLib correlates returned entities by resource key, so the missing input
+receives a 404 in its own slot without shifting the entities returned for later
+inputs. Batch processing is non-transactional, so valid siblings may already be
+committed. Retry only failed result slots rather than replaying the whole batch.
 
 Custom `IBatchRepository<TEntity, TKey>` implementations must honor the public
 cardinality, ordering, key, and duplicate-key rules. Create returns exactly one
@@ -74,8 +83,9 @@ hooks may replace that response). RestLib does not retry the write because the
 repository may already have committed it.
 
 Batch size is limited to 100 items by default (configurable via
-`RestLibOptions.MaxBatchSize`). Hooks fire once per item, and validation runs
-per item with errors reported individually.
+`RestLibOptions.MaxBatchSize`). Hooks and validation run independently for every
+member that was decoded successfully, with errors reported in the member's
+original result slot.
 
 ## HATEOAS Hypermedia Links
 

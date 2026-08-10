@@ -23,12 +23,14 @@ internal static class BatchHandler
     private interface IBatchRequestProcessor
     {
         /// <summary>
-        /// Processes the parsed item array for the requested action.
+        /// Processes the ordered members of the parsed item array for the requested action.
         /// </summary>
         /// <param name="action">The requested batch action.</param>
-        /// <param name="items">The parsed item array.</param>
+        /// <param name="items">The ordered parsed item inputs.</param>
         /// <returns>The batch response.</returns>
-        Task<BatchResponse> ProcessAsync(BatchAction action, JsonElement items);
+        Task<BatchResponse> ProcessAsync(
+            BatchAction action,
+            IReadOnlyList<BatchItemInput> items);
 
         /// <summary>
         /// Executes the active model's before-response hook.
@@ -272,21 +274,13 @@ internal static class BatchHandler
         var actionName = action.ToString().ToLowerInvariant();
         RestLibLogMessages.BatchRequestReceived(logger, actionName, itemCount);
 
-        JsonElement parsedItems;
-        try
-        {
-            parsedItems = ParseItems(
-                action,
-                envelope.Items,
-                config.KeyRouteParts,
-                jsonOptions);
-        }
-        catch (JsonException exception)
-        {
-            return problems.Create(Responses.ProblemDetailsFactory.InvalidBatchRequest(
-                exception.Message,
-                instance: instance));
-        }
+        var parsedItems = ParseItems(
+            action,
+            envelope.Items,
+            config.KeyRouteParts,
+            jsonOptions,
+            logger,
+            cancellationToken);
 
         var response = await processor.ProcessAsync(action, parsedItems);
         var beforeResponseResult = await processor.ExecuteBeforeResponseAsync(batchOperation);
@@ -322,73 +316,48 @@ internal static class BatchHandler
             : batchPath;
     }
 
-    private static JsonElement ParseItems<TKey>(
+    private static IReadOnlyList<BatchItemInput> ParseItems<TKey>(
         BatchAction action,
         JsonElement itemsElement,
         IReadOnlyList<RestLibKeyRoutePart<TKey>> keyRouteParts,
-        JsonSerializerOptions jsonOptions)
-        where TKey : notnull
-    {
-        return action switch
-        {
-            BatchAction.Create => itemsElement,
-            BatchAction.Update or BatchAction.Patch =>
-                ParseUpdateItems(itemsElement, keyRouteParts, jsonOptions),
-            BatchAction.Delete => ParseDeleteItems(itemsElement, keyRouteParts, jsonOptions),
-            _ => throw new InvalidOperationException($"Unexpected batch action: {action}")
-        };
-    }
-
-    private static JsonElement ParseUpdateItems<TKey>(
-        JsonElement itemsElement,
-        IReadOnlyList<RestLibKeyRoutePart<TKey>> keyRouteParts,
-        JsonSerializerOptions jsonOptions)
+        JsonSerializerOptions jsonOptions,
+        ILogger logger,
+        CancellationToken cancellationToken)
         where TKey : notnull
     {
         ArgumentNullException.ThrowIfNull(keyRouteParts);
         ArgumentNullException.ThrowIfNull(jsonOptions);
+        ArgumentNullException.ThrowIfNull(logger);
 
-        if (keyRouteParts.Count <= 1)
+        var parsedItems = new List<BatchItemInput>(itemsElement.GetArrayLength());
+        foreach (var item in itemsElement.EnumerateArray())
         {
-            return itemsElement;
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var parsedItem = action switch
+                {
+                    BatchAction.Create => BatchItemInput.FromJson(item.Clone()),
+                    BatchAction.Update or BatchAction.Patch =>
+                        BatchItemInput.FromDeserialized(
+                            ParseUpdateItem(item, keyRouteParts, jsonOptions)),
+                    BatchAction.Delete => BatchItemInput.FromDeserialized(
+                        ParseCompositeKey(item, keyRouteParts, jsonOptions)),
+                    _ => throw new InvalidOperationException(
+                        $"Unexpected batch action: {action}")
+                };
+
+                parsedItems.Add(parsedItem);
+            }
+            catch (JsonException exception)
+            {
+                RestLibLogMessages.JsonDeserializationFailed(logger, exception);
+                parsedItems.Add(BatchItemInput.FromDeserializationError());
+            }
         }
 
-        if (itemsElement.ValueKind != JsonValueKind.Array)
-        {
-            throw new JsonException("The 'items' property must be an array.");
-        }
-
-        var parsedItems = itemsElement.EnumerateArray()
-            .Select(item => ParseUpdateItem(item, keyRouteParts, jsonOptions))
-            .ToList();
-
-        return JsonSerializer.SerializeToElement(parsedItems, jsonOptions);
-    }
-
-    private static JsonElement ParseDeleteItems<TKey>(
-        JsonElement itemsElement,
-        IReadOnlyList<RestLibKeyRoutePart<TKey>> keyRouteParts,
-        JsonSerializerOptions jsonOptions)
-        where TKey : notnull
-    {
-        ArgumentNullException.ThrowIfNull(keyRouteParts);
-        ArgumentNullException.ThrowIfNull(jsonOptions);
-
-        if (keyRouteParts.Count <= 1)
-        {
-            return itemsElement;
-        }
-
-        if (itemsElement.ValueKind != JsonValueKind.Array)
-        {
-            throw new JsonException("The 'items' property must be an array.");
-        }
-
-        var parsedItems = itemsElement.EnumerateArray()
-            .Select(item => ParseCompositeKey(item, keyRouteParts, jsonOptions))
-            .ToList();
-
-        return JsonSerializer.SerializeToElement(parsedItems, jsonOptions);
+        return parsedItems;
     }
 
     private static BatchUpdateItem<TKey> ParseUpdateItem<TKey>(
@@ -524,7 +493,9 @@ internal static class BatchHandler
         where TEntity : class
         where TKey : notnull
     {
-        public async Task<BatchResponse> ProcessAsync(BatchAction action, JsonElement items)
+        public async Task<BatchResponse> ProcessAsync(
+            BatchAction action,
+            IReadOnlyList<BatchItemInput> items)
         {
             return action switch
             {
@@ -562,7 +533,9 @@ internal static class BatchHandler
         where TDbModel : class
         where TKey : notnull
     {
-        public async Task<BatchResponse> ProcessAsync(BatchAction action, JsonElement items)
+        public async Task<BatchResponse> ProcessAsync(
+            BatchAction action,
+            IReadOnlyList<BatchItemInput> items)
         {
             return action switch
             {

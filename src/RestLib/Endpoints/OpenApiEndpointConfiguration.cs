@@ -574,7 +574,9 @@ internal static class OpenApiEndpointConfiguration
             "Batch",
             $"Batch operations for {entityName}",
             $"Perform batch create, update, patch, or delete operations on {entityName} resources. " +
-            $"Enabled actions: {string.Join(", ", config.EnabledBatchActions.Select(a => a.ToString().ToLowerInvariant()))}.",
+            $"Enabled actions: {string.Join(", ", config.EnabledBatchActions.Select(a => a.ToString().ToLowerInvariant()))}. " +
+            "An accepted items array returns one ordered result per member; a member that cannot be decoded " +
+            "receives an indexed 400 result while valid siblings continue.",
             configureAuthorization: false);
 
         // Let the action-aware authorization check in BatchHandler run even when a route group
@@ -586,9 +588,13 @@ internal static class OpenApiEndpointConfiguration
             // Document responses
             operation.Responses = new OpenApiResponses
             {
-                ["200"] = new OpenApiResponse { Description = "All items processed successfully" },
-                ["207"] = new OpenApiResponse { Description = "Multi-Status - some items succeeded, some failed" },
-                ["400"] = CreateProblemDetailsResponse("Invalid batch request, size exceeded, or action not enabled"),
+                ["200"] = new OpenApiResponse { Description = "All array members processed successfully" },
+                ["207"] = new OpenApiResponse
+                {
+                    Description = "Multi-Status - one or more members failed, including member decoding failures"
+                },
+                ["400"] = CreateProblemDetailsResponse(
+                    "Top-level invalid batch envelope, size exceeded, or action not enabled"),
                 ["401"] = CreateProblemDetailsResponse("Unauthorized - Authentication required"),
                 ["403"] = CreateProblemDetailsResponse("Forbidden - Insufficient permissions")
             };

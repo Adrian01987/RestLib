@@ -479,7 +479,72 @@ test_batch_create_hook_execution() {
 }
 
 # =============================================================================
-# TEST 17: Exactly at MaxBatchSize (100 items — should succeed)
+# TEST 17: Malformed Batch Member Preserves Ordered Per-Item Results
+# =============================================================================
+test_malformed_create_member_preserves_siblings() {
+  http_post "${BASE_URL}/api/products/batch" '{
+    "action": "create",
+    "items": [
+      {
+        "name": "Q30 Valid Product A",
+        "price": 30.01,
+        "category_id": "'"${ELECTRONICS_ID}"'",
+        "is_active": true
+      },
+      42,
+      {
+        "name": "Q30 Valid Product B",
+        "price": 30.02,
+        "category_id": "'"${BOOKS_ID}"'",
+        "is_active": false
+      }
+    ]
+  }'
+
+  assert_http_status "207"                           || return 1
+  assert_items_count "3"                             || return 1
+  assert_json_field ".items[0].index" "0"            || return 1
+  assert_json_field ".items[1].index" "1"            || return 1
+  assert_json_field ".items[2].index" "2"            || return 1
+  assert_item_status 0 "201"                         || return 1
+  assert_item_status 1 "400"                         || return 1
+  assert_item_status 2 "201"                         || return 1
+  assert_item_has_entity 0                           || return 1
+  assert_item_no_error 0                             || return 1
+  assert_item_no_entity 1                            || return 1
+  assert_item_has_error 1                            || return 1
+  assert_json_field ".items[1].error.type" "/problems/bad-request" || return 1
+  assert_item_has_entity 2                           || return 1
+  assert_item_no_error 2                             || return 1
+
+  local first_id second_id
+  first_id=$(jq_val '.items[0].entity.id')
+  second_id=$(jq_val '.items[2].entity.id')
+  assert_ne "items[0].entity.id" "$first_id" "null"   || return 1
+  assert_ne "items[2].entity.id" "$second_id" "null" || return 1
+
+  # Both valid neighbours must have been persisted despite the malformed member.
+  http_get "${BASE_URL}/api/products/${first_id}"
+  assert_http_status "200"                                      || return 1
+  assert_json_field ".name" "Q30 Valid Product A"               || return 1
+
+  http_get "${BASE_URL}/api/products/${second_id}"
+  assert_http_status "200"                                      || return 1
+  assert_json_field ".name" "Q30 Valid Product B"               || return 1
+
+  # Products exclude direct DELETE, so clean up both persisted neighbours in one batch.
+  http_post "${BASE_URL}/api/products/batch" '{
+    "action": "delete",
+    "items": ["'"${first_id}"'", "'"${second_id}"'"]
+  }'
+  assert_http_status "200"       || return 1
+  assert_items_count "2"         || return 1
+  assert_item_status 0 "204"     || return 1
+  assert_item_status 1 "204"     || return 1
+}
+
+# =============================================================================
+# TEST 18: Exactly at MaxBatchSize (100 items — should succeed)
 # =============================================================================
 test_at_max_batch_size() {
   local items
@@ -524,6 +589,7 @@ run_test "No Batch Config (Categories -> 405)"                  test_no_batch_co
 run_test "Mixed Success/Failure: Patch (valid + not found)"     test_mixed_success_failure_patch
 run_test "Mixed Success/Failure: Delete (valid + not found)"    test_mixed_success_failure_delete
 run_test "Batch Create with Hook Execution (total calc)"        test_batch_create_hook_execution
+run_test "Malformed Create Member Preserves Valid Siblings"     test_malformed_create_member_preserves_siblings
 run_test "Exactly at MaxBatchSize (100 items)"                  test_at_max_batch_size
 
 # =============================================================================

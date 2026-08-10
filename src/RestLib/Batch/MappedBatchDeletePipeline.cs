@@ -22,10 +22,6 @@ internal sealed class MappedBatchDeletePipeline<TApiModel, TDbModel, TKey>
     protected override RestLibOperation Operation => RestLibOperation.BatchDelete;
 
     /// <inheritdoc/>
-    protected override string DeserializationErrorMessage =>
-        "The 'items' array could not be deserialized as a list of IDs.";
-
-    /// <inheritdoc/>
     protected override async Task<(BatchItemResult? Error, (int Index, TKey Key) ValidItem)> ValidateItemAsync(
         int index,
         TKey? key,

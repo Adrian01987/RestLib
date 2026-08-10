@@ -10,27 +10,24 @@ namespace RestLib.Serialization;
 internal static class JsonDeserializationHelper
 {
     /// <summary>
-    /// Deserializes a JSON array element into a list of items.
-    /// Returns <c>null</c> if the element is not a JSON array or cannot be deserialized.
+    /// Attempts to deserialize one JSON element.
     /// </summary>
     /// <typeparam name="T">The type to deserialize each element as.</typeparam>
-    /// <param name="element">The raw JSON element to deserialize.</param>
+    /// <param name="element">The JSON element to deserialize.</param>
     /// <param name="jsonOptions">The JSON serializer options.</param>
+    /// <param name="item">The deserialized item when successful.</param>
     /// <param name="logger">Optional logger for recording deserialization failures.</param>
-    /// <returns>A list of deserialized items, or <c>null</c> on failure.</returns>
-    internal static IReadOnlyList<T?>? DeserializeArray<T>(
+    /// <returns><c>true</c> when deserialization succeeds; otherwise, <c>false</c>.</returns>
+    internal static bool TryDeserializeItem<T>(
         JsonElement element,
         JsonSerializerOptions jsonOptions,
+        out T? item,
         ILogger? logger = null)
     {
         try
         {
-            if (element.ValueKind != JsonValueKind.Array)
-            {
-                return null;
-            }
-
-            return element.Deserialize<List<T?>>(jsonOptions);
+            item = element.Deserialize<T>(jsonOptions);
+            return true;
         }
         catch (JsonException ex)
         {
@@ -39,7 +36,8 @@ internal static class JsonDeserializationHelper
                 RestLibLogMessages.JsonDeserializationFailed(logger, ex);
             }
 
-            return null;
+            item = default;
+            return false;
         }
     }
 }

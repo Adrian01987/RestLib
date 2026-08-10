@@ -91,9 +91,17 @@ internal static class RestLibKeyConversion
     {
         ArgumentNullException.ThrowIfNull(targetType);
 
-        return JsonSerializer.Deserialize(value.GetRawText(), targetType, jsonOptions)
+        var deserialized = JsonSerializer.Deserialize(value.GetRawText(), targetType, jsonOptions)
             ?? throw new JsonException(
-                $"RestLib could not deserialize a composite key value to '{targetType.Name}'.");
+                $"RestLib could not deserialize a batch key value to '{targetType.Name}'.");
+        var effectiveType = Nullable.GetUnderlyingType(targetType) ?? targetType;
+        if (effectiveType.IsEnum && !EnumValueValidator.IsValid(effectiveType, deserialized))
+        {
+            throw new JsonException(
+                $"The batch key value is not valid for enum type '{effectiveType.Name}'.");
+        }
+
+        return deserialized;
     }
 
     /// <summary>

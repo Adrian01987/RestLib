@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using RestLib.Configuration;
 using RestLib.Hooks;
@@ -27,12 +26,6 @@ internal abstract class BatchActionPipelineBase<TKey, TRawItem, TValidItem, TCon
     protected abstract RestLibOperation Operation { get; }
 
     /// <summary>
-    /// Gets the error message used when the items array cannot be deserialized.
-    /// </summary>
-    protected virtual string DeserializationErrorMessage =>
-        "The 'items' array could not be deserialized.";
-
-    /// <summary>
     /// Gets a value indicating whether the action supports bulk persistence.
     /// </summary>
     protected virtual bool HasBulkPath => true;
@@ -40,26 +33,14 @@ internal abstract class BatchActionPipelineBase<TKey, TRawItem, TValidItem, TCon
     /// <summary>
     /// Processes a batch request through deserialization, validation, and persistence.
     /// </summary>
-    /// <param name="itemsElement">The raw JSON items array.</param>
+    /// <param name="items">The ordered members of the accepted items array.</param>
     /// <param name="context">The batch execution context.</param>
     /// <returns>The response containing one result per submitted item.</returns>
-    internal async Task<BatchResponse> ProcessAsync(JsonElement itemsElement, TContext context)
+    internal async Task<BatchResponse> ProcessAsync(
+        IReadOnlyList<BatchItemInput> items,
+        TContext context)
     {
         context.CancellationToken.ThrowIfCancellationRequested();
-
-        var items = JsonDeserializationHelper.DeserializeArray<TRawItem>(
-            itemsElement,
-            context.JsonOptions,
-            context.Logger);
-        if (items is null)
-        {
-            return SingleErrorResponse(
-                0,
-                StatusCodes.Status400BadRequest,
-                ProblemDetailsFactory.BadRequest(
-                    DeserializationErrorMessage,
-                    context.HttpContext.Request.Path));
-        }
 
         var results = new BatchItemResult?[items.Count];
         var validItems = new List<TValidItem>();
@@ -68,7 +49,37 @@ internal abstract class BatchActionPipelineBase<TKey, TRawItem, TValidItem, TCon
         {
             context.CancellationToken.ThrowIfCancellationRequested();
 
-            var (error, validItem) = await ValidateItemAsync(index, items[index], context);
+            var input = items[index];
+            TRawItem? rawItem;
+            var deserialized = true;
+            if (input.HasDeserializationError)
+            {
+                deserialized = false;
+                rawItem = default;
+            }
+            else if (input.HasDeserializedValue)
+            {
+                rawItem = (TRawItem?)input.DeserializedValue;
+            }
+            else
+            {
+                deserialized = JsonDeserializationHelper.TryDeserializeItem(
+                    input.JsonValue,
+                    context.JsonOptions,
+                    out rawItem,
+                    context.Logger);
+            }
+
+            if (!deserialized)
+            {
+                results[index] = BadRequestResult(
+                    index,
+                    $"The batch item at index {index} could not be deserialized.",
+                    context.HttpContext.Request.Path);
+                continue;
+            }
+
+            var (error, validItem) = await ValidateItemAsync(index, rawItem, context);
             if (error is not null)
             {
                 results[index] = error;
@@ -81,24 +92,6 @@ internal abstract class BatchActionPipelineBase<TKey, TRawItem, TValidItem, TCon
         await ExecuteAsync(validItems, results, context);
 
         return new BatchResponse { Items = results.ToList()! };
-    }
-
-    /// <summary>
-    /// Creates a batch response with a single error entry.
-    /// </summary>
-    /// <param name="index">The item index.</param>
-    /// <param name="status">The HTTP status code.</param>
-    /// <param name="error">The problem details.</param>
-    /// <returns>A response containing the error entry.</returns>
-    protected static BatchResponse SingleErrorResponse(
-        int index,
-        int status,
-        RestLibProblemDetails error)
-    {
-        return new BatchResponse
-        {
-            Items = [new BatchItemResult { Index = index, Status = status, Error = error }]
-        };
     }
 
     /// <summary>

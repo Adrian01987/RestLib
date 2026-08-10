@@ -55,6 +55,7 @@ public partial class OpenApiDocumentationTests
             {
                 config.AllowAnonymous();
                 config.KeySelector = e => e.Id;
+                config.EnableBatch();
             })
             .BuildAsync();
 

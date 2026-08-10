@@ -1,6 +1,6 @@
 # ADR-008: Batch Operations
 
-**Status:** Accepted (amended 2026-08-05)
+**Status:** Accepted (amended 2026-08-10)
 **Date:** 2026-03-25
 
 ## Context
@@ -36,22 +36,37 @@ resource that needs different batch rate limits must enable one action on that
 route or expose the operations as separate resources/routes.
 
 ### Partial success semantics
-Each item is processed independently. The response uses 200 when all items
-succeed, 207 Multi-Status when results are mixed. Each item in the response
-carries its own `status`, `entity` (on success), and `error` (on failure).
-This is more practical than all-or-nothing for large imports.
+Each accepted array member is processed independently. The response uses 200
+only when every member succeeds and 207 Multi-Status when one or more members
+fail, including when all members fail. Each item in the response carries its own
+`status`, `entity` (on success), and `error` (on failure). This is more practical
+than all-or-nothing for large imports.
 
-Once the request `items` array has been parsed successfully, the response has
-exactly one entry per request item in the same order. Each entry's `index` is
-the zero-based position of that item in the original request. Validation,
-not-found, hook, persistence, and repository-contract failures therefore stay
-attached to the request item that produced them.
+Once RestLib accepts a syntactically valid request envelope containing a
+non-empty `items` array within the configured size limit, the array defines the
+response cardinality. The response has exactly one entry per array member in the
+same order, and each entry's `index` is that member's zero-based request
+position. RestLib normalizes and deserializes each member independently for the
+requested action. A member that cannot be decoded receives an indexed 400
+`/problems/bad-request` result, does not reach validation, hooks, or persistence,
+and does not prevent valid siblings from continuing. Validation, not-found,
+hook, persistence, and repository-contract failures likewise stay attached to
+the request member that produced them.
+
+Failures that prevent RestLib from accepting the envelope remain one top-level
+400 response rather than an indexed batch result. These include syntactically
+malformed JSON, a missing, null, non-array, or empty `items` member, an unknown or
+disabled action, and a request that exceeds `MaxBatchSize`.
 
 ### Non-transactional processing
 
 Batch operations are **non-transactional by design**. There is no rollback
 mechanism at the RestLib level. The specific behaviour depends on which
 persistence path is used:
+
+Because valid members can commit while another member receives an indexed 400,
+clients should retry only failed result slots. Replaying the complete request
+can duplicate effects for members that already succeeded.
 
 **Individual path** (`PersistIndividuallyAsync`): Each item is persisted in
 its own `try`/`catch`. If item 3 of 5 throws, items 1-2 are already
@@ -165,7 +180,8 @@ hooks full per-item control.
 - New `IBatchRepository` interface is additive (no breaking change)
 - Four new `RestLibOperation` enum values
 - One new endpoint per resource with batch enabled
-- Hooks fire N times for N items (may be slow for very large batches)
+- Hooks fire at most N times for N accepted array members; members that cannot be
+  decoded do not enter the hook pipeline
 
 ## Known Limitations
 

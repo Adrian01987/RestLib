@@ -73,7 +73,7 @@ baseUri)` to obtain the full URI that matches configured runtime output.
 
 | HTTP Status | Type                            | Title                 | Notes                                |
 | ----------- | ------------------------------- | --------------------- | ------------------------------------ |
-| 400         | `/problems/bad-request`         | Bad Request           |                                      |
+| 400         | `/problems/bad-request`         | Bad Request           | Includes indexed batch-member decoding failures |
 | 400         | `/problems/validation-failed`   | Validation Failed     |                                      |
 | 400         | `/problems/invalid-cursor`      | Invalid Cursor        |                                      |
 | 400         | `/problems/invalid-limit`       | Invalid Limit         |                                      |
@@ -81,7 +81,7 @@ baseUri)` to obtain the full URI that matches configured runtime output.
 | 400         | `/problems/invalid-sort`        | Invalid Sort          |                                      |
 | 400         | `/problems/invalid-fields`      | Invalid Field Selection |                                    |
 | 400         | `/problems/invalid-search`     | Invalid Search Parameter |                                  |
-| 400         | `/problems/invalid-batch-request` | Invalid Batch Request | Invalid envelope structure or action |
+| 400         | `/problems/invalid-batch-request` | Invalid Batch Request | Top-level invalid envelope structure or action; accepted-array member failures use indexed `/problems/bad-request` results |
 | 400         | `/problems/batch-size-exceeded` | Batch Size Exceeded   | Items exceed `MaxBatchSize` limit    |
 | 400         | `/problems/batch-action-not-enabled` | Batch Action Not Enabled | Requested action not enabled for resource |
 | 401         | `/problems/unauthorized`        | Unauthorized          | OpenAPI docs only; handled by ASP.NET Core authorization (including action-aware batch evaluation) |

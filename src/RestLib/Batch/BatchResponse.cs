@@ -5,8 +5,9 @@ namespace RestLib.Batch;
 
 /// <summary>
 /// Represents the batch response envelope containing per-item results.
-/// For a successfully parsed request items array, the envelope contains one
-/// result per request item in the same order as the request.
+/// Once a request envelope and its items array are accepted, the envelope
+/// contains one result per array member in the same order as the request,
+/// including members that could not be deserialized.
 /// </summary>
 public class BatchResponse
 {

@@ -94,6 +94,26 @@ public partial class OpenApiDocumentationTests
     }
 
     [Fact]
+    public async Task OpenApi_Batch_Should_Document_PerMemberAndEnvelopeOutcomes()
+    {
+        // Arrange
+        using var host = await CreateHostWithOpenApi();
+        var client = host.GetTestClient();
+
+        // Act
+        var openApiDoc = await GetOpenApiDocument(client);
+        var batchOp = openApiDoc.Paths!["/api/items/batch"]!.Operations[HttpMethod.Post]!;
+
+        // Assert
+        batchOp.Description.Should().Contain("one ordered result per member");
+        batchOp.Responses.Should().ContainKey("200");
+        batchOp.Responses.Should().ContainKey("207");
+        batchOp.Responses.Should().ContainKey("400");
+        batchOp.Responses["207"].Description.Should().Contain("member decoding failures");
+        batchOp.Responses["400"].Description.Should().Contain("Top-level invalid batch envelope");
+    }
+
+    [Fact]
     public async Task OpenApi_Update_Should_Document_StatusCodes()
     {
         // Arrange

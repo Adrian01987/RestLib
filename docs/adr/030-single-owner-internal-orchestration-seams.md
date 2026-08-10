@@ -1,6 +1,6 @@
 # ADR-030: Single-Owner Internal Orchestration Seams
 
-**Status:** Accepted
+**Status:** Accepted (amended 2026-08-10)
 **Date:** 2026-08-06
 
 ## Context
@@ -42,10 +42,19 @@ unmapped pipelines remain thin adapters for model-specific validation, mapping,
 hooks, persistence calls, HATEOAS, and response entities.
 
 `BatchHandler` owns the HTTP boundary once: envelope parsing, action selection,
-action-aware authorization, request limits, dispatch, before-response hooks,
-aggregate status selection, and serialization. Its private batch-request
+action-aware authorization, request limits, per-member action/key-shape
+normalization, dispatch, before-response hooks, aggregate status selection, and
+serialization. Once an envelope and non-empty items array are accepted, the
+handler normalizes each raw member independently so one conversion failure does
+not discard its siblings or their original positions. Its private batch-request
 processor boundary chooses the mapped or unmapped adapter without duplicating
 the HTTP protocol.
+
+The shared batch state machine independently deserializes each normalized member
+and assigns every outcome to its preallocated request-index slot. Member
+normalization or deserialization failures become indexed 400 results; only
+envelope-level failures remain top-level 400 responses. This ownership preserves
+one ordered result per accepted array member across mapped and unmapped modes.
 
 `BulkPersistenceExecutor` marks only the bulk repository call. This boundary is
 important because a repository failure may occur after a write was committed,
